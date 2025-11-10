@@ -1,0 +1,56 @@
+calculate_start_time:
+  name: Calculate Start Time
+  description: Calculate the optimal start time to reach target temperature at the specified time.
+  fields:
+    current_temp:
+      name: Current Temperature
+      description: Current room temperature in Celsius
+      required: true
+      example: 18.5
+      selector:
+        number:
+          min: -50
+          max: 50
+          step: 0.1
+          unit_of_measurement: "°C"
+    target_temp:
+      name: Target Temperature
+      description: Desired target temperature in Celsius
+      required: true
+      example: 21.0
+      selector:
+        number:
+          min: 0
+          max: 40
+          step: 0.1
+          unit_of_measurement: "°C"
+    outdoor_temp:
+      name: Outdoor Temperature
+      description: Current outdoor temperature in Celsius
+      required: true
+      example: 5.0
+      selector:
+        number:
+          min: -50
+          max: 50
+          step: 0.1
+          unit_of_measurement: "°C"
+    target_time:
+      name: Target Time
+      description: Time when the target temperature should be reached
+      required: true
+      example: "2024-01-15 07:00:00"
+      selector:
+        datetime:
+    thermal_slope:
+      name: Thermal Slope
+      description: Heating rate in degrees Celsius per hour (optional, defaults to 2.0)
+      required: false
+      example: 2.5
+      default: 2.0
+      selector:
+        number:
+          min: 0.1
+          max: 10.0
+          step: 0.1
+          unit_of_measurement: "°C/h"

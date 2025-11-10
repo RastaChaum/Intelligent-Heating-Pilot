@@ -1,0 +1,35 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurer Smart Starter VTherm",
+        "description": "Configurez votre intégration Smart Starter VTherm pour des calculs de préchauffage intelligents.",
+        "data": {
+          "name": "Nom",
+          "current_temp_entity": "Capteur de température actuelle (optionnel)",
+          "target_temp_entity": "Entité de température cible (optionnel)",
+          "outdoor_temp_entity": "Capteur de température extérieure (optionnel)",
+          "thermal_slope": "Pente thermique (°C/h)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Échec de la connexion",
+      "invalid_auth": "Authentification invalide",
+      "unknown": "Erreur inattendue"
+    },
+    "abort": {
+      "already_configured": "L'appareil est déjà configuré"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options Smart Starter VTherm",
+        "data": {
+          "thermal_slope": "Pente thermique (°C/h)"
+        }
+      }
+    }
+  }
+}
