@@ -515,32 +515,6 @@ class IntelligentHeatingPilotCoordinator:
         return False
 
     async def async_schedule_anticipation(self, anticipation_data: dict) -> None:
-        """Schedule the anticipated start."""
-        anticipated_start = anticipation_data[ATTR_ANTICIPATED_START_TIME]
-        scheduler_entity = anticipation_data["scheduler_entity"]
-        next_schedule_time = anticipation_data[ATTR_NEXT_SCHEDULE_TIME]
-        lhs = anticipation_data.get(ATTR_LEARNED_HEATING_SLOPE, 0)
-        now = dt_util.now()
-
-        _LOGGER.info("Scheduling anticipation: start=%s, target_time=%s, LHS=%.2f°C/h", 
-                    anticipated_start.isoformat(), next_schedule_time.isoformat(), lhs)
-
-        # Check if we already scheduled this anticipation with same LHS (avoid duplicates)
-        # BUT allow rescheduling if LHS changed significantly
-        if self._last_scheduled_time == anticipated_start and self._last_scheduled_lhs is not None:
-            if abs(lhs - self._last_scheduled_lhs) < 0.05:  # Less than 0.05°C/h change
-                _LOGGER.debug(
-                    "Already scheduled anticipation for %s with similar LHS (%.2f vs %.2f), skipping duplicate",
-                    anticipated_start.isoformat(), self._last_scheduled_lhs, lhs
-                )
-                return
-            else:
-                _LOGGER.info(
-                    "Rescheduling anticipation for %s due to LHS change (%.2f -> %.2f°C/h)",
-                    anticipated_start.isoformat(), self._last_scheduled_lhs, lhs
-                )
-
-        # Cancel any existing scheduled start
         if self._cancel_scheduled_start:
             self._cancel_scheduled_start()
             self._cancel_scheduled_start = None
