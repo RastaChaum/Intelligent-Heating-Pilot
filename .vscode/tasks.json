@@ -1,0 +1,49 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Deploy to Home Assistant",
+      "type": "shell",
+      "command": "scp -r ${workspaceFolder}/custom_components/smart_starter_vtherm root@${homeassistant_host}:/config/custom_components/",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Restart Home Assistant",
+      "type": "shell",
+      "command": "ssh {homeassistant_user}@{homeassistant_host} 'ha core restart'",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Deploy and Restart",
+      "dependsOn": [
+        "Deploy to Home Assistant",
+        "Restart Home Assistant"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "View Home Assistant Logs",
+      "type": "shell",
+      "command": "ssh {homeassistant_user}@{homeassistant_host} 'tail -f /config/home-assistant.log | grep smart_starter_vtherm'",
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    }
+  ]
+}

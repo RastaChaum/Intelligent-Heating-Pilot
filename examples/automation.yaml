@@ -1,0 +1,195 @@
+---
+# Example automations for Smart Starter VTherm
+
+# Automation 1: Calculate start time every hour and turn on heating when needed
+automation:
+  - id: smart_starter_vtherm_hourly_check
+    alias: "Smart Starter VTherm - Hourly Check"
+    description: "Check every hour if heating should start for next scheduled period"
+    trigger:
+      - platform: time_pattern
+        minutes: 0 # Every hour at :00
+    action:
+      # Get current values from sensors
+      - service: smart_starter_vtherm.calculate_start_time
+        data:
+          current_temp: "{{ states('sensor.living_room_temperature') | float }}"
+          target_temp: 21.0
+          outdoor_temp: "{{ states('sensor.outdoor_temperature') | float }}"
+          target_time: "{{ now().replace(hour=7, minute=0, second=0) }}"
+          thermal_slope: 2.0
+      # If we should start now, turn on the heating
+      - condition: template
+        value_template: >
+          {{ (states('sensor.smart_starter_vtherm_start_time') | as_datetime) <= now() }}
+      - service: climate.set_hvac_mode
+        target:
+          entity_id: climate.living_room_thermostat
+        data:
+          hvac_mode: heat
+      - service: notify.mobile_app
+        data:
+          title: "Chauffage démarré"
+          message: >
+            Le chauffage a démarré pour atteindre 21°C à 07:00.
+            Durée de préchauffage: {{ states('sensor.smart_starter_vtherm_preheat_duration') }} minutes
+
+  # Automation 2: Integrate with scheduler helper
+  - id: smart_starter_vtherm_with_scheduler
+    alias: "Smart Starter VTherm - With Scheduler"
+    description: "Use scheduler helper to determine when to heat"
+    trigger:
+      - platform: time_pattern
+        minutes: "/15" # Check every 15 minutes
+    condition:
+      # Only run if scheduler is enabled
+      - condition: state
+        entity_id: input_boolean.heating_schedule_enabled
+        state: "on"
+      # Only run during certain hours (e.g., before morning schedule)
+      - condition: time
+        after: "00:00:00"
+        before: "10:00:00"
+    action:
+      # Get the next scheduled heating time from scheduler
+      - variables:
+          next_schedule: "{{ states('sensor.heating_scheduler_next_time') }}"
+          target_temp: "{{ states('input_number.heating_target_temp') | float }}"
+      - service: smart_starter_vtherm.calculate_start_time
+        data:
+          current_temp: "{{ states('sensor.room_temperature') | float }}"
+          target_temp: "{{ target_temp }}"
+          outdoor_temp: "{{ states('sensor.outdoor_temperature') | float }}"
+          target_time: "{{ next_schedule }}"
+          thermal_slope: "{{ states('input_number.thermal_slope') | float(2.0) }}"
+      # Check if we should start heating now
+      - condition: template
+        value_template: >
+          {{ (states('sensor.smart_starter_vtherm_start_time') | as_datetime) <= now() }}
+      - service: climate.set_temperature
+        target:
+          entity_id: climate.versatile_thermostat
+        data:
+          temperature: "{{ target_temp }}"
+          hvac_mode: heat
+
+  # Automation 3: Morning routine with progressive heating
+  - id: smart_starter_morning_routine
+    alias: "Smart Starter VTherm - Morning Routine"
+    description: "Smart heating for morning wake-up"
+    trigger:
+      # Trigger every day at midnight to prepare for morning
+      - platform: time
+        at: "00:00:00"
+    action:
+      - service: smart_starter_vtherm.calculate_start_time
+        data:
+          current_temp: "{{ states('sensor.bedroom_temperature') | float }}"
+          target_temp: 20.0
+          outdoor_temp: "{{ states('sensor.outdoor_temperature') | float }}"
+          target_time: "{{ now().replace(hour=7, minute=0, second=0) }}"
+          thermal_slope: 1.8
+      # Set a helper to remember when to start
+      - service: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.heating_start_time
+        data:
+          datetime: "{{ states('sensor.smart_starter_vtherm_start_time') }}"
+      - service: notify.persistent_notification
+        data:
+          title: "Chauffage programmé"
+          message: >
+            Chauffage démarrera à {{ states('sensor.smart_starter_vtherm_start_time') | as_datetime | as_local }}
+            pour atteindre 20°C à 07:00.
+            Durée de préchauffage estimée: {{ states('sensor.smart_starter_vtherm_preheat_duration') }} minutes
+
+  - id: smart_starter_activate_heating
+    alias: "Smart Starter VTherm - Activate Heating at Calculated Time"
+    description: "Turn on heating at the calculated start time"
+    trigger:
+      - platform: time
+        at: input_datetime.heating_start_time
+    action:
+      - service: climate.set_hvac_mode
+        target:
+          entity_id: climate.bedroom_thermostat
+        data:
+          hvac_mode: heat
+      - service: climate.set_temperature
+        target:
+          entity_id: climate.bedroom_thermostat
+        data:
+          temperature: 20.0
+
+  # Automation 4: Weekend vs Weekday schedules
+  - id: smart_starter_weekday_schedule
+    alias: "Smart Starter VTherm - Weekday Schedule"
+    description: "Different schedules for weekdays and weekends"
+    trigger:
+      - platform: time
+        at: "23:00:00"
+    condition:
+      - condition: time
+        weekday:
+          - mon
+          - tue
+          - wed
+          - thu
+          - fri
+    action:
+      - service: smart_starter_vtherm.calculate_start_time
+        data:
+          current_temp: "{{ states('sensor.living_room_temperature') | float }}"
+          target_temp: 21.0
+          outdoor_temp: "{{ states('sensor.outdoor_temperature') | float }}"
+          target_time: "{{ (now().timestamp() + 86400) | timestamp_custom('%Y-%m-%d')).replace(hour=6, minute=30, second=0) }}"
+          thermal_slope: 2.0
+
+  - id: smart_starter_weekend_schedule
+    alias: "Smart Starter VTherm - Weekend Schedule"
+    description: "Leisurely weekend heating schedule"
+    trigger:
+      - platform: time
+        at: "23:00:00"
+    condition:
+      - condition: time
+        weekday:
+          - sat
+          - sun
+    action:
+      - service: smart_starter_vtherm.calculate_start_time
+        data:
+          current_temp: "{{ states('sensor.living_room_temperature') | float }}"
+          target_temp: 20.0
+          outdoor_temp: "{{ states('sensor.outdoor_temperature') | float }}"
+          target_time: "{{ ((now().timestamp() + 86400) | timestamp_custom('%Y-%m-%d')).replace(hour=8, minute=30, second=0) }}"
+          thermal_slope: 2.0
+
+# Input helpers needed for some examples
+input_boolean:
+  heating_schedule_enabled:
+    name: Heating Schedule Enabled
+    icon: mdi:thermometer-auto
+
+input_number:
+  heating_target_temp:
+    name: Heating Target Temperature
+    min: 15
+    max: 25
+    step: 0.5
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+
+  thermal_slope:
+    name: Thermal Slope
+    min: 0.5
+    max: 5.0
+    step: 0.1
+    unit_of_measurement: "°C/h"
+    icon: mdi:slope-uphill
+
+input_datetime:
+  heating_start_time:
+    name: Heating Start Time
+    has_date: true
+    has_time: true

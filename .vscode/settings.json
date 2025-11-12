@@ -1,0 +1,15 @@
+{
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": true,
+  "python.formatting.provider": "black",
+  "editor.formatOnSave": true,
+  "files.associations": {
+    "*.yaml": "home-assistant"
+  },
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/custom_components"
+  ],
+  "python.autoComplete.extraPaths": [
+    "${workspaceFolder}/custom_components"
+  ]
+}
