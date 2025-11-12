@@ -514,6 +514,7 @@ class IntelligentHeatingPilotCoordinator:
 
         return False
 
+    async def async_schedule_anticipation(self, anticipation_data: dict) -> None:
         """Schedule the anticipated start."""
         anticipated_start = anticipation_data[ATTR_ANTICIPATED_START_TIME]
         scheduler_entity = anticipation_data["scheduler_entity"]
