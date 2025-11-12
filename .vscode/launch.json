@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Home Assistant: Attach to Container",
+            "type": "python",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5678
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}/custom_components/smart_starter_vtherm",
+                    "remoteRoot": "/config/custom_components/smart_starter_vtherm"
+                }
+            ],
+            "justMyCode": false,
+            "django": false,
+            "subProcess": true
+        },
+        {
+            "name": "Home Assistant: View Logs",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/view_logs.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}
