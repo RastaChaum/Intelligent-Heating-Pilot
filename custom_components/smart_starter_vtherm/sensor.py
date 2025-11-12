@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import logging
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -10,17 +11,16 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTime
+from homeassistant.const import UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .const import (
-    ATTR_CURRENT_TEMP,
-    ATTR_OUTDOOR_TEMP,
-    ATTR_PREHEAT_DURATION,
-    ATTR_START_TIME,
-    ATTR_TARGET_TEMP,
-    ATTR_TARGET_TIME,
+    ATTR_ANTICIPATED_START_TIME,
+    ATTR_LEARNED_HEATING_SLOPE,
+    ATTR_NEXT_SCHEDULE_TIME,
+    ATTR_NEXT_TARGET_TEMP,
     CONF_NAME,
     DOMAIN,
 )
@@ -34,11 +34,13 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Smart Starter VTherm sensors."""
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]
     name = config_entry.data.get(CONF_NAME, "Smart Starter VTherm")
 
     sensors = [
-        SmartStarterVThermPreheatDurationSensor(config_entry, name),
-        SmartStarterVThermStartTimeSensor(config_entry, name),
+        SmartStarterVThermAnticipationTimeSensor(coordinator, config_entry, name),
+        SmartStarterVThermLearnedSlopeSensor(coordinator, config_entry, name),
+        SmartStarterVThermNextScheduleSensor(coordinator, config_entry, name),
     ]
 
     async_add_entities(sensors, True)
@@ -49,14 +51,15 @@ class SmartStarterVThermSensorBase(SensorEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, config_entry: ConfigEntry, name: str) -> None:
+    def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
         """Initialize the sensor."""
+        self.coordinator = coordinator
         self._config_entry = config_entry
         self._attr_device_info = {
             "identifiers": {(DOMAIN, config_entry.entry_id)},
             "name": name,
             "manufacturer": "Smart Starter VTherm",
-            "model": "Preheating Calculator",
+            "model": "Intelligent Preheating with ML",
         }
 
     async def async_added_to_hass(self) -> None:
@@ -64,90 +67,178 @@ class SmartStarterVThermSensorBase(SensorEntity):
         await super().async_added_to_hass()
 
         @callback
-        def handle_calculation_event(event):
-            """Handle calculation complete event."""
-            self._handle_calculation_result(event.data)
+        def handle_anticipation_event(event):
+            """Handle anticipation calculated event."""
+            self._handle_anticipation_result(event.data)
             self.async_write_ha_state()
 
         self.async_on_remove(
             self.hass.bus.async_listen(
-                f"{DOMAIN}_calculation_complete", handle_calculation_event
+                f"{DOMAIN}_anticipation_calculated", handle_anticipation_event
             )
         )
 
-    def _handle_calculation_result(self, data: dict) -> None:
-        """Handle new calculation result. Override in subclasses."""
+    def _handle_anticipation_result(self, data: dict) -> None:
+        """Handle new anticipation result. Override in subclasses."""
         pass
 
 
-class SmartStarterVThermPreheatDurationSensor(SmartStarterVThermSensorBase):
-    """Sensor for preheating duration in minutes."""
+class SmartStarterVThermAnticipationTimeSensor(SmartStarterVThermSensorBase):
+    """Sensor for anticipated start time."""
 
-    _attr_name = "Preheat Duration"
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
-    _attr_device_class = SensorDeviceClass.DURATION
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:clock-outline"
-
-    def __init__(self, config_entry: ConfigEntry, name: str) -> None:
-        """Initialize the sensor."""
-        super().__init__(config_entry, name)
-        self._attr_unique_id = f"{config_entry.entry_id}_preheat_duration"
-        self._preheat_duration = None
-        self._attributes = {}
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the state of the sensor."""
-        return self._preheat_duration
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        """Return additional attributes."""
-        return self._attributes
-
-    def _handle_calculation_result(self, data: dict) -> None:
-        """Handle new calculation result."""
-        self._preheat_duration = data.get(ATTR_PREHEAT_DURATION)
-        self._attributes = {
-            ATTR_CURRENT_TEMP: data.get(ATTR_CURRENT_TEMP),
-            ATTR_TARGET_TEMP: data.get(ATTR_TARGET_TEMP),
-            ATTR_OUTDOOR_TEMP: data.get(ATTR_OUTDOOR_TEMP),
-            ATTR_TARGET_TIME: data.get(ATTR_TARGET_TIME),
-        }
-
-
-class SmartStarterVThermStartTimeSensor(SmartStarterVThermSensorBase):
-    """Sensor for optimal start time."""
-
-    _attr_name = "Start Time"
+    _attr_name = "Anticipated Start Time"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:clock-start"
 
-    def __init__(self, config_entry: ConfigEntry, name: str) -> None:
+    def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
         """Initialize the sensor."""
-        super().__init__(config_entry, name)
-        self._attr_unique_id = f"{config_entry.entry_id}_start_time"
-        self._start_time = None
+        super().__init__(coordinator, config_entry, name)
+        self._attr_unique_id = f"{config_entry.entry_id}_anticipated_start_time"
+        self._anticipated_start = None
         self._attributes = {}
 
     @property
     def native_value(self) -> datetime | None:
         """Return the state of the sensor."""
-        return self._start_time
+        return self._anticipated_start
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return True
 
     @property
     def extra_state_attributes(self) -> dict:
         """Return additional attributes."""
         return self._attributes
 
-    def _handle_calculation_result(self, data: dict) -> None:
-        """Handle new calculation result."""
-        start_time_str = data.get(ATTR_START_TIME)
-        if start_time_str:
-            self._start_time = datetime.fromisoformat(start_time_str)
-        self._attributes = {
-            ATTR_PREHEAT_DURATION: data.get(ATTR_PREHEAT_DURATION),
-            "should_start_now": data.get("should_start_now"),
-            ATTR_TARGET_TIME: data.get(ATTR_TARGET_TIME),
+    def _handle_anticipation_result(self, data: dict) -> None:
+        """Handle new anticipation result."""
+        anticipated_start = data.get(ATTR_ANTICIPATED_START_TIME)
+        if anticipated_start:
+            # Event carries ISO string; accept datetime too
+            if isinstance(anticipated_start, str):
+                # Parse with HA helper to preserve timezone correctly
+                parsed = dt_util.parse_datetime(anticipated_start)
+                if parsed is None:
+                    try:
+                        parsed = datetime.fromisoformat(anticipated_start)
+                    except ValueError:
+                        parsed = None
+                self._anticipated_start = parsed
+            else:
+                self._anticipated_start = anticipated_start
+            # Store attributes - keep next_schedule_time as ISO string for proper serialization
+            next_sched = data.get(ATTR_NEXT_SCHEDULE_TIME)
+            if isinstance(next_sched, str):
+                next_sched_attr = next_sched  # Already ISO string
+            elif isinstance(next_sched, datetime):
+                next_sched_attr = next_sched.isoformat()
+            else:
+                next_sched_attr = None
+            
+            self._attributes = {
+                ATTR_NEXT_SCHEDULE_TIME: next_sched_attr,
+                ATTR_NEXT_TARGET_TEMP: data.get(ATTR_NEXT_TARGET_TEMP),
+                "anticipation_minutes": data.get("anticipation_minutes"),
+                "current_temp": data.get("current_temp"),
+                "scheduler_entity": data.get("scheduler_entity"),
+                ATTR_LEARNED_HEATING_SLOPE: data.get(ATTR_LEARNED_HEATING_SLOPE),
+            }
+            _LOGGER.info("Anticipated start time updated: %s", self._anticipated_start)
+
+
+class SmartStarterVThermLearnedSlopeSensor(SmartStarterVThermSensorBase):
+    """Sensor for learned heating slope (LHS)."""
+
+    _attr_name = "Learned Heating Slope"
+    _attr_native_unit_of_measurement = "°C/h"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:chart-line"
+
+    def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, config_entry, name)
+        self._attr_unique_id = f"{config_entry.entry_id}_learned_heating_slope"
+        self._slope = None
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        return self.coordinator.get_learned_heating_slope()
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional attributes."""
+        slopes = self.coordinator._data.get("learned_slopes", [])
+        if slopes:
+            min_slope = min(slopes)
+            max_slope = max(slopes)
+            avg_slope = sum(slopes) / len(slopes)
+        else:
+            min_slope = max_slope = avg_slope = None
+        
+        return {
+            "sample_count": len(slopes),
+            "min_slope": min_slope,
+            "max_slope": max_slope,
+            "average_slope": avg_slope,
+            "recent_slopes": slopes[-10:] if len(slopes) > 10 else slopes,
         }
+
+
+class SmartStarterVThermNextScheduleSensor(SmartStarterVThermSensorBase):
+    """Sensor for next schedule time."""
+
+    _attr_name = "Next Schedule Time"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, config_entry, name)
+        self._attr_unique_id = f"{config_entry.entry_id}_next_schedule_time"
+        self._next_schedule = None
+        self._attributes = {}
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the state of the sensor."""
+        return self._next_schedule
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional attributes."""
+        return self._attributes
+
+    def _handle_anticipation_result(self, data: dict) -> None:
+        """Handle new anticipation result."""
+        next_schedule = data.get(ATTR_NEXT_SCHEDULE_TIME)
+        if next_schedule:
+            # Event carries ISO string; accept datetime too
+            if isinstance(next_schedule, str):
+                # Parse with HA helper to preserve timezone correctly
+                parsed = dt_util.parse_datetime(next_schedule)
+                if parsed is None:
+                    try:
+                        parsed = datetime.fromisoformat(next_schedule)
+                    except ValueError:
+                        parsed = None
+                self._next_schedule = parsed
+            else:
+                self._next_schedule = next_schedule
+            self._attributes = {
+                ATTR_NEXT_TARGET_TEMP: data.get(ATTR_NEXT_TARGET_TEMP),
+                "scheduler_entity": data.get("scheduler_entity"),
+            }
+            _LOGGER.info("Next schedule time updated: %s", self._next_schedule)
