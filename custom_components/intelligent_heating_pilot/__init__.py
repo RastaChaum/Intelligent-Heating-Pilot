@@ -745,6 +745,7 @@ class IntelligentHeatingPilotCoordinator:
         # This means the scheduler was already triggered, avoid re-triggering
         skip_schedule = False
         if next_temp is not None and self._is_vtherm_already_at_target(next_temp):
+        if next_temp is not None and self._is_vtherm_already_at_target(next_temp):
             _LOGGER.debug(
                 "VTherm already at target temperature (%.1f°C), will skip anticipation scheduling only",
                 next_temp
