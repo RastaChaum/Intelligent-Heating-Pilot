@@ -8,14 +8,14 @@ IHP is an ambitious Home Assistant integration designed to elevate your climate 
 
 The ultimate vision of IHP is to act as the complete "Flight Controller" for your heating system, making autonomous decisions regarding when to heat, how long to heat, and what the optimal temporary setpoint should be, based on Adaptive Learning and real-time inputs (occupancy, weather, inertia).
 
-The first release (Proof of Concept) focuses on delivering the foundational feature: **Smart Predictive Pre-heating (Adaptive Start)**. This initial capability lays the groundwork by building the essential Online Learning Model needed for all future advanced functions.
+The first release (Proof of Concept / Alpha) focuses on delivering the foundational feature: **Smart Predictive Pre-heating (Adaptive Start)**. This initial capability uses statistical learning to continuously improve its predictions, laying the groundwork for future machine learning-based advanced functions.
 
 ## 🌟 Current Features (V1: Adaptive Start)
 
 - **Smart Predictive Pre-heating**: Automatically determines when to start heating to reach the target temperature at the exact scheduled time.
-- **Adaptive Learning**: Continuously learns your heating system's behavior through online machine learning.
-- **Multi-Factor Awareness**: Adapts calculations based on outdoor temperature, humidity, and cloud coverage.
-- **Thermal Modeling**: Builds and refines thermal models specific to your room and heating system.
+- **Statistical Learning**: Continuously learns from VTherm's thermal slope observations using robust statistical aggregation (trimmed mean).
+- **Multi-Factor Awareness**: Adapts calculations based on humidity and cloud coverage.
+- **Thermal Slope Aggregation**: Collects and refines heating slope data from your VTherm to improve prediction accuracy over time.
 - **Seamless Integration**: Works with Versatile Thermostat (VTherm) and HACS Scheduler Component.
 - **Real-time Sensors**: Exposes learned heating slope, anticipation time, and next schedule information.
 - **Configuration Interface**: Simple setup via the Home Assistant user interface.
@@ -89,7 +89,7 @@ The integration will automatically reload and start monitoring the new entities.
 IHP works automatically in the background once configured:
 
 1. **Monitors Your Scheduler**: Watches your configured scheduler entities for upcoming heating schedules.
-2. **Learns Continuously**: Observes your VTherm's thermal slope and builds an adaptive model.
+2. **Learns Continuously**: Observes your VTherm's thermal slope and aggregates observations using robust statistics.
 3. **Anticipates Start Time**: Calculates when to trigger the scheduler action to reach the target temperature exactly on time.
 4. **Triggers Heating**: Automatically triggers the scheduler action at the optimal anticipated start time.
 5. **Monitors Progress**: Tracks heating progress and prevents overshooting the target temperature.
@@ -106,132 +106,147 @@ The integration automatically creates several sensors for monitoring:
 
 IHP provides a service for manual control if needed:
 
-#### `intelligent_heating_pilot.reset_learning`
+#### `smart_starter_vtherm.reset_learning`
 
 Resets the learned heating slope history. Use this if you've made significant changes to your heating system (new radiators, insulation, etc.) and want IHP to start learning from scratch.
 
 **Example:**
 ```yaml
-service: intelligent_heating_pilot.reset_learning
+service: smart_starter_vtherm.reset_learning
 ```
 
-## 🧠 Intelligent Calculation Logic (Online Machine Learning)
+**Note**: The service uses the internal domain name `smart_starter_vtherm` for backward compatibility with existing installations.
 
-IHP goes beyond static calculations by employing an **online machine learning model** to dynamically learn and adapt to your specific environment. Instead of relying on a fixed "thermal slope," the system continuously refines its understanding of your heating system's behavior based on historical data and new observations from your Home Assistant installation.
+## 🧠 Intelligent Calculation Logic (Statistical Learning)
 
-For each VTherm instance, the model learns:
-
-1.  **Room-specific thermal characteristics**: How quickly a particular room heats up or cools down under various conditions.
-2.  **Impact of external factors**: The influence of outdoor temperature, humidity, and other environmental variables on heating efficiency.
-3.  **System inertia**: The time it takes for your heating system to respond and for the room temperature to change.
+IHP goes beyond static calculations by employing **statistical learning** to dynamically adapt to your specific environment. Instead of relying on a fixed "thermal slope," the system continuously collects and aggregates thermal slope data from your VTherm to refine its predictions over time.
 
 ### How it works:
 
--   **Data Collection**: The integration collects data points including current temperature, target temperature, outdoor temperature, heating duration, and actual time to reach the target.
--   **Model Training**: An online machine learning algorithm (e.g., a regression model) is continuously trained and updated with this new data. This allows the model to adapt to changes in insulation, radiator performance, seasonal variations, and other dynamic factors.
--   **Predictive Calculation**: When a preheat is required, the model uses its learned knowledge to predict the precise duration needed to reach the target temperature at the scheduled time. This prediction is highly personalized to your specific VTherm and room conditions.
+1. **Data Collection**: The integration continuously monitors your VTherm's `temperature_slope` attribute, which represents how quickly your room is heating up (in °C/h).
 
-This approach ensures that IHP provides optimal preheating, minimizing energy waste while maximizing comfort, as it constantly learns and improves its accuracy over time.
+2. **Slope Aggregation**: IHP collects positive slope values (heating phases) and stores up to 100 recent observations. Negative slopes (cooling phases) are ignored to focus on heating behavior.
 
-### Initial Calculation (Fallback/Cold Start)
+3. **Robust Statistical Analysis**: The Learned Heating Slope (LHS) is calculated using a **trimmed mean** approach:
+   - Sort all collected slope values
+   - Remove the top and bottom 10% (outliers)
+   - Calculate the average of the remaining values
+   - This provides a robust estimate resistant to extreme measurements
 
-For initial setup or in cases where insufficient historical data is available, the system will use a simplified model based on:
+4. **Anticipation Calculation**: When a scheduled heating event approaches, IHP calculates:
+   ```
+   Base Time (minutes) = (Target Temp - Current Temp) / LHS × 60
+   ```
 
-1.  **Temperature Difference (ΔT)**: `target_temp - current_temp`
-2.  **Outdoor Factor**: Impact of outdoor temperature on heating speed.
-    -   Formula: `outdoor_factor = 1 + (20 - outdoor_temp) * 0.05`
-    -   At 20°C outdoor: factor = 1.0 (no impact)
-    -   At 0°C outdoor: factor = 2.0 (heating twice as slow)
-    -   At -10°C outdoor: factor = 2.5
-3.  **Effective Thermal Slope**: `effective_slope = thermal_slope / outdoor_factor`
-4.  **Preheat Duration**: `duration = ΔT / effective_slope` (in hours, converted to minutes)
-5.  **Start Time**: `start_time = target_time - duration`
+5. **Environmental Corrections**: The base time is adjusted based on optional sensors:
+   - **High Indoor Humidity** (>70%): +10% time (humid air feels cooler, heating perception slower)
+   - **High Cloud Coverage** (>80%): +5% time (less solar gain, slower heating)
 
-As more data is collected, the online machine learning model will gradually take over, providing increasingly accurate and personalized preheating predictions.
+6. **Final Anticipation**: Add safety buffer and apply limits:
+   ```
+   Final Time = Base Time × Corrections + 5 minutes buffer
+   Constrained between 10 and 180 minutes
+   ```
 
-### Calculation Example (Initial/Fallback Logic)
+7. **Trigger Point**: IHP triggers the scheduler action at:
+   ```
+   Start Time = Schedule Time - Final Anticipation Time
+   ```
 
-**Conditions:**
+This statistical approach ensures IHP continuously improves its accuracy as it observes your heating system's real-world behavior, adapting to seasonal changes, VTherm configuration updates, and room characteristics.
+
+### Cold Start Behavior
+
+When IHP first starts or has no historical data, it uses a conservative default Learned Heating Slope (LHS) of **2.0°C/h**. As your VTherm heats the room, IHP begins collecting slope observations and the LHS becomes more accurate within a few heating cycles.
+
+**Note**: Outdoor temperature is **not** directly used in the calculation. The VTherm's thermal slope already reflects environmental conditions (outdoor temperature affects how fast the room heats). IHP learns from these real-world observations rather than applying theoretical corrections.
+
+### Calculation Example
+
+**Scenario:**
 - Current Temperature: 18°C
 - Target Temperature: 21°C
-- Outdoor Temperature: 5°C
-- Thermal Slope: 2.0°C/h
-- Target Time: 07:00
+- Learned Heating Slope (LHS): 2.0°C/h (from VTherm observations)
+- Indoor Humidity: 65% (below threshold, no correction)
+- Cloud Coverage: 85% (above 80%, applies correction)
+- Scheduled Target Time: 07:00
 
-**Calculation:**
-1. ΔT = 21 - 18 = 3°C
-2. outdoor_factor = 1 + (20 - 5) * 0.05 = 1.75
-3. effective_slope = 2.0 / 1.75 = 1.14°C/h
-4. duration = 3 / 1.14 = 2.63 hours = 158 minutes
-5. start_time = 07:00 - 158 min = 04:22
+**Step-by-Step Calculation:**
 
-**Result: Start heating at 04:22 to reach 21°C at 07:00**
+1. **Temperature Delta**: 21 - 18 = **3°C**
 
-## 🔧 Thermal Slope Configuration
+2. **Base Anticipation Time**: 3°C / 2.0°C/h × 60 = **90 minutes**
 
-### Option 1: Using Versatile Thermostat Entity
+3. **Environmental Corrections**:
+   - Humidity correction: None (65% < 70%)
+   - Cloud coverage correction: 1.05 (85% > 80%)
+   - Total correction factor: **1.05**
 
-If you're using [Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat), it already calculates and exposes the thermal slope as an entity. Simply:
+4. **Corrected Time**: 90 × 1.05 = **94.5 minutes**
 
-1. During setup, select **"Entity"** as the Thermal Slope Source.
-2. Choose the VTherm sensor that exposes the slope (typically named `sensor.<your_vtherm>_slope`).
+5. **Add Safety Buffer**: 94.5 + 5 = **99.5 minutes**
 
-The integration will automatically use the real-time thermal slope calculated by VTherm, ensuring the most accurate preheating predictions.
+6. **Apply Limits**: min(max(99.5, 10), 180) = **99.5 minutes** ✓
 
-### Option 2: Manual Configuration **(Not Yet Implemented !)**
+7. **Anticipated Start Time**: 07:00 - 99.5 min = **05:20:30**
 
-If you don't have Versatile Thermostat or prefer manual configuration:
+**Result: IHP will trigger the scheduler action at 05:20:30 to reach 21°C by 07:00**
 
-1. During setup, select **"Manual"** as the Thermal Slope Source.
-2. Enter your estimated thermal slope value.
+## 🔧 How IHP Learns Your Heating System
 
-**To determine your thermal slope manually:**
+IHP automatically learns from your [Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat) by reading its `temperature_slope` attribute. No manual configuration is required.
 
-1. Note your room's initial temperature.
-2. Start heating at full power.
-3. After 1 hour, note the new temperature.
-4. The difference is your thermal slope in °C/h.
+### What is Thermal Slope?
 
-Example: 18°C → 20°C after 1h = 2.0°C/h slope.
+The thermal slope represents how quickly your room heats up, measured in °C/h. For example, if your room goes from 18°C to 20°C in one hour, the thermal slope is 2.0°C/h.
 
 **Factors influencing thermal slope:**
-- Room insulation
-- Radiator power
+- Room insulation quality
+- Radiator power and efficiency
 - Room volume
-- Heating type
+- Heating system type
+- Outdoor temperature (cold weather slows heating)
+- Solar gain (sunny days speed heating)
 
-**Note:** IHP's online machine learning model will continuously adapt and improve its predictions based on your actual heating patterns, regardless of initial configuration.
+### Learning Process
 
+1. **VTherm measures**: Your VTherm continuously calculates the current thermal slope based on real-time temperature changes.
 
+2. **IHP observes**: IHP reads this slope value whenever your room is heating (positive slopes only).
 
-## 🔧 Determining Your Thermal Slope
+3. **Statistical aggregation**: IHP stores up to 100 recent slope observations and calculates a robust average (trimmed mean) to filter out outliers.
 
-The thermal slope represents the rate at which your room heats up. To determine it:
+4. **Continuous improvement**: As seasons change, insulation settles, or you adjust your VTherm settings, IHP automatically adapts its predictions.
 
-1. Note your room's initial temperature.
-2. Start heating at full power.
-3. After 1 hour, note the new temperature.
-4. The difference is your thermal slope in °C/h.
+### Resetting Learning History
 
-Example: 18°C → 20°C after 1h = 2.0°C/h slope.
+If you make significant changes to your heating system (new radiators, insulation work, etc.), you can reset IHP's learning history:
 
-**Factors influencing thermal slope:**
-- Room insulation
-- Radiator power
-- Room volume
-- Heating type
+```yaml
+service: smart_starter_vtherm.reset_learning
+```
+
+IHP will start fresh with the default 2.0°C/h slope and begin learning again from your new system's behavior.
 
 ## 🐛 Troubleshooting
 
-### Service does not calculate correctly
+### Anticipation seems inaccurate
 
-- Verify all parameters are correct.
-- Ensure the thermal slope matches your installation.
-- Check Home Assistant logs for more details.
+- **Initial learning phase**: IHP needs a few heating cycles to build accurate slope history. Give it 3-5 heating events to stabilize.
+- **Extreme conditions**: Very cold outdoor temperatures or unusual weather can affect VTherm's slope calculations. IHP adapts over time.
+- **Check logs**: Enable debug logging to see LHS values and calculation details:
+  ```yaml
+  logger:
+    default: info
+    logs:
+      custom_components.intelligent_heating_pilot: debug
+  ```
 
-### Sensors do not update
+### Sensors show no data
 
-- Verify the service has been called at least once.
+- **Check VTherm configuration**: Ensure your VTherm entity has the `temperature_slope` attribute exposed.
+- **Verify scheduler setup**: Make sure your scheduler entities have upcoming events configured.
+- **Review logs**: Check Home Assistant logs for error messages or warnings from IHP.
 
 ## 🤝 Contribution
 
