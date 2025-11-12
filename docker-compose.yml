@@ -1,0 +1,17 @@
+services:
+  homeassistant:
+    container_name: homeassistant
+    image: "ghcr.io/home-assistant/home-assistant:stable"
+    ports:
+      - 8123:8123
+      - 5678:5678
+    volumes:
+      - /home/david.chaumont/Sources/Domotique/SmartStarterVTherm/custom_components/smart_starter_vtherm:/config/custom_components/smart_starter_vtherm
+      - ./examples/config:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    environment:
+      TZ: Europe/Paris
