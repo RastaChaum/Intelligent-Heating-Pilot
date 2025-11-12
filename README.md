@@ -106,13 +106,13 @@ The integration automatically creates several sensors for monitoring:
 
 IHP provides a service for manual control if needed:
 
-#### `smart_starter_vtherm.reset_learning`
+#### `intelligent_heating_pilot.reset_learning`
 
 Resets the learned heating slope history. Use this if you've made significant changes to your heating system (new radiators, insulation, etc.) and want IHP to start learning from scratch.
 
 **Example:**
 ```yaml
-service: smart_starter_vtherm.reset_learning
+service: intelligent_heating_pilot.reset_learning
 ```
 
 ## 🧠 Intelligent Calculation Logic (Online Machine Learning)
@@ -178,7 +178,7 @@ If you're using [Versatile Thermostat](https://github.com/jmcollin78/versatile_t
 
 The integration will automatically use the real-time thermal slope calculated by VTherm, ensuring the most accurate preheating predictions.
 
-### Option 2: Manual Configuration
+### Option 2: Manual Configuration **(Not Yet Implemented !)**
 
 If you don't have Versatile Thermostat or prefer manual configuration:
 
@@ -232,7 +232,6 @@ Example: 18°C → 20°C after 1h = 2.0°C/h slope.
 ### Sensors do not update
 
 - Verify the service has been called at least once.
-- Sensors are updated during the `smart_starter_vtherm_calculation_complete` event.
 
 ## 🤝 Contribution
 
