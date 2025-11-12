@@ -40,11 +40,6 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
-# import debugpy
-# debugpy.listen(("0.0.0.0", 5678))
-# debugpy.wait_for_client()  # Optionnel : attend la connexion
-
-
 class SmartStarterVThermCoordinator:
     """Coordinator for Smart Starter VTherm integration."""
 
@@ -512,12 +507,13 @@ class SmartStarterVThermCoordinator:
                     hvac_action,
                 )
                 return True
+        
         except (ValueError, TypeError):
+            # If the target temperature is not a valid float, treat as not already at target
             pass
 
         return False
 
-    async def async_schedule_anticipation(self, anticipation_data: dict[str, Any]) -> None:
         """Schedule the anticipated start."""
         anticipated_start = anticipation_data[ATTR_ANTICIPATED_START_TIME]
         scheduler_entity = anticipation_data["scheduler_entity"]
@@ -555,7 +551,7 @@ class SmartStarterVThermCoordinator:
         # If anticipated start is in the past BUT next_schedule_time is in the future,
         # trigger immediately (handles restarts, delays, etc.)
         if anticipated_start <= now < next_schedule_time:
-            next_target_temp = anticipation_data[ATTR_NEXT_TARGET_TEMP]
+
             _LOGGER.info(
                 "Anticipated start time %s is past but next schedule %s is future. Triggering scheduler action immediately.",
                 anticipated_start.isoformat(),

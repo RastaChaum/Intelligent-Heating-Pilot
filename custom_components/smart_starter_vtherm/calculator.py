@@ -1,5 +1,6 @@
 """Calculation logic for Smart Starter VTherm."""
 from datetime import datetime, timedelta
+from homeassistant.util import dt as dt_util
 import logging
 
 _LOGGER = logging.getLogger(__name__)
@@ -149,7 +150,7 @@ class PreheatingCalculator:
 
         # Calculate when heating should start
         start_time = target_time - timedelta(minutes=preheat_minutes)
-        now = datetime.now()
+        now = dt_util.now()
 
         # Check if we should start now (if start_time is in the past)
         should_start_now = start_time <= now
