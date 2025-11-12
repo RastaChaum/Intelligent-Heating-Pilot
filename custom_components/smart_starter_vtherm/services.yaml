@@ -54,3 +54,8 @@ calculate_start_time:
           max: 10.0
           step: 0.1
           unit_of_measurement: "°C/h"
+
+reset_learning:
+  name: Reset Learning History
+  description: Clear all learned heating slopes and reset to default values
+  fields: {}
