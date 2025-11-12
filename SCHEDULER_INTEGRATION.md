@@ -115,7 +115,7 @@ Ajoutez dans `configuration.yaml` :
 logger:
   default: info
   logs:
-    custom_components.smart_starter_vtherm: debug
+    custom_components.intelligent_heating_pilot: debug
     homeassistant.components.scheduler: debug
 ```
 

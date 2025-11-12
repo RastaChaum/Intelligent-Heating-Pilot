@@ -1,6 +1,6 @@
 """Constants for the Intelligent Heating Pilot integration."""
 
-DOMAIN = "smart_starter_vtherm"
+DOMAIN = "intelligent_heating_pilot"
 
 # Configuration keys
 CONF_NAME = "name"

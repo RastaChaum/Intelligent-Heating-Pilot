@@ -5,7 +5,7 @@ import sys
 import os
 
 # Add the parent directory to the path so we can import the module
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../custom_components/smart_starter_vtherm'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../custom_components/intelligent_heating_pilot'))
 
 # Import directly from calculator.py without going through __init__.py
 from calculator import PreheatingCalculator

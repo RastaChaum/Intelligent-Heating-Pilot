@@ -11,8 +11,8 @@
             },
             "pathMappings": [
                 {
-                    "localRoot": "${workspaceFolder}/custom_components/smart_starter_vtherm",
-                    "remoteRoot": "/config/custom_components/smart_starter_vtherm"
+                    "localRoot": "${workspaceFolder}/custom_components/intelligent_heating_pilot",
+                    "remoteRoot": "/config/custom_components/intelligent_heating_pilot"
                 }
             ],
             "justMyCode": false,

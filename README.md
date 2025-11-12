@@ -51,7 +51,7 @@ The long-term ambition of IHP includes, but is not limited to:
 
 ### Manual Installation
 
-1. Copy the `custom_components/smart_starter_vtherm` folder into your Home Assistant `custom_components` folder.
+1. Copy the `custom_components/intelligent_heating_pilot` folder into your Home Assistant `custom_components` folder.
 2. Restart Home Assistant.
 
 ## ⚙️ Configuration
@@ -106,16 +106,16 @@ The integration automatically creates several sensors for monitoring:
 
 IHP provides a service for manual control if needed:
 
-#### `smart_starter_vtherm.reset_learning`
+#### `intelligent_heating_pilot.reset_learning`
 
 Resets the learned heating slope history. Use this if you've made significant changes to your heating system (new radiators, insulation, etc.) and want IHP to start learning from scratch.
 
 **Example:**
 ```yaml
-service: smart_starter_vtherm.reset_learning
+service: intelligent_heating_pilot.reset_learning
 ```
 
-**Note**: The service uses the internal domain name `smart_starter_vtherm` for backward compatibility with existing installations.
+**Note**: The service uses the internal domain name `intelligent_heating_pilot` for backward compatibility with existing installations.
 
 ## 🧠 Intelligent Calculation Logic (Statistical Learning)
 
@@ -223,7 +223,7 @@ The thermal slope represents how quickly your room heats up, measured in °C/h. 
 If you make significant changes to your heating system (new radiators, insulation work, etc.), you can reset IHP's learning history:
 
 ```yaml
-service: smart_starter_vtherm.reset_learning
+service: intelligent_heating_pilot.reset_learning
 ```
 
 IHP will start fresh with the default 2.0°C/h slope and begin learning again from your new system's behavior.

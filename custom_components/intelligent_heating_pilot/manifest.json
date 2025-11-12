@@ -1,7 +1,9 @@
 {
-  "domain": "smart_starter_vtherm",
+  "domain": "intelligent_heating_pilot",
   "name": "Intelligent Heating Pilot",
-  "codeowners": ["@RastaChaum"],
+  "codeowners": [
+    "@RastaChaum"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/RastaChaum/Intelligent-Heating-Pilot",
