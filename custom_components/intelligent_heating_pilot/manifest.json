@@ -1,13 +1,15 @@
 {
-  "domain": "smart_starter_vtherm",
-  "name": "Smart Starter VTherm",
-  "codeowners": ["@RastaChaum"],
+  "domain": "intelligent_heating_pilot",
+  "name": "Intelligent Heating Pilot",
+  "codeowners": [
+    "@RastaChaum"
+  ],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/RastaChaum/SmartStarterVTherm",
+  "documentation": "https://github.com/RastaChaum/Intelligent-Heating-Pilot",
   "integration_type": "service",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/RastaChaum/SmartStarterVTherm/issues",
+  "issue_tracker": "https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues",
   "requirements": [],
   "version": "0.1.0"
 }

@@ -1,4 +1,4 @@
-"""The Smart Starter VTherm integration."""
+"""The Intelligent Heating Pilot integration."""
 from __future__ import annotations
 
 import asyncio
@@ -40,8 +40,8 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
-class SmartStarterVThermCoordinator:
-    """Coordinator for Smart Starter VTherm integration."""
+class IntelligentHeatingPilotCoordinator:
+    """Coordinator for Intelligent Heating Pilot integration."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the coordinator."""
@@ -837,17 +837,17 @@ class SmartStarterVThermCoordinator:
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up the Smart Starter VTherm component."""
+    """Set up the Intelligent Heating Pilot component."""
     hass.data.setdefault(DOMAIN, {})
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Smart Starter VTherm from a config entry."""
+    """Set up Intelligent Heating Pilot from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
     # Create coordinator
-    coordinator = SmartStarterVThermCoordinator(hass, entry)
+    coordinator = IntelligentHeatingPilotCoordinator(hass, entry)
     await coordinator.async_load()
 
     # Store coordinator

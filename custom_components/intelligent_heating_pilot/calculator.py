@@ -1,4 +1,4 @@
-"""Calculation logic for Smart Starter VTherm."""
+"""Calculation logic for Intelligent Heating Pilot."""
 from datetime import datetime, timedelta
 from homeassistant.util import dt as dt_util
 import logging

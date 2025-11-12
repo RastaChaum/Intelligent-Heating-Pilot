@@ -1,4 +1,4 @@
-"""Integration tests for Smart Starter VTherm component structure."""
+"""Integration tests for Intelligent Heating Pilot component structure."""
 import unittest
 import json
 import os

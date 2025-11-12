@@ -1,4 +1,4 @@
-"""Tests for the Smart Starter VTherm calculator."""
+"""Tests for the Intelligent Heating Pilot calculator."""
 import unittest
 from datetime import datetime, timedelta
 import sys

@@ -1,14 +1,14 @@
-# Architecture de Smart Starter VTherm
+# Architecture d'Intelligent Heating Pilot (IHP)
 
 ## Vue d'ensemble
 
-SmartStarterVTherm agit comme un **intermédiaire intelligent** entre le HACS Scheduler Component et Versatile Thermostat (VTherm). Il apprend des pentes thermiques de votre VTherm et anticipe le démarrage du chauffage pour atteindre la température cible exactement à l'heure programmée.
+Intelligent Heating Pilot (IHP) agit comme un **intermédiaire intelligent** entre le HACS Scheduler Component et Versatile Thermostat (VTherm). Il apprend des pentes thermiques de votre VTherm et anticipe le démarrage du chauffage pour atteindre la température cible exactement à l'heure programmée.
 
 ## Flux de Fonctionnement
 
 ```mermaid
 graph TD
-    A[Scheduler Entities] -->|Prochain événement| B[SmartStarterVTherm]
+    A[Scheduler Entities] -->|Prochain événement| B[IntelligentHeatingPilot]
     C[VTherm Entity] -->|Slope actuel| B
     D[Capteurs Optionnels] -->|Humidité, Nuages| B
     B -->|Calcul LHS| E[Learned Heating Slope]
@@ -20,7 +20,7 @@ graph TD
 
 ## Composants Principaux
 
-### 1. SmartStarterVThermCoordinator
+### 1. IntelligentHeatingPilotCoordinator
 
 Classe centrale qui gère toute la logique de l'intégration.
 

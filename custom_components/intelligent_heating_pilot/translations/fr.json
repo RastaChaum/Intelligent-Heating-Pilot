@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Configurer Smart Starter VTherm",
-        "description": "Configurez votre intégration Smart Starter VTherm pour des calculs de préchauffage intelligents basés sur l'apprentissage des pentes thermiques de votre VTherm.",
+        "title": "Configurer Intelligent Heating Pilot",
+        "description": "Configurez votre intégration Intelligent Heating Pilot (IHP) pour des calculs de préchauffage intelligents basés sur l'apprentissage des pentes thermiques de votre VTherm.",
         "data": {
           "name": "Nom de l'intégration",
           "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
@@ -33,8 +33,8 @@
   "options": {
     "step": {
       "init": {
-        "title": "Modifier les options Smart Starter VTherm",
-        "description": "Modifiez les entités utilisées par Smart Starter VTherm",
+        "title": "Modifier les options Intelligent Heating Pilot",
+        "description": "Modifiez les entités utilisées par Intelligent Heating Pilot",
         "data": {
           "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
           "scheduler_entities": "Entités Scheduler (switches)",

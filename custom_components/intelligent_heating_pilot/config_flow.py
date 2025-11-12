@@ -1,4 +1,4 @@
-"""Config flow for Smart Starter VTherm integration."""
+"""Config flow for Intelligent Heating Pilot integration."""
 from __future__ import annotations
 
 import logging
@@ -24,15 +24,15 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class SmartStarterVThermConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Smart Starter VTherm."""
+class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Intelligent Heating Pilot."""
 
     VERSION = 1
 
     @staticmethod
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
         """Get the options flow for this handler."""
-        return SmartStarterVThermOptionsFlow(config_entry)
+        return IntelligentHeatingPilotOptionsFlow(config_entry)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -96,8 +96,8 @@ class SmartStarterVThermConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-class SmartStarterVThermOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow for Smart Starter VTherm."""
+class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
+    """Handle options flow for Intelligent Heating Pilot."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
