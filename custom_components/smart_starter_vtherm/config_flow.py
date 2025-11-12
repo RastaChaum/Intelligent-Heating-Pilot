@@ -12,13 +12,13 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
-    CONF_CURRENT_TEMP_ENTITY,
+    CONF_CLOUD_COVER_ENTITY,
+    CONF_HUMIDITY_IN_ENTITY,
+    CONF_HUMIDITY_OUT_ENTITY,
     CONF_NAME,
-    CONF_OUTDOOR_TEMP_ENTITY,
-    CONF_TARGET_TEMP_ENTITY,
-    CONF_THERMAL_SLOPE,
+    CONF_SCHEDULER_ENTITIES,
+    CONF_VTHERM_ENTITY,
     DEFAULT_NAME,
-    DEFAULT_THERMAL_SLOPE,
     DOMAIN,
 )
 
@@ -29,6 +29,11 @@ class SmartStarterVThermConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Smart Starter VTherm."""
 
     VERSION = 1
+
+    @staticmethod
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
+        """Get the options flow for this handler."""
+        return SmartStarterVThermOptionsFlow(config_entry)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -53,24 +58,33 @@ class SmartStarterVThermConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
-                vol.Optional(CONF_CURRENT_TEMP_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                vol.Required(CONF_VTHERM_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="climate",
+                        integration="versatile_thermostat"
+                    )
                 ),
-                vol.Optional(CONF_TARGET_TEMP_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain=["climate", "input_number"])
+                vol.Required(CONF_SCHEDULER_ENTITIES): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="switch",
+                        multiple=True
+                    )
                 ),
-                vol.Optional(CONF_OUTDOOR_TEMP_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                vol.Optional(CONF_HUMIDITY_IN_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor",
+                        device_class="humidity"
+                    )
                 ),
-                vol.Optional(
-                    CONF_THERMAL_SLOPE, default=DEFAULT_THERMAL_SLOPE
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=10.0,
-                        step=0.1,
-                        unit_of_measurement="°C/h",
-                        mode=selector.NumberSelectorMode.BOX,
+                vol.Optional(CONF_HUMIDITY_OUT_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor",
+                        device_class="humidity"
+                    )
+                ),
+                vol.Optional(CONF_CLOUD_COVER_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor"
                     )
                 ),
             }
@@ -78,6 +92,87 @@ class SmartStarterVThermConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
+            data_schema=data_schema,
+            errors=errors,
+        )
+
+
+class SmartStarterVThermOptionsFlow(config_entries.OptionsFlow):
+    """Handle options flow for Smart Starter VTherm."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage the options."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            # Update the config entry with new data
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data={**self.config_entry.data, **user_input},
+            )
+            return self.async_create_entry(title="", data={})
+
+        # Get current values from config entry
+        current_data = self.config_entry.data
+
+        # Build the schema with current values as defaults
+        data_schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_VTHERM_ENTITY,
+                    default=current_data.get(CONF_VTHERM_ENTITY)
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="climate",
+                        integration="versatile_thermostat"
+                    )
+                ),
+                vol.Required(
+                    CONF_SCHEDULER_ENTITIES,
+                    default=current_data.get(CONF_SCHEDULER_ENTITIES, [])
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="switch",
+                        multiple=True
+                    )
+                ),
+                vol.Optional(
+                    CONF_HUMIDITY_IN_ENTITY,
+                    default=current_data.get(CONF_HUMIDITY_IN_ENTITY)
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor",
+                        device_class="humidity"
+                    )
+                ),
+                vol.Optional(
+                    CONF_HUMIDITY_OUT_ENTITY,
+                    default=current_data.get(CONF_HUMIDITY_OUT_ENTITY)
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor",
+                        device_class="humidity"
+                    )
+                ),
+                vol.Optional(
+                    CONF_CLOUD_COVER_ENTITY,
+                    default=current_data.get(CONF_CLOUD_COVER_ENTITY)
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor"
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="init",
             data_schema=data_schema,
             errors=errors,
         )

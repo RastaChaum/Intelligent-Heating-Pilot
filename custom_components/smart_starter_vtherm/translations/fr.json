@@ -3,13 +3,21 @@
     "step": {
       "user": {
         "title": "Configurer Smart Starter VTherm",
-        "description": "Configurez votre intégration Smart Starter VTherm pour des calculs de préchauffage intelligents.",
+        "description": "Configurez votre intégration Smart Starter VTherm pour des calculs de préchauffage intelligents basés sur l'apprentissage des pentes thermiques de votre VTherm.",
         "data": {
-          "name": "Nom",
-          "current_temp_entity": "Capteur de température actuelle (optionnel)",
-          "target_temp_entity": "Entité de température cible (optionnel)",
-          "outdoor_temp_entity": "Capteur de température extérieure (optionnel)",
-          "thermal_slope": "Pente thermique (°C/h)"
+          "name": "Nom de l'intégration",
+          "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
+          "scheduler_entities": "Entités Scheduler (switches)",
+          "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
+          "humidity_out_entity_id": "Capteur d'humidité extérieure (optionnel)",
+          "cloud_cover_entity_id": "Capteur de couverture nuageuse (optionnel)"
+        },
+        "data_description": {
+          "vtherm_entity_id": "Le thermostat Versatile Thermostat à contrôler (source du slope d'apprentissage)",
+          "scheduler_entities": "Les switchs du HACS Scheduler Component qui pilotent ce VTherm",
+          "humidity_in_entity_id": "Capteur d'humidité de la pièce pour affiner les calculs",
+          "humidity_out_entity_id": "Capteur d'humidité extérieure pour affiner les calculs",
+          "cloud_cover_entity_id": "Capteur de couverture nuageuse pour prendre en compte l'impact solaire"
         }
       }
     },
@@ -19,15 +27,20 @@
       "unknown": "Erreur inattendue"
     },
     "abort": {
-      "already_configured": "L'appareil est déjà configuré"
+      "already_configured": "Cette intégration est déjà configurée"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Options Smart Starter VTherm",
+        "title": "Modifier les options Smart Starter VTherm",
+        "description": "Modifiez les entités utilisées par Smart Starter VTherm",
         "data": {
-          "thermal_slope": "Pente thermique (°C/h)"
+          "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
+          "scheduler_entities": "Entités Scheduler (switches)",
+          "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
+          "humidity_out_entity_id": "Capteur d'humidité extérieure (optionnel)",
+          "cloud_cover_entity_id": "Capteur de couverture nuageuse (optionnel)"
         }
       }
     }
