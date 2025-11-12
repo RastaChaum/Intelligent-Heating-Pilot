@@ -174,7 +174,7 @@ class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBas
     @property
     def extra_state_attributes(self) -> dict:
         """Return additional attributes."""
-        slopes = self.coordinator._data.get("learned_slopes", [])
+        slopes = self.coordinator.get_learned_slopes()
         if slopes:
             min_slope = min(slopes)
             max_slope = max(slopes)

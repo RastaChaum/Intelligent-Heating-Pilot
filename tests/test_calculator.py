@@ -73,7 +73,7 @@ class TestPreheatingCalculator(unittest.TestCase):
 
     def test_warm_outdoor_decreases_duration(self):
         """Test that warm outdoor temperature decreases preheating duration."""
-        # At 25°C outdoor: factor = 1 + (20-25)*0.05 = 0.75, min 0.5 -> 0.75
+        # At 25°C outdoor: factor = 1 + (20-25)*0.05 = 0.75 (above min 0.5, so unclamped)
         # Effective slope = 2.0 / 0.75 = 2.67°C/h
         # To heat 3°C: 3/2.67 = 1.125 hours = 67.5 minutes
         duration = self.calculator.calculate_preheat_duration(
