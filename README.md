@@ -4,6 +4,12 @@
 
 Home Assistant integration for Versatile Thermostat (VTherm). Intelligently preheats your home to ensure the exact target temperature at the scheduled time, taking into account thermal slope, outdoor temperature, and scheduling.
 
+## 🏗️ Architecture
+
+This project follows **Domain-Driven Design (DDD)** principles with strict separation between business logic and infrastructure. See [DDD_ARCHITECTURE.md](DDD_ARCHITECTURE.md) for detailed architectural documentation.
+
+**For contributors and AI assistants:** Please read [.github/copilot-instructions.md](.github/copilot-instructions.md) for coding guidelines and architectural requirements.
+
 ## 🌟 Features
 
 - **Intelligent Preheat Time Calculation**: Automatically determines when to start heating to reach the target temperature at the exact scheduled time.
@@ -12,6 +18,7 @@ Home Assistant integration for Versatile Thermostat (VTherm). Intelligently preh
 - **Home Assistant Service**: Easy to integrate into your automations.
 - **Dedicated Sensors**: Exposes preheat duration and optimal start time.
 - **Configuration Interface**: Setup via the Home Assistant user interface.
+- **Domain-Driven Design**: Clean architecture with testable business logic.
 
 ## 📋 Prerequisites
 
@@ -249,6 +256,26 @@ Contributions are welcome! Feel free to:
 - Report bugs
 - Suggest new features
 - Submit pull requests
+
+### Development Guidelines
+
+This project follows **Domain-Driven Design (DDD)** and **Test-Driven Development (TDD)** principles:
+
+1. **Read the guidelines**: Start with [.github/copilot-instructions.md](.github/copilot-instructions.md)
+2. **Understand the architecture**: Review [DDD_ARCHITECTURE.md](DDD_ARCHITECTURE.md)
+3. **Write tests first**: Add unit tests before implementation
+4. **Keep domain pure**: No `homeassistant.*` imports in the `domain/` layer
+5. **Use interfaces**: All external interactions through ABCs
+
+### Running Tests
+
+Run domain layer unit tests (no Home Assistant required):
+
+```bash
+python -m unittest discover tests/unit/domain -v
+```
+
+All domain tests should pass and run in under 1 second.
 
 ## 📝 License
 
