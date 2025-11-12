@@ -22,6 +22,9 @@ class PreheatingCalculator:
         current_temp: float,
         target_temp: float,
         outdoor_temp: float,
+        current_humidity: float = 50.0,
+        outdoor_humidity: float = 50.0,
+        cloud_coverage: float = 50.0,
     ) -> float:
         """Calculate the preheating duration in minutes.
         
@@ -29,6 +32,9 @@ class PreheatingCalculator:
             current_temp: Current room temperature in Celsius
             target_temp: Target temperature in Celsius
             outdoor_temp: Outdoor temperature in Celsius
+            current_humidity: Current room humidity in %
+            outdoor_humidity: Outdoor humidity in %
+            cloud_coverage: Cloud coverage in % (0=clear, 100=overcast)
             
         Returns:
             Preheating duration in minutes
@@ -36,7 +42,9 @@ class PreheatingCalculator:
         The calculation considers:
         1. Temperature difference to heat
         2. Outdoor temperature impact on heat loss
-        3. Thermal slope (heating rate) of the room
+        3. Humidity effects on heating efficiency
+        4. Solar gain from cloud coverage
+        5. Thermal slope (heating rate) of the room
         """
         # If already at or above target, no preheating needed
         if current_temp >= target_temp:
@@ -59,8 +67,27 @@ class PreheatingCalculator:
         outdoor_factor = 1.0 + (20.0 - outdoor_temp) * 0.05
         outdoor_factor = max(0.5, outdoor_factor)  # Minimum factor of 0.5
 
-        # Effective heating rate considering outdoor conditions
-        effective_slope = self.thermal_slope / outdoor_factor
+        # Humidity factor: higher humidity makes heating feel slower
+        # Formula: humidity_factor = 1 + (current_humidity - 50) * 0.002
+        # At 50% humidity: factor = 1.0 (neutral)
+        # At 80% humidity: factor = 1.06 (6% slower)
+        # At 20% humidity: factor = 0.94 (6% faster)
+        humidity_factor = 1.0 + (current_humidity - 50.0) * 0.002
+        humidity_factor = max(0.8, min(1.2, humidity_factor))
+
+        # Solar gain factor: less cloud coverage means more solar heat gain
+        # Formula: solar_factor = 1 - (100 - cloud_coverage) * 0.001
+        # At 100% cloud: factor = 1.0 (no solar gain)
+        # At 0% cloud (clear sky): factor = 0.9 (10% faster due to sun)
+        # At 50% cloud: factor = 0.95 (5% faster)
+        solar_factor = 1.0 - (100.0 - cloud_coverage) * 0.001
+        solar_factor = max(0.8, min(1.0, solar_factor))
+
+        # Combined factor for all environmental conditions
+        combined_factor = outdoor_factor * humidity_factor * solar_factor
+
+        # Effective heating rate considering all conditions
+        effective_slope = self.thermal_slope / combined_factor
 
         # Calculate time needed in hours, then convert to minutes
         hours_needed = temp_delta / effective_slope
@@ -68,11 +95,19 @@ class PreheatingCalculator:
 
         _LOGGER.debug(
             "Preheat calculation: ΔT=%.1f°C, outdoor=%.1f°C, "
-            "factor=%.2f, slope=%.2f°C/h, effective_slope=%.2f°C/h, "
+            "humidity_in=%.1f%%, humidity_out=%.1f%%, clouds=%.1f%%, "
+            "outdoor_factor=%.2f, humidity_factor=%.2f, solar_factor=%.2f, "
+            "combined_factor=%.2f, slope=%.2f°C/h, effective_slope=%.2f°C/h, "
             "duration=%.1f min",
             temp_delta,
             outdoor_temp,
+            current_humidity,
+            outdoor_humidity,
+            cloud_coverage,
             outdoor_factor,
+            humidity_factor,
+            solar_factor,
+            combined_factor,
             self.thermal_slope,
             effective_slope,
             minutes_needed,
@@ -86,6 +121,9 @@ class PreheatingCalculator:
         target_temp: float,
         outdoor_temp: float,
         target_time: datetime,
+        current_humidity: float = 50.0,
+        outdoor_humidity: float = 50.0,
+        cloud_coverage: float = 50.0,
     ) -> dict:
         """Calculate when to start heating to reach target temp at target time.
         
@@ -94,6 +132,9 @@ class PreheatingCalculator:
             target_temp: Target temperature in Celsius
             outdoor_temp: Outdoor temperature in Celsius
             target_time: When the target temperature should be reached
+            current_humidity: Current room humidity in %
+            outdoor_humidity: Outdoor humidity in %
+            cloud_coverage: Cloud coverage in % (0=clear, 100=overcast)
             
         Returns:
             Dictionary with calculation results including:
@@ -102,7 +143,8 @@ class PreheatingCalculator:
             - should_start_now: Whether heating should start immediately
         """
         preheat_minutes = self.calculate_preheat_duration(
-            current_temp, target_temp, outdoor_temp
+            current_temp, target_temp, outdoor_temp,
+            current_humidity, outdoor_humidity, cloud_coverage
         )
 
         # Calculate when heating should start
@@ -120,6 +162,9 @@ class PreheatingCalculator:
             "current_temp": current_temp,
             "target_temp": target_temp,
             "outdoor_temp": outdoor_temp,
+            "current_humidity": current_humidity,
+            "outdoor_humidity": outdoor_humidity,
+            "cloud_coverage": cloud_coverage,
         }
 
         _LOGGER.info(
