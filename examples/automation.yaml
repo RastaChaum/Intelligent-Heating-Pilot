@@ -142,7 +142,7 @@ automation:
           current_temp: "{{ states('sensor.living_room_temperature') | float }}"
           target_temp: 21.0
           outdoor_temp: "{{ states('sensor.outdoor_temperature') | float }}"
-          target_time: "{{ (now().timestamp() + 86400) | timestamp_custom('%Y-%m-%d')).replace(hour=6, minute=30, second=0) }}"
+          target_time: "{{ (now().timestamp() + 86400) | timestamp_custom('%Y-%m-%d %H:%M:%S') | as_datetime }}"
           thermal_slope: 2.0
 
   - id: smart_starter_weekend_schedule
@@ -162,7 +162,7 @@ automation:
           current_temp: "{{ states('sensor.living_room_temperature') | float }}"
           target_temp: 20.0
           outdoor_temp: "{{ states('sensor.outdoor_temperature') | float }}"
-          target_time: "{{ ((now().timestamp() + 86400) | timestamp_custom('%Y-%m-%d')).replace(hour=8, minute=30, second=0) }}"
+          target_time: "{{ (now().timestamp() + 86400) | timestamp_custom('%Y-%m-%d %H:%M:%S') | as_datetime }}"
           thermal_slope: 2.0
 
 # Input helpers needed for some examples

@@ -210,6 +210,10 @@ class IntelligentHeatingPilotCoordinator:
 
         return lhs
 
+    def get_learned_slopes(self) -> list[float]:
+        """Get the list of learned slopes for public access."""
+        return self._data.get("learned_slopes", [])
+
     def get_vtherm_current_temp(self) -> float | None:
         """Get current temperature from VTherm."""
         entity_id = self.entry.data.get(CONF_VTHERM_ENTITY)
@@ -510,10 +514,11 @@ class IntelligentHeatingPilotCoordinator:
         
         except (ValueError, TypeError):
             # If the target temperature is not a valid float, treat as not already at target
-            pass
+            return False
 
         return False
 
+    async def async_schedule_anticipation(self, anticipation_data: dict) -> None:
         """Schedule the anticipated start."""
         anticipated_start = anticipation_data[ATTR_ANTICIPATED_START_TIME]
         scheduler_entity = anticipation_data["scheduler_entity"]
@@ -739,7 +744,7 @@ class IntelligentHeatingPilotCoordinator:
         # Check if VTherm is already at the target temperature
         # This means the scheduler was already triggered, avoid re-triggering
         skip_schedule = False
-        if next_temp is not None and hasattr(self, "_is_vtherm_already_at_target") and self._is_vtherm_already_at_target(next_temp):
+        if next_temp is not None and self._is_vtherm_already_at_target(next_temp):
             _LOGGER.debug(
                 "VTherm already at target temperature (%.1f°C), will skip anticipation scheduling only",
                 next_temp
@@ -787,7 +792,7 @@ class IntelligentHeatingPilotCoordinator:
                         )
                         self._anticipation_trigger_executed.add(anticipated_start)
                     except Exception as err:  # noqa: BLE001
-                        _LOGGER.warning("Forced scheduler trigger failed: %s", err)
+                        _LOGGER.warning("Forced scheduler trigger failed: %s", err, exc_info=True)
 
         # Build payload for sensors, always emitting at least next schedule info
         payload: dict[str, Any] = {}

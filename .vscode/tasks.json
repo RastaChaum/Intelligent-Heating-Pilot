@@ -18,7 +18,7 @@
     {
       "label": "Restart Home Assistant",
       "type": "shell",
-      "command": "ssh {homeassistant_user}@{homeassistant_host} 'ha core restart'",
+      "command": "ssh ${homeassistant_user}@${homeassistant_host} 'ha core restart'",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -37,7 +37,7 @@
     {
       "label": "View Home Assistant Logs",
       "type": "shell",
-      "command": "ssh {homeassistant_user}@{homeassistant_host} 'tail -f /config/home-assistant.log | grep intelligent_heating_pilot'",
+      "command": "ssh ${homeassistant_user}@${homeassistant_host} 'tail -f /config/home-assistant.log | grep intelligent_heating_pilot'",
       "problemMatcher": [],
       "isBackground": true,
       "presentation": {
