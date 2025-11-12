@@ -4,7 +4,7 @@
     {
       "label": "Deploy to Home Assistant",
       "type": "shell",
-      "command": "scp -r ${workspaceFolder}/custom_components/smart_starter_vtherm root@${homeassistant_host}:/config/custom_components/",
+      "command": "scp -r ${workspaceFolder}/custom_components/intelligent_heating_pilot root@${homeassistant_host}:/config/custom_components/",
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -37,7 +37,7 @@
     {
       "label": "View Home Assistant Logs",
       "type": "shell",
-      "command": "ssh {homeassistant_user}@{homeassistant_host} 'tail -f /config/home-assistant.log | grep smart_starter_vtherm'",
+      "command": "ssh {homeassistant_user}@{homeassistant_host} 'tail -f /config/home-assistant.log | grep intelligent_heating_pilot'",
       "problemMatcher": [],
       "isBackground": true,
       "presentation": {

@@ -25,7 +25,7 @@ Une intégration Home Assistant se compose de plusieurs fichiers :
 
 ### Pourquoi vos entités étaient "inconnu"
 
-- Les capteurs attendent un événement `smart_starter_vtherm_calculation_complete`
+- Les capteurs attendent un événement `intelligent_heating_pilot_calculation_complete`
 - Cet événement est déclenché uniquement par le service `calculate_start_time`
 - **Solution appliquée** : Valeurs initiales (0 pour duration, None pour timestamp)
 
@@ -57,7 +57,7 @@ _LOGGER.error("Erreur!")
 ```bash
 # Tâche VS Code : "View Home Assistant Logs"
 # Ou manuellement :
-ssh root@192.168.1.100 'tail -f /config/home-assistant.log | grep smart_starter_vtherm'
+ssh root@192.168.1.100 'tail -f /config/home-assistant.log | grep intelligent_heating_pilot'
 ```
 
 #### Option B : Script Python
@@ -69,7 +69,7 @@ python scripts/view_logs.py
 #### Option C : Interface Home Assistant
 
 - Configuration → Système → Logs
-- Filtrer par "smart_starter_vtherm"
+- Filtrer par "intelligent_heating_pilot"
 
 ### 3. Activer le Mode Debug
 
@@ -79,7 +79,7 @@ Ajoutez dans `configuration.yaml` de Home Assistant :
 logger:
   default: info
   logs:
-    custom_components.smart_starter_vtherm: debug
+    custom_components.intelligent_heating_pilot: debug
 ```
 
 Puis redémarrez Home Assistant.
@@ -88,7 +88,7 @@ Puis redémarrez Home Assistant.
 
 Dans Home Assistant :
 1. Outils de développement → Services
-2. Sélectionnez `smart_starter_vtherm.calculate_start_time`
+2. Sélectionnez `intelligent_heating_pilot.calculate_start_time`
 3. Données de test :
 
 ```yaml
@@ -135,7 +135,7 @@ pip install debugpy
 Pour changer les entités surveillées après l'installation :
 
 1. **Configuration** → **Intégrations**
-2. Trouvez **Smart Starter VTherm**
+2. Trouvez **Intelligent Heating Pilot**
 3. Cliquez sur les **trois points** (⋮)
 4. Sélectionnez **"Configure"** ou **"Options"**
 5. Modifiez les entités
@@ -147,7 +147,7 @@ L'intégration se rechargera automatiquement et commencera à surveiller les nou
 
 Quand une intégration ne fonctionne pas :
 
-- [ ] **Logs de démarrage** : Cherchez "Setting up smart_starter_vtherm"
+- [ ] **Logs de démarrage** : Cherchez "Setting up intelligent_heating_pilot"
 - [ ] **Erreurs d'import** : Vérifiez les `import` manquants
 - [ ] **Manifest.json valide** : Domain, version, requirements
 - [ ] **Entités créées** : Outils dev → États → Cherchez vos entités
@@ -178,13 +178,13 @@ ssh root@192.168.1.100 'ha core reload'
 ### Vérifier que les fichiers sont bien copiés
 
 ```bash
-ssh root@192.168.1.100 'ls -la /config/custom_components/smart_starter_vtherm/'
+ssh root@192.168.1.100 'ls -la /config/custom_components/intelligent_heating_pilot/'
 ```
 
 ### Supprimer le cache Python
 
 ```bash
-ssh root@192.168.1.100 'rm -rf /config/custom_components/smart_starter_vtherm/__pycache__'
+ssh root@192.168.1.100 'rm -rf /config/custom_components/intelligent_heating_pilot/__pycache__'
 ```
 
 ## 🎯 Workflow Recommandé

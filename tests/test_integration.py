@@ -1,11 +1,11 @@
-"""Integration tests for Smart Starter VTherm component structure."""
+"""Integration tests for Intelligent Heating Pilot component structure."""
 import unittest
 import json
 import os
 import sys
 
 # Add the parent directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../custom_components/smart_starter_vtherm'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../custom_components/intelligent_heating_pilot'))
 
 
 class TestIntegrationStructure(unittest.TestCase):
@@ -15,7 +15,7 @@ class TestIntegrationStructure(unittest.TestCase):
         """Set up test fixtures."""
         self.base_path = os.path.join(
             os.path.dirname(__file__),
-            '../custom_components/smart_starter_vtherm'
+            '../custom_components/intelligent_heating_pilot'
         )
 
     def test_manifest_exists_and_valid(self):
@@ -34,7 +34,7 @@ class TestIntegrationStructure(unittest.TestCase):
         self.assertIn('issue_tracker', manifest)
         
         # Check domain matches expected
-        self.assertEqual(manifest['domain'], 'smart_starter_vtherm')
+        self.assertEqual(manifest['domain'], 'intelligent_heating_pilot')
 
     def test_strings_json_exists_and_valid(self):
         """Test that strings.json exists and is valid."""
@@ -82,7 +82,7 @@ class TestIntegrationStructure(unittest.TestCase):
         """Test that const module can be imported."""
         try:
             from const import DOMAIN, DEFAULT_HEATING_SLOPE
-            self.assertEqual(DOMAIN, 'smart_starter_vtherm')
+            self.assertEqual(DOMAIN, 'intelligent_heating_pilot')
             self.assertEqual(DEFAULT_HEATING_SLOPE, 2.0)
         except ImportError as e:
             self.fail(f"Failed to import const: {e}")
@@ -97,7 +97,7 @@ class TestIntegrationStructure(unittest.TestCase):
         
         self.assertIn('name', hacs_config)
         self.assertIn('domains', hacs_config)
-        self.assertIn('smart_starter_vtherm', hacs_config['domains'])
+        self.assertIn('intelligent_heating_pilot', hacs_config['domains'])
 
 
 if __name__ == '__main__':

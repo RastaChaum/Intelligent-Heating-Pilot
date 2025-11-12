@@ -1,0 +1,48 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurer Intelligent Heating Pilot",
+        "description": "Configurez votre intégration Intelligent Heating Pilot (IHP) pour des calculs de préchauffage intelligents basés sur l'apprentissage des pentes thermiques de votre VTherm.",
+        "data": {
+          "name": "Nom de l'intégration",
+          "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
+          "scheduler_entities": "Entités Scheduler (switches)",
+          "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
+          "humidity_out_entity_id": "Capteur d'humidité extérieure (optionnel)",
+          "cloud_cover_entity_id": "Capteur de couverture nuageuse (optionnel)"
+        },
+        "data_description": {
+          "vtherm_entity_id": "Le thermostat Versatile Thermostat à contrôler (source du slope d'apprentissage)",
+          "scheduler_entities": "Les switchs du HACS Scheduler Component qui pilotent ce VTherm",
+          "humidity_in_entity_id": "Capteur d'humidité de la pièce pour affiner les calculs",
+          "humidity_out_entity_id": "Capteur d'humidité extérieure pour affiner les calculs",
+          "cloud_cover_entity_id": "Capteur de couverture nuageuse pour prendre en compte l'impact solaire"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Échec de la connexion",
+      "invalid_auth": "Authentification invalide",
+      "unknown": "Erreur inattendue"
+    },
+    "abort": {
+      "already_configured": "Cette intégration est déjà configurée"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modifier les options Intelligent Heating Pilot",
+        "description": "Modifiez les entités utilisées par Intelligent Heating Pilot",
+        "data": {
+          "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
+          "scheduler_entities": "Entités Scheduler (switches)",
+          "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
+          "humidity_out_entity_id": "Capteur d'humidité extérieure (optionnel)",
+          "cloud_cover_entity_id": "Capteur de couverture nuageuse (optionnel)"
+        }
+      }
+    }
+  }
+}

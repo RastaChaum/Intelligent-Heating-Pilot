@@ -6,7 +6,7 @@ services:
       - 8123:8123
       - 5678:5678
     volumes:
-      - ./custom_components/smart_starter_vtherm:/config/custom_components/smart_starter_vtherm
+      - ./custom_components/intelligent_heating_pilot:/config/custom_components/intelligent_heating_pilot
       - ./examples/config:/config
       - /etc/localtime:/etc/localtime:ro
       - /run/dbus:/run/dbus:ro

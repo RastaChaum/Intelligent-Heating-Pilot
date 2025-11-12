@@ -1,0 +1,48 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure Intelligent Heating Pilot",
+        "description": "Set up your Intelligent Heating Pilot (IHP) integration for intelligent preheating calculations based on learned thermal slopes from your VTherm.",
+        "data": {
+          "name": "Integration Name",
+          "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
+          "scheduler_entities": "Scheduler Entities (switches)",
+          "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
+          "humidity_out_entity_id": "Outdoor Humidity Sensor (optional)",
+          "cloud_cover_entity_id": "Cloud Coverage Sensor (optional)"
+        },
+        "data_description": {
+          "vtherm_entity_id": "The Versatile Thermostat to control (source of learned slope)",
+          "scheduler_entities": "The HACS Scheduler Component switches that control this VTherm",
+          "humidity_in_entity_id": "Room humidity sensor to refine calculations",
+          "humidity_out_entity_id": "Outdoor humidity sensor to refine calculations",
+          "cloud_cover_entity_id": "Cloud coverage sensor to account for solar impact"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "invalid_auth": "Invalid authentication",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This integration is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modify Intelligent Heating Pilot Options",
+        "description": "Modify the entities used by Intelligent Heating Pilot",
+        "data": {
+          "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
+          "scheduler_entities": "Scheduler Entities (switches)",
+          "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
+          "humidity_out_entity_id": "Outdoor Humidity Sensor (optional)",
+          "cloud_cover_entity_id": "Cloud Coverage Sensor (optional)"
+        }
+      }
+    }
+  }
+}
