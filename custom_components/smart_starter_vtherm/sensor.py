@@ -1,4 +1,4 @@
-"""Sensor platform for Smart Starter VTherm."""
+"""Sensor platform for Intelligent Heating Pilot."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -32,21 +32,21 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Smart Starter VTherm sensors."""
+    """Set up the Intelligent Heating Pilot sensors."""
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
-    name = config_entry.data.get(CONF_NAME, "Smart Starter VTherm")
+    name = config_entry.data.get(CONF_NAME, "Intelligent Heating Pilot")
 
     sensors = [
-        SmartStarterVThermAnticipationTimeSensor(coordinator, config_entry, name),
-        SmartStarterVThermLearnedSlopeSensor(coordinator, config_entry, name),
-        SmartStarterVThermNextScheduleSensor(coordinator, config_entry, name),
+        IntelligentHeatingPilotAnticipationTimeSensor(coordinator, config_entry, name),
+        IntelligentHeatingPilotLearnedSlopeSensor(coordinator, config_entry, name),
+        IntelligentHeatingPilotNextScheduleSensor(coordinator, config_entry, name),
     ]
 
     async_add_entities(sensors, True)
 
 
-class SmartStarterVThermSensorBase(SensorEntity):
-    """Base class for Smart Starter VTherm sensors."""
+class IntelligentHeatingPilotSensorBase(SensorEntity):
+    """Base class for Intelligent Heating Pilot sensors."""
 
     _attr_has_entity_name = True
 
@@ -57,7 +57,7 @@ class SmartStarterVThermSensorBase(SensorEntity):
         self._attr_device_info = {
             "identifiers": {(DOMAIN, config_entry.entry_id)},
             "name": name,
-            "manufacturer": "Smart Starter VTherm",
+            "manufacturer": "Intelligent Heating Pilot",
             "model": "Intelligent Preheating with ML",
         }
 
@@ -82,7 +82,7 @@ class SmartStarterVThermSensorBase(SensorEntity):
         pass
 
 
-class SmartStarterVThermAnticipationTimeSensor(SmartStarterVThermSensorBase):
+class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSensorBase):
     """Sensor for anticipated start time."""
 
     _attr_name = "Anticipated Start Time"
@@ -147,7 +147,7 @@ class SmartStarterVThermAnticipationTimeSensor(SmartStarterVThermSensorBase):
             _LOGGER.info("Anticipated start time updated: %s", self._anticipated_start)
 
 
-class SmartStarterVThermLearnedSlopeSensor(SmartStarterVThermSensorBase):
+class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBase):
     """Sensor for learned heating slope (LHS)."""
 
     _attr_name = "Learned Heating Slope"
@@ -191,7 +191,7 @@ class SmartStarterVThermLearnedSlopeSensor(SmartStarterVThermSensorBase):
         }
 
 
-class SmartStarterVThermNextScheduleSensor(SmartStarterVThermSensorBase):
+class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBase):
     """Sensor for next schedule time."""
 
     _attr_name = "Next Schedule Time"

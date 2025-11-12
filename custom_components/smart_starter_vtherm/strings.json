@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Configure Smart Starter VTherm",
-        "description": "Set up your Smart Starter VTherm integration for intelligent preheating calculations based on learned thermal slopes from your VTherm.",
+        "title": "Configure Intelligent Heating Pilot",
+        "description": "Set up your Intelligent Heating Pilot (IHP) integration for intelligent preheating calculations based on learned thermal slopes from your VTherm.",
         "data": {
           "name": "Integration Name",
           "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
@@ -33,8 +33,8 @@
   "options": {
     "step": {
       "init": {
-        "title": "Modify Smart Starter VTherm Options",
-        "description": "Modify the entities used by Smart Starter VTherm",
+        "title": "Modify Intelligent Heating Pilot Options",
+        "description": "Modify the entities used by Intelligent Heating Pilot",
         "data": {
           "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
           "scheduler_entities": "Scheduler Entities (switches)",

@@ -135,7 +135,7 @@ pip install debugpy
 Pour changer les entités surveillées après l'installation :
 
 1. **Configuration** → **Intégrations**
-2. Trouvez **Smart Starter VTherm**
+2. Trouvez **Intelligent Heating Pilot**
 3. Cliquez sur les **trois points** (⋮)
 4. Sélectionnez **"Configure"** ou **"Options"**
 5. Modifiez les entités

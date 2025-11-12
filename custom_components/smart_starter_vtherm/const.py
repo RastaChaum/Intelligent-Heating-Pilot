@@ -1,4 +1,4 @@
-"""Constants for the Smart Starter VTherm integration."""
+"""Constants for the Intelligent Heating Pilot integration."""
 
 DOMAIN = "smart_starter_vtherm"
 
@@ -21,7 +21,7 @@ CONF_CLOUD_COVERAGE_ENTITY = "cloud_coverage_entity"
 CONF_SCHEDULER_ENTITY = "scheduler_entity"
 
 # Default values
-DEFAULT_NAME = "Smart Starter VTherm"
+DEFAULT_NAME = "Intelligent Heating Pilot"
 
 # Service names
 SERVICE_CALCULATE_START_TIME = "calculate_start_time"
