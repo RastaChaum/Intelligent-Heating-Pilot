@@ -760,7 +760,7 @@ class IntelligentHeatingPilotCoordinator:
                         )
                         self._anticipation_trigger_executed.add(anticipated_start)
                     except Exception as err:  # noqa: BLE001
-                        _LOGGER.warning("Forced scheduler trigger failed: %s", err)
+                        _LOGGER.warning("Forced scheduler trigger failed: %s", err, exc_info=True)
 
         # Build payload for sensors, always emitting at least next schedule info
         payload: dict[str, Any] = {}
