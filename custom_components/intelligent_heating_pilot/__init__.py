@@ -512,9 +512,7 @@ class IntelligentHeatingPilotCoordinator:
             # If the target temperature is not a valid float, treat as not already at target
             pass
 
-        return False
-
-    async def async_schedule_anticipation(self, anticipation_data: dict) -> None:
+        # Schedule the anticipated start
         if self._cancel_scheduled_start:
             self._cancel_scheduled_start()
             self._cancel_scheduled_start = None
