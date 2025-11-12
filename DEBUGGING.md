@@ -57,7 +57,7 @@ _LOGGER.error("Erreur!")
 ```bash
 # Tâche VS Code : "View Home Assistant Logs"
 # Ou manuellement :
-ssh root@192.168.1.100 'tail -f /config/home-assistant.log | grep intelligent_heating_pilot'
+ssh <user>@<host> 'tail -f /config/home-assistant.log | grep intelligent_heating_pilot'
 ```
 
 #### Option B : Script Python
@@ -178,13 +178,13 @@ ssh root@192.168.1.100 'ha core reload'
 ### Vérifier que les fichiers sont bien copiés
 
 ```bash
-ssh root@192.168.1.100 'ls -la /config/custom_components/intelligent_heating_pilot/'
+ssh <user>@<host> 'ls -la /config/custom_components/intelligent_heating_pilot/'
 ```
 
 ### Supprimer le cache Python
 
 ```bash
-ssh root@192.168.1.100 'rm -rf /config/custom_components/intelligent_heating_pilot/__pycache__'
+ssh <user>@<host> 'rm -rf /config/custom_components/intelligent_heating_pilot/__pycache__'
 ```
 
 ## 🎯 Workflow Recommandé
