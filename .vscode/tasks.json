@@ -18,7 +18,7 @@
     {
       "label": "Restart Home Assistant",
       "type": "shell",
-      "command": "ssh {homeassistant_user}@{homeassistant_host} 'ha core restart'",
+      "command": "ssh ${homeassistant_user}@${homeassistant_host} 'ha core restart'",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
