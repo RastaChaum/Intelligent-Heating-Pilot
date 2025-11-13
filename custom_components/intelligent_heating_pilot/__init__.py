@@ -100,7 +100,7 @@ class IntelligentHeatingPilotCoordinator:
         has_options = isinstance(self.config.options, dict) or hasattr(self.config.options, 'get')
         options_schedulers = self.config.options.get(CONF_SCHEDULER_ENTITIES) if has_options else None
         
-        _LOGGER.debug("[%s] has_options=%s, options_schedulers=%s", self.config.entry_id, has_options, options_schedulers)
+        _LOGGER.info("[%s] 🔍 DIAGNOSTIC: has_options=%s, options_schedulers=%s", self.config.entry_id, has_options, options_schedulers)
         
         if has_options and options_schedulers is not None:
             raw = options_schedulers
