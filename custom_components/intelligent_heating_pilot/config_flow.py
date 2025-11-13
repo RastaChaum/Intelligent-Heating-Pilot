@@ -53,6 +53,20 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                 data=user_input,
             )
 
+        # Get all scheduler entities with their friendly names
+        scheduler_options = []
+        for state in self.hass.states.async_all("switch"):
+            # Filter for scheduler entities (they typically have "schedule_" prefix or scheduler attributes)
+            if "schedule" in state.entity_id.lower() or state.attributes.get("next_trigger"):
+                friendly_name = state.attributes.get("friendly_name", state.entity_id)
+                scheduler_options.append({
+                    "value": state.entity_id,
+                    "label": f"{friendly_name} ({state.entity_id})"
+                })
+
+        # Sort by label for easier selection
+        scheduler_options.sort(key=lambda x: x["label"])
+
         # Build the schema for the configuration form
         data_schema = vol.Schema(
             {
@@ -63,7 +77,13 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         integration="versatile_thermostat"
                     )
                 ),
-                vol.Required(CONF_SCHEDULER_ENTITIES): selector.EntitySelector(
+                vol.Required(CONF_SCHEDULER_ENTITIES): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=scheduler_options,
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN
+                    )
+                ) if scheduler_options else selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain="switch",
                         multiple=True
@@ -120,6 +140,20 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         # Get current values from config entry
         current_data = self.config_entry.data
 
+        # Get all scheduler entities with their friendly names
+        scheduler_options = []
+        for state in self.hass.states.async_all("switch"):
+            # Filter for scheduler entities (they typically have "schedule_" prefix or scheduler attributes)
+            if "schedule" in state.entity_id.lower() or state.attributes.get("next_trigger"):
+                friendly_name = state.attributes.get("friendly_name", state.entity_id)
+                scheduler_options.append({
+                    "value": state.entity_id,
+                    "label": f"{friendly_name} ({state.entity_id})"
+                })
+
+        # Sort by label for easier selection
+        scheduler_options.sort(key=lambda x: x["label"])
+
         # Build the schema with current values as defaults
         data_schema = vol.Schema(
             {
@@ -135,7 +169,13 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_SCHEDULER_ENTITIES,
                     default=current_data.get(CONF_SCHEDULER_ENTITIES, [])
-                ): selector.EntitySelector(
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=scheduler_options,
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN
+                    )
+                ) if scheduler_options else selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain="switch",
                         multiple=True
