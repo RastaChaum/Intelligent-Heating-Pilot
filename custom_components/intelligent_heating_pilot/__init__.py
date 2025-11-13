@@ -43,11 +43,11 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 class IntelligentHeatingPilotCoordinator:
     """Coordinator for Intelligent Heating Pilot integration."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the coordinator."""
         self.hass = hass
-        self.entry = entry
-        self._store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}_{entry.entry_id}")
+        self.config = config_entry
+        self._store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}_{config_entry.entry_id}")
         self._data: dict[str, Any] = {}
         self._cancel_scheduled_start = None
         self._cancel_overshoot_monitor = None
@@ -66,7 +66,7 @@ class IntelligentHeatingPilotCoordinator:
             _LOGGER.debug("Loaded stored data: %s", self._data)
         else:
             self._data = {
-                "learned_slopes": [],  # Historical slopes from VTherm (positive=heating, negative=cooling)
+                "historical_slopes": [],  # Historical slopes from VTherm (positive=heating, negative=cooling)
                 "learned_heating_slope": DEFAULT_HEATING_SLOPE,
             }
 
@@ -77,17 +77,17 @@ class IntelligentHeatingPilotCoordinator:
     def get_vtherm_entity(self) -> str:
         """Get VTherm entity ID (options override data)."""
         return (
-            self.entry.options.get(CONF_VTHERM_ENTITY)
-            if isinstance(self.entry.options, dict) and self.entry.options.get(CONF_VTHERM_ENTITY) is not None
-            else self.entry.data.get(CONF_VTHERM_ENTITY)
+            self.config.options.get(CONF_VTHERM_ENTITY)
+            if isinstance(self.config.options, dict) and self.config.options.get(CONF_VTHERM_ENTITY) is not None
+            else self.config.data.get(CONF_VTHERM_ENTITY)
         )
 
     def get_scheduler_entities(self) -> list[str]:
         """Get scheduler entity IDs (options override data)."""
         source = (
-            self.entry.options
-            if isinstance(self.entry.options, dict) and self.entry.options.get(CONF_SCHEDULER_ENTITIES) is not None
-            else self.entry.data
+            self.config.options.get(CONF_SCHEDULER_ENTITIES)
+            if isinstance(self.config.options, dict) and self.config.options.get(CONF_SCHEDULER_ENTITIES) is not None
+            else self.config.data
         )
         entities = source.get(CONF_SCHEDULER_ENTITIES, [])
         return entities if isinstance(entities, list) else [entities]
@@ -95,36 +95,36 @@ class IntelligentHeatingPilotCoordinator:
     def get_humidity_in_entity(self) -> str | None:
         """Get indoor humidity entity ID (options override data)."""
         return (
-            self.entry.options.get(CONF_HUMIDITY_IN_ENTITY)
-            if isinstance(self.entry.options, dict) and self.entry.options.get(CONF_HUMIDITY_IN_ENTITY) is not None
-            else self.entry.data.get(CONF_HUMIDITY_IN_ENTITY)
+            self.config.options.get(CONF_HUMIDITY_IN_ENTITY)
+            if isinstance(self.config.options, dict) and self.config.options.get(CONF_HUMIDITY_IN_ENTITY) is not None
+            else self.config.data.get(CONF_HUMIDITY_IN_ENTITY)
         )
 
     def get_humidity_out_entity(self) -> str | None:
         """Get outdoor humidity entity ID (options override data)."""
         return (
-            self.entry.options.get(CONF_HUMIDITY_OUT_ENTITY)
-            if isinstance(self.entry.options, dict) and self.entry.options.get(CONF_HUMIDITY_OUT_ENTITY) is not None
-            else self.entry.data.get(CONF_HUMIDITY_OUT_ENTITY)
+            self.config.options.get(CONF_HUMIDITY_OUT_ENTITY)
+            if isinstance(self.config.options, dict) and self.config.options.get(CONF_HUMIDITY_OUT_ENTITY) is not None
+            else self.config.data.get(CONF_HUMIDITY_OUT_ENTITY)
         )
 
     def get_cloud_cover_entity(self) -> str | None:
         """Get cloud cover entity ID (options override data)."""
         return (
-            self.entry.options.get(CONF_CLOUD_COVER_ENTITY)
-            if isinstance(self.entry.options, dict) and self.entry.options.get(CONF_CLOUD_COVER_ENTITY) is not None
-            else self.entry.data.get(CONF_CLOUD_COVER_ENTITY)
+            self.config.options.get(CONF_CLOUD_COVER_ENTITY)
+            if isinstance(self.config.options, dict) and self.config.options.get(CONF_CLOUD_COVER_ENTITY) is not None
+            else self.config.data.get(CONF_CLOUD_COVER_ENTITY)
         )
 
     def get_vtherm_slope(self) -> float:
-        """Get current slope from VTherm entity and update learning history."""
-        entity_id = self.entry.data.get(CONF_VTHERM_ENTITY)
+        """Get current slope from VTherm entity and update learning history (options-aware)."""
+        entity_id = self.get_vtherm_entity()
         if not entity_id:
-            _LOGGER.debug("VTherm entity id missing for slope")
+            _LOGGER.warning("VTherm entity id missing for slope -> using default slope %s", DEFAULT_HEATING_SLOPE)
             return DEFAULT_HEATING_SLOPE
         vtherm_state = self.hass.states.get(entity_id)
         if not vtherm_state:
-            _LOGGER.warning("VTherm entity not found: %s", entity_id)
+            _LOGGER.warning("VTherm entity not found: %s -> using default slope %s", entity_id, DEFAULT_HEATING_SLOPE)
             return DEFAULT_HEATING_SLOPE
 
         # DEBUG: Log ALL attributes to find the correct slope attribute
@@ -151,7 +151,7 @@ class IntelligentHeatingPilotCoordinator:
             except (ValueError, TypeError):
                 _LOGGER.warning("Invalid slope value from VTherm: %s", slope)
         else:
-            _LOGGER.debug("No slope attribute found in VTherm %s", entity_id)
+            _LOGGER.warning("No slope attribute found in VTherm %s", entity_id)
 
         fallback = self._data.get("max_heating_slope", DEFAULT_HEATING_SLOPE)
         _LOGGER.debug("Using fallback slope: %.2f°C/h", fallback)
@@ -160,7 +160,7 @@ class IntelligentHeatingPilotCoordinator:
     def _update_learned_slope(self, slope: float) -> None:
         """Update learned slopes history."""
         # Accept all slope values (positive = heating, negative = cooling)
-        slopes = self._data.get("learned_slopes", [])
+        slopes = self._data.get("historical_slopes", [])
         old_lhs = self._data.get("learned_heating_slope")
         
         slopes.append(slope)
@@ -169,7 +169,7 @@ class IntelligentHeatingPilotCoordinator:
         if len(slopes) > 100:
             slopes = slopes[-100:]
 
-        self._data["learned_slopes"] = slopes
+        self._data["historical_slopes"] = slopes
 
         # Calculate robust average (trimmed mean) for LHS
         lhs = self._calculate_robust_average(slopes)
@@ -210,7 +210,7 @@ class IntelligentHeatingPilotCoordinator:
 
     def get_learned_heating_slope(self) -> float:
         """Get the learned heating slope (LHS)."""
-        slopes = self._data.get("learned_slopes", [])
+        slopes = self._data.get("historical_slopes", [])
         
         # Filter out negative slopes (cooling phases) - only keep positive heating slopes
         positive_slopes = [s for s in slopes if s > 0]
@@ -231,13 +231,13 @@ class IntelligentHeatingPilotCoordinator:
 
         return lhs
 
-    def get_learned_slopes(self) -> list[float]:
+    def get_historical_slopes(self) -> list[float]:
         """Get the list of learned slopes for public access."""
-        return self._data.get("learned_slopes", [])
+        return self._data.get("historical_slopes", [])
 
     def get_vtherm_current_temp(self) -> float | None:
-        """Get current temperature from VTherm."""
-        entity_id = self.entry.data.get(CONF_VTHERM_ENTITY)
+        """Get current temperature from VTherm (options-aware)."""
+        entity_id = self.get_vtherm_entity()
         if not entity_id:
             _LOGGER.debug("VTherm entity id missing for current temp")
             return None
@@ -836,7 +836,7 @@ class IntelligentHeatingPilotCoordinator:
                         _LOGGER.warning("Forced scheduler trigger failed: %s", err, exc_info=True)
 
         # Build payload for sensors, always emitting at least next schedule info
-        payload: dict[str, Any] = {"entry_id": self.entry.entry_id}
+        payload: dict[str, Any] = {"entry_id": self.config.entry_id}
         if next_time is not None:
             payload[ATTR_NEXT_SCHEDULE_TIME] = next_time.isoformat()
         if next_temp is not None:
@@ -899,58 +899,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Store coordinator
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Set up state change listeners (filtered per entry)
-    @callback
-    def state_changed_listener(event: Event):
-        """Handle state changes of monitored entities."""
-        entity_id = event.data.get("entity_id")
-        
-        # For VTherm: react to ema_temp OR slope changes
-        if entity_id == coordinator.get_vtherm_entity():
-            old_state = event.data.get("old_state")
-            new_state = event.data.get("new_state")
-            
-            if old_state and new_state:
-                old_ema_temp = old_state.attributes.get(VTHERM_ATTR_CURRENT_TEMPERATURE)
-                new_ema_temp = new_state.attributes.get(VTHERM_ATTR_CURRENT_TEMPERATURE)
-                old_slope = old_state.attributes.get(VTHERM_ATTR_SLOPE)
-                new_slope = new_state.attributes.get(VTHERM_ATTR_SLOPE)
-                
-                ema_temp_changed = old_ema_temp != new_ema_temp
-                slope_changed = old_slope != new_slope
-                
-                # Trigger update if ema_temp OR slope changed
-                if ema_temp_changed or slope_changed:
-                    # Ignore changes if we're the ones modifying the VTherm
-                    if coordinator._ignore_vtherm_changes_until:
-                        if dt_util.now() < coordinator._ignore_vtherm_changes_until:
-                            _LOGGER.debug("Ignoring VTherm change (we triggered it)")
-                            return
-                    
-                    if ema_temp_changed:
-                        _LOGGER.debug("VTherm ema_temp changed from %s to %s, triggering update", old_ema_temp, new_ema_temp)
-                    if slope_changed:
-                        _LOGGER.debug("VTherm slope changed from %s to %s, triggering update and LHS recalculation", old_slope, new_slope)
-                    
-                    hass.async_create_task(coordinator.async_update())
-                else:
-                    _LOGGER.debug("VTherm changed but ema_temp and slope unchanged, skipping update")
-            return
-
-        # Build list of other monitored entities (scheduler, sensors)
-        monitored_entities = []
-        monitored_entities.extend(coordinator.get_scheduler_entities())
-
-        if coordinator.get_humidity_in_entity():
-            monitored_entities.append(coordinator.get_humidity_in_entity())
-        if coordinator.get_humidity_out_entity():
-            monitored_entities.append(coordinator.get_humidity_out_entity())
-        if coordinator.get_cloud_cover_entity():
-            monitored_entities.append(coordinator.get_cloud_cover_entity())
-
-        if entity_id in monitored_entities:
-            _LOGGER.debug("Entity %s changed, triggering update", entity_id)
-            hass.async_create_task(coordinator.async_update())
+    # (Legacy global state_changed_listener removed – using filtered tracking below)
 
     # Replace global EVENT_STATE_CHANGED listen with filtered tracking limited to this entry's entities
     tracked_entities: list[str] = []
@@ -1028,7 +977,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_reset_learning(call):
         """Handle the reset_learning service call."""
         _LOGGER.info("Resetting learning history")
-        coordinator._data["learned_slopes"] = []
+        coordinator._data["historical_slopes"] = []
         coordinator._data["learned_heating_slope"] = None
         await coordinator.async_save()
         _LOGGER.info("Learning history cleared, will use default heating slope until new data is collected")

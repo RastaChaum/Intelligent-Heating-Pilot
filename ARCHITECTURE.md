@@ -198,7 +198,7 @@ Structure :
 {
     "version": 1,
     "data": {
-        "learned_slopes": [2.1, 2.3, 2.0, ...],
+        "historical_slopes": [2.1, 2.3, 2.0, ...],
         "max_heating_slope": 2.3
     }
 }

@@ -55,7 +55,7 @@ SCHEDULER_ATTR_NEXT_TIME = "next_time"
 SCHEDULER_ATTR_NEXT_ACTION = "next_action"
 
 # Storage
-STORAGE_KEY = "intelligent_heating_pilot_vtherm_storage"
+STORAGE_KEY = "intelligent_heating_pilot_storage"
 STORAGE_VERSION = 1
 
 # Default values for calculations
