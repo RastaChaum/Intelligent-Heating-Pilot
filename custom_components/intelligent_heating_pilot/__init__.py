@@ -402,7 +402,16 @@ class IntelligentHeatingPilotCoordinator:
         if temp_delta <= 0:
             _LOGGER.debug("Target temp (%.1f°C) <= current temp (%.1f°C), no heating needed", 
                          next_temp, current_temp)
-            return None
+            # Return anticipation data = next_time to indicate no anticipation needed
+            return {
+                ATTR_NEXT_SCHEDULE_TIME: next_time,
+                ATTR_NEXT_TARGET_TEMP: next_temp,
+                ATTR_ANTICIPATED_START_TIME: next_time,
+                "anticipation_minutes": 0,
+                "current_temp": current_temp,
+                "scheduler_entity": scheduler_entity,
+                ATTR_LEARNED_HEATING_SLOPE: lhs,
+            }
 
         # Protection against division by zero
         if lhs <= 0:
@@ -525,6 +534,17 @@ class IntelligentHeatingPilotCoordinator:
         next_schedule_time = anticipation_data[ATTR_NEXT_SCHEDULE_TIME]
         lhs = anticipation_data.get(ATTR_LEARNED_HEATING_SLOPE, 0)
         now = dt_util.now()
+
+        # Check if this is a "no anticipation needed" marker (midnight 1970)
+        if anticipated_start == next_schedule_time:
+            _LOGGER.debug("No anticipation needed (target temp <= current temp), skipping scheduling")
+            # Cancel any existing scheduled start
+            if self._cancel_scheduled_start:
+                self._cancel_scheduled_start()
+                self._cancel_scheduled_start = None
+            self._last_scheduled_time = None
+            self._last_scheduled_lhs = None
+            return
 
         _LOGGER.info("Scheduling anticipation: start=%s, target_time=%s, LHS=%.2f°C/h", 
                     anticipated_start.isoformat(), next_schedule_time.isoformat(), lhs)
