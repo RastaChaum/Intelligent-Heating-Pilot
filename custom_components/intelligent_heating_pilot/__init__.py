@@ -84,13 +84,11 @@ class IntelligentHeatingPilotCoordinator:
 
     def get_scheduler_entities(self) -> list[str]:
         """Get scheduler entity IDs (options override data)."""
-        source = (
+        return (
             self.config.options.get(CONF_SCHEDULER_ENTITIES)
             if isinstance(self.config.options, dict) and self.config.options.get(CONF_SCHEDULER_ENTITIES) is not None
             else self.config.data
         )
-        entities = source.get(CONF_SCHEDULER_ENTITIES, [])
-        return entities if isinstance(entities, list) else [entities]
 
     def get_humidity_in_entity(self) -> str | None:
         """Get indoor humidity entity ID (options override data)."""
