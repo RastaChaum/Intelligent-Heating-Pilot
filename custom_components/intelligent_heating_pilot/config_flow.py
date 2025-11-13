@@ -130,12 +130,8 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Update the config entry OPTIONS with new data (override data at runtime)
-            self.hass.config_entries.async_update_entry(
-                self.config_entry,
-                options={**self.config_entry.options, **user_input},
-            )
-            return self.async_create_entry(title="", data={})
+            # Return new OPTIONS; Home Assistant will persist them in entry.options
+            return self.async_create_entry(title="", data=user_input)
 
         # Get current values from config entry (options override data)
         current_data = {**self.config_entry.data, **self.config_entry.options}
@@ -154,6 +150,11 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         # Sort by label for easier selection
         scheduler_options.sort(key=lambda x: x["label"])
 
+        # Normalize defaults (scheduler list may be a single string in older entries)
+        default_schedulers = current_data.get(CONF_SCHEDULER_ENTITIES, [])
+        if isinstance(default_schedulers, str):
+            default_schedulers = [default_schedulers]
+
         # Build the schema with current values as defaults
         data_schema = vol.Schema(
             {
@@ -168,7 +169,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Required(
                     CONF_SCHEDULER_ENTITIES,
-                    default=current_data.get(CONF_SCHEDULER_ENTITIES, [])
+                    default=default_schedulers
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=scheduler_options,
