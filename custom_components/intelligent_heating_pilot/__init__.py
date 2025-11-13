@@ -88,27 +88,44 @@ class IntelligentHeatingPilotCoordinator:
         Older entries may have a single string. Options flow returns a list of raw entity_ids.
         Previously a bug treated the list itself as a dict and called .get() on it, breaking retrieval
         and causing anticipation to never calculate (no scheduler found)."""
+        
+        # DEBUG: Log entry_id and full config state
+        _LOGGER.info("[%s] === SCHEDULER GETTER DEBUG ===", self.config.entry_id)
+        _LOGGER.info("[%s] Entry title: %s", self.config.entry_id, self.config.title)
+        _LOGGER.info("[%s] config.data content: %s", self.config.entry_id, dict(self.config.data))
+        _LOGGER.info("[%s] config.options content: %s", self.config.entry_id, dict(self.config.options) if self.config.options else {})
+        
         # If options define the schedulers, prefer them
         if isinstance(self.config.options, dict) and self.config.options.get(CONF_SCHEDULER_ENTITIES) is not None:
             raw = self.config.options.get(CONF_SCHEDULER_ENTITIES)
+            _LOGGER.info("[%s] Found schedulers in OPTIONS: %s (type: %s)", self.config.entry_id, raw, type(raw).__name__)
             if isinstance(raw, list):
                 # Filter only plausible entity_id strings
                 cleaned = [r for r in raw if isinstance(r, str) and r]
                 if not cleaned:
-                    _LOGGER.debug("Options scheduler list empty after cleaning: %s", raw)
+                    _LOGGER.warning("[%s] Options scheduler list empty after cleaning: %s", self.config.entry_id, raw)
+                else:
+                    _LOGGER.info("[%s] Returning schedulers from options: %s", self.config.entry_id, cleaned)
                 return cleaned
             if isinstance(raw, str):
+                _LOGGER.info("[%s] Returning single scheduler from options: [%s]", self.config.entry_id, raw)
                 return [raw]
-            _LOGGER.warning("Unexpected type for options[%s]: %r", CONF_SCHEDULER_ENTITIES, type(raw))
+            _LOGGER.warning("[%s] Unexpected type for options[%s]: %r", self.config.entry_id, CONF_SCHEDULER_ENTITIES, type(raw))
             return []
+        
         # Fallback to data stored at initial config
         raw = self.config.data.get(CONF_SCHEDULER_ENTITIES, [])
+        _LOGGER.info("[%s] Using schedulers from DATA (fallback): %s (type: %s)", self.config.entry_id, raw, type(raw).__name__)
         if isinstance(raw, list):
-            return [r for r in raw if isinstance(r, str) and r]
+            result = [r for r in raw if isinstance(r, str) and r]
+            _LOGGER.info("[%s] Returning schedulers from data: %s", self.config.entry_id, result)
+            return result
         if isinstance(raw, str):
+            _LOGGER.info("[%s] Returning single scheduler from data: [%s]", self.config.entry_id, raw)
             return [raw]
         if raw:
-            _LOGGER.warning("Unexpected type for data[%s]: %r", CONF_SCHEDULER_ENTITIES, type(raw))
+            _LOGGER.warning("[%s] Unexpected type for data[%s]: %r", self.config.entry_id, CONF_SCHEDULER_ENTITIES, type(raw))
+        _LOGGER.warning("[%s] No schedulers found! Returning empty list", self.config.entry_id)
         return []
 
     def get_humidity_in_entity(self) -> str | None:
@@ -282,11 +299,15 @@ class IntelligentHeatingPilotCoordinator:
         Chooses the earliest upcoming valid (time + temperature) across all schedulers.
         """
         scheduler_entities = self.get_scheduler_entities()
+        _LOGGER.info("[%s] === GET_NEXT_SCHEDULER_EVENT ===", self.config.entry_id)
+        _LOGGER.info("[%s] Configured scheduler entities to scan: %s", self.config.entry_id, scheduler_entities)
+        
         chosen_time: datetime | None = None
         chosen_temp: float | None = None
         chosen_entity: str | None = None
 
         for entity_id in scheduler_entities:
+            _LOGGER.debug("[%s] Scanning scheduler: %s", self.config.entry_id, entity_id)
             state = self.hass.states.get(entity_id)
             if not state:
                 continue
@@ -330,14 +351,15 @@ class IntelligentHeatingPilotCoordinator:
                     chosen_entity = entity_id
 
         if chosen_time:
-            _LOGGER.debug(
-                "Selected next scheduler event: %s at %s target %.2f°C",
+            _LOGGER.info(
+                "[%s] ✓ Selected next scheduler event: %s at %s target %.2f°C",
+                self.config.entry_id,
                 chosen_entity,
                 chosen_time,
                 chosen_temp,
             )
         else:
-            _LOGGER.debug("No valid scheduler event found among %s", scheduler_entities)
+            _LOGGER.warning("[%s] ✗ No valid scheduler event found among %s", self.config.entry_id, scheduler_entities)
         return chosen_time, chosen_temp, chosen_entity
 
     def get_vtherm_entity(self) -> str:
@@ -1023,5 +1045,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Update options."""
+    """Update options and force immediate refresh."""
+    _LOGGER.info("[%s] Options updated, reloading integration and forcing update", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
+    
+    # After reload, force an immediate update to refresh sensors with new config
+    coordinator = hass.data[DOMAIN].get(entry.entry_id)
+    if coordinator:
+        _LOGGER.info("[%s] Forcing immediate coordinator update after options change", entry.entry_id)
+        await coordinator.async_update()
