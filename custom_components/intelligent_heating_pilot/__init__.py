@@ -83,12 +83,33 @@ class IntelligentHeatingPilotCoordinator:
         )
 
     def get_scheduler_entities(self) -> list[str]:
-        """Get scheduler entity IDs (options override data)."""
-        return (
-            self.config.options.get(CONF_SCHEDULER_ENTITIES)
-            if isinstance(self.config.options, dict) and self.config.options.get(CONF_SCHEDULER_ENTITIES) is not None
-            else self.config.data
-        )
+
+        """Get scheduler entity IDs (options override data) with robust type handling.
+        Older entries may have a single string. Options flow returns a list of raw entity_ids.
+        Previously a bug treated the list itself as a dict and called .get() on it, breaking retrieval
+        and causing anticipation to never calculate (no scheduler found)."""
+        # If options define the schedulers, prefer them
+        if isinstance(self.config.options, dict) and self.config.options.get(CONF_SCHEDULER_ENTITIES) is not None:
+            raw = self.config.options.get(CONF_SCHEDULER_ENTITIES)
+            if isinstance(raw, list):
+                # Filter only plausible entity_id strings
+                cleaned = [r for r in raw if isinstance(r, str) and r]
+                if not cleaned:
+                    _LOGGER.debug("Options scheduler list empty after cleaning: %s", raw)
+                return cleaned
+            if isinstance(raw, str):
+                return [raw]
+            _LOGGER.warning("Unexpected type for options[%s]: %r", CONF_SCHEDULER_ENTITIES, type(raw))
+            return []
+        # Fallback to data stored at initial config
+        raw = self.config.data.get(CONF_SCHEDULER_ENTITIES, [])
+        if isinstance(raw, list):
+            return [r for r in raw if isinstance(r, str) and r]
+        if isinstance(raw, str):
+            return [raw]
+        if raw:
+            _LOGGER.warning("Unexpected type for data[%s]: %r", CONF_SCHEDULER_ENTITIES, type(raw))
+        return []
 
     def get_humidity_in_entity(self) -> str | None:
         """Get indoor humidity entity ID (options override data)."""
@@ -252,80 +273,13 @@ class IntelligentHeatingPilotCoordinator:
                 pass
         return None
 
-    def get_next_scheduler_event(self) -> tuple[datetime | None, float | None, str | None]:
-        """
-        Get next scheduler event details.
-        
-        Returns:
-            Tuple of (next_schedule_time, next_target_temp, scheduler_entity_id)
-        """
-        scheduler_entities = self.get_scheduler_entities()
-        chosen_time: datetime | None = None
-        chosen_temp: float | None = None
-        chosen_scheduler: str | None = None
-
-        for entity_id in scheduler_entities:
-            state = self.hass.states.get(entity_id)
-            if not state:
-                continue
-
-            attrs = state.attributes
-            _LOGGER.debug("Scheduler %s attributes: %s", entity_id, attrs)
-
-            # Primary source: next_trigger + next_slot + actions
-            next_trigger_raw = attrs.get("next_trigger")
-            next_slot = attrs.get("next_slot")
-            actions = attrs.get("actions")
-
-            next_time: datetime | None = None
-            if next_trigger_raw:
-                # Use Home Assistant datetime parser first (preserves timezone)
-                next_time = dt_util.parse_datetime(str(next_trigger_raw))
-                if next_time is None:
-                    try:
-                        parsed = datetime.fromisoformat(str(next_trigger_raw))
-                        # Ensure timezone is set to local if naive
-                        next_time = dt_util.as_local(parsed) if parsed.tzinfo is None else parsed
-                    except ValueError:
-                        _LOGGER.warning("Unable to parse next_trigger '%s' for %s", next_trigger_raw, entity_id)
-
-            target_temp: float | None = None
-            if isinstance(actions, list) and isinstance(next_slot, int) and 0 <= next_slot < len(actions):
-                action = actions[next_slot]
-                target_temp = self._extract_target_temp_from_action(action)
-            else:
-                # Fallback: some versions expose next_entries list
-                next_entries = attrs.get("next_entries")
-                if isinstance(next_entries, list) and next_entries:
-                    entry = next_entries[0]
-                    entry_actions = entry.get("actions", [])
-                    if isinstance(entry_actions, list) and entry_actions:
-                        target_temp = self._extract_target_temp_from_action(entry_actions[0])
-                    entry_time = entry.get("time") or entry.get("start") or entry.get("trigger_time")
-                    if entry_time and not next_time:
-                        parsed = dt_util.parse_datetime(str(entry_time))
-                        if parsed is None:
-                            parsed = self._safe_fromiso(str(entry_time))
-                            # Ensure local timezone if naive
-                            if parsed and parsed.tzinfo is None:
-                                parsed = dt_util.as_local(parsed)
-                        next_time = parsed
-
-            if next_time and target_temp is not None:
-                # Choose earliest upcoming among all scheduler entities
-                if not chosen_time or next_time < chosen_time:
-                    chosen_time = next_time
-                    chosen_temp = target_temp
-                    chosen_scheduler = entity_id
-
-        if chosen_time:
-            _LOGGER.debug(
-                "Selected next scheduler event: %s at %s target %.2f°C", chosen_scheduler, chosen_time, chosen_temp
-            )
-        else:
-            _LOGGER.debug("No valid scheduler event found among %s", scheduler_entities)
-
-        return chosen_time, chosen_temp, chosen_scheduler
+    def get_vtherm_entity(self) -> str:
+        """Get VTherm entity ID (options override data)."""
+        return (
+            self.config.options.get(CONF_VTHERM_ENTITY)
+            if isinstance(self.config.options, dict) and self.config.options.get(CONF_VTHERM_ENTITY) is not None
+            else self.config.data.get(CONF_VTHERM_ENTITY)
+        )
 
     def _safe_fromiso(self, value: str) -> datetime | None:
         try:
