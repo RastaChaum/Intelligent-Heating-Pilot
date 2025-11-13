@@ -273,6 +273,73 @@ class IntelligentHeatingPilotCoordinator:
                 pass
         return None
 
+    def get_next_scheduler_event(self) -> tuple[datetime | None, float | None, str | None]:
+        """Return (next_time, target_temp, scheduler_entity) among configured schedulers.
+
+        Parses different attribute layouts:
+        - Standard: next_trigger (ISO datetime), next_slot (index), actions (list of dict)
+        - Fallback: next_entries[0] with time/start/trigger_time and actions
+        Chooses the earliest upcoming valid (time + temperature) across all schedulers.
+        """
+        scheduler_entities = self.get_scheduler_entities()
+        chosen_time: datetime | None = None
+        chosen_temp: float | None = None
+        chosen_entity: str | None = None
+
+        for entity_id in scheduler_entities:
+            state = self.hass.states.get(entity_id)
+            if not state:
+                continue
+            attrs = state.attributes
+            next_trigger_raw = attrs.get("next_trigger")
+            next_slot = attrs.get("next_slot")
+            actions = attrs.get("actions")
+            next_time: datetime | None = None
+            if next_trigger_raw:
+                # Robust parse keeping timezone if present
+                parsed = dt_util.parse_datetime(str(next_trigger_raw))
+                if parsed is None:
+                    parsed = self._safe_fromiso(str(next_trigger_raw))
+                if parsed and parsed.tzinfo is None:
+                    parsed = dt_util.as_local(parsed)
+                next_time = parsed
+
+            target_temp: float | None = None
+            if isinstance(actions, list) and isinstance(next_slot, int) and 0 <= next_slot < len(actions):
+                action = actions[next_slot]
+                target_temp = self._extract_target_temp_from_action(action)
+            else:
+                # Fallback: next_entries
+                next_entries = attrs.get("next_entries")
+                if isinstance(next_entries, list) and next_entries:
+                    entry = next_entries[0]
+                    entry_actions = entry.get("actions", [])
+                    if isinstance(entry_actions, list) and entry_actions:
+                        target_temp = self._extract_target_temp_from_action(entry_actions[0])
+                    entry_time = entry.get("time") or entry.get("start") or entry.get("trigger_time")
+                    if entry_time and not next_time:
+                        parsed = dt_util.parse_datetime(str(entry_time)) or self._safe_fromiso(str(entry_time))
+                        if parsed and parsed.tzinfo is None:
+                            parsed = dt_util.as_local(parsed)
+                        next_time = parsed
+
+            if next_time and target_temp is not None:
+                if not chosen_time or next_time < chosen_time:
+                    chosen_time = next_time
+                    chosen_temp = target_temp
+                    chosen_entity = entity_id
+
+        if chosen_time:
+            _LOGGER.debug(
+                "Selected next scheduler event: %s at %s target %.2f°C",
+                chosen_entity,
+                chosen_time,
+                chosen_temp,
+            )
+        else:
+            _LOGGER.debug("No valid scheduler event found among %s", scheduler_entities)
+        return chosen_time, chosen_temp, chosen_entity
+
     def get_vtherm_entity(self) -> str:
         """Get VTherm entity ID (options override data)."""
         return (
