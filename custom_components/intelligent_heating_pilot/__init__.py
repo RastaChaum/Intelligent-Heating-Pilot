@@ -75,25 +75,46 @@ class IntelligentHeatingPilotCoordinator:
         await self._store.async_save(self._data)
 
     def get_vtherm_entity(self) -> str:
-        """Get VTherm entity ID."""
-        return self.entry.data.get(CONF_VTHERM_ENTITY)
+        """Get VTherm entity ID (options override data)."""
+        return (
+            self.entry.options.get(CONF_VTHERM_ENTITY)
+            if isinstance(self.entry.options, dict) and self.entry.options.get(CONF_VTHERM_ENTITY) is not None
+            else self.entry.data.get(CONF_VTHERM_ENTITY)
+        )
 
     def get_scheduler_entities(self) -> list[str]:
-        """Get scheduler entity IDs."""
-        entities = self.entry.data.get(CONF_SCHEDULER_ENTITIES, [])
+        """Get scheduler entity IDs (options override data)."""
+        source = (
+            self.entry.options
+            if isinstance(self.entry.options, dict) and self.entry.options.get(CONF_SCHEDULER_ENTITIES) is not None
+            else self.entry.data
+        )
+        entities = source.get(CONF_SCHEDULER_ENTITIES, [])
         return entities if isinstance(entities, list) else [entities]
 
     def get_humidity_in_entity(self) -> str | None:
-        """Get indoor humidity entity ID."""
-        return self.entry.data.get(CONF_HUMIDITY_IN_ENTITY)
+        """Get indoor humidity entity ID (options override data)."""
+        return (
+            self.entry.options.get(CONF_HUMIDITY_IN_ENTITY)
+            if isinstance(self.entry.options, dict) and self.entry.options.get(CONF_HUMIDITY_IN_ENTITY) is not None
+            else self.entry.data.get(CONF_HUMIDITY_IN_ENTITY)
+        )
 
     def get_humidity_out_entity(self) -> str | None:
-        """Get outdoor humidity entity ID."""
-        return self.entry.data.get(CONF_HUMIDITY_OUT_ENTITY)
+        """Get outdoor humidity entity ID (options override data)."""
+        return (
+            self.entry.options.get(CONF_HUMIDITY_OUT_ENTITY)
+            if isinstance(self.entry.options, dict) and self.entry.options.get(CONF_HUMIDITY_OUT_ENTITY) is not None
+            else self.entry.data.get(CONF_HUMIDITY_OUT_ENTITY)
+        )
 
     def get_cloud_cover_entity(self) -> str | None:
-        """Get cloud cover entity ID."""
-        return self.entry.data.get(CONF_CLOUD_COVER_ENTITY)
+        """Get cloud cover entity ID (options override data)."""
+        return (
+            self.entry.options.get(CONF_CLOUD_COVER_ENTITY)
+            if isinstance(self.entry.options, dict) and self.entry.options.get(CONF_CLOUD_COVER_ENTITY) is not None
+            else self.entry.data.get(CONF_CLOUD_COVER_ENTITY)
+        )
 
     def get_vtherm_slope(self) -> float:
         """Get current slope from VTherm entity and update learning history."""

@@ -130,15 +130,15 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Update the config entry with new data
+            # Update the config entry OPTIONS with new data (override data at runtime)
             self.hass.config_entries.async_update_entry(
                 self.config_entry,
-                data={**self.config_entry.data, **user_input},
+                options={**self.config_entry.options, **user_input},
             )
             return self.async_create_entry(title="", data={})
 
-        # Get current values from config entry
-        current_data = self.config_entry.data
+        # Get current values from config entry (options override data)
+        current_data = {**self.config_entry.data, **self.config_entry.options}
 
         # Get all scheduler entities with their friendly names
         scheduler_options = []
