@@ -9,7 +9,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED, EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.event import async_track_point_in_time, async_track_state_change_event
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -899,7 +899,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Store coordinator
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Set up state change listeners
+    # Set up state change listeners (filtered per entry)
     @callback
     def state_changed_listener(event: Event):
         """Handle state changes of monitored entities."""
@@ -952,9 +952,52 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("Entity %s changed, triggering update", entity_id)
             hass.async_create_task(coordinator.async_update())
 
-    # Register state change listener
-    unsub = hass.bus.async_listen(EVENT_STATE_CHANGED, state_changed_listener)
-    coordinator._listeners.append(unsub)
+    # Replace global EVENT_STATE_CHANGED listen with filtered tracking limited to this entry's entities
+    tracked_entities: list[str] = []
+    vtherm = coordinator.get_vtherm_entity()
+    if vtherm:
+        tracked_entities.append(vtherm)
+    tracked_entities.extend(coordinator.get_scheduler_entities())
+    for extra in [coordinator.get_humidity_in_entity(), coordinator.get_humidity_out_entity(), coordinator.get_cloud_cover_entity()]:
+        if extra:
+            tracked_entities.append(extra)
+
+    @callback
+    def _filtered_state_change(event: Event):
+        entity_id = event.data.get("entity_id")
+        if entity_id not in tracked_entities:
+            return
+        # Dedicated logic for VTherm attribute-based triggering
+        if vtherm and entity_id == vtherm:
+            old_state = event.data.get("old_state")
+            new_state = event.data.get("new_state")
+            if old_state and new_state:
+                old_ema = old_state.attributes.get(VTHERM_ATTR_CURRENT_TEMPERATURE)
+                new_ema = new_state.attributes.get(VTHERM_ATTR_CURRENT_TEMPERATURE)
+                old_slope = old_state.attributes.get(VTHERM_ATTR_SLOPE)
+                new_slope = new_state.attributes.get(VTHERM_ATTR_SLOPE)
+                ema_changed = old_ema != new_ema
+                slope_changed = old_slope != new_slope
+                if ema_changed or slope_changed:
+                    if coordinator._ignore_vtherm_changes_until and dt_util.now() < coordinator._ignore_vtherm_changes_until:
+                        _LOGGER.debug("[%s] Ignoring self-induced VTherm change", entry.entry_id)
+                        return
+                    if ema_changed:
+                        _LOGGER.debug("[%s] VTherm ema_temp %s -> %s", entry.entry_id, old_ema, new_ema)
+                    if slope_changed:
+                        _LOGGER.debug("[%s] VTherm slope %s -> %s", entry.entry_id, old_slope, new_slope)
+                    hass.async_create_task(coordinator.async_update())
+                return
+        # Any change on other tracked entities triggers update
+        _LOGGER.debug("[%s] Tracked entity %s changed -> update", entry.entry_id, entity_id)
+        hass.async_create_task(coordinator.async_update())
+
+    if tracked_entities:
+        unsub = async_track_state_change_event(hass, tracked_entities, _filtered_state_change)
+        coordinator._listeners.append(unsub)
+        _LOGGER.debug("[%s] Tracking entities: %s", entry.entry_id, tracked_entities)
+    else:
+        _LOGGER.warning("[%s] No entities to track", entry.entry_id)
 
     # Do initial update
     await coordinator.async_update()
