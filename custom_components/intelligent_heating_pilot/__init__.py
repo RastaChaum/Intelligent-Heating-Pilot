@@ -89,50 +89,34 @@ class IntelligentHeatingPilotCoordinator:
         Previously a bug treated the list itself as a dict and called .get() on it, breaking retrieval
         and causing anticipation to never calculate (no scheduler found)."""
         
-        # DEBUG: Log entry_id and full config state
-        _LOGGER.info("[%s] === SCHEDULER GETTER DEBUG ===", self.config.entry_id)
-        _LOGGER.info("[%s] Entry title: %s", self.config.entry_id, self.config.title)
-        _LOGGER.info("[%s] config.data content: %s", self.config.entry_id, dict(self.config.data))
-        _LOGGER.info("[%s] config.options content: %s", self.config.entry_id, dict(self.config.options) if self.config.options else {})
-        
-        # If options define the schedulers, prefer them
         # Check both that options exists AND that it has schedulers (could be empty list)
         has_options = isinstance(self.config.options, dict) or hasattr(self.config.options, 'get')
         options_schedulers = self.config.options.get(CONF_SCHEDULER_ENTITIES) if has_options else None
         
-        _LOGGER.info("[%s] 🔍 DIAGNOSTIC: has_options=%s, options_schedulers=%s", self.config.entry_id, has_options, options_schedulers)
-        
         if has_options and options_schedulers is not None:
             raw = options_schedulers
-            _LOGGER.info("[%s] Found schedulers in OPTIONS: %s (type: %s)", self.config.entry_id, raw, type(raw).__name__)
+            _LOGGER.debug("[%s] Using schedulers from OPTIONS: %s", self.config.entry_id, raw)
             if isinstance(raw, list):
                 # Filter only plausible entity_id strings
                 cleaned = [r for r in raw if isinstance(r, str) and r]
                 if not cleaned:
                     _LOGGER.warning("[%s] Options scheduler list empty after cleaning: %s", self.config.entry_id, raw)
-                else:
-                    _LOGGER.info("[%s] ✅ Returning schedulers from OPTIONS: %s", self.config.entry_id, cleaned)
                 return cleaned
             if isinstance(raw, str):
-                _LOGGER.info("[%s] ✅ Returning single scheduler from OPTIONS: [%s]", self.config.entry_id, raw)
                 return [raw]
             _LOGGER.warning("[%s] Unexpected type for options[%s]: %r", self.config.entry_id, CONF_SCHEDULER_ENTITIES, type(raw))
             return []
         
-        # Fallback to data stored at initial config (old scheduler, should not be used if options exist!)
+        # Fallback to data stored at initial config (only for backward compatibility)
         raw = self.config.data.get(CONF_SCHEDULER_ENTITIES, [])
-        _LOGGER.warning("[%s] ⚠️ Using schedulers from DATA (fallback - options were empty!): %s (type: %s)", 
-                       self.config.entry_id, raw, type(raw).__name__)
+        _LOGGER.debug("[%s] Using schedulers from DATA (fallback): %s", self.config.entry_id, raw)
         if isinstance(raw, list):
-            result = [r for r in raw if isinstance(r, str) and r]
-            _LOGGER.warning("[%s] ⚠️ Returning STALE schedulers from data: %s", self.config.entry_id, result)
-            return result
+            return [r for r in raw if isinstance(r, str) and r]
         if isinstance(raw, str):
-            _LOGGER.warning("[%s] ⚠️ Returning STALE single scheduler from data: [%s]", self.config.entry_id, raw)
             return [raw]
         if raw:
             _LOGGER.warning("[%s] Unexpected type for data[%s]: %r", self.config.entry_id, CONF_SCHEDULER_ENTITIES, type(raw))
-        _LOGGER.error("[%s] ❌ No schedulers found in options OR data! Returning empty list", self.config.entry_id)
+        _LOGGER.error("[%s] No schedulers configured!", self.config.entry_id)
         return []
 
     def get_humidity_in_entity(self) -> str | None:
@@ -306,26 +290,21 @@ class IntelligentHeatingPilotCoordinator:
         Chooses the earliest upcoming valid (time + temperature) across all schedulers.
         """
         scheduler_entities = self.get_scheduler_entities()
-        _LOGGER.info("[%s] === GET_NEXT_SCHEDULER_EVENT ===", self.config.entry_id)
-        _LOGGER.info("[%s] Configured scheduler entities to scan: %s", self.config.entry_id, scheduler_entities)
+        _LOGGER.debug("[%s] Scanning scheduler entities: %s", self.config.entry_id, scheduler_entities)
         
         chosen_time: datetime | None = None
         chosen_temp: float | None = None
         chosen_entity: str | None = None
 
         for entity_id in scheduler_entities:
-            _LOGGER.info("[%s] 🔍 Scanning scheduler: %s", self.config.entry_id, entity_id)
             state = self.hass.states.get(entity_id)
             if not state:
-                _LOGGER.warning("[%s]   ✗ Scheduler entity not found in hass.states", self.config.entry_id)
+                _LOGGER.warning("[%s] Scheduler %s not found", self.config.entry_id, entity_id)
                 continue
             attrs = state.attributes
             next_trigger_raw = attrs.get("next_trigger")
             next_slot = attrs.get("next_slot")
             actions = attrs.get("actions")
-            
-            _LOGGER.info("[%s]   next_trigger=%s, next_slot=%s, actions count=%s", 
-                        self.config.entry_id, next_trigger_raw, next_slot, len(actions) if isinstance(actions, list) else "N/A")
             
             next_time: datetime | None = None
             if next_trigger_raw:
@@ -336,14 +315,11 @@ class IntelligentHeatingPilotCoordinator:
                 if parsed and parsed.tzinfo is None:
                     parsed = dt_util.as_local(parsed)
                 next_time = parsed
-                _LOGGER.info("[%s]   Parsed next_time: %s", self.config.entry_id, next_time)
 
             target_temp: float | None = None
             if isinstance(actions, list) and isinstance(next_slot, int) and 0 <= next_slot < len(actions):
                 action = actions[next_slot]
-                _LOGGER.info("[%s]   Extracting temp from action[%d]: %s", self.config.entry_id, next_slot, action)
                 target_temp = self._extract_target_temp_from_action(action)
-                _LOGGER.info("[%s]   Extracted target_temp: %s", self.config.entry_id, target_temp)
             else:
                 # Fallback: next_entries
                 next_entries = attrs.get("next_entries")
@@ -360,24 +336,23 @@ class IntelligentHeatingPilotCoordinator:
                         next_time = parsed
 
             if next_time and target_temp is not None:
-                _LOGGER.info("[%s]   ✓ Valid event: time=%s temp=%.2f°C", self.config.entry_id, next_time, target_temp)
                 if not chosen_time or next_time < chosen_time:
                     chosen_time = next_time
                     chosen_temp = target_temp
                     chosen_entity = entity_id
             else:
-                _LOGGER.warning("[%s]   ✗ Skipped: time=%s temp=%s", self.config.entry_id, next_time, target_temp)
+                _LOGGER.debug("[%s] Skipped %s: time=%s temp=%s", self.config.entry_id, entity_id, next_time, target_temp)
 
         if chosen_time:
             _LOGGER.info(
-                "[%s] ✓ Selected next scheduler event: %s at %s target %.2f°C",
+                "[%s] Next event: %s at %s (%.1f°C)",
                 self.config.entry_id,
                 chosen_entity,
-                chosen_time,
+                chosen_time.strftime("%H:%M"),
                 chosen_temp,
             )
         else:
-            _LOGGER.warning("[%s] ✗ No valid scheduler event found among %s", self.config.entry_id, scheduler_entities)
+            _LOGGER.warning("[%s] No valid scheduler event found", self.config.entry_id)
         return chosen_time, chosen_temp, chosen_entity
 
     def get_vtherm_entity(self) -> str:
@@ -402,39 +377,30 @@ class IntelligentHeatingPilotCoordinator:
         - climate.set_preset_mode {preset_mode: name} -> mapped to a temperature using VTherm attributes.
         """
         if not isinstance(action, dict):
-            _LOGGER.debug("[%s] _extract: action not a dict: %s", self.config.entry_id, type(action))
             return None
         service = action.get("service") or action.get("service_call")
         data = action.get("data") or action.get("service_data") or {}
-        
-        _LOGGER.debug("[%s] _extract: service=%s, data=%s", self.config.entry_id, service, data)
 
         # Direct temperature
         if service == "climate.set_temperature":
             temp = data.get("temperature")
             try:
-                result = float(temp) if temp is not None else None
-                _LOGGER.debug("[%s] _extract: direct temp=%s", self.config.entry_id, result)
-                return result
+                return float(temp) if temp is not None else None
             except (ValueError, TypeError):
-                _LOGGER.warning("[%s] _extract: failed to parse direct temp: %s", self.config.entry_id, temp)
+                _LOGGER.warning("[%s] Invalid temperature in action: %s", self.config.entry_id, temp)
                 return None
 
         # Preset mode mapping
         if service == "climate.set_preset_mode":
             preset = data.get("preset_mode") or data.get("preset")
-            _LOGGER.info("[%s] _extract: preset_mode=%s", self.config.entry_id, preset)
             
             if preset:
                 vtherm_entity_id = self.get_vtherm_entity()
-                _LOGGER.info("[%s] _extract: looking up VTherm: %s", self.config.entry_id, vtherm_entity_id)
                 vtherm_state = self.hass.states.get(vtherm_entity_id)
                 
                 if not vtherm_state:
-                    _LOGGER.warning("[%s] _extract: VTherm state not found for %s", self.config.entry_id, vtherm_entity_id)
+                    _LOGGER.warning("[%s] VTherm not found: %s", self.config.entry_id, vtherm_entity_id)
                     return None
-                
-                _LOGGER.info("[%s] _extract: VTherm attributes keys: %s", self.config.entry_id, list(vtherm_state.attributes.keys()))
                 
                 # 1. Try explicit attribute naming convention: <preset>_temperature or <preset>_temp
                 for key, val in vtherm_state.attributes.items():
@@ -442,39 +408,28 @@ class IntelligentHeatingPilotCoordinator:
                         continue
                     if preset in key and ("temp" in key or "temperature" in key):
                         try:
-                            result = float(val)
-                            _LOGGER.info("[%s] _extract: found via naming convention %s=%s -> %.2f°C", 
-                                       self.config.entry_id, key, val, result)
-                            return result
+                            return float(val)
                         except (ValueError, TypeError):
                             continue
                 
                 # 2. If current preset equals requested preset, use its current target temperature
                 current_preset = vtherm_state.attributes.get("preset_mode")
-                _LOGGER.debug("[%s] _extract: current_preset=%s, requested=%s", 
-                            self.config.entry_id, current_preset, preset)
-                
                 if current_preset == preset:
                     current_target = vtherm_state.attributes.get("temperature") or vtherm_state.attributes.get("target_temp")
                     try:
                         if current_target is not None:
-                            result = float(current_target)
-                            _LOGGER.info("[%s] _extract: found via current preset match: %.2f°C", 
-                                       self.config.entry_id, result)
-                            return result
+                            return float(current_target)
                     except (ValueError, TypeError):
                         pass
                 
                 # 3. Fallback: generic temperature attribute
                 fallback = vtherm_state.attributes.get("temperature") or vtherm_state.attributes.get("target_temp")
-                _LOGGER.warning("[%s] _extract: falling back to generic temp=%s", self.config.entry_id, fallback)
                 try:
                     return float(fallback) if fallback is not None else None
                 except (ValueError, TypeError):
-                    _LOGGER.warning("[%s] _extract: failed to parse fallback temp", self.config.entry_id)
+                    _LOGGER.warning("[%s] Cannot extract temp for preset '%s'", self.config.entry_id, preset)
                     return None
         
-        _LOGGER.warning("[%s] _extract: service not recognized: %s", self.config.entry_id, service)
         return None
 
     async def async_calculate_anticipation(
