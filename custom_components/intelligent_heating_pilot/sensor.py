@@ -68,7 +68,11 @@ class IntelligentHeatingPilotSensorBase(SensorEntity):
         @callback
         def handle_anticipation_event(event):
             """Handle anticipation calculated event."""
-            self._handle_anticipation_result(event.data)
+            data = event.data or {}
+            # Filter events to only those coming from our own config entry
+            if data.get("entry_id") != self._config_entry.entry_id:
+                return
+            self._handle_anticipation_result(data)
             self.async_write_ha_state()
 
         self.async_on_remove(

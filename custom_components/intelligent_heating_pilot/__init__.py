@@ -836,7 +836,7 @@ class IntelligentHeatingPilotCoordinator:
                         _LOGGER.warning("Forced scheduler trigger failed: %s", err, exc_info=True)
 
         # Build payload for sensors, always emitting at least next schedule info
-        payload: dict[str, Any] = {}
+        payload: dict[str, Any] = {"entry_id": self.entry.entry_id}
         if next_time is not None:
             payload[ATTR_NEXT_SCHEDULE_TIME] = next_time.isoformat()
         if next_temp is not None:
