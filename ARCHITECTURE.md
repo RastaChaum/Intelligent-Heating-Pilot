@@ -88,7 +88,7 @@ Gère la configuration initiale et les modifications post-installation.
 
 Trois capteurs exposent les données calculées :
 
-#### a) `sensor.smart_starter_vtherm_anticipated_start_time`
+#### a) `sensor.intelligent_heating_pilot_anticipated_start_time`
 - **Type** : Timestamp
 - **Description** : Heure à laquelle le chauffage sera démarré en anticipation
 - **Attributs** :
@@ -99,7 +99,7 @@ Trois capteurs exposent les données calculées :
   - `scheduler_entity` : Entité scheduler concernée
   - `learned_heating_slope` : LHS utilisé pour le calcul
 
-#### b) `sensor.smart_starter_vtherm_learned_heating_slope`
+#### b) `sensor.intelligent_heating_pilot_learned_heating_slope`
 - **Type** : Mesure (°C/h)
 - **Description** : Pente de chauffage apprise (LHS)
 - **Attributs** :
@@ -107,7 +107,7 @@ Trois capteurs exposent les données calculées :
   - `sample_count` : Nombre d'échantillons collectés
   - `recent_slopes` : 10 derniers slopes mesurés
 
-#### c) `sensor.smart_starter_vtherm_next_schedule_time`
+#### c) `sensor.intelligent_heating_pilot_next_schedule_time`
 - **Type** : Timestamp
 - **Description** : Heure du prochain événement scheduler
 - **Attributs** :
@@ -191,7 +191,7 @@ await hass.services.async_call(
 
 ### Fichier de Stockage
 
-Emplacement : `.storage/smart_starter_vtherm_storage_{entry_id}`
+Emplacement : `.storage/intelligent_heating_pilot_storage_{entry_id}`
 
 Structure :
 ```json
@@ -234,7 +234,7 @@ Cela déclenche immédiatement l'action programmée (changement de consigne du V
 
 ## Événements Home Assistant
 
-### `smart_starter_vtherm_anticipation_calculated`
+### `intelligent_heating_pilot_anticipation_calculated`
 
 Déclenché après chaque calcul d'anticipation réussi.
 
@@ -294,7 +294,7 @@ Activer les logs détaillés dans `configuration.yaml` :
 logger:
   default: info
   logs:
-    custom_components.smart_starter_vtherm: debug
+    custom_components.intelligent_heating_pilot: debug
 ```
 
 Les logs incluent :

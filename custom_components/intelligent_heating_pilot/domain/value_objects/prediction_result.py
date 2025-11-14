@@ -36,7 +36,8 @@ class PredictionResult:
                 f"Confidence must be between 0 and 1, got {self.confidence_level}"
             )
         
-        if self.learned_heating_slope <= 0:
+        # Allow zero slope only when confidence is also zero (invalid prediction)
+        if self.learned_heating_slope <= 0 and self.confidence_level > 0:
             raise ValueError(
-                f"Heating slope must be positive, got {self.learned_heating_slope}"
+                f"Heating slope must be positive when confidence > 0, got {self.learned_heating_slope}"
             )

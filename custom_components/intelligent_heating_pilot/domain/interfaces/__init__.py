@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from .scheduler_reader import ISchedulerReader
 from .model_storage import IModelStorage
-from .climate_commander import IClimateCommander
+from .scheduler_commander import ISchedulerCommander
 
 __all__ = [
     "ISchedulerReader",
     "IModelStorage",
-    "IClimateCommander",
+    "ISchedulerCommander",
 ]

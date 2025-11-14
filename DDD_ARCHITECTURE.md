@@ -17,7 +17,7 @@ Domain-Driven Design provides several key benefits for this project:
 ## Layer Architecture
 
 ```
-custom_components/smart_starter_vtherm/
+custom_components/intelligent_heating_pilot/
 ├── domain/                      # Pure business logic (NO Home Assistant)
 │   ├── value_objects/          # Immutable data carriers
 │   │   ├── environment_state.py

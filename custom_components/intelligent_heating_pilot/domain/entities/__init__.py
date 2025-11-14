@@ -1,8 +1,8 @@
 """Domain entities - objects with identity and lifecycle."""
 from __future__ import annotations
 
-from .pilot_controller import PilotController
+from .heating_pilot import HeatingPilot
 
 __all__ = [
-    "PilotController",
+    "HeatingPilot",
 ]

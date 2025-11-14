@@ -40,7 +40,7 @@ This project follows **Domain-Driven Design (DDD)** principles with strict separ
 
 ### Manual Installation
 
-1. Copy the `custom_components/smart_starter_vtherm` folder into your Home Assistant `custom_components` folder.
+1. Copy the `custom_components/intelligent_heating_pilot` folder into your Home Assistant `custom_components` folder.
 2. Restart Home Assistant.
 
 ## ⚙️ Configuration
@@ -76,7 +76,7 @@ The integration will automatically reload and start monitoring the new entities.
 
 ## 📊 Usage
 
-### Service: `smart_starter_vtherm.calculate_start_time`
+### Service: `intelligent_heating_pilot.calculate_start_time`
 
 Calculates the optimal start time to reach the target temperature.
 
@@ -90,7 +90,7 @@ Calculates the optimal start time to reach the target temperature.
 **Service Call Example:**
 
 ```yaml
-service: smart_starter_vtherm.calculate_start_time
+service: intelligent_heating_pilot.calculate_start_time
 data:
   current_temp: 18.5
   target_temp: 21.0
@@ -115,7 +115,7 @@ automation:
       - platform: time_pattern
         minutes: "/5"  # Checks every 5 minutes
     action:
-      - service: smart_starter_vtherm.calculate_start_time
+      - service: intelligent_heating_pilot.calculate_start_time
         data:
           current_temp: "{{ states('sensor.salon_temperature') }}"
           target_temp: 21.0
@@ -123,7 +123,7 @@ automation:
           target_time: "{{ states('sensor.scheduler_next_time') }}"
           thermal_slope: 2.0
       - condition: template
-        value_template: "{{ states('sensor.smart_starter_vtherm_start_time') <= now() }}"
+        value_template: "{{ states('sensor.intelligent_heating_pilot_start_time') <= now() }}"
       - service: climate.set_hvac_mode
         target:
           entity_id: climate.versatile_thermostat
@@ -248,7 +248,7 @@ Example: 18°C → 20°C after 1h = 2.0°C/h slope.
 ### Sensors do not update
 
 - Verify the service has been called at least once.
-- Sensors are updated during the `smart_starter_vtherm_calculation_complete` event.
+- Sensors are updated during the `intelligent_heating_pilot_calculation_complete` event.
 
 ## 🤝 Contribution
 

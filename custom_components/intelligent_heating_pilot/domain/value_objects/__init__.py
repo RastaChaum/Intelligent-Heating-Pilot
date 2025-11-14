@@ -5,13 +5,13 @@ Value objects are immutable data carriers that represent concepts in the domain.
 from __future__ import annotations
 
 from .environment_state import EnvironmentState
-from .schedule_event import ScheduleEvent
+from .schedule_timeslot import ScheduleTimeslot
 from .prediction_result import PredictionResult
 from .heating_decision import HeatingDecision, HeatingAction
 
 __all__ = [
     "EnvironmentState",
-    "ScheduleEvent",
+    "ScheduleTimeslot",
     "PredictionResult",
     "HeatingDecision",
     "HeatingAction",

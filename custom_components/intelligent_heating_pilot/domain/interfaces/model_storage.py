@@ -12,8 +12,8 @@ class IModelStorage(ABC):
     """
     
     @abstractmethod
-    async def save_learned_slope(self, slope: float) -> None:
-        """Persist a newly learned heating slope.
+    async def save_slope_in_history(self, slope: float) -> None:
+        """Persist a newly learned heating slope in history.
         
         Args:
             slope: Heating slope value in °C/hour
@@ -21,7 +21,7 @@ class IModelStorage(ABC):
         pass
     
     @abstractmethod
-    async def get_learned_slopes(self) -> list[float]:
+    async def get_slopes_in_history(self) -> list[float]:
         """Retrieve historical learned heating slopes.
         
         Returns:
@@ -42,8 +42,8 @@ class IModelStorage(ABC):
         pass
     
     @abstractmethod
-    async def clear_learning_history(self) -> None:
-        """Clear all learned slope data.
+    async def clear_slope_history(self) -> None:
+        """Clear all learned slope data from history.
         
         This resets the learning system to its initial state.
         """

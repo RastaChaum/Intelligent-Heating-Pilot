@@ -1,6 +1,6 @@
 """Constants for the Smart Starter VTherm integration."""
 
-DOMAIN = "smart_starter_vtherm"
+DOMAIN = "intelligent_heating_pilot"
 
 # Configuration keys
 CONF_NAME = "name"
@@ -55,7 +55,7 @@ SCHEDULER_ATTR_NEXT_TIME = "next_time"
 SCHEDULER_ATTR_NEXT_ACTION = "next_action"
 
 # Storage
-STORAGE_KEY = "smart_starter_vtherm_storage"
+STORAGE_KEY = "intelligent_heating_pilot_storage"
 STORAGE_VERSION = 1
 
 # Default values for calculations

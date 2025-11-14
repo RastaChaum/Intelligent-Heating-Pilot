@@ -11,7 +11,7 @@ All development must follow **Domain-Driven Design** principles with strict sepa
 ### Layer Structure
 
 ```
-custom_components/smart_starter_vtherm/
+custom_components/intelligent_heating_pilot/
 ├── domain/              # Pure business logic (NO Home Assistant dependencies)
 │   ├── value_objects/   # Immutable data carriers
 │   ├── entities/        # Domain entities and aggregates
@@ -51,8 +51,9 @@ All new features must be developed using TDD:
 1. **Domain-first testing** - Write domain layer tests BEFORE implementation
 2. **Mock external dependencies** - Use mocks for all infrastructure interactions
 3. **Test against interfaces** - Unit tests should test against ABCs, not concrete implementations
-4. **High coverage** - Aim for >80% coverage of domain logic
-5. **Fast tests** - Domain tests should run in milliseconds (no HA, no I/O)
+4. **Centralized fixtures** - Use a centralized `fixtures.py` file for test data (DRY principle)
+5. **High coverage** - Aim for >80% coverage of domain logic
+6. **Fast tests** - Domain tests should run in milliseconds (no HA, no I/O)
 
 ### Testing Structure
 
@@ -315,8 +316,10 @@ Before submitting any AI-generated code, verify:
 - [ ] Value objects are immutable (`@dataclass(frozen=True)`)
 - [ ] All functions have complete type hints
 - [ ] Unit tests exist and use mocks for dependencies
+- [ ] Tests use centralized fixtures (DRY principle)
 - [ ] Tests can run without Home Assistant installed
 - [ ] Business logic is in domain, infrastructure is thin
+- [ ] No hardcoded fallback values - prefer WARNING logs and user alerts
 - [ ] Code follows PEP 8 and uses meaningful names
 - [ ] Docstrings explain the "why", not just the "what"
 

@@ -10,16 +10,28 @@ sys.path.insert(
     0,
     os.path.join(
         os.path.dirname(__file__),
-        "../../../custom_components/smart_starter_vtherm",
+        "../../../custom_components/intelligent_heating_pilot",
     ),
 )
 
 from domain.value_objects import (
     EnvironmentState,
-    ScheduleEvent,
+    ScheduleTimeslot,
     PredictionResult,
     HeatingDecision,
     HeatingAction,
+)
+
+# Import fixtures
+sys.path.insert(0, os.path.dirname(__file__))
+from fixtures import (
+    get_test_datetime,
+    TEST_CURRENT_TEMP,
+    TEST_TARGET_TEMP,
+    TEST_OUTDOOR_TEMP,
+    TEST_HUMIDITY,
+    TEST_LEARNED_SLOPE,
+    TEST_TIMESLOT_ID,
 )
 
 
@@ -28,17 +40,17 @@ class TestEnvironmentState(unittest.TestCase):
 
     def test_create_valid_environment_state(self):
         """Test creating a valid environment state."""
-        now = datetime.now()
+        now = get_test_datetime()
         state = EnvironmentState(
-            current_temp=20.0,
-            outdoor_temp=10.0,
-            humidity=50.0,
+            current_temp=TEST_CURRENT_TEMP,
+            outdoor_temp=TEST_OUTDOOR_TEMP,
+            humidity=TEST_HUMIDITY,
             timestamp=now,
         )
         
-        self.assertEqual(state.current_temp, 20.0)
-        self.assertEqual(state.outdoor_temp, 10.0)
-        self.assertEqual(state.humidity, 50.0)
+        self.assertEqual(state.current_temp, TEST_CURRENT_TEMP)
+        self.assertEqual(state.outdoor_temp, TEST_OUTDOOR_TEMP)
+        self.assertEqual(state.humidity, TEST_HUMIDITY)
         self.assertEqual(state.timestamp, now)
 
     def test_environment_state_with_optional_fields(self):
@@ -90,40 +102,40 @@ class TestEnvironmentState(unittest.TestCase):
             state.current_temp = 25.0  # Should fail
 
 
-class TestScheduleEvent(unittest.TestCase):
-    """Tests for ScheduleEvent value object."""
+class TestScheduleTimeslot(unittest.TestCase):
+    """Tests for ScheduleTimeslot value object."""
 
     def test_create_valid_schedule_event(self):
         """Test creating a valid schedule event."""
         target_time = datetime.now()
-        event = ScheduleEvent(
+        event = ScheduleTimeslot(
             target_time=target_time,
             target_temp=21.0,
-            event_id="test_event_1",
+            timeslot_id="test_event_1",
         )
         
         self.assertEqual(event.target_time, target_time)
         self.assertEqual(event.target_temp, 21.0)
-        self.assertEqual(event.event_id, "test_event_1")
+        self.assertEqual(event.timeslot_id, "test_event_1")
 
     def test_schedule_event_requires_id(self):
-        """Test that event_id cannot be empty."""
+        """Test that timeslot_id cannot be empty."""
         target_time = datetime.now()
         
         with self.assertRaises(ValueError):
-            ScheduleEvent(
+            ScheduleTimeslot(
                 target_time=target_time,
                 target_temp=21.0,
-                event_id="",  # Invalid
+                timeslot_id="",  # Invalid
             )
 
     def test_schedule_event_is_immutable(self):
-        """Test that ScheduleEvent is immutable."""
+        """Test that ScheduleTimeslot is immutable."""
         target_time = datetime.now()
-        event = ScheduleEvent(
+        event = ScheduleTimeslot(
             target_time=target_time,
             target_temp=21.0,
-            event_id="test_event_1",
+            timeslot_id="test_event_1",
         )
         
         with self.assertRaises(AttributeError):
