@@ -1,4 +1,11 @@
-"""Calculation logic for Intelligent Heating Pilot."""
+"""Calculation logic for Intelligent Heating Pilot.
+
+DEPRECATED: This module is being phased out in favor of the domain layer.
+The logic has been migrated to domain.services.prediction_service.PredictionService
+which does not depend on Home Assistant and is more testable.
+
+This file is kept for backward compatibility during migration.
+"""
 from datetime import datetime, timedelta
 from homeassistant.util import dt as dt_util
 import logging
@@ -7,7 +14,11 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class PreheatingCalculator:
-    """Calculate optimal preheating start time."""
+    """Calculate optimal preheating start time.
+    
+    DEPRECATED: Use domain.services.prediction_service.PredictionService instead.
+    This class will be removed in a future version.
+    """
 
     def __init__(self, thermal_slope: float = 2.0):
         """Initialize the calculator.
