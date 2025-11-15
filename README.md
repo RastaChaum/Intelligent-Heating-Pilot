@@ -271,6 +271,26 @@ Contributions are welcome! Feel free to:
 - Suggest new features
 - Submit pull requests
 
+### Development Guidelines
+
+This project follows **Domain-Driven Design (DDD)** and **Test-Driven Development (TDD)** principles:
+
+1. **Read the guidelines**: Start with [.github/copilot-instructions.md](.github/copilot-instructions.md)
+2. **Understand the architecture**: Review [DDD_ARCHITECTURE.md](DDD_ARCHITECTURE.md)
+3. **Write tests first**: Add unit tests before implementation
+4. **Keep domain pure**: No `homeassistant.*` imports in the `domain/` layer
+5. **Use interfaces**: All external interactions through ABCs
+
+### Running Tests
+
+Run domain layer unit tests (no Home Assistant required):
+
+```bash
+python -m unittest discover tests/unit/domain -v
+```
+
+All domain tests should pass and run in under 1 second.
+
 ## 📝 License
 
 This project is licensed under the MIT License.
