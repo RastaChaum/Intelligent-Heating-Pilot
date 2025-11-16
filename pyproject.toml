@@ -1,0 +1,54 @@
+[tool.poetry]
+name = "intelligent-heating-pilot"
+version = "0.1.0"
+description = "Intelligent Heating Pilot for Home Assistant"
+authors = ["RastaChaum"]
+license = "MIT"
+readme = "README.md"
+packages = []                                                # No packaging; HA loads custom_components directly
+
+# Python constraint (align with HA core supported version)
+[tool.poetry.dependencies]
+# Home Assistant 2025.9+ requires Python 3.13.2+
+python = ">=3.13.2,<3.14"
+
+# Runtime dependencies for standalone domain experimentation (keep minimal)
+# Domain code is pure standard library; no extra runtime deps required here.
+
+[tool.poetry.group.dev.dependencies]
+# Home Assistant for type checking & local import resolution (dev only!)
+homeassistant = ">=2025.9"
+pytest = "^8.2"
+pytest-asyncio = "^0.23"
+ruff = "^0.6.0"
+mypy = "^1.10"
+types-setuptools = "^68.0.0"
+
+[tool.poetry.group.test.dependencies]
+coverage = "^7.6"
+
+[tool.poetry.scripts]
+# Optional helper scripts
+ihp-tests = "pytest:main"
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E203", "E501"]
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+strict_optional = true
+warn_unused_ignores = true
+warn_return_any = true
+warn_redundant_casts = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-q"
+
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"
