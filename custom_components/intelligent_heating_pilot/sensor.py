@@ -38,8 +38,12 @@ async def async_setup_entry(
 
     sensors = [
         IntelligentHeatingPilotAnticipationTimeSensor(coordinator, config_entry, name),
-        IntelligentHeatingPilotLearnedSlopeSensor(coordinator, config_entry, name),
         IntelligentHeatingPilotNextScheduleSensor(coordinator, config_entry, name),
+        # HMS-only display companions
+        IntelligentHeatingPilotAnticipationTimeHmsSensor(coordinator, config_entry, name),
+        IntelligentHeatingPilotNextScheduleHmsSensor(coordinator, config_entry, name),
+        # Metrics
+        IntelligentHeatingPilotLearnedSlopeSensor(coordinator, config_entry, name),
         IntelligentHeatingPilotPredictionConfidenceSensor(coordinator, config_entry, name),  # Phase 4: New
     ]
 
@@ -91,9 +95,9 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
     """Sensor for anticipated start time."""
 
     _attr_name = "Anticipated Start Time"
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:clock-start"
-
+    _attr_device_class = SensorDeviceClass.TIMESTAMP  # type: ignore[assignment]
+    
     def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, name)
@@ -154,6 +158,52 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
                         self._anticipated_start, data.get("confidence_level", 0.0))
 
 
+class IntelligentHeatingPilotAnticipationTimeHmsSensor(IntelligentHeatingPilotSensorBase):
+    """Companion sensor showing only HH:MM:SS for anticipated start time."""
+
+    _attr_name = "Anticipated Start Time (HMS)"
+    _attr_icon = "mdi:clock-outline"
+
+    def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
+        super().__init__(coordinator, config_entry, name)
+        self._attr_unique_id = f"{config_entry.entry_id}_anticipated_start_time_hms"
+        self._time_str: str | None = None
+        self._attributes: dict[str, Any] = {}
+
+    @property
+    def native_value(self) -> str | None:
+        return self._time_str
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return self._attributes
+
+    def _handle_anticipation_result(self, data: dict) -> None:
+        value = data.get(ATTR_ANTICIPATED_START_TIME)
+        dt_val: datetime | None = None
+        if isinstance(value, str):
+            dt_val = dt_util.parse_datetime(value) or None
+            if dt_val is None:
+                try:
+                    dt_val = datetime.fromisoformat(value)
+                except ValueError:
+                    dt_val = None
+        elif isinstance(value, datetime):
+            dt_val = value
+        if dt_val is not None:
+            # Ensure local timezone and format HH:MM:SS
+            local_dt = dt_util.as_local(dt_val)
+            self._time_str = local_dt.strftime("%H:%M:%S")
+            # Provide raw timestamp as attribute for completeness
+            self._attributes = {
+                "timestamp": local_dt.isoformat(),
+            }
+
+
 class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBase):
     """Sensor for learned heating slope (LHS)."""
 
@@ -171,7 +221,8 @@ class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBas
     @property
     def native_value(self) -> float | None:
         """Return the state of the sensor."""
-        return self.coordinator.get_learned_heating_slope()
+        # Prefer last event-driven value, fallback to coordinator cache
+        return self._slope if self._slope is not None else self.coordinator.get_learned_heating_slope()
 
     @property
     def available(self) -> bool:
@@ -197,13 +248,25 @@ class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBas
             "recent_slopes": slopes[-10:] if len(slopes) > 10 else slopes,
         }
 
+    def _handle_anticipation_result(self, data: dict) -> None:
+        """Consume learned slope from anticipation event and refresh caches."""
+        try:
+            lhs = data.get(ATTR_LEARNED_HEATING_SLOPE)
+            if lhs is not None:
+                self._slope = float(lhs)
+                # Ask coordinator to refresh caches (history, lhs) asynchronously
+                if hasattr(self.coordinator, "refresh_caches"):
+                    self.hass.async_create_task(self.coordinator.refresh_caches())
+        except (TypeError, ValueError):
+            _LOGGER.debug("Invalid learned_heating_slope in event: %s", data.get(ATTR_LEARNED_HEATING_SLOPE))
+
 
 class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBase):
     """Sensor for next schedule time."""
 
     _attr_name = "Next Schedule Time"
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:calendar-clock"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP  # type: ignore[assignment]
 
     def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
         """Initialize the sensor."""
@@ -248,6 +311,50 @@ class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBas
                 "scheduler_entity": data.get("scheduler_entity"),
             }
             _LOGGER.info("Next schedule time updated: %s", self._next_schedule)
+
+
+class IntelligentHeatingPilotNextScheduleHmsSensor(IntelligentHeatingPilotSensorBase):
+    """Companion sensor showing only HH:MM:SS for next schedule time."""
+
+    _attr_name = "Next Schedule Time (HMS)"
+    _attr_icon = "mdi:clock-time-three-outline"
+
+    def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
+        super().__init__(coordinator, config_entry, name)
+        self._attr_unique_id = f"{config_entry.entry_id}_next_schedule_time_hms"
+        self._time_str: str | None = None
+        self._attributes: dict[str, Any] = {}
+
+    @property
+    def native_value(self) -> str | None:
+        return self._time_str
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return self._attributes
+
+    def _handle_anticipation_result(self, data: dict) -> None:
+        value = data.get(ATTR_NEXT_SCHEDULE_TIME)
+        dt_val: datetime | None = None
+        if isinstance(value, str):
+            dt_val = dt_util.parse_datetime(value) or None
+            if dt_val is None:
+                try:
+                    dt_val = datetime.fromisoformat(value)
+                except ValueError:
+                    dt_val = None
+        elif isinstance(value, datetime):
+            dt_val = value
+        if dt_val is not None:
+            local_dt = dt_util.as_local(dt_val)
+            self._time_str = local_dt.strftime("%H:%M:%S")
+            self._attributes = {
+                "timestamp": local_dt.isoformat(),
+            }
 
 
 class IntelligentHeatingPilotPredictionConfidenceSensor(IntelligentHeatingPilotSensorBase):
