@@ -58,11 +58,11 @@ The refactored architecture will:
 - [x] Enhanced `PredictionService` with environmental calculations
 - [x] Marked `PreheatingCalculator` as deprecated
 
-### Phase 3: 🔨 IN PROGRESS - Gradual Coordinator Refactoring
+### Phase 3: ✅ COMPLETED - Gradual Coordinator Refactoring
 
 **Strategy: Wrap, Don't Rewrite**
 
-To maintain backward compatibility, we'll refactor incrementally:
+Successfully refactored coordinator incrementally while maintaining backward compatibility:
 
 #### Step 3.1: Add Adapter Instances to Coordinator
 ```python
@@ -195,9 +195,9 @@ async def decide_action(self) -> HeatingDecision:
         await scheduler_commander.run_action(...)
 ```
 
-### Phase 4: Update Sensors
+### Phase 4: ✅ COMPLETED - Update Sensors
 
-Sensors should fire events using domain value objects:
+Sensors updated to expose domain-calculated confidence metrics:
 
 **Before:**
 ```python
@@ -243,19 +243,20 @@ Each commit should be atomic and revertible:
 
 1. ✅ Create adapters (DONE)
 2. ✅ Enhance domain logic (DONE)
-3. 🔨 Refactor coordinator methods one by one:
-   - [ ] `get_learned_heating_slope()` → use `HAModelStorage`
-   - [ ] `get_next_scheduler_event()` → use `HASchedulerReader`
-   - [ ] `async_calculate_anticipation()` → use `PredictionService`
-   - [ ] `async_schedule_anticipation()` → use `HASchedulerCommander`
-4. [ ] Update sensors to use domain events
-5. [ ] Add integration tests
-6. [ ] Remove deprecated `PreheatingCalculator`
+3. ✅ Refactor coordinator methods (DONE):
+   - [x] `get_learned_heating_slope()` → use `HAModelStorage`
+   - [x] `get_next_scheduler_event()` → use `HASchedulerReader`
+   - [x] `async_calculate_anticipation()` → use `PredictionService`
+   - [ ] `async_schedule_anticipation()` → use `HASchedulerCommander` (Future)
+4. ✅ Update sensors to expose domain confidence (DONE)
+5. [ ] Add integration tests (Future)
+6. [ ] Remove deprecated `PreheatingCalculator` (Future)
+7. [ ] Remove legacy sync methods after validation period (Future)
 
 ## Timeline
 
-- **Sprint 1** (Current): Create infrastructure adapters ✅
-- **Sprint 2** (Next): Refactor coordinator storage methods
-- **Sprint 3**: Refactor coordinator calculation methods
-- **Sprint 4**: Integrate `HeatingPilot` aggregate
-- **Sprint 5**: Update sensors and finalize migration
+- **Sprint 1**: Create infrastructure adapters ✅ DONE
+- **Sprint 2**: Refactor coordinator with DDD adapters ✅ DONE
+- **Sprint 3**: Update sensors with domain confidence ✅ DONE
+- **Sprint 4** (Future): Integrate `HeatingPilot` aggregate for full domain decisions
+- **Sprint 5** (Future): Remove legacy code and finalize migration
