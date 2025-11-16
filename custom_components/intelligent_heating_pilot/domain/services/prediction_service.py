@@ -4,6 +4,22 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
+from ..constants import (
+    BASE_HIGH_CONFIDENCE,
+    BASE_LOW_CONFIDENCE,
+    BASE_MEDIUM_CONFIDENCE,
+    CLOUD_COVERAGE_FACTOR,
+    CONFIDENCE_BOOST_PER_SENSOR,
+    DEFAULT_ANTICIPATION_BUFFER,
+    HIGH_CONFIDENCE_SLOPE,
+    HUMIDITY_FACTOR,
+    HUMIDITY_REFERENCE,
+    MAX_ANTICIPATION_TIME,
+    MEDIUM_CONFIDENCE_SLOPE,
+    MIN_ANTICIPATION_TIME,
+    OUTDOOR_TEMP_FACTOR,
+    OUTDOOR_TEMP_REFERENCE,
+)
 from ..value_objects import PredictionResult
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,11 +38,6 @@ class PredictionService:
     4. Solar gain from cloud coverage
     5. Learned heating slope (heating rate) from historical data
     """
-    
-    # Constants for calculation
-    DEFAULT_ANTICIPATION_BUFFER = 5  # minutes - Safety buffer
-    MIN_ANTICIPATION_TIME = 10  # minutes - Minimum anticipation
-    MAX_ANTICIPATION_TIME = 180  # minutes (3 hours) - Maximum anticipation
     
     def predict_heating_time(
         self,
@@ -95,10 +106,10 @@ class PredictionService:
         anticipation_minutes *= correction_factor
         
         # Apply buffer and limits
-        anticipation_minutes += self.DEFAULT_ANTICIPATION_BUFFER
+        anticipation_minutes += DEFAULT_ANTICIPATION_BUFFER
         anticipation_minutes = max(
-            self.MIN_ANTICIPATION_TIME,
-            min(self.MAX_ANTICIPATION_TIME, anticipation_minutes)
+            MIN_ANTICIPATION_TIME,
+            min(MAX_ANTICIPATION_TIME, anticipation_minutes)
         )
         
         # Calculate anticipated start time
@@ -149,34 +160,34 @@ class PredictionService:
         correction_factor = 1.0
         
         # Outdoor temperature factor: colder outside means slower heating
-        # Formula: outdoor_factor = 1 + (20 - outdoor_temp) * 0.05
+        # Formula: outdoor_factor = 1 + (OUTDOOR_TEMP_REFERENCE - outdoor_temp) * OUTDOOR_TEMP_FACTOR
         # At outdoor_temp = 20°C: factor = 1.0 (no impact)
         # At outdoor_temp = 0°C: factor = 2.0 (heating takes twice as long)
         # At outdoor_temp = -10°C: factor = 2.5 (even slower)
         if outdoor_temp is not None:
-            outdoor_factor = 1.0 + (20.0 - outdoor_temp) * 0.05
+            outdoor_factor = 1.0 + (OUTDOOR_TEMP_REFERENCE - outdoor_temp) * OUTDOOR_TEMP_FACTOR
             outdoor_factor = max(0.5, outdoor_factor)  # Minimum factor of 0.5
             correction_factor *= outdoor_factor
             _LOGGER.debug("Outdoor temp %.1f°C -> factor %.2f", outdoor_temp, outdoor_factor)
         
         # Humidity factor: higher humidity makes heating feel slower
-        # Formula: humidity_factor = 1 + (humidity - 50) * 0.002
+        # Formula: humidity_factor = 1 + (humidity - HUMIDITY_REFERENCE) * HUMIDITY_FACTOR
         # At 50% humidity: factor = 1.0 (neutral)
         # At 80% humidity: factor = 1.06 (6% slower)
         # At 20% humidity: factor = 0.94 (6% faster)
         if humidity is not None:
-            humidity_factor = 1.0 + (humidity - 50.0) * 0.002
+            humidity_factor = 1.0 + (humidity - HUMIDITY_REFERENCE) * HUMIDITY_FACTOR
             humidity_factor = max(0.8, min(1.2, humidity_factor))
             correction_factor *= humidity_factor
             _LOGGER.debug("Humidity %.1f%% -> factor %.2f", humidity, humidity_factor)
         
         # Solar gain factor: less cloud coverage means more solar heat gain
-        # Formula: solar_factor = 1 - (100 - cloud_coverage) * 0.001
+        # Formula: solar_factor = 1 - (100 - cloud_coverage) * CLOUD_COVERAGE_FACTOR
         # At 100% cloud: factor = 1.0 (no solar gain)
         # At 0% cloud (clear sky): factor = 0.9 (10% faster due to sun)
         # At 50% cloud: factor = 0.95 (5% faster)
         if cloud_coverage is not None:
-            solar_factor = 1.0 - (100.0 - cloud_coverage) * 0.001
+            solar_factor = 1.0 - (100.0 - cloud_coverage) * CLOUD_COVERAGE_FACTOR
             solar_factor = max(0.8, min(1.0, solar_factor))
             correction_factor *= solar_factor
             _LOGGER.debug("Cloud coverage %.1f%% -> factor %.2f", cloud_coverage, solar_factor)
@@ -204,12 +215,12 @@ class PredictionService:
             Confidence level between 0.0 and 1.0
         """
         # Base confidence from slope validity
-        if learned_slope > 1.5:
-            confidence = 0.9  # High confidence with good slope
-        elif learned_slope > 0.5:
-            confidence = 0.75  # Medium confidence
+        if learned_slope > HIGH_CONFIDENCE_SLOPE:
+            confidence = BASE_HIGH_CONFIDENCE
+        elif learned_slope > MEDIUM_CONFIDENCE_SLOPE:
+            confidence = BASE_MEDIUM_CONFIDENCE
         else:
-            confidence = 0.6  # Lower confidence with low slope
+            confidence = BASE_LOW_CONFIDENCE
         
         # Adjust confidence based on available environmental data
         data_availability = 0
@@ -219,7 +230,7 @@ class PredictionService:
             data_availability += 1
         
         # Increase confidence slightly with more environmental data
-        confidence += data_availability * 0.05
+        confidence += data_availability * CONFIDENCE_BOOST_PER_SENSOR
         
         # Cap at 1.0
         return min(1.0, confidence)
