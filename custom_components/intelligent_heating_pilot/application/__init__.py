@@ -113,6 +113,9 @@ class HeatingApplicationService:
         if not environment:
             _LOGGER.warning("Cannot read current environment")
             return None
+              
+        # Get learned slope
+        lhs = await self._model_storage.get_learned_heating_slope()
         
         # Check if already at target
         if environment.current_temp >= timeslot.target_temp:
@@ -121,11 +124,17 @@ class HeatingApplicationService:
                 environment.current_temp,
                 timeslot.target_temp
             )
-            return None
-        
-        # Get learned slope
-        lhs = await self._model_storage.get_learned_heating_slope()
-        
+            return {
+                "anticipated_start_time": timeslot.target_time,
+                "next_schedule_time": timeslot.target_time,
+                "next_target_temp": timeslot.target_temp,
+                "anticipation_minutes": 0,
+                "current_temp": environment.current_temp,
+                "learned_heating_slope": lhs,
+                "confidence_level": 100,
+                "timeslot_id": timeslot.timeslot_id,
+            }
+
         # Calculate prediction
         prediction = self._prediction_service.predict_heating_time(
             current_temp=environment.current_temp,
