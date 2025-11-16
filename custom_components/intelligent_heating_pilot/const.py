@@ -57,9 +57,3 @@ SCHEDULER_ATTR_NEXT_ACTION = "next_action"
 # Storage
 STORAGE_KEY = "intelligent_heating_pilot_storage"
 STORAGE_VERSION = 1
-
-# Default values for calculations
-DEFAULT_HEATING_SLOPE = 2.0  # °C/h - Conservative default
-DEFAULT_ANTICIPATION_BUFFER = 5  # minutes - Safety buffer
-MIN_ANTICIPATION_TIME = 10  # minutes - Minimum anticipation
-MAX_ANTICIPATION_TIME = 180  # minutes - Maximum anticipation (3 hours)

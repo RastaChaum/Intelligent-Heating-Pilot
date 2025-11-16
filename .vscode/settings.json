@@ -1,15 +1,27 @@
 {
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "python.linting.enabled": true,
-  "python.linting.pylintEnabled": true,
-  "python.formatting.provider": "black",
-  "editor.formatOnSave": true,
+  "python.linting.pylintEnabled": false,
+  "python.formatting.provider": "none",
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit",
+      "source.organizeImports": "explicit"
+    }
+  },
+  "ruff.lint.run": "onSave",
   "files.associations": {
     "*.yaml": "home-assistant"
   },
   "python.analysis.extraPaths": [
-    "${workspaceFolder}/custom_components"
+    "${workspaceFolder}/custom_components",
+    "${workspaceFolder}/.venv/lib/python3.13/site-packages"
   ],
   "python.autoComplete.extraPaths": [
-    "${workspaceFolder}/custom_components"
-  ]
+    "${workspaceFolder}/custom_components",
+    "${workspaceFolder}/.venv/lib/python3.13/site-packages"
+  ],
+  "python.analysis.typeCheckingMode": "basic"
 }
