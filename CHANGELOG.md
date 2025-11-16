@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2025-11-16
+
+### Changed
+- Remove optional remote debugging code (debugpy) from integration entrypoint
+
 ## [0.2.0] - 2025-11-16
 
 ### Added
@@ -26,4 +31,5 @@ All notable changes to this project will be documented in this file.
 ### Removed
 - Legacy `calculator.py`
 
+[0.2.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.1.0...v0.2.0
