@@ -40,6 +40,7 @@ async def async_setup_entry(
         IntelligentHeatingPilotAnticipationTimeSensor(coordinator, config_entry, name),
         IntelligentHeatingPilotLearnedSlopeSensor(coordinator, config_entry, name),
         IntelligentHeatingPilotNextScheduleSensor(coordinator, config_entry, name),
+        IntelligentHeatingPilotPredictionConfidenceSensor(coordinator, config_entry, name),  # Phase 4: New
     ]
 
     async_add_entities(sensors, True)
@@ -147,8 +148,10 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
                 "current_temp": data.get("current_temp"),
                 "scheduler_entity": data.get("scheduler_entity"),
                 ATTR_LEARNED_HEATING_SLOPE: data.get(ATTR_LEARNED_HEATING_SLOPE),
+                "confidence_level": data.get("confidence_level"),  # Phase 4: New from domain
             }
-            _LOGGER.info("Anticipated start time updated: %s", self._anticipated_start)
+            _LOGGER.info("Anticipated start time updated: %s (confidence: %.2f)", 
+                        self._anticipated_start, data.get("confidence_level", 0.0))
 
 
 class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBase):
@@ -245,3 +248,56 @@ class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBas
                 "scheduler_entity": data.get("scheduler_entity"),
             }
             _LOGGER.info("Next schedule time updated: %s", self._next_schedule)
+
+
+class IntelligentHeatingPilotPredictionConfidenceSensor(IntelligentHeatingPilotSensorBase):
+    """Sensor for prediction confidence level.
+    
+    Phase 4: New sensor to display domain prediction confidence (0.0-1.0).
+    This reflects the quality of the prediction based on learned data and
+    available environmental sensors.
+    """
+
+    _attr_name = "Prediction Confidence"
+    _attr_icon = "mdi:percent"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, config_entry, name)
+        self._attr_unique_id = f"{config_entry.entry_id}_prediction_confidence"
+        self._confidence = None
+        self._attributes = {}
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor as percentage (0-100)."""
+        if self._confidence is not None:
+            return round(self._confidence * 100, 1)
+        return None
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional attributes."""
+        return self._attributes
+
+    def _handle_anticipation_result(self, data: dict) -> None:
+        """Handle new anticipation result."""
+        confidence = data.get("confidence_level")
+        if confidence is not None:
+            self._confidence = float(confidence)
+            self._attributes = {
+                ATTR_LEARNED_HEATING_SLOPE: data.get(ATTR_LEARNED_HEATING_SLOPE),
+                "anticipation_minutes": data.get("anticipation_minutes"),
+                "environmental_data_available": {
+                    "humidity": data.get("humidity") is not None,
+                    "cloud_coverage": data.get("cloud_coverage") is not None,
+                },
+            }
+            _LOGGER.info("Prediction confidence updated: %.1f%%", self._confidence * 100)
