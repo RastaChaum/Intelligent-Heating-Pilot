@@ -40,15 +40,6 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[str] = [Platform.SENSOR]
 
-# Optional remote debugging (non-blocking if unavailable)
-try:  # pragma: no cover - dev convenience
-    import debugpy  # type: ignore
-
-    debugpy.listen(("0.0.0.0", 5678))
-    _LOGGER.info("debugpy listening on port 5678")
-except Exception:  # noqa: BLE001 - broad on purpose
-    pass
-
 class IntelligentHeatingPilotCoordinator:
     """Lightweight coordinator for DDD architecture.
     
