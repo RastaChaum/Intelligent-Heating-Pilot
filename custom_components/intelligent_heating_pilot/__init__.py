@@ -35,6 +35,9 @@ from .const import (
     VTHERM_ATTR_SLOPE,
     VTHERM_ATTR_TEMPERATURE,
 )
+from .domain.services.prediction_service import PredictionService
+from .domain.value_objects import EnvironmentState
+from .infrastructure.adapters import HAModelStorage, HASchedulerReader
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,6 +60,11 @@ class IntelligentHeatingPilotCoordinator:
         self._anticipation_trigger_executed: set[datetime] = set()  # Track executed triggers
         self._is_updating = False  # Prevent concurrent updates
         self._ignore_vtherm_changes_until: datetime | None = None  # Ignore VTherm changes during our own modifications
+        
+        # Phase 3.1: Create adapter instances for DDD architecture
+        self._model_storage = HAModelStorage(hass, config_entry.entry_id)
+        self._scheduler_reader: HASchedulerReader | None = None  # Initialized after config loaded
+        self._prediction_service = PredictionService()
 
     async def async_load(self) -> None:
         """Load stored data."""
@@ -69,6 +77,10 @@ class IntelligentHeatingPilotCoordinator:
                 "historical_slopes": [],  # Historical slopes from VTherm (positive=heating, negative=cooling)
                 "learned_heating_slope": DEFAULT_HEATING_SLOPE,
             }
+        
+        # Phase 3.1: Initialize scheduler reader with configured entities
+        scheduler_entities = self.get_scheduler_entities()
+        self._scheduler_reader = HASchedulerReader(self.hass, scheduler_entities)
 
     async def async_save(self) -> None:
         """Save data to storage."""
@@ -185,31 +197,38 @@ class IntelligentHeatingPilotCoordinator:
         return fallback
 
     def _update_learned_slope(self, slope: float) -> None:
-        """Update learned slopes history."""
-        # Accept all slope values (positive = heating, negative = cooling)
-        slopes = self._data.get("historical_slopes", [])
-        old_lhs = self._data.get("learned_heating_slope")
+        """Update learned slopes history.
         
+        Phase 3.2: Delegate to HAModelStorage adapter while maintaining backward
+        compatibility with legacy _data storage.
+        """
+        # Get old LHS for change detection
+        old_lhs_task = self.hass.async_create_task(self._model_storage.get_learned_heating_slope())
+        
+        # Delegate to adapter (async)
+        async def update_async():
+            old_lhs = await old_lhs_task
+            await self._model_storage.save_slope_in_history(slope)
+            new_lhs = await self._model_storage.get_learned_heating_slope()
+            
+            _LOGGER.debug("Updated learned heating slope: %.2f°C/h", new_lhs)
+            
+            # If LHS changed significantly (>0.1°C/h), trigger anticipation recalculation
+            if old_lhs is not None and abs(new_lhs - old_lhs) > 0.1:
+                _LOGGER.info("LHS changed significantly from %.2f to %.2f°C/h, triggering anticipation recalculation", 
+                            old_lhs, new_lhs)
+                await self.async_update()
+        
+        self.hass.async_create_task(update_async())
+        
+        # Legacy: Also update _data for backward compatibility during migration
+        slopes = self._data.get("historical_slopes", [])
         slopes.append(slope)
-
-        # Keep only last 100 values (~30 days if updated a few times per day)
         if len(slopes) > 100:
             slopes = slopes[-100:]
-
         self._data["historical_slopes"] = slopes
-
-        # Calculate robust average (trimmed mean) for LHS
         lhs = self._calculate_robust_average(slopes)
         self._data["learned_heating_slope"] = lhs
-        _LOGGER.debug("Updated learned heating slope: %.2f°C/h (from %d samples)", lhs, len(slopes))
-
-        # If LHS changed significantly (>0.1°C/h), trigger anticipation recalculation
-        if old_lhs is not None and abs(lhs - old_lhs) > 0.1:
-            _LOGGER.info("LHS changed significantly from %.2f to %.2f°C/h, triggering anticipation recalculation", 
-                        old_lhs, lhs)
-            self.hass.async_create_task(self.async_update())
-
-        # Save asynchronously
         self.hass.async_create_task(self.async_save())
 
     def _calculate_robust_average(self, values: list[float]) -> float:
@@ -236,7 +255,11 @@ class IntelligentHeatingPilotCoordinator:
         return sum(trimmed) / len(trimmed)
 
     def get_learned_heating_slope(self) -> float:
-        """Get the learned heating slope (LHS)."""
+        """Get the learned heating slope (LHS).
+        
+        Phase 3.2: Use legacy _data for synchronous compatibility.
+        Async callers should use get_learned_heating_slope_async() instead.
+        """
         slopes = self._data.get("historical_slopes", [])
         
         # Filter out negative slopes (cooling phases) - only keep positive heating slopes
@@ -257,6 +280,13 @@ class IntelligentHeatingPilotCoordinator:
             _LOGGER.debug("Using cached LHS: %.2f°C/h (from %d positive samples)", lhs, len(positive_slopes))
 
         return lhs
+    
+    async def get_learned_heating_slope_async(self) -> float:
+        """Get the learned heating slope (LHS) asynchronously.
+        
+        Phase 3.2: Delegate to HAModelStorage adapter.
+        """
+        return await self._model_storage.get_learned_heating_slope()
 
     def get_historical_slopes(self) -> list[float]:
         """Get the list of learned slopes for public access."""
@@ -284,6 +314,9 @@ class IntelligentHeatingPilotCoordinator:
     def get_next_scheduler_event(self) -> tuple[datetime | None, float | None, str | None]:
         """Return (next_time, target_temp, scheduler_entity) among configured schedulers.
 
+        Phase 3.3: Legacy synchronous wrapper for backward compatibility.
+        New async code should use get_next_scheduler_event_async() instead.
+        
         Parses different attribute layouts:
         - Standard: next_trigger (ISO datetime), next_slot (index), actions (list of dict)
         - Fallback: next_entries[0] with time/start/trigger_time and actions
@@ -354,6 +387,20 @@ class IntelligentHeatingPilotCoordinator:
         else:
             _LOGGER.warning("[%s] No valid scheduler event found", self.config.entry_id)
         return chosen_time, chosen_temp, chosen_entity
+    
+    async def get_next_scheduler_event_async(self) -> tuple[datetime | None, float | None, str | None]:
+        """Return (next_time, target_temp, scheduler_entity) asynchronously.
+        
+        Phase 3.3: Delegate to HASchedulerReader adapter.
+        """
+        if self._scheduler_reader is None:
+            _LOGGER.error("Scheduler reader not initialized")
+            return None, None, None
+        
+        timeslot = await self._scheduler_reader.get_next_timeslot()
+        if timeslot:
+            return timeslot.target_time, timeslot.target_temp, timeslot.timeslot_id
+        return None, None, None
 
     def get_vtherm_entity(self) -> str:
         """Get VTherm entity ID (options override data)."""
@@ -440,14 +487,16 @@ class IntelligentHeatingPilotCoordinator:
     ) -> dict[str, Any] | None:
         """Calculate anticipation time for next schedule.
         
+        Phase 3.4: Refactored to use domain PredictionService for calculations.
+        
         Args:
             next_time: Next schedule time (if not provided, will be fetched)
             next_temp: Next target temperature (if not provided, will be fetched)
             scheduler_entity: Scheduler entity ID (if not provided, will be fetched)
         """
-        # Get next scheduler event if not provided
+        # Get next scheduler event if not provided (using new async adapter)
         if next_time is None or next_temp is None:
-            next_time, next_temp, scheduler_entity = self.get_next_scheduler_event()
+            next_time, next_temp, scheduler_entity = await self.get_next_scheduler_event_async()
 
         if not next_time or not next_temp:
             _LOGGER.debug("No next schedule event found")
@@ -459,80 +508,52 @@ class IntelligentHeatingPilotCoordinator:
             _LOGGER.warning("Cannot get current temperature from VTherm")
             return None
 
-        # Get learned heating slope
-        lhs = self.get_learned_heating_slope()
+        # Get learned heating slope (using new async adapter)
+        lhs = await self.get_learned_heating_slope_async()
 
-        # Calculate base anticipation time
-        temp_delta = next_temp - current_temp
-
-        if temp_delta <= 0:
-            _LOGGER.debug("Target temp (%.1f°C) <= current temp (%.1f°C), no heating needed", 
-                         next_temp, current_temp)
-            # Return anticipation data = next_time to indicate no anticipation needed
-            return {
-                ATTR_NEXT_SCHEDULE_TIME: next_time,
-                ATTR_NEXT_TARGET_TEMP: next_temp,
-                ATTR_ANTICIPATED_START_TIME: next_time,
-                "anticipation_minutes": 0,
-                "current_temp": current_temp,
-                "scheduler_entity": scheduler_entity,
-                ATTR_LEARNED_HEATING_SLOPE: lhs,
-            }
-
-        # Protection against division by zero
-        if lhs <= 0:
-            _LOGGER.warning("Invalid LHS (%.4f°C/h), cannot calculate anticipation. Using default.", lhs)
-            lhs = DEFAULT_HEATING_SLOPE
-
-        # Anticipation = (Target - Current) / (LHS / 60)
-        anticipation_minutes = (temp_delta / lhs) * 60.0
-
-        # Apply correction factors based on optional sensors
-        correction_factor = 1.0
-
-        # Humidity correction
+        # Build environment state for domain
         humidity_in = self._get_sensor_value(self.get_humidity_in_entity())
-        if humidity_in and humidity_in > 70:
-            correction_factor *= 1.1  # High humidity = slower heating
-
-        # Cloud coverage correction (less sun = slower heating)
         cloud_cover = self._get_sensor_value(self.get_cloud_cover_entity())
-        if cloud_cover and cloud_cover > 80:
-            correction_factor *= 1.05
-
-        anticipation_minutes *= correction_factor
-
-        # Apply buffer and limits
-        anticipation_minutes += DEFAULT_ANTICIPATION_BUFFER
-        anticipation_minutes = max(MIN_ANTICIPATION_TIME, min(MAX_ANTICIPATION_TIME, anticipation_minutes))
-
-        # Calculate anticipated start time, preserving timezone
-        anticipated_start = next_time - timedelta(minutes=anticipation_minutes)
+        outdoor_temp_entity = None  # TODO: Add outdoor temp entity to config if needed
         
+        # Use domain PredictionService for calculation
+        prediction = self._prediction_service.predict_heating_time(
+            current_temp=current_temp,
+            target_temp=next_temp,
+            learned_slope=lhs,
+            target_time=next_time,
+            humidity=humidity_in,
+            cloud_coverage=cloud_cover,
+        )
+
         # Ensure timezone is preserved (convert naive to local if needed)
+        anticipated_start = prediction.anticipated_start_time
         if anticipated_start.tzinfo is None:
             anticipated_start = dt_util.as_local(anticipated_start)
         if next_time.tzinfo is None:
             next_time = dt_util.as_local(next_time)
 
+        # Convert domain result back to dict for backward compatibility
         result = {
             ATTR_NEXT_SCHEDULE_TIME: next_time,
             ATTR_NEXT_TARGET_TEMP: next_temp,
             ATTR_ANTICIPATED_START_TIME: anticipated_start,
-            "anticipation_minutes": anticipation_minutes,
+            "anticipation_minutes": prediction.estimated_duration_minutes,
             "current_temp": current_temp,
             "scheduler_entity": scheduler_entity,
-            ATTR_LEARNED_HEATING_SLOPE: lhs,
+            ATTR_LEARNED_HEATING_SLOPE: prediction.learned_heating_slope,
+            "confidence_level": prediction.confidence_level,  # New: domain provides confidence
         }
 
         _LOGGER.info(
-            "Anticipation calculated: Start at %s (%.1f min before %s) for target %.1f°C (current: %.1f°C, LHS: %.2f°C/h)",
+            "Anticipation calculated: Start at %s (%.1f min before %s) for target %.1f°C (current: %.1f°C, LHS: %.2f°C/h, confidence: %.2f)",
             anticipated_start.isoformat(),
-            anticipation_minutes,
+            prediction.estimated_duration_minutes,
             next_time.isoformat(),
             next_temp,
             current_temp,
-            lhs,
+            prediction.learned_heating_slope,
+            prediction.confidence_level,
         )
 
         return result
