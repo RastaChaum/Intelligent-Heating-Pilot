@@ -32,15 +32,23 @@ class HASchedulerReader(ISchedulerReader):
     to domain value objects.
     """
     
-    def __init__(self, hass: HomeAssistant, scheduler_entity_ids: list[str]) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        scheduler_entity_ids: list[str],
+        vtherm_entity_id: str | None = None,
+    ) -> None:
         """Initialize the scheduler reader adapter.
         
         Args:
             hass: Home Assistant instance
             scheduler_entity_ids: List of scheduler entity IDs to monitor
+            vtherm_entity_id: Optional VTherm climate entity ID used to resolve
+                preset temperatures (e.g., when actions use preset modes).
         """
         self._hass = hass
         self._scheduler_entity_ids = scheduler_entity_ids
+        self._vtherm_entity_id = vtherm_entity_id
     
     async def get_next_timeslot(self) -> ScheduleTimeslot | None:
         """Retrieve the next scheduled heating timeslot.
@@ -243,11 +251,66 @@ class HASchedulerReader(ISchedulerReader):
         # Preset mode requires mapping via VTherm attributes
         # This is handled by getting the current VTherm state when the preset is active
         if service == "climate.set_preset_mode":
-            # For now, we can't resolve preset temperatures without VTherm access
-            # This would need to be provided by the coordinator or another adapter
-            _LOGGER.debug(
-                "Cannot resolve preset mode temperature without VTherm reference"
+            preset = (
+                data.get("preset_mode")
+                or data.get("preset")
+                or data.get("mode")
             )
+            if isinstance(preset, str):
+                # Try resolving using VTherm attributes if available
+                resolved = self._resolve_preset_temperature(preset)
+                if resolved is not None:
+                    return resolved
+                _LOGGER.debug(
+                    "Could not resolve preset '%s' to temperature (entity=%s)",
+                    preset,
+                    self._vtherm_entity_id,
+                )
             return None
         
+        return None
+
+    def _resolve_preset_temperature(self, preset: str) -> float | None:
+        """Resolve a preset name to a numeric temperature using VTherm attributes.
+        
+        This uses the VTherm climate entity attributes as the source of truth. It
+        attempts common attribute naming conventions. If the preset is currently
+        active, falls back to the entity's "temperature" attribute.
+        
+        Args:
+            preset: Preset mode name from the scheduler action
+        
+        Returns:
+            Temperature in Celsius, or None if it cannot be resolved.
+        """
+        if not self._vtherm_entity_id:
+            return None
+        state = self._hass.states.get(self._vtherm_entity_id)
+        if not state:
+            _LOGGER.debug("VTherm entity not found: %s", self._vtherm_entity_id)
+            return None
+        attrs = state.attributes or {}
+        key = str(preset).lower().replace(" ", "_")
+        # Try common naming patterns
+        candidate_keys = [
+            f"{key}_temperature",
+            f"{key}_temp",
+            f"temperature_{key}",
+            f"temp_{key}",
+        ]
+        for k in candidate_keys:
+            if k in attrs and attrs[k] is not None:
+                try:
+                    return float(attrs[k])
+                except (ValueError, TypeError):
+                    _LOGGER.debug("Invalid preset attribute %s=%s", k, attrs[k])
+        # Fallback: if this preset is currently active, use current target temperature
+        current_preset = attrs.get("preset_mode")
+        if isinstance(current_preset, str) and current_preset.lower() == key:
+            for target_key in ("temperature", "target_temperature", "target_temp"):
+                if target_key in attrs and attrs[target_key] is not None:
+                    try:
+                        return float(attrs[target_key])
+                    except (ValueError, TypeError):
+                        pass
         return None
