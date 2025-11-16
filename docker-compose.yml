@@ -10,7 +10,6 @@ services:
       - ./examples/config:/config
       - /etc/localtime:/etc/localtime:ro
       - /run/dbus:/run/dbus:ro
-    restart: unless-stopped
     environment:
       TZ: Europe/Paris
     network_mode: host
