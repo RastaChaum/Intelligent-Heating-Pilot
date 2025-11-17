@@ -14,6 +14,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from ...domain.interfaces import IModelStorage
+from ...domain.services import LHSCalculationService
 from ...domain.value_objects import SlopeData
 
 if TYPE_CHECKING:
@@ -62,6 +63,7 @@ class HAModelStorage(IModelStorage):
         )
         self._data: dict[str, Any] = {}
         self._loaded = False
+        self._lhs_calculation_service = LHSCalculationService()
     
     async def _ensure_loaded(self) -> None:
         """Ensure storage data is loaded and migrated if needed."""
@@ -196,9 +198,9 @@ class HAModelStorage(IModelStorage):
         
         self._data["slope_data_list"] = slope_data_list
         
-        # Recalculate learned heating slope from all positive slopes
+        # Recalculate learned heating slope using domain service
         all_slopes = [entry["slope_value"] for entry in slope_data_list]
-        lhs = self._calculate_robust_average(all_slopes)
+        lhs = self._lhs_calculation_service.calculate_robust_average(all_slopes)
         self._data["learned_heating_slope"] = lhs
         
         _LOGGER.debug(
@@ -331,10 +333,10 @@ class HAModelStorage(IModelStorage):
             )
             return DEFAULT_HEATING_SLOPE
         
-        # Get cached LHS or recalculate
+        # Get cached LHS or recalculate using domain service
         lhs = self._data.get("learned_heating_slope")
         if lhs is None or lhs <= 0:
-            lhs = self._calculate_robust_average(positive_slopes)
+            lhs = self._lhs_calculation_service.calculate_robust_average(positive_slopes)
             self._data["learned_heating_slope"] = lhs
             _LOGGER.debug(
                 "Recalculated LHS from %d positive samples: %.2f°C/h",
@@ -366,35 +368,3 @@ class HAModelStorage(IModelStorage):
             self._data["historical_slopes"] = []
         
         await self._store.async_save(self._data)
-    
-    def _calculate_robust_average(self, values: list[float]) -> float:
-        """Calculate robust average by removing extreme values (trimmed mean).
-        
-        This method provides a more stable estimate by removing outliers.
-        
-        Args:
-            values: List of slope values
-            
-        Returns:
-            Robust average of the values
-        """
-        if not values:
-            return DEFAULT_HEATING_SLOPE
-        
-        # Sort values
-        sorted_values = sorted(values)
-        n = len(sorted_values)
-        
-        if n < 4:
-            # Not enough data for trimming, use simple average
-            return sum(sorted_values) / n
-        
-        # Remove top and bottom 10% (trimmed mean)
-        trim_count = max(1, int(n * 0.1))
-        trimmed = sorted_values[trim_count:-trim_count]
-        
-        if not trimmed:
-            # Fallback to median if trimming removed everything
-            return sorted_values[n // 2]
-        
-        return sum(trimmed) / len(trimmed)

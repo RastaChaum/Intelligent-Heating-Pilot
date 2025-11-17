@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from homeassistant.util import dt as dt_util
 
 from ..domain.entities import HeatingPilot
-from ..domain.services import PredictionService
+from ..domain.services import PredictionService, LHSCalculationService
 from ..domain.value_objects import HeatingAction, HeatingDecision, SlopeData
 
 if TYPE_CHECKING:
@@ -63,6 +63,7 @@ class HeatingApplicationService:
         self._climate_commander = climate_commander
         self._environment_reader = environment_reader
         self._prediction_service = PredictionService()
+        self._lhs_calculation_service = LHSCalculationService()
         self._lhs_window_hours = lhs_window_hours
         
         # Runtime state for anticipation scheduling
@@ -131,24 +132,11 @@ class HeatingApplicationService:
             )
             return global_lhs
         
-        # Calculate robust average from window slopes
-        slope_values = [sd.slope_value for sd in window_slopes]
+        # Use domain service to calculate LHS from window slopes
+        contextual_lhs = self._lhs_calculation_service.calculate_from_slope_data(window_slopes)
         
-        # Use same trimmed mean algorithm as storage adapter
-        sorted_values = sorted(slope_values)
-        n = len(sorted_values)
-        
-        if n < 4:
-            # Not enough data for trimming, use simple average
-            contextual_lhs = sum(sorted_values) / n
-        else:
-            # Remove top and bottom 10% (trimmed mean)
-            trim_count = max(1, int(n * 0.1))
-            trimmed = sorted_values[trim_count:-trim_count]
-            contextual_lhs = sum(trimmed) / len(trimmed) if trimmed else sorted_values[n // 2]
-        
-        _LOGGER.debug(
-            "Calculated contextual LHS from %d slopes in %.1fh window: %.2f°C/h",
+        _LOGGER.info(
+            "Using contextual LHS from %d slopes in %.1fh window: %.2f°C/h",
             len(window_slopes),
             self._lhs_window_hours,
             contextual_lhs
