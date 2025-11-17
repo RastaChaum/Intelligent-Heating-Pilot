@@ -115,32 +115,37 @@ class HeatingApplicationService:
         Returns:
             LHS calculated from time-windowed slopes, or global LHS as fallback
         """
-        # Get slopes from time window before target time
-        window_slopes = await self._model_storage.get_slopes_in_time_window(
-            before_time=target_time,
-            window_hours=self._lhs_window_hours
-        )
+        # Get all slope data from storage
+        all_slope_data = await self._model_storage.get_all_slope_data()
         
-        if not window_slopes:
-            # Fallback to global LHS
+        if not all_slope_data:
+            # Fallback to global LHS if no data available
             global_lhs = await self._model_storage.get_learned_heating_slope()
             _LOGGER.warning(
-                "No slopes in time window (%.1f hours before %s), using global LHS: %.2f°C/h",
-                self._lhs_window_hours,
-                target_time.isoformat(),
+                "No slope data available, using global LHS: %.2f°C/h",
                 global_lhs
             )
             return global_lhs
         
-        # Use domain service to calculate LHS from window slopes
-        contextual_lhs = self._lhs_calculation_service.calculate_from_slope_data(window_slopes)
-        
-        _LOGGER.info(
-            "Using contextual LHS from %d slopes in %.1fh window: %.2f°C/h",
-            len(window_slopes),
-            self._lhs_window_hours,
-            contextual_lhs
+        # Use domain service to calculate contextual LHS based on time window
+        # Domain service handles the filtering and calculation logic
+        contextual_lhs = self._lhs_calculation_service.calculate_contextual_lhs(
+            all_slope_data=all_slope_data,
+            target_time=target_time,
+            window_hours=self._lhs_window_hours
         )
+        
+        # If domain service returns default (no slopes in window), try global LHS
+        if contextual_lhs == 2.0:  # DEFAULT_HEATING_SLOPE
+            global_lhs = await self._model_storage.get_learned_heating_slope()
+            if global_lhs != 2.0:  # If we have learned data, use it
+                _LOGGER.warning(
+                    "No slopes in time window (%.1f hours before %s), using global LHS: %.2f°C/h",
+                    self._lhs_window_hours,
+                    target_time.isoformat(),
+                    global_lhs
+                )
+                return global_lhs
         
         return contextual_lhs
     

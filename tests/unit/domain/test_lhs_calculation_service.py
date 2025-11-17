@@ -103,6 +103,92 @@ class TestLHSCalculationService(unittest.TestCase):
         # Outliers should be removed
         self.assertGreater(result, 1.5)
         self.assertLess(result, 3.0)
+    
+    def test_calculate_contextual_lhs_with_time_window(self):
+        """Test calculating contextual LHS based on time window."""
+        from datetime import timedelta
+        
+        # Create slopes over 10 hours
+        target_time = datetime(2025, 11, 17, 18, 0, 0, tzinfo=timezone.utc)
+        slope_data_list = [
+            SlopeData(slope_value=1.8, timestamp=target_time - timedelta(hours=10)),
+            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=8)),
+            SlopeData(slope_value=2.2, timestamp=target_time - timedelta(hours=5)),  # In 6h window
+            SlopeData(slope_value=2.3, timestamp=target_time - timedelta(hours=3)),  # In 6h window
+            SlopeData(slope_value=2.1, timestamp=target_time - timedelta(hours=1)),  # In 6h window
+        ]
+        
+        # Calculate with 6-hour window
+        result = self.service.calculate_contextual_lhs(
+            all_slope_data=slope_data_list,
+            target_time=target_time,
+            window_hours=6.0
+        )
+        
+        # Should only use slopes from last 6 hours (2.2, 2.3, 2.1)
+        # Average should be around 2.2
+        self.assertGreater(result, 2.0)
+        self.assertLess(result, 2.4)
+    
+    def test_calculate_contextual_lhs_empty_window(self):
+        """Test contextual LHS when no slopes in window."""
+        from datetime import timedelta
+        
+        # Create slopes but all outside the window
+        target_time = datetime(2025, 11, 17, 18, 0, 0, tzinfo=timezone.utc)
+        slope_data_list = [
+            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=20)),
+            SlopeData(slope_value=2.2, timestamp=target_time - timedelta(hours=15)),
+        ]
+        
+        # Calculate with 6-hour window
+        result = self.service.calculate_contextual_lhs(
+            all_slope_data=slope_data_list,
+            target_time=target_time,
+            window_hours=6.0
+        )
+        
+        # Should return default when no slopes in window
+        self.assertEqual(result, 2.0)
+    
+    def test_calculate_contextual_lhs_empty_data(self):
+        """Test contextual LHS with no data."""
+        target_time = datetime(2025, 11, 17, 18, 0, 0, tzinfo=timezone.utc)
+        
+        result = self.service.calculate_contextual_lhs(
+            all_slope_data=[],
+            target_time=target_time,
+            window_hours=6.0
+        )
+        
+        # Should return default
+        self.assertEqual(result, 2.0)
+    
+    def test_calculate_contextual_lhs_filters_correctly(self):
+        """Test that contextual LHS correctly filters by time window."""
+        from datetime import timedelta
+        
+        target_time = datetime(2025, 11, 17, 18, 0, 0, tzinfo=timezone.utc)
+        
+        # Create slopes: some in window, some outside
+        slope_data_list = [
+            SlopeData(slope_value=1.0, timestamp=target_time - timedelta(hours=7)),  # Outside
+            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=5)),  # Inside
+            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=4)),  # Inside
+            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=3)),  # Inside
+            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=2)),  # Inside
+            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=1)),  # Inside
+        ]
+        
+        result = self.service.calculate_contextual_lhs(
+            all_slope_data=slope_data_list,
+            target_time=target_time,
+            window_hours=6.0
+        )
+        
+        # Should only average the 5 slopes in window (all 2.0)
+        # Should not include the 1.0 slope from 7 hours ago
+        self.assertAlmostEqual(result, 2.0, places=2)
 
 
 if __name__ == "__main__":
