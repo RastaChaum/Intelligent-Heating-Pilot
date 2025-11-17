@@ -110,16 +110,18 @@ class LHSCalculationService:
         target_time: datetime,
         window_hours: float
     ) -> float:
-        """Calculate LHS from slopes within a time window before target time.
+        """Calculate LHS from slopes within a time-of-day window, ignoring the date.
         
         This method implements the core domain logic for contextual LHS:
-        - Filters slopes to only those within the time window preceding target_time
+        - Filters slopes to only those whose timestamp time-of-day falls within
+          the [start_time, end_time) window derived from target_time and window_hours
+        - Ignores the date component (e.g., select between 16:00 and 22:00 for any day)
+        - Correctly handles windows that cross midnight (e.g., 22:00 -> 02:00)
         - Calculates robust average from the filtered slopes
-        - Represents environmental conditions (solar gain, etc.) for that period
         
         Args:
             all_slope_data: All available slope data (will be filtered)
-            target_time: Target time for which to calculate LHS
+            target_time: End of the time window (only time-of-day is used)
             window_hours: Size of time window in hours before target_time
             
         Returns:
@@ -132,20 +134,34 @@ class LHSCalculationService:
             )
             return DEFAULT_HEATING_SLOPE
         
-        # Calculate window start time
-        window_start = target_time - timedelta(hours=window_hours)
-        
-        # Filter slopes within the time window
-        window_slopes = [
-            sd for sd in all_slope_data
-            if window_start <= sd.timestamp < target_time
-        ]
+        # Derive the time-of-day window [start_tod, end_tod), ignoring the date.
+        if window_hours >= 24:
+            # Full-day window: include all slopes.
+            window_slopes = list(all_slope_data)
+            start_tod_str = "00:00"
+            end_tod_str = "00:00"
+        else:
+            start_tod = (target_time - timedelta(hours=window_hours)).time()
+            end_tod = target_time.time()
+            start_tod_str = start_tod.strftime("%H:%M")
+            end_tod_str = end_tod.strftime("%H:%M")
+            
+            def in_window(ts: datetime) -> bool:
+                t = ts.time()
+                if start_tod <= end_tod:
+                    # Normal window (same day)
+                    return start_tod <= t < end_tod
+                # Window crosses midnight (e.g., 22:00 -> 02:00)
+                return t >= start_tod or t < end_tod
+            
+            # Filter slopes within the time-of-day window
+            window_slopes = [sd for sd in all_slope_data if in_window(sd.timestamp)]
         
         if not window_slopes:
             _LOGGER.debug(
-                "No slopes found in %.1fh window before %s, using default: %.2f°C/h",
-                window_hours,
-                target_time.isoformat(),
+                "No slopes found in time-of-day window [%s, %s), using default: %.2f°C/h",
+                start_tod_str,
+                end_tod_str,
                 DEFAULT_HEATING_SLOPE
             )
             return DEFAULT_HEATING_SLOPE
@@ -154,10 +170,10 @@ class LHSCalculationService:
         lhs = self.calculate_from_slope_data(window_slopes)
         
         _LOGGER.info(
-            "Calculated contextual LHS from %d slopes in %.1fh window (before %s): %.2f°C/h",
+            "Calculated contextual LHS from %d slopes in time-of-day window [%s, %s): %.2f°C/h",
             len(window_slopes),
-            window_hours,
-            target_time.isoformat(),
+            start_tod_str,
+            end_tod_str,
             lhs
         )
         
