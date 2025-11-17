@@ -13,7 +13,7 @@ from homeassistant.util import dt as dt_util
 
 from ..domain.entities import HeatingPilot
 from ..domain.services import PredictionService
-from ..domain.value_objects import HeatingAction, HeatingDecision
+from ..domain.value_objects import HeatingAction, HeatingDecision, SlopeData
 
 if TYPE_CHECKING:
     from ..infrastructure.adapters import (
@@ -45,6 +45,7 @@ class HeatingApplicationService:
         scheduler_commander: "HASchedulerCommander",
         climate_commander: "HAClimateCommander",
         environment_reader: "HAEnvironmentReader",
+        lhs_window_hours: float = 6.0,
     ) -> None:
         """Initialize the application service.
         
@@ -54,6 +55,7 @@ class HeatingApplicationService:
             scheduler_commander: Triggers scheduler actions
             climate_commander: Controls climate entity
             environment_reader: Reads environmental conditions
+            lhs_window_hours: Time window in hours for contextual LHS (default: 6)
         """
         self._scheduler_reader = scheduler_reader
         self._model_storage = model_storage
@@ -61,6 +63,7 @@ class HeatingApplicationService:
         self._climate_commander = climate_commander
         self._environment_reader = environment_reader
         self._prediction_service = PredictionService()
+        self._lhs_window_hours = lhs_window_hours
         
         # Runtime state for anticipation scheduling
         self._last_scheduled_time: datetime | None = None
@@ -83,9 +86,15 @@ class HeatingApplicationService:
             _LOGGER.debug("Negative slope %.2f°C/h, skipping (cooling phase)", new_slope)
             return
         
+        # Create timestamped slope data
+        slope_data = SlopeData(
+            slope_value=new_slope,
+            timestamp=dt_util.now()
+        )
+        
         # Learn the slope via adapter
         old_lhs = await self._model_storage.get_learned_heating_slope()
-        await self._model_storage.save_slope_in_history(new_slope)
+        await self._model_storage.save_slope_data(slope_data)
         new_lhs = await self._model_storage.get_learned_heating_slope()
         
         # Log significant changes
@@ -95,6 +104,57 @@ class HeatingApplicationService:
                 old_lhs,
                 new_lhs
             )
+    
+    async def _get_contextual_lhs(self, target_time: datetime) -> float:
+        """Get LHS from time window preceding target time.
+        
+        Args:
+            target_time: Target schedule time
+            
+        Returns:
+            LHS calculated from time-windowed slopes, or global LHS as fallback
+        """
+        # Get slopes from time window before target time
+        window_slopes = await self._model_storage.get_slopes_in_time_window(
+            before_time=target_time,
+            window_hours=self._lhs_window_hours
+        )
+        
+        if not window_slopes:
+            # Fallback to global LHS
+            global_lhs = await self._model_storage.get_learned_heating_slope()
+            _LOGGER.warning(
+                "No slopes in time window (%.1f hours before %s), using global LHS: %.2f°C/h",
+                self._lhs_window_hours,
+                target_time.isoformat(),
+                global_lhs
+            )
+            return global_lhs
+        
+        # Calculate robust average from window slopes
+        slope_values = [sd.slope_value for sd in window_slopes]
+        
+        # Use same trimmed mean algorithm as storage adapter
+        sorted_values = sorted(slope_values)
+        n = len(sorted_values)
+        
+        if n < 4:
+            # Not enough data for trimming, use simple average
+            contextual_lhs = sum(sorted_values) / n
+        else:
+            # Remove top and bottom 10% (trimmed mean)
+            trim_count = max(1, int(n * 0.1))
+            trimmed = sorted_values[trim_count:-trim_count]
+            contextual_lhs = sum(trimmed) / len(trimmed) if trimmed else sorted_values[n // 2]
+        
+        _LOGGER.debug(
+            "Calculated contextual LHS from %d slopes in %.1fh window: %.2f°C/h",
+            len(window_slopes),
+            self._lhs_window_hours,
+            contextual_lhs
+        )
+        
+        return contextual_lhs
     
     async def calculate_and_schedule_anticipation(self) -> dict | None:
         """Calculate anticipation and schedule heating start.
@@ -114,8 +174,8 @@ class HeatingApplicationService:
             _LOGGER.warning("Cannot read current environment")
             return None
               
-        # Get learned slope
-        lhs = await self._model_storage.get_learned_heating_slope()
+        # Get contextual LHS from time window preceding target time
+        lhs = await self._get_contextual_lhs(timeslot.target_time)
         
         # Check if already at target
         if environment.current_temp >= timeslot.target_temp:

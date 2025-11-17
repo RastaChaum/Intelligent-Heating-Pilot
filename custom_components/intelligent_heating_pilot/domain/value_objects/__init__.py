@@ -8,6 +8,7 @@ from .environment_state import EnvironmentState
 from .schedule_timeslot import ScheduleTimeslot
 from .prediction_result import PredictionResult
 from .heating_decision import HeatingDecision, HeatingAction
+from .slope_data import SlopeData
 
 __all__ = [
     "EnvironmentState",
@@ -15,4 +16,5 @@ __all__ = [
     "PredictionResult",
     "HeatingDecision",
     "HeatingAction",
+    "SlopeData",
 ]

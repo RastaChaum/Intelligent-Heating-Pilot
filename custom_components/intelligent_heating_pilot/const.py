@@ -9,6 +9,8 @@ CONF_SCHEDULER_ENTITIES = "scheduler_entities"
 CONF_HUMIDITY_IN_ENTITY = "humidity_in_entity_id"
 CONF_HUMIDITY_OUT_ENTITY = "humidity_out_entity_id"
 CONF_CLOUD_COVER_ENTITY = "cloud_cover_entity_id"
+CONF_LHS_WINDOW_HOURS = "lhs_window_hours"
+CONF_LHS_RETENTION_DAYS = "lhs_retention_days"
 
 # Legacy keys (kept for backward compatibility if needed)
 CONF_THERMAL_SLOPE_ENTITY = "thermal_slope_entity"
@@ -22,6 +24,8 @@ CONF_SCHEDULER_ENTITY = "scheduler_entity"
 
 # Default values
 DEFAULT_NAME = "Intelligent Heating Pilot"
+DEFAULT_LHS_WINDOW_HOURS = 6.0  # 6-hour time window for contextual LHS
+DEFAULT_LHS_RETENTION_DAYS = 30  # Keep slope data for 30 days
 
 # Service names
 SERVICE_CALCULATE_START_TIME = "calculate_start_time"
