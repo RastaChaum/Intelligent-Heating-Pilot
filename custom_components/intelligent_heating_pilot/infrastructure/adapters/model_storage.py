@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 # Storage configuration
-STORAGE_VERSION = 2  # Bumped for timestamped slope data
+STORAGE_VERSION = 1
 STORAGE_KEY = "intelligent_heating_pilot_model"
 
 # Default values
@@ -82,7 +82,7 @@ class HAModelStorage(IModelStorage):
                     self._data["historical_slopes"][0], (int, float)
                 ):
                     _LOGGER.info("Migrating slope data from v1 to v2 format")
-                    self._migrate_to_v2()
+                    await self._migrate_to_v2()
             
             _LOGGER.debug("Loaded model storage data (version %d)", STORAGE_VERSION)
         else:
@@ -98,7 +98,7 @@ class HAModelStorage(IModelStorage):
         
         self._loaded = True
     
-    def _migrate_to_v2(self) -> None:
+    async def _migrate_to_v2(self) -> None:
         """Migrate data from v1 (float list) to v2 (timestamped list).
         
         Assumes old slopes were recorded recently and assigns timestamps
@@ -123,8 +123,14 @@ class HAModelStorage(IModelStorage):
             })
         
         self._data["slope_data_list"] = slope_data_list
-        # Keep historical_slopes for backward compatibility during transition
-        _LOGGER.info("Migrated %d slope entries to v2 format", len(slope_data_list))
+        # Remove old format after successful migration
+        if "historical_slopes" in self._data:
+            del self._data["historical_slopes"]
+        
+        # Persist the migrated data to storage
+        await self._store.async_save(self._data)
+        
+        _LOGGER.info("Migrated %d slope entries to v2 format and persisted to storage", len(slope_data_list))
     
     async def _cleanup_old_data(self) -> None:
         """Remove slope data older than retention period."""
