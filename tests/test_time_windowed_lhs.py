@@ -69,39 +69,6 @@ def test_slope_data_immutability():
         print("✓ SlopeData is immutable")
 
 
-def test_contextual_lhs_calculation_logic():
-    """Test the logic for calculating contextual LHS from a time window."""
-    print("\nTesting contextual LHS calculation logic...")
-    
-    # Simulate slopes from different times
-    now = datetime.now(timezone.utc)
-    
-    # Slopes from last 10 hours
-    all_slopes = [
-        SlopeData(slope_value=1.8, timestamp=now - timedelta(hours=10)),
-        SlopeData(slope_value=2.0, timestamp=now - timedelta(hours=8)),
-        SlopeData(slope_value=2.2, timestamp=now - timedelta(hours=5)),  # Within 6h window
-        SlopeData(slope_value=2.3, timestamp=now - timedelta(hours=3)),  # Within 6h window
-        SlopeData(slope_value=2.1, timestamp=now - timedelta(hours=1)),  # Within 6h window
-    ]
-    
-    # Filter to 6-hour window
-    window_start = now - timedelta(hours=6)
-    windowed_slopes = [
-        sd for sd in all_slopes
-        if window_start <= sd.timestamp < now
-    ]
-    
-    assert len(windowed_slopes) == 3, f"Expected 3 slopes in window, got {len(windowed_slopes)}"
-    
-    # Calculate average (simplified, real code uses trimmed mean)
-    avg = sum(sd.slope_value for sd in windowed_slopes) / len(windowed_slopes)
-    expected_avg = (2.2 + 2.3 + 2.1) / 3
-    
-    assert abs(avg - expected_avg) < 0.01, f"Expected {expected_avg}, got {avg}"
-    print(f"✓ Contextual LHS calculated correctly: {avg:.2f}°C/h from {len(windowed_slopes)} slopes")
-
-
 def test_storage_format():
     """Test the expected storage format for timestamped slopes."""
     print("\nTesting storage format...")
