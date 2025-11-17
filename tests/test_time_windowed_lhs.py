@@ -121,24 +121,3 @@ def test_storage_format():
     
     assert reconstructed.slope_value == 2.5
     print("✓ Storage format compatible with SlopeData")
-
-
-def run_all_tests():
-    """Run all integration tests."""
-    print("=" * 60)
-    print("TIME-WINDOWED LHS INTEGRATION TESTS")
-    print("=" * 60)
-    
-    test_slope_data_creation()
-    test_slope_data_validation()
-    test_slope_data_immutability()
-    test_contextual_lhs_calculation_logic()
-    test_storage_format()
-    
-    print("\n" + "=" * 60)
-    print("ALL TESTS PASSED ✓")
-    print("=" * 60)
-
-
-if __name__ == "__main__":
-    run_all_tests()

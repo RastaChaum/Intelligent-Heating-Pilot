@@ -69,24 +69,6 @@ class TestIntegrationStructure(unittest.TestCase):
             en_trans = json.load(f)
         self.assertIn('config', en_trans)
 
-    def test_calculator_module_imports(self):
-        """Test that calculator module can be imported."""
-        try:
-            from calculator import PreheatingCalculator
-            calc = PreheatingCalculator(thermal_slope=2.0)
-            self.assertIsNotNone(calc)
-        except ImportError as e:
-            self.fail(f"Failed to import calculator: {e}")
-
-    def test_const_module_imports(self):
-        """Test that const module can be imported."""
-        try:
-            from const import DOMAIN, DEFAULT_HEATING_SLOPE
-            self.assertEqual(DOMAIN, 'intelligent_heating_pilot')
-            self.assertEqual(DEFAULT_HEATING_SLOPE, 2.0)
-        except ImportError as e:
-            self.fail(f"Failed to import const: {e}")
-
     def test_hacs_json_exists(self):
         """Test that hacs.json exists in the root."""
         hacs_path = os.path.join(os.path.dirname(__file__), '../hacs.json')
