@@ -23,8 +23,12 @@ from .const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
+    CONF_LHS_RETENTION_DAYS,
+    CONF_LHS_WINDOW_HOURS,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
+    DEFAULT_LHS_RETENTION_DAYS,
+    DEFAULT_LHS_WINDOW_HOURS,
     DOMAIN,
 )
 from .infrastructure.adapters import (
@@ -68,6 +72,8 @@ class IntelligentHeatingPilotCoordinator:
         self._humidity_in = self._get_config_value(CONF_HUMIDITY_IN_ENTITY)
         self._humidity_out = self._get_config_value(CONF_HUMIDITY_OUT_ENTITY)
         self._cloud_cover = self._get_config_value(CONF_CLOUD_COVER_ENTITY)
+        self._lhs_window_hours = float(self._get_config_value(CONF_LHS_WINDOW_HOURS) or DEFAULT_LHS_WINDOW_HOURS)
+        self._lhs_retention_days = int(self._get_config_value(CONF_LHS_RETENTION_DAYS) or DEFAULT_LHS_RETENTION_DAYS)
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
@@ -90,7 +96,11 @@ class IntelligentHeatingPilotCoordinator:
     async def async_load(self) -> None:
         """Load and initialize all components."""
         # Create infrastructure adapters
-        self._model_storage = HAModelStorage(self.hass, self.config.entry_id)
+        self._model_storage = HAModelStorage(
+            self.hass,
+            self.config.entry_id,
+            retention_days=self._lhs_retention_days
+        )
         self._scheduler_reader = HASchedulerReader(
             self.hass,
             self._scheduler_entities,
@@ -118,6 +128,7 @@ class IntelligentHeatingPilotCoordinator:
             scheduler_commander=self._scheduler_commander,
             climate_commander=self._climate_commander,
             environment_reader=self._environment_reader,
+            lhs_window_hours=self._lhs_window_hours,
         )
         
         # Create event bridge

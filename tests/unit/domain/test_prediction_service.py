@@ -15,6 +15,7 @@ sys.path.insert(
 )
 
 from domain.services import PredictionService
+from domain.constants import MIN_ANTICIPATION_TIME, MAX_ANTICIPATION_TIME
 
 # Import fixtures
 sys.path.insert(0, os.path.dirname(__file__))
@@ -145,7 +146,7 @@ class TestPredictionService(unittest.TestCase):
         # Should respect minimum
         self.assertGreaterEqual(
             result.estimated_duration_minutes,
-            self.service.MIN_ANTICIPATION_TIME
+            MIN_ANTICIPATION_TIME
         )
 
     def test_respects_max_anticipation_time(self):
@@ -164,7 +165,7 @@ class TestPredictionService(unittest.TestCase):
         # Should respect maximum
         self.assertLessEqual(
             result.estimated_duration_minutes,
-            self.service.MAX_ANTICIPATION_TIME
+            MAX_ANTICIPATION_TIME
         )
 
     def test_handles_invalid_slope(self):

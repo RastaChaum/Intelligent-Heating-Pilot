@@ -14,9 +14,13 @@ from .const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
+    CONF_LHS_RETENTION_DAYS,
+    CONF_LHS_WINDOW_HOURS,
     CONF_NAME,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
+    DEFAULT_LHS_RETENTION_DAYS,
+    DEFAULT_LHS_WINDOW_HOURS,
     DEFAULT_NAME,
     DOMAIN,
 )
@@ -104,6 +108,30 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                 vol.Optional(CONF_CLOUD_COVER_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain="sensor"
+                    )
+                ),
+                vol.Optional(
+                    CONF_LHS_WINDOW_HOURS,
+                    default=DEFAULT_LHS_WINDOW_HOURS
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=24.0,
+                        step=0.5,
+                        unit_of_measurement="hours",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_LHS_RETENTION_DAYS,
+                    default=DEFAULT_LHS_RETENTION_DAYS
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=7,
+                        max=90,
+                        step=1,
+                        unit_of_measurement="days",
+                        mode=selector.NumberSelectorMode.BOX
                     )
                 ),
             }
@@ -206,6 +234,30 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain="sensor"
+                    )
+                ),
+                vol.Optional(
+                    CONF_LHS_WINDOW_HOURS,
+                    default=current_data.get(CONF_LHS_WINDOW_HOURS, DEFAULT_LHS_WINDOW_HOURS)
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=24.0,
+                        step=0.5,
+                        unit_of_measurement="hours",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_LHS_RETENTION_DAYS,
+                    default=current_data.get(CONF_LHS_RETENTION_DAYS, DEFAULT_LHS_RETENTION_DAYS)
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=7,
+                        max=90,
+                        step=1,
+                        unit_of_measurement="days",
+                        mode=selector.NumberSelectorMode.BOX
                     )
                 ),
             }
