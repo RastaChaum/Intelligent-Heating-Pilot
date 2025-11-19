@@ -217,6 +217,7 @@ class HeatingApplicationService:
             anticipated_start=prediction.anticipated_start_time,
             target_time=timeslot.target_time,
             target_temp=timeslot.target_temp,
+            scheduler_entity_id=timeslot.scheduler_entity,
             lhs=prediction.learned_heating_slope,
         )
         
@@ -238,6 +239,7 @@ class HeatingApplicationService:
         anticipated_start: datetime,
         target_time: datetime,
         target_temp: float,
+        scheduler_entity_id: str,
         lhs: float,
     ) -> None:
         """Schedule anticipated heating start and handle revert logic.
@@ -265,7 +267,7 @@ class HeatingApplicationService:
                     self._last_scheduled_lhs or 0.0,
                     lhs
                 )
-                await self._scheduler_commander.cancel_action()
+                await self._scheduler_commander.cancel_action(scheduler_entity_id)
                 self._is_preheating_active = False
                 self._preheating_target_time = None
                 # Update tracking for new anticipated time
@@ -302,7 +304,7 @@ class HeatingApplicationService:
             )
             # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
             # Respects scheduler conditions (skip_conditions=False in the adapter)
-            await self._scheduler_commander.run_action(target_time)
+            await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
             self._is_preheating_active = True
             self._preheating_target_time = target_time
             return
@@ -321,7 +323,7 @@ class HeatingApplicationService:
         )
         # Note: Actual scheduling is triggered by periodic updates from event_bridge
     
-    async def check_overshoot_risk(self) -> None:
+    async def check_overshoot_risk(self, scheduler_entity_id: str) -> None:
         """Check if heating should stop to prevent overshoot."""
         # Get next timeslot
         timeslot = await self._scheduler_reader.get_next_timeslot()
@@ -357,7 +359,7 @@ class HeatingApplicationService:
             )
             # Revert to current scheduled state instead of directly turning off
             # This respects scheduler conditions and returns to the proper setpoint
-            await self._scheduler_commander.cancel_action()
+            await self._scheduler_commander.cancel_action(scheduler_entity_id)
             self._is_preheating_active = False
             self._preheating_target_time = None
     

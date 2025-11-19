@@ -29,7 +29,7 @@ class HASchedulerCommander(ISchedulerCommander):
     requests into Home Assistant service calls.
     """
     
-    def __init__(self, hass: HomeAssistant, scheduler_entity_id: str) -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the scheduler commander adapter.
         
         Args:
@@ -37,9 +37,8 @@ class HASchedulerCommander(ISchedulerCommander):
             scheduler_entity_id: The scheduler entity ID to control
         """
         self._hass = hass
-        self._scheduler_entity_id = scheduler_entity_id
     
-    async def run_action(self, target_time: datetime) -> None:
+    async def run_action(self, target_time: datetime, scheduler_entity_id: str) -> None:
         """Trigger a scheduler action for a specific timeslot.
         
         This will start heating in the mode configured in the scheduler
@@ -51,7 +50,7 @@ class HASchedulerCommander(ISchedulerCommander):
         Raises:
             ValueError: If scheduler entity is not configured
         """
-        if not self._scheduler_entity_id:
+        if not scheduler_entity_id:
             _LOGGER.error("Cannot run action: no scheduler entity configured")
             raise ValueError("Scheduler entity ID not configured")
         
@@ -60,7 +59,7 @@ class HASchedulerCommander(ISchedulerCommander):
         
         _LOGGER.info(
             "Triggering scheduler action for %s at time %s",
-            self._scheduler_entity_id,
+            scheduler_entity_id,
             trigger_time_str
         )
         
@@ -69,7 +68,7 @@ class HASchedulerCommander(ISchedulerCommander):
                 SCHEDULER_DOMAIN,
                 SERVICE_RUN_ACTION,
                 {
-                    "entity_id": self._scheduler_entity_id,
+                    "entity_id": scheduler_entity_id,
                     "time": trigger_time_str,
                     "skip_conditions": False  # Respect scheduler conditions
                 },
@@ -79,13 +78,13 @@ class HASchedulerCommander(ISchedulerCommander):
         except Exception as err:
             _LOGGER.error(
                 "Failed to trigger scheduler action for %s: %s",
-                self._scheduler_entity_id,
+                scheduler_entity_id,
                 err,
                 exc_info=True
             )
             raise
     
-    async def cancel_action(self) -> None:
+    async def cancel_action(self, scheduler_entity_id: str) -> None:
         """Cancel current scheduler action and return to current timeslot.
         
         This is used to stop overshoot by reverting to the mode configured
@@ -95,7 +94,7 @@ class HASchedulerCommander(ISchedulerCommander):
         This implementation triggers the action for "now" which effectively
         reverts to the current scheduled state.
         """
-        if not self._scheduler_entity_id:
+        if not scheduler_entity_id:
             _LOGGER.error("Cannot cancel action: no scheduler entity configured")
             raise ValueError("Scheduler entity ID not configured")
         
@@ -106,7 +105,7 @@ class HASchedulerCommander(ISchedulerCommander):
         
         _LOGGER.info(
             "Canceling scheduler action for %s by reverting to current time %s",
-            self._scheduler_entity_id,
+            scheduler_entity_id,
             current_time_str
         )
         
@@ -115,7 +114,7 @@ class HASchedulerCommander(ISchedulerCommander):
                 SCHEDULER_DOMAIN,
                 SERVICE_RUN_ACTION,
                 {
-                    "entity_id": self._scheduler_entity_id,
+                    "entity_id": scheduler_entity_id,
                     "time": current_time_str,
                     "skip_conditions": False
                 },
@@ -125,7 +124,7 @@ class HASchedulerCommander(ISchedulerCommander):
         except Exception as err:
             _LOGGER.error(
                 "Failed to cancel scheduler action for %s: %s",
-                self._scheduler_entity_id,
+                scheduler_entity_id,
                 err,
                 exc_info=True
             )
