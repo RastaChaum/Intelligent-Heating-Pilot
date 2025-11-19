@@ -2,9 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Deploy to Home Assistant",
+      "label": "Restart Docker Compose",
       "type": "shell",
-      "command": "scp -r ${workspaceFolder}/custom_components/intelligent_heating_pilot root@${homeassistant_host}:/config/custom_components/",
+      "command": "docker compose restart homeassistant",
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -16,9 +16,31 @@
       }
     },
     {
-      "label": "Restart Home Assistant",
+      "label": "View Docker Logs",
       "type": "shell",
-      "command": "ssh ${homeassistant_user}@${homeassistant_host} 'ha core restart'",
+      "command": "docker compose logs -f homeassistant | grep -E '(intelligent_heating_pilot|ERROR|WARNING)'",
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "View IHP Debug Logs",
+      "type": "shell",
+      "command": "docker compose logs -f homeassistant | grep intelligent_heating_pilot",
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Deploy to Home Assistant (Remote)",
+      "type": "shell",
+      "command": "scp -r ${workspaceFolder}/custom_components/intelligent_heating_pilot root@${homeassistant_host}:/config/custom_components/",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
@@ -26,23 +48,13 @@
       }
     },
     {
-      "label": "Deploy and Restart",
-      "dependsOn": [
-        "Deploy to Home Assistant",
-        "Restart Home Assistant"
-      ],
-      "dependsOrder": "sequence",
-      "problemMatcher": []
-    },
-    {
-      "label": "View Home Assistant Logs",
+      "label": "Restart Home Assistant (Remote)",
       "type": "shell",
-      "command": "ssh ${homeassistant_user}@${homeassistant_host} 'tail -f /config/home-assistant.log | grep intelligent_heating_pilot'",
+      "command": "ssh ${homeassistant_user}@${homeassistant_host} 'ha core restart'",
       "problemMatcher": [],
-      "isBackground": true,
       "presentation": {
         "reveal": "always",
-        "panel": "dedicated"
+        "panel": "new"
       }
     }
   ]

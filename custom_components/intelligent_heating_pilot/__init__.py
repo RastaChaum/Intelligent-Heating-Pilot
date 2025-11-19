@@ -287,16 +287,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Setup event listeners
     coordinator.setup_listeners()
     
-    # Initial update
-    await coordinator.async_update()
-    
-    # Delayed update after HA start
+    # Wait for HA to be fully started before first update
+    # This ensures all entities (especially scheduler entities) are available
     @callback
     def _ha_started(_event):
-        _LOGGER.debug("[%s] HA started, triggering update", entry.entry_id)
+        _LOGGER.info("[%s] HA started, triggering initial update", entry.entry_id)
         hass.async_create_task(coordinator.async_update())
     
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started)
+    # If HA already started, trigger update immediately, otherwise wait
+    if hass.is_running:
+        _LOGGER.debug("[%s] HA already running, triggering update now", entry.entry_id)
+        await coordinator.async_update()
+    else:
+        _LOGGER.debug("[%s] Waiting for HA start event before first update", entry.entry_id)
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started)
     
     # Small delayed update for late attribute population
     @callback

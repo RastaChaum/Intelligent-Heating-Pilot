@@ -169,6 +169,67 @@ class TestHASchedulerReader(unittest.TestCase):
         """Test parsing invalid trigger string."""
         result = self.reader._parse_next_trigger("not a datetime")
         self.assertIsNone(result)
+    
+    def test_resolve_preset_temperature_v8_format(self):
+        """Test resolving preset temperature from VTherm v8.0.0+ format."""
+        # Setup VTherm entity with v8.0.0+ preset_temperatures structure
+        vtherm_state = Mock()
+        vtherm_state.entity_id = "climate.test_vtherm"
+        vtherm_state.attributes = {
+            "preset_mode": "none",
+            "preset_temperatures": {
+                "eco_temp": 18.0,
+                "boost_temp": 22.0,
+                "comfort_temp": 20.0,
+                "frost_temp": 10.0,
+            }
+        }
+        
+        reader = HASchedulerReader(
+            self.mock_hass, 
+            ["switch.schedule"], 
+            vtherm_entity_id="climate.test_vtherm"
+        )
+        
+        # Mock VTherm state
+        self.mock_hass.states.get.return_value = vtherm_state
+        
+        # Test resolving eco preset
+        result = reader._resolve_preset_temperature("eco")
+        self.assertEqual(result, 18.0)
+        
+        # Test resolving boost preset
+        result = reader._resolve_preset_temperature("boost")
+        self.assertEqual(result, 22.0)
+        
+        # Test resolving comfort preset
+        result = reader._resolve_preset_temperature("comfort")
+        self.assertEqual(result, 20.0)
+    
+    def test_resolve_preset_temperature_ignores_zero_values(self):
+        """Test that preset resolution ignores 0 values (uninitialized)."""
+        # Setup VTherm with uninitialized presets
+        vtherm_state = Mock()
+        vtherm_state.entity_id = "climate.test_vtherm"
+        vtherm_state.attributes = {
+            "preset_mode": "none",
+            "preset_temperatures": {
+                "eco_temp": 0,  # Uninitialized
+                "boost_temp": 0,  # Uninitialized
+            }
+        }
+        
+        reader = HASchedulerReader(
+            self.mock_hass, 
+            ["switch.schedule"], 
+            vtherm_entity_id="climate.test_vtherm"
+        )
+        
+        self.mock_hass.states.get.return_value = vtherm_state
+        
+        # Should return None for 0 values
+        result = reader._resolve_preset_temperature("eco")
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":

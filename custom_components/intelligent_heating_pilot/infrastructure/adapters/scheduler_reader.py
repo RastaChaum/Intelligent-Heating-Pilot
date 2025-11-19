@@ -14,6 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from ...domain.interfaces import ISchedulerReader
 from ...domain.value_objects import ScheduleTimeslot
+from ..vtherm_compat import get_vtherm_attribute
 
 if TYPE_CHECKING:
     from homeassistant.core import State
@@ -70,7 +71,11 @@ class HASchedulerReader(ISchedulerReader):
         for entity_id in self._scheduler_entity_ids:
             state = self._hass.states.get(entity_id)
             if not state:
-                _LOGGER.warning("Scheduler entity not found: %s", entity_id)
+                # Use debug level if HA is still starting up, warning otherwise
+                if self._hass.is_running:
+                    _LOGGER.warning("Scheduler entity not found: %s", entity_id)
+                else:
+                    _LOGGER.debug("Scheduler entity not yet available (HA starting): %s", entity_id)
                 continue
             
             # Extract next trigger time and target temperature
@@ -104,7 +109,7 @@ class HASchedulerReader(ISchedulerReader):
                 scheduler_entity=chosen_entity
             )
         
-        _LOGGER.warning("No valid scheduler timeslot found")
+        _LOGGER.debug("No valid scheduler timeslot found (check scheduler configuration and preset temperatures)")
         return None
     
     def _extract_timeslot_data(
@@ -123,6 +128,16 @@ class HASchedulerReader(ISchedulerReader):
             Tuple of (next_time, target_temp), either can be None if not found
         """
         attrs = state.attributes
+        
+        # Debug logging to understand the actual structure
+        _LOGGER.debug(
+            "Scheduler %s attributes: next_trigger=%s, next_slot=%s, actions=%s, next_entries=%s",
+            state.entity_id,
+            attrs.get("next_trigger"),
+            attrs.get("next_slot"),
+            type(attrs.get("actions")),
+            type(attrs.get("next_entries")),
+        )
         
         # Try standard format first
         next_time = self._parse_next_trigger(attrs.get("next_trigger"))
@@ -275,8 +290,8 @@ class HASchedulerReader(ISchedulerReader):
         """Resolve a preset name to a numeric temperature using VTherm attributes.
         
         This uses the VTherm climate entity attributes as the source of truth. It
-        attempts common attribute naming conventions. If the preset is currently
-        active, falls back to the entity's "temperature" attribute.
+        attempts common attribute naming conventions, with v8.0.0+ compatibility
+        using get_vtherm_attribute() to access both legacy and new data structures.
         
         Args:
             preset: Preset mode name from the scheduler action
@@ -290,28 +305,60 @@ class HASchedulerReader(ISchedulerReader):
         if not state:
             _LOGGER.debug("VTherm entity not found: %s", self._vtherm_entity_id)
             return None
-        attrs = state.attributes or {}
+        
         key = str(preset).lower().replace(" ", "_")
-        # Try common naming patterns
+        
+        # First, try the preset_temperatures dict (VTherm v8.0.0+ format)
+        preset_temps = get_vtherm_attribute(state, "preset_temperatures")
+        if isinstance(preset_temps, dict):
+            # VTherm uses format like "eco_temp", "boost_temp", "comfort_temp"
+            # Try multiple key patterns
+            preset_keys_to_try = [
+                f"{key}_temp",           # eco_temp, boost_temp
+                f"{key}_temperature",    # eco_temperature
+                key,                      # eco, boost (fallback)
+                preset.lower(),          # Original lowercase
+            ]
+            
+            for preset_key in preset_keys_to_try:
+                if preset_key in preset_temps:
+                    try:
+                        temp_value = float(preset_temps[preset_key])
+                        # Ignore 0 values as they indicate uninitialized presets
+                        if temp_value > 0:
+                            _LOGGER.debug("Resolved preset '%s' to %.1f°C (from %s)", preset, temp_value, preset_key)
+                            return temp_value
+                        else:
+                            _LOGGER.debug("Skipping preset '%s' with 0°C (likely uninitialized)", preset)
+                    except (ValueError, TypeError):
+                        _LOGGER.debug("Invalid preset_temperatures value for %s: %s", preset_key, preset_temps[preset_key])
+        
+        # Fallback: try common naming patterns with v8.0.0+ compatibility
         candidate_keys = [
             f"{key}_temperature",
             f"{key}_temp",
             f"temperature_{key}",
             f"temp_{key}",
         ]
+        
         for k in candidate_keys:
-            if k in attrs and attrs[k] is not None:
+            # Use get_vtherm_attribute to handle both legacy and v8.0.0+ formats
+            value = get_vtherm_attribute(state, k)
+            if value is not None:
                 try:
-                    return float(attrs[k])
+                    return float(value)
                 except (ValueError, TypeError):
-                    _LOGGER.debug("Invalid preset attribute %s=%s", k, attrs[k])
+                    _LOGGER.debug("Invalid preset attribute %s=%s", k, value)
+        
         # Fallback: if this preset is currently active, use current target temperature
-        current_preset = attrs.get("preset_mode")
+        current_preset = get_vtherm_attribute(state, "preset_mode")
         if isinstance(current_preset, str) and current_preset.lower() == key:
             for target_key in ("temperature", "target_temperature", "target_temp"):
-                if target_key in attrs and attrs[target_key] is not None:
+                value = get_vtherm_attribute(state, target_key)
+                if value is not None:
                     try:
-                        return float(attrs[target_key])
+                        return float(value)
                     except (ValueError, TypeError):
                         pass
+        
         return None
