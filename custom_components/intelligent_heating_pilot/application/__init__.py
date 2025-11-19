@@ -180,7 +180,7 @@ class HeatingApplicationService:
             return {
                 "anticipated_start_time": timeslot.target_time,
                 "next_schedule_time": timeslot.target_time,
-                "next_target_temp": timeslot.target_temp,
+                "next_target_temperature": timeslot.target_temp,
                 "anticipation_minutes": 0,
                 "current_temp": environment.current_temp,
                 "learned_heating_slope": lhs,
@@ -222,7 +222,7 @@ class HeatingApplicationService:
         return {
             "anticipated_start_time": prediction.anticipated_start_time,
             "next_schedule_time": timeslot.target_time,
-            "next_target_temp": timeslot.target_temp,
+            "next_target_temperature": timeslot.target_temp,
             "anticipation_minutes": prediction.estimated_duration_minutes,
             "current_temp": environment.current_temp,
             "learned_heating_slope": prediction.learned_heating_slope,
