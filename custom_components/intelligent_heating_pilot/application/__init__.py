@@ -69,6 +69,8 @@ class HeatingApplicationService:
         # Runtime state for anticipation scheduling
         self._last_scheduled_time: datetime | None = None
         self._last_scheduled_lhs: float | None = None
+        self._is_preheating_active: bool = False
+        self._preheating_target_time: datetime | None = None
     
     async def process_slope_update(self, new_slope: float) -> None:
         """Process a new slope value from VTherm.
@@ -215,6 +217,7 @@ class HeatingApplicationService:
             anticipated_start=prediction.anticipated_start_time,
             target_time=timeslot.target_time,
             target_temp=timeslot.target_temp,
+            scheduler_entity_id=timeslot.scheduler_entity,
             lhs=prediction.learned_heating_slope,
         )
         
@@ -236,20 +239,53 @@ class HeatingApplicationService:
         anticipated_start: datetime,
         target_time: datetime,
         target_temp: float,
+        scheduler_entity_id: str,
         lhs: float,
     ) -> None:
-        """Schedule anticipated heating start.
+        """Schedule anticipated heating start and handle revert logic.
+        
+        This method handles both starting pre-heating and reverting to the current
+        scheduled state when conditions change (e.g., anticipated start time moves later).
         
         Args:
             anticipated_start: When to start heating
             target_time: Target schedule time
+            target_temp: Target temperature
             lhs: Learned heating slope used
         """
         now = dt_util.now()
         
-        # Check for duplicate scheduling
+        # Check if we're currently pre-heating and should revert
+        if self._is_preheating_active:
+            # If anticipated start moved to the future (after now), we should stop pre-heating
+            if anticipated_start > now and self._preheating_target_time == target_time:
+                _LOGGER.warning(
+                    "Anticipated start time moved later (now: %s, new start: %s). "
+                    "LHS improved from %.2f to %.2f°C/h. Reverting to current scheduled state.",
+                    now.isoformat(),
+                    anticipated_start.isoformat(),
+                    self._last_scheduled_lhs or 0.0,
+                    lhs
+                )
+                await self._scheduler_commander.cancel_action(scheduler_entity_id)
+                self._is_preheating_active = False
+                self._preheating_target_time = None
+                # Update tracking for new anticipated time
+                self._last_scheduled_time = anticipated_start
+                self._last_scheduled_lhs = lhs
+                return
+            
+            # If we've reached the target time, mark pre-heating as complete
+            if now >= target_time:
+                _LOGGER.info("Target time reached, pre-heating complete")
+                self._is_preheating_active = False
+                self._preheating_target_time = None
+                return
+        
+        # Check for duplicate scheduling (only if not already pre-heating)
         if (
-            self._last_scheduled_time == anticipated_start
+            not self._is_preheating_active
+            and self._last_scheduled_time == anticipated_start
             and self._last_scheduled_lhs is not None
             and abs(lhs - self._last_scheduled_lhs) < 0.05
         ):
@@ -263,16 +299,14 @@ class HeatingApplicationService:
         # If anticipated start is in past but target is future, trigger now
         if anticipated_start <= now < target_time:
             _LOGGER.info(
-                "Anticipated start %s is past, triggering immediately",
+                "Anticipated start %s is past, triggering pre-heating immediately",
                 anticipated_start.isoformat()
             )
-            await self._scheduler_commander.run_action(target_time)
-            # Safety: Force HVAC to heat with the intended target temperature
-            # Some setups may switch HVAC mode to 'off' despite preset being applied.
-            try:
-                await self._climate_commander.turn_on_heat(target_temp)
-            except Exception:
-                _LOGGER.warning("Failed to force HVAC heat after scheduler action", exc_info=True)
+            # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
+            # Respects scheduler conditions (skip_conditions=False in the adapter)
+            await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
+            self._is_preheating_active = True
+            self._preheating_target_time = target_time
             return
         
         # If both are in past, skip
@@ -280,15 +314,16 @@ class HeatingApplicationService:
             _LOGGER.debug("Both times are past, skipping")
             return
         
-        # Schedule for future (would need a task scheduler in real implementation)
+        # Anticipated start is in the future - wait for it
         _LOGGER.info(
-            "Would schedule anticipation at %s for target %s",
+            "Anticipation scheduled: start at %s for target %s (waiting %.1f minutes)",
             anticipated_start.isoformat(),
-            target_time.isoformat()
+            target_time.isoformat(),
+            (anticipated_start - now).total_seconds() / 60.0
         )
-        # TODO: Implement actual scheduling mechanism
+        # Note: Actual scheduling is triggered by periodic updates from event_bridge
     
-    async def check_overshoot_risk(self) -> None:
+    async def check_overshoot_risk(self, scheduler_entity_id: str) -> None:
         """Check if heating should stop to prevent overshoot."""
         # Get next timeslot
         timeslot = await self._scheduler_reader.get_next_timeslot()
@@ -317,12 +352,16 @@ class HeatingApplicationService:
         
         if estimated_temp > overshoot_threshold:
             _LOGGER.warning(
-                "Overshoot risk! Current: %.1f°C, estimated: %.1f°C, target: %.1f°C - turning off",
+                "Overshoot risk! Current: %.1f°C, estimated: %.1f°C, target: %.1f°C - reverting to current schedule",
                 environment.current_temp,
                 estimated_temp,
                 timeslot.target_temp
             )
-            await self._climate_commander.turn_off()
+            # Revert to current scheduled state instead of directly turning off
+            # This respects scheduler conditions and returns to the proper setpoint
+            await self._scheduler_commander.cancel_action(scheduler_entity_id)
+            self._is_preheating_active = False
+            self._preheating_target_time = None
     
     async def reset_learned_slopes(self) -> None:
         """Reset all learned slope history."""

@@ -107,9 +107,7 @@ class IntelligentHeatingPilotCoordinator:
             vtherm_entity_id=self._vtherm_entity,
         )
         
-        # Scheduler commander needs a specific entity (use first one)
-        primary_scheduler = self._scheduler_entities[0] if self._scheduler_entities else ""
-        self._scheduler_commander = HASchedulerCommander(self.hass, primary_scheduler)
+        self._scheduler_commander = HASchedulerCommander(self.hass)
         
         self._climate_commander = HAClimateCommander(self.hass, self._vtherm_entity)
         self._environment_reader = HAEnvironmentReader(

@@ -18,11 +18,10 @@ class TestHASchedulerCommander(unittest.TestCase):
         self.mock_hass = Mock()
         self.mock_hass.services.async_call = AsyncMock()
         self.scheduler_entity = "switch.heating_schedule"
-        self.commander = HASchedulerCommander(self.mock_hass, self.scheduler_entity)
+        self.commander = HASchedulerCommander(self.mock_hass)
     
     def test_init(self):
         """Test adapter initialization."""
-        self.assertEqual(self.commander._scheduler_entity_id, self.scheduler_entity)
         self.assertEqual(self.commander._hass, self.mock_hass)
     
     def test_run_action_success(self):
@@ -33,7 +32,7 @@ class TestHASchedulerCommander(unittest.TestCase):
         target_time = datetime(2024, 1, 15, 7, 30)
         
         # Execute
-        asyncio.run(self.commander.run_action(target_time))
+        asyncio.run(self.commander.run_action(target_time, self.scheduler_entity))
         
         # Assert
         self.mock_hass.services.async_call.assert_called_once_with(
@@ -52,12 +51,12 @@ class TestHASchedulerCommander(unittest.TestCase):
         import asyncio
         
         # Setup: commander with no entity
-        commander = HASchedulerCommander(self.mock_hass, "")
+        commander = HASchedulerCommander(self.mock_hass)
         target_time = datetime(2024, 1, 15, 7, 30)
         
         # Execute & Assert
         with self.assertRaises(ValueError) as context:
-            asyncio.run(commander.run_action(target_time))
+            asyncio.run(commander.run_action(target_time, ""))
         
         self.assertIn("not configured", str(context.exception))
         self.mock_hass.services.async_call.assert_not_called()
@@ -74,7 +73,7 @@ class TestHASchedulerCommander(unittest.TestCase):
         
         # Execute & Assert
         with self.assertRaises(Exception) as context:
-            asyncio.run(self.commander.run_action(target_time))
+            asyncio.run(self.commander.run_action(target_time, self.scheduler_entity))
         
         self.assertIn("Service call failed", str(context.exception))
     
@@ -83,7 +82,7 @@ class TestHASchedulerCommander(unittest.TestCase):
         import asyncio
         
         # Execute
-        asyncio.run(self.commander.cancel_action())
+        asyncio.run(self.commander.cancel_action(self.scheduler_entity))
         
         # Assert: should call service with current time
         self.mock_hass.services.async_call.assert_called_once()
@@ -102,11 +101,11 @@ class TestHASchedulerCommander(unittest.TestCase):
         import asyncio
         
         # Setup: commander with no entity
-        commander = HASchedulerCommander(self.mock_hass, "")
+        commander = HASchedulerCommander(self.mock_hass)
         
         # Execute & Assert
         with self.assertRaises(ValueError) as context:
-            asyncio.run(commander.cancel_action())
+            asyncio.run(commander.cancel_action(""))
         
         self.assertIn("not configured", str(context.exception))
         self.mock_hass.services.async_call.assert_not_called()
@@ -128,7 +127,7 @@ class TestHASchedulerCommander(unittest.TestCase):
             self.mock_hass.services.async_call.reset_mock()
             
             # Execute
-            asyncio.run(self.commander.run_action(target_time))
+            asyncio.run(self.commander.run_action(target_time, self.scheduler_entity))
             
             # Assert
             call_args = self.mock_hass.services.async_call.call_args
