@@ -186,6 +186,7 @@ class HeatingApplicationService:
                 "learned_heating_slope": lhs,
                 "confidence_level": 100,
                 "timeslot_id": timeslot.timeslot_id,
+                "scheduler_entity": timeslot.scheduler_entity,
             }
 
         # Calculate prediction
@@ -227,6 +228,7 @@ class HeatingApplicationService:
             "learned_heating_slope": prediction.learned_heating_slope,
             "confidence_level": prediction.confidence_level,
             "timeslot_id": timeslot.timeslot_id,
+            "scheduler_entity": timeslot.scheduler_entity,
         }
     
     async def _schedule_anticipation(

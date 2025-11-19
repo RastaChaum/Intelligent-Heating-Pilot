@@ -17,11 +17,13 @@ class ScheduleTimeslot:
         target_time: When the target temperature should be reached
         target_temp: Desired temperature in Celsius
         timeslot_id: Unique identifier for this schedule timeslot
+        scheduler_entity: The scheduler entity ID that provided this timeslot
     """
     
     target_time: datetime
     target_temp: float
     timeslot_id: str
+    scheduler_entity: str = ""
     
     def __post_init__(self) -> None:
         """Validate the schedule timeslot data."""

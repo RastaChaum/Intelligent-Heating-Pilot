@@ -100,7 +100,8 @@ class HASchedulerReader(ISchedulerReader):
             return ScheduleTimeslot(
                 target_time=chosen_time,
                 target_temp=chosen_temp,
-                timeslot_id=f"{chosen_entity}_{chosen_time.isoformat()}"
+                timeslot_id=f"{chosen_entity}_{chosen_time.isoformat()}",
+                scheduler_entity=chosen_entity
             )
         
         _LOGGER.warning("No valid scheduler timeslot found")
