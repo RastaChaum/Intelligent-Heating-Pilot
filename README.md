@@ -1,20 +1,25 @@
 # Intelligent Heating Pilot (IHP)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-![Version](https://img.shields.io/badge/version-0.1.0--alpha-orange)
-![Status](https://img.shields.io/badge/status-alpha-red)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![Status](https://img.shields.io/badge/status-beta-yellow)
 
-> [!WARNING]
-> **🚧 ALPHA VERSION - USE AT YOUR OWN RISK 🚧**
+> [!NOTE]
+> **🚀 BETA VERSION (v0.3.0) 🚀**
 > 
-> This is the **first alpha release (v0.1.0-alpha)** of Intelligent Heating Pilot. While the core features are functional, this version is still in active development and testing.
+> Intelligent Heating Pilot is now in **beta**. Core features are stable and tested, with comprehensive documentation for users and contributors.
+>
+> **What's New in 0.3.0:**
+> - 📚 Complete documentation restructuring
+> - 🌍 All documentation in English
+> - 🤝 Clear contributor guidelines
+> - 🏗️ Detailed architecture documentation
 >
 > **Known Limitations:**
-> - ⚠️ **Multi-scheduler per VTherm NOT tested**: Using multiple schedulers for a single thermostat has not been validated yet
-> - 🧪 Multi-instance isolation (multiple IHP for different rooms) is newly implemented
-> - 📊 Statistical learning requires several days of data collection for optimal accuracy
+> - ⚠️ Multi-scheduler per VTherm configuration needs more testing
+> - 📊 Statistical learning requires 3-5 heating cycles for optimal accuracy
 >
-> **We encourage early adopters to test and provide feedback!** Please report any issues on [GitHub Issues](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues).
+> **Feedback Welcome!** Please report any issues on [GitHub Issues](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues).
 
 ---
 
