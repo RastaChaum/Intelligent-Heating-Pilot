@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from ...domain.value_objects import EnvironmentState
+from ..vtherm_compat import get_vtherm_attribute
 
 if TYPE_CHECKING:
     pass
@@ -65,7 +66,8 @@ class HAEnvironmentReader:
             _LOGGER.warning("VTherm entity not found: %s", self._vtherm_entity_id)
             return None
         
-        current_temp_raw = vtherm_state.attributes.get("current_temperature")
+        # Use v8.0.0+ compatible attribute access
+        current_temp_raw = get_vtherm_attribute(vtherm_state, "current_temperature")
         if current_temp_raw is None:
             _LOGGER.warning("No current_temperature in VTherm %s", self._vtherm_entity_id)
             return None
@@ -113,7 +115,8 @@ class HAEnvironmentReader:
         if not vtherm_state:
             return None
         
-        slope_raw = vtherm_state.attributes.get("slope")
+        # Use v8.0.0+ compatible attribute access
+        slope_raw = get_vtherm_attribute(vtherm_state, "slope")
         if slope_raw is None:
             return None
         
@@ -141,9 +144,9 @@ class HAEnvironmentReader:
         if hvac_mode != "heat":
             return False
         
-        # Check current temp is lower than target temp
-        current_temp = vtherm_state.attributes.get("current_temperature")
-        target_temp = vtherm_state.attributes.get("temperature")
+        # Check current temp is lower than target temp (v8.0.0+ compatible)
+        current_temp = get_vtherm_attribute(vtherm_state, "current_temperature")
+        target_temp = get_vtherm_attribute(vtherm_state, "temperature")
         
         if current_temp is None or target_temp is None:
             # If we can't determine temps, assume not heating
