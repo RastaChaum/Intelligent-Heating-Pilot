@@ -12,6 +12,8 @@ from homeassistant.core import Event, EventStateChangedData, HomeAssistant, call
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
+from .vtherm_compat import get_vtherm_attribute
+
 if TYPE_CHECKING:
     from datetime import datetime
     
@@ -113,13 +115,13 @@ class HAEventBridge:
             _LOGGER.debug("Ignoring self-induced VTherm change")
             return
         
-        # Extract slope changes
-        old_slope = old_state.attributes.get("temperature_slope")
-        new_slope = new_state.attributes.get("temperature_slope")
+        # Extract slope changes (v8.0.0+ compatible)
+        old_slope = get_vtherm_attribute(old_state, "temperature_slope")
+        new_slope = get_vtherm_attribute(new_state, "temperature_slope")
         
-        # Extract temperature changes
-        old_temp = old_state.attributes.get("current_temperature")
-        new_temp = new_state.attributes.get("current_temperature")
+        # Extract temperature changes (v8.0.0+ compatible)
+        old_temp = get_vtherm_attribute(old_state, "current_temperature")
+        new_temp = get_vtherm_attribute(new_state, "current_temperature")
         
         slope_changed = old_slope != new_slope
         temp_changed = old_temp != new_temp
@@ -159,11 +161,12 @@ class HAEventBridge:
                     "entry_id": self._entry_id,
                     "anticipated_start_time": anticipation_data["anticipated_start_time"].isoformat(),
                     "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
-                    "next_target_temp": anticipation_data["next_target_temp"],
+                    "next_target_temperature": anticipation_data["next_target_temperature"],
                     "anticipation_minutes": anticipation_data["anticipation_minutes"],
                     "current_temp": anticipation_data["current_temp"],
                     "learned_heating_slope": anticipation_data["learned_heating_slope"],
                     "confidence_level": anticipation_data["confidence_level"],
+                    "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
                 },
             )
             _LOGGER.debug("Published anticipation event for sensors")

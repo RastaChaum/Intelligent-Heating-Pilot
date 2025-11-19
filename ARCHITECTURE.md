@@ -1,324 +1,755 @@
-# Architecture d'Intelligent Heating Pilot (IHP)
+# Architecture Documentation
 
-## Vue d'ensemble
+## 📐 Domain-Driven Design (DDD) Architecture
 
-Intelligent Heating Pilot (IHP) agit comme un **intermédiaire intelligent** entre le HACS Scheduler Component et Versatile Thermostat (VTherm). Il apprend des pentes thermiques de votre VTherm et anticipe le démarrage du chauffage pour atteindre la température cible exactement à l'heure programmée.
+Intelligent Heating Pilot follows **Domain-Driven Design** principles with a strict separation between business logic and infrastructure concerns. This architecture ensures maintainability, testability, and independence from Home Assistant implementation details.
 
-## Flux de Fonctionnement
+## 🎯 Core Principles
 
-```mermaid
-graph TD
-    A[Scheduler Entities] -->|Prochain événement| B[IntelligentHeatingPilot]
-    C[VTherm Entity] -->|Slope actuel| B
-    D[Capteurs Optionnels] -->|Humidité, Nuages| B
-    B -->|Calcul LHS| E[Learned Heating Slope]
-    B -->|Calcul Anticipation| F[Anticipated Start Time]
-    F -->|Appel scheduler.run_action| A
-    B -->|Surveillance| G[Overshoot Prevention]
-    G -->|Si nécessaire| H[climate.set_hvac_mode off]
+1. **Domain Independence**: Core business logic has zero dependencies on Home Assistant
+2. **Interface-Driven Design**: All external interactions happen through Abstract Base Classes (ABCs)
+3. **Immutability**: Value objects are immutable to prevent unexpected state changes
+4. **Test-First**: Business logic is developed using Test-Driven Development (TDD)
+5. **Single Responsibility**: Each component has one clear, well-defined purpose
+
+## 🏗️ Layer Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│          Home Assistant Core                     │
+│          (Coordinator, Config Flow)              │
+└────────────────┬────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────┐
+│        Application Layer                         │
+│  (Use Cases & Orchestration)                     │
+│  • HeatingApplicationService                     │
+│  • Coordinates domain and infrastructure         │
+└────────────────┬────────────────────────────────┘
+                 │
+        ┌────────┴────────┐
+        │                 │
+┌───────▼──────┐  ┌──────▼─────────────────┐
+│ Domain Layer │  │ Infrastructure Layer    │
+│ (Pure Logic) │  │ (HA Integration)        │
+└──────────────┘  └────────────────────────┘
+
+Domain Layer (NO HA dependencies):
+├── value_objects/
+│   ├── environment_state.py        # Immutable environmental data
+│   ├── schedule_timeslot.py        # Immutable schedule data
+│   ├── prediction_result.py        # Immutable prediction data
+│   ├── heating_decision.py         # Immutable decision data
+│   └── slope_data.py               # Immutable slope data
+├── entities/
+│   └── heating_pilot.py            # Aggregate root (future)
+├── interfaces/
+│   ├── scheduler_reader.py         # ABC: Read scheduler
+│   ├── scheduler_commander.py      # ABC: Control scheduler
+│   ├── climate_commander.py        # ABC: Control climate
+│   ├── environment_reader.py       # ABC: Read environment
+│   └── model_storage.py            # ABC: Persist learning data
+└── services/
+    ├── prediction_service.py       # Calculate anticipation
+    └── lhs_calculation_service.py  # Calculate learned heating slope
+
+Infrastructure Layer (HA-specific):
+└── adapters/
+    ├── scheduler_reader.py         # Implements ISchedulerReader
+    ├── scheduler_commander.py      # Implements ISchedulerCommander
+    ├── climate_commander.py        # Implements IClimateCommander
+    ├── environment_reader.py       # Implements IEnvironmentReader
+    └── model_storage.py            # Implements IModelStorage
 ```
 
-## Composants Principaux
+## 📦 Value Objects (Immutable Data Carriers)
 
-### 1. IntelligentHeatingPilotCoordinator
+Value objects are **immutable** data structures that carry information between layers without containing logic.
 
-Classe centrale qui gère toute la logique de l'intégration.
+### EnvironmentState
 
-#### Responsabilités :
-- **Apprentissage des slopes** : Collecte et stocke les valeurs de slope du VTherm
-- **Calcul du LHS (Learned Heating Slope)** : Détermine le slope maximal appris
-- **Extraction des événements scheduler** : Identifie le prochain déclenchement et sa consigne
-- **Calcul d'anticipation** : Détermine quand démarrer le chauffage
-- **Planification** : Schedule l'appel à `scheduler.run_action`
-- **Surveillance de sur-chauffe** : Prévient le dépassement de la cible
-
-#### Méthodes Clés :
+Represents the current environmental conditions:
 
 ```python
-async def async_load() -> None
-    """Charge les données persistées (slopes appris)."""
+@dataclass(frozen=True)
+class EnvironmentState:
+    """Current environmental conditions."""
+    current_temp: float
+    outdoor_temp: float | None
+    humidity: float | None
+    cloud_coverage: float | None
+    timestamp: datetime
+```
 
-def get_vtherm_slope() -> float
-    """Récupère le slope actuel du VTherm et l'ajoute à l'historique."""
+### ScheduleTimeslot
 
-def get_learned_heating_slope() -> float
-    """Retourne le LHS (max des slopes appris)."""
+Represents a scheduled heating event:
 
-async def get_next_scheduler_event() -> tuple[datetime, float, str]
-    """
-    Extrait le prochain événement du scheduler.
-    Retourne: (next_time, next_temp, scheduler_entity)
-    """
+```python
+@dataclass(frozen=True)
+class ScheduleTimeslot:
+    """A scheduled heating timeslot."""
+    start_time: datetime
+    target_temp: float
+    schedule_id: str
+```
 
-async def async_calculate_anticipation() -> dict
-    """
-    Calcule le temps d'anticipation basé sur :
-    - Delta de température (target - current)
-    - LHS (Learned Heating Slope)
-    - Facteurs de correction (humidité, nuages)
+### PredictionResult
+
+Result of the anticipation calculation:
+
+```python
+@dataclass(frozen=True)
+class PredictionResult:
+    """Result of heating anticipation prediction."""
+    anticipated_start_time: datetime
+    anticipation_duration_minutes: float
+    confidence_level: float
+    reasoning: str
+```
+
+### SlopeData
+
+Timestamped heating slope observation:
+
+```python
+@dataclass(frozen=True)
+class SlopeData:
+    """A single heating slope observation."""
+    slope_value: float  # °C/h
+    timestamp: datetime
+```
+
+## 🔌 Interfaces (Contracts)
+
+Interfaces define contracts between the domain and infrastructure layers. The domain depends on these abstractions, not on concrete implementations.
+
+### ISchedulerReader
+
+Read scheduled events from a scheduler:
+
+```python
+class ISchedulerReader(ABC):
+    """Contract for reading scheduled events."""
     
-    Formule: Anticipation_min = (ΔT / LHS) * 60 + buffer
-    """
-
-async def async_schedule_anticipation(anticipation_data: dict) -> None
-    """Planifie l'appel à scheduler.run_action à l'heure anticipée."""
-
-async def async_start_overshoot_monitoring(anticipation_data: dict) -> None
-    """
-    Surveille toutes les 2 minutes après le démarrage anticipé.
-    Si la température risque de dépasser la cible, éteint le chauffage.
-    """
+    @abstractmethod
+    async def get_next_timeslot(self) -> ScheduleTimeslot | None:
+        """Get the next scheduled heating timeslot."""
+        pass
+    
+    @abstractmethod
+    async def has_active_schedule(self) -> bool:
+        """Check if any schedule is currently active."""
+        pass
 ```
 
-### 2. Configuration Flow
+### ISchedulerCommander
 
-Gère la configuration initiale et les modifications post-installation.
+Control the scheduler to trigger heating:
 
-#### Paramètres :
-
-| Paramètre | Type | Obligatoire | Description |
-|-----------|------|-------------|-------------|
-| `vtherm_entity_id` | climate | ✅ Oui | Entité Versatile Thermostat (source du slope) |
-| `scheduler_entities` | list[switch] | ✅ Oui | Switchs du HACS Scheduler Component |
-| `humidity_in_entity_id` | sensor | ❌ Non | Capteur d'humidité intérieure |
-| `humidity_out_entity_id` | sensor | ❌ Non | Capteur d'humidité extérieure |
-| `cloud_cover_entity_id` | sensor | ❌ Non | Capteur de couverture nuageuse |
-
-### 3. Sensors (Capteurs)
-
-Trois capteurs exposent les données calculées :
-
-#### a) `sensor.intelligent_heating_pilot_anticipated_start_time`
-- **Type** : Timestamp
-- **Description** : Heure à laquelle le chauffage sera démarré en anticipation
-- **Attributs** :
-  - `next_schedule_time` : Heure du prochain événement scheduler
-  - `next_target_temp` : Température cible du prochain événement
-  - `anticipation_minutes` : Durée d'anticipation en minutes
-  - `current_temp` : Température actuelle
-  - `scheduler_entity` : Entité scheduler concernée
-  - `learned_heating_slope` : LHS utilisé pour le calcul
-
-#### b) `sensor.intelligent_heating_pilot_learned_heating_slope`
-- **Type** : Mesure (°C/h)
-- **Description** : Pente de chauffage apprise (LHS)
-- **Attributs** :
-  - `max_slope` : Slope maximal enregistré
-  - `sample_count` : Nombre d'échantillons collectés
-  - `recent_slopes` : 10 derniers slopes mesurés
-
-#### c) `sensor.intelligent_heating_pilot_next_schedule_time`
-- **Type** : Timestamp
-- **Description** : Heure du prochain événement scheduler
-- **Attributs** :
-  - `next_target_temp` : Température cible
-  - `scheduler_entity` : Entité scheduler source
-
-## Algorithme de Calcul d'Anticipation
-
-### Formule de Base
-
-$$
-\text{Anticipation}_{\text{min}} = \frac{T_{\text{target}} - T_{\text{current}}}{\text{LHS} / 60}
-$$
-
-Où :
-- $T_{\text{target}}$ : Température cible du prochain scheduler
-- $T_{\text{current}}$ : Température actuelle de la pièce
-- $\text{LHS}$ : Learned Heating Slope (°C/h)
-
-### Facteurs de Correction
-
-#### Humidité Intérieure
-Si `humidity_in > 70%` :
-$$
-\text{Correction}_{\text{humid}} = 1.1
-$$
-(L'humidité élevée ralentit le chauffage ressenti)
-
-#### Couverture Nuageuse
-Si `cloud_cover > 80%` :
-$$
-\text{Correction}_{\text{cloud}} = 1.05
-$$
-(Absence de soleil = chauffage plus lent)
-
-### Formule Finale
-
-$$
-\text{Anticipation}_{\text{final}} = \text{min}(\text{MAX}, \text{max}(\text{MIN}, \text{Anticipation}_{\text{min}} \times \text{Correction}_{\text{humid}} \times \text{Correction}_{\text{cloud}} + \text{Buffer}))
-$$
-
-Avec :
-- $\text{MIN} = 10$ minutes
-- $\text{MAX} = 180$ minutes (3 heures)
-- $\text{Buffer} = 5$ minutes
-
-### Heure de Démarrage Anticipé
-
-$$
-\text{Anticipated Start Time} = \text{Next Schedule Time} - \text{Anticipation}_{\text{final}}
-$$
-
-## Mécanisme de Prévention de Sur-Chauffe
-
-### Détection
-
-Après le démarrage anticipé, le système vérifie toutes les 2 minutes :
-
-$$
-T_{\text{estimated}} = T_{\text{current}} + \left(\text{Slope}_{\text{current}} \times \frac{\text{Time to Schedule}}{60}\right)
-$$
-
-### Condition d'Arrêt
-
-Si :
-$$
-T_{\text{estimated}} > T_{\text{target}} + 0.5°C
-$$
-
-Alors :
 ```python
-await hass.services.async_call(
-    "climate",
-    "set_hvac_mode",
-    {"entity_id": vtherm_entity, "hvac_mode": "off"},
-    blocking=True,
-)
+class ISchedulerCommander(ABC):
+    """Contract for commanding scheduler actions."""
+    
+    @abstractmethod
+    async def trigger_schedule_action(
+        self,
+        schedule_id: str,
+        target_temp: float
+    ) -> None:
+        """Trigger a scheduled heating action."""
+        pass
 ```
 
-## Persistance des Données
+### IClimateCommander
 
-### Fichier de Stockage
+Control the climate device (VTherm):
 
-Emplacement : `.storage/intelligent_heating_pilot_storage_{entry_id}`
+```python
+class IClimateCommander(ABC):
+    """Contract for climate control actions."""
+    
+    @abstractmethod
+    async def set_temperature(self, temperature: float) -> None:
+        """Set the target temperature."""
+        pass
+    
+    @abstractmethod
+    async def set_hvac_mode(self, mode: str) -> None:
+        """Set the HVAC mode (heat, off, etc.)."""
+        pass
+```
 
-Structure :
-```json
-{
-    "version": 1,
-    "data": {
-        "historical_slopes": [2.1, 2.3, 2.0, ...],
-        "max_heating_slope": 2.3
+### IEnvironmentReader
+
+Read current environmental state:
+
+```python
+class IEnvironmentReader(ABC):
+    """Contract for reading environmental data."""
+    
+    @abstractmethod
+    async def get_current_state(self) -> EnvironmentState:
+        """Get the current environmental state."""
+        pass
+```
+
+### IModelStorage
+
+Persist and retrieve learned heating slopes:
+
+```python
+class IModelStorage(ABC):
+    """Contract for persisting learning data."""
+    
+    @abstractmethod
+    async def save_slope(self, slope: SlopeData) -> None:
+        """Save a single slope observation."""
+        pass
+    
+    @abstractmethod
+    async def get_recent_slopes(
+        self,
+        max_count: int = 100
+    ) -> list[SlopeData]:
+        """Retrieve recent slope observations."""
+        pass
+    
+    @abstractmethod
+    async def clear_all_slopes(self) -> None:
+        """Clear all stored slope data (reset learning)."""
+        pass
+```
+
+## 🧠 Domain Services
+
+Domain services contain pure business logic and operate on value objects.
+
+### PredictionService
+
+Calculates when to start heating based on learned data:
+
+```python
+class PredictionService:
+    """Calculate heating anticipation predictions."""
+    
+    def __init__(
+        self,
+        scheduler_reader: ISchedulerReader,
+        environment_reader: IEnvironmentReader,
+        storage: IModelStorage,
+    ) -> None:
+        self._scheduler = scheduler_reader
+        self._environment = environment_reader
+        self._storage = storage
+    
+    async def calculate_anticipation(self) -> PredictionResult | None:
+        """Calculate when to start heating for the next schedule.
+        
+        Returns:
+            PredictionResult with anticipated start time and details,
+            or None if no valid prediction can be made.
+        """
+        # Get next scheduled event
+        next_timeslot = await self._scheduler.get_next_timeslot()
+        if not next_timeslot:
+            return None
+        
+        # Get current environmental state
+        environment = await self._environment.get_current_state()
+        
+        # Get learned heating slope (LHS)
+        lhs_service = LHSCalculationService(self._storage)
+        lhs = await lhs_service.calculate_lhs()
+        
+        # Calculate base anticipation time
+        delta_temp = next_timeslot.target_temp - environment.current_temp
+        if delta_temp <= 0:
+            return None  # Already at or above target
+        
+        base_minutes = (delta_temp / lhs) * 60
+        
+        # Apply environmental corrections
+        correction_factor = 1.0
+        
+        if environment.humidity and environment.humidity > 70:
+            correction_factor *= 1.10  # +10% for high humidity
+        
+        if environment.cloud_coverage and environment.cloud_coverage > 80:
+            correction_factor *= 1.05  # +5% for heavy clouds
+        
+        # Apply corrections and safety buffer
+        adjusted_minutes = base_minutes * correction_factor + 5
+        
+        # Constrain to reasonable limits
+        final_minutes = max(10, min(180, adjusted_minutes))
+        
+        # Calculate start time
+        anticipated_start = next_timeslot.start_time - timedelta(
+            minutes=final_minutes
+        )
+        
+        return PredictionResult(
+            anticipated_start_time=anticipated_start,
+            anticipation_duration_minutes=final_minutes,
+            confidence_level=0.8,  # TODO: Calculate based on data quality
+            reasoning=f"Delta: {delta_temp:.1f}°C, LHS: {lhs:.2f}°C/h"
+        )
+```
+
+### LHSCalculationService
+
+Calculates the Learned Heating Slope using robust statistics:
+
+```python
+class LHSCalculationService:
+    """Calculate Learned Heating Slope (LHS) from observations."""
+    
+    DEFAULT_LHS = 2.0  # °C/h (conservative cold start value)
+    
+    def __init__(self, storage: IModelStorage) -> None:
+        self._storage = storage
+    
+    async def calculate_lhs(self) -> float:
+        """Calculate LHS using trimmed mean (robust average).
+        
+        Returns:
+            Learned heating slope in °C/h
+        """
+        slopes = await self._storage.get_recent_slopes(max_count=100)
+        
+        if not slopes:
+            return self.DEFAULT_LHS
+        
+        # Extract slope values
+        values = [s.slope_value for s in slopes if s.slope_value > 0]
+        
+        if len(values) < 3:
+            return self.DEFAULT_LHS
+        
+        # Sort and trim outliers (10% from each end)
+        sorted_values = sorted(values)
+        trim_count = int(len(sorted_values) * 0.1)
+        
+        if trim_count > 0:
+            trimmed = sorted_values[trim_count:-trim_count]
+        else:
+            trimmed = sorted_values
+        
+        # Calculate trimmed mean
+        return sum(trimmed) / len(trimmed)
+```
+
+## 🔧 Infrastructure Adapters
+
+Adapters implement domain interfaces using Home Assistant APIs. They are **thin translation layers** with no business logic.
+
+### HASchedulerReader
+
+Reads scheduler state from Home Assistant:
+
+```python
+class HASchedulerReader(ISchedulerReader):
+    """Home Assistant implementation of ISchedulerReader."""
+    
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        scheduler_entity_ids: list[str],
+        vtherm_entity_id: str,
+    ) -> None:
+        self._hass = hass
+        self._scheduler_ids = scheduler_entity_ids
+        self._vtherm_id = vtherm_entity_id
+    
+    async def get_next_timeslot(self) -> ScheduleTimeslot | None:
+        """Read next timeslot from HA scheduler."""
+        for entity_id in self._scheduler_ids:
+            state = self._hass.states.get(entity_id)
+            if not state:
+                continue
+            
+            # Extract next_entries from attributes
+            next_entries = state.attributes.get("next_entries", [])
+            if not next_entries:
+                continue
+            
+            # Get first entry
+            entry = next_entries[0]
+            
+            # Parse timestamp
+            start_time = dt_util.parse_datetime(entry["time"])
+            if not start_time:
+                continue
+            
+            # Resolve target temperature from VTherm preset
+            target_temp = await self._resolve_target_temp(
+                entry["actions"]
+            )
+            
+            return ScheduleTimeslot(
+                start_time=start_time,
+                target_temp=target_temp,
+                schedule_id=entity_id,
+            )
+        
+        return None
+    
+    async def _resolve_target_temp(self, actions: list) -> float:
+        """Resolve target temperature from scheduler actions."""
+        # Implementation details...
+        pass
+```
+
+### HAModelStorage
+
+Persists learned slopes in Home Assistant's storage:
+
+```python
+class HAModelStorage(IModelStorage):
+    """Home Assistant storage implementation."""
+    
+    def __init__(self, store: Store) -> None:
+        self._store = store
+    
+    async def save_slope(self, slope: SlopeData) -> None:
+        """Save slope to HA storage."""
+        data = await self._store.async_load() or {"slopes": []}
+        
+        slopes = data.get("slopes", [])
+        slopes.append({
+            "value": slope.slope_value,
+            "timestamp": slope.timestamp.isoformat(),
+        })
+        
+        # Keep only last 100
+        if len(slopes) > 100:
+            slopes = slopes[-100:]
+        
+        data["slopes"] = slopes
+        await self._store.async_save(data)
+    
+    async def get_recent_slopes(
+        self,
+        max_count: int = 100
+    ) -> list[SlopeData]:
+        """Load slopes from HA storage."""
+        data = await self._store.async_load()
+        if not data:
+            return []
+        
+        slopes_data = data.get("slopes", [])
+        return [
+            SlopeData(
+                slope_value=s["value"],
+                timestamp=dt_util.parse_datetime(s["timestamp"]),
+            )
+            for s in slopes_data[-max_count:]
+        ]
+```
+
+## 🎬 Application Layer
+
+The application layer orchestrates domain services and infrastructure adapters to fulfill use cases.
+
+### HeatingApplicationService
+
+Main orchestration service:
+
+```python
+class HeatingApplicationService:
+    """Orchestrates heating pilot operations."""
+    
+    def __init__(
+        self,
+        prediction_service: PredictionService,
+        scheduler_commander: ISchedulerCommander,
+        climate_commander: IClimateCommander,
+        storage: IModelStorage,
+    ) -> None:
+        self._prediction = prediction_service
+        self._scheduler_cmd = scheduler_commander
+        self._climate_cmd = climate_commander
+        self._storage = storage
+    
+    async def calculate_and_schedule_heating(self) -> PredictionResult | None:
+        """Main use case: calculate anticipation and schedule heating."""
+        # Calculate when to start
+        prediction = await self._prediction.calculate_anticipation()
+        
+        if not prediction:
+            _LOGGER.debug("No valid prediction available")
+            return None
+        
+        _LOGGER.info(
+            "Predicted anticipation: %s minutes, start at %s",
+            prediction.anticipation_duration_minutes,
+            prediction.anticipated_start_time,
+        )
+        
+        # Schedule heating action (handled by coordinator timer)
+        # The coordinator will call trigger_heating() at the right time
+        
+        return prediction
+    
+    async def trigger_heating(
+        self,
+        schedule_id: str,
+        target_temp: float
+    ) -> None:
+        """Trigger heating at the anticipated time."""
+        # Trigger scheduler action
+        await self._scheduler_cmd.trigger_schedule_action(
+            schedule_id=schedule_id,
+            target_temp=target_temp,
+        )
+        
+        # Ensure HVAC mode is heat
+        await self._climate_cmd.set_hvac_mode("heat")
+        
+        _LOGGER.info("Heating triggered: %s -> %.1f°C", schedule_id, target_temp)
+    
+    async def record_slope_observation(self, slope_value: float) -> None:
+        """Record a new heating slope observation."""
+        if slope_value <= 0:
+            return  # Ignore non-heating slopes
+        
+        slope = SlopeData(
+            slope_value=slope_value,
+            timestamp=datetime.now(),
+        )
+        
+        await self._storage.save_slope(slope)
+        _LOGGER.debug("Recorded slope: %.2f °C/h", slope_value)
+```
+
+## 🧪 Testing Strategy
+
+### Domain Layer Tests
+
+Domain tests must be **fast** (<1 second) and require **no Home Assistant**:
+
+```python
+# tests/unit/domain/test_prediction_service.py
+from unittest.mock import AsyncMock, Mock
+from domain.services.prediction_service import PredictionService
+from domain.interfaces.scheduler_reader import ISchedulerReader
+
+def test_prediction_calculates_correct_anticipation():
+    # GIVEN: Mocked dependencies
+    mock_scheduler = AsyncMock(spec=ISchedulerReader)
+    mock_scheduler.get_next_timeslot.return_value = ScheduleTimeslot(
+        start_time=datetime(2025, 1, 1, 7, 0),
+        target_temp=21.0,
+        schedule_id="schedule.morning",
+    )
+    
+    mock_environment = AsyncMock(spec=IEnvironmentReader)
+    mock_environment.get_current_state.return_value = EnvironmentState(
+        current_temp=18.0,
+        outdoor_temp=5.0,
+        humidity=65.0,
+        cloud_coverage=50.0,
+        timestamp=datetime(2025, 1, 1, 5, 0),
+    )
+    
+    mock_storage = AsyncMock(spec=IModelStorage)
+    mock_storage.get_recent_slopes.return_value = [
+        SlopeData(slope_value=2.0, timestamp=datetime.now())
+    ]
+    
+    # WHEN: Service calculates anticipation
+    service = PredictionService(
+        scheduler_reader=mock_scheduler,
+        environment_reader=mock_environment,
+        storage=mock_storage,
+    )
+    
+    result = await service.calculate_anticipation()
+    
+    # THEN: Result is accurate
+    assert result is not None
+    assert result.anticipation_duration_minutes == pytest.approx(95, rel=0.1)
+    assert result.anticipated_start_time == datetime(2025, 1, 1, 5, 25)
+```
+
+### Infrastructure Tests
+
+Infrastructure tests verify adapters correctly translate between HA and domain:
+
+```python
+# tests/unit/infrastructure/adapters/test_scheduler_reader.py
+async def test_ha_scheduler_reader_parses_next_timeslot():
+    # GIVEN: Mock Home Assistant state
+    mock_hass = Mock()
+    mock_state = Mock()
+    mock_state.attributes = {
+        "next_entries": [
+            {
+                "time": "2025-01-01T07:00:00+00:00",
+                "actions": [
+                    {
+                        "service": "climate.set_preset_mode",
+                        "data": {"preset_mode": "comfort"},
+                    }
+                ],
+            }
+        ]
     }
-}
+    mock_hass.states.get.return_value = mock_state
+    
+    # WHEN: Adapter reads next timeslot
+    adapter = HASchedulerReader(
+        hass=mock_hass,
+        scheduler_entity_ids=["switch.schedule_morning"],
+        vtherm_entity_id="climate.vtherm",
+    )
+    
+    timeslot = await adapter.get_next_timeslot()
+    
+    # THEN: Timeslot is correctly parsed
+    assert timeslot is not None
+    assert timeslot.start_time == datetime(2025, 1, 1, 7, 0, tzinfo=UTC)
+    assert timeslot.target_temp == 21.0  # Resolved from comfort preset
 ```
 
-### Gestion de l'Historique
+## 📊 Data Flow Example
 
-- Maximum 100 valeurs de slope conservées
-- Mise à jour du `max_heating_slope` à chaque ajout
-- Sauvegarde asynchrone après chaque modification
+Here's how a complete heating anticipation cycle works:
 
-## Intégration avec Scheduler Component
+```
+1. Coordinator Timer Fires
+   └─> HeatingApplicationService.calculate_and_schedule_heating()
 
-### Défi Technique
+2. Application Service Orchestrates
+   └─> PredictionService.calculate_anticipation()
+       ├─> ISchedulerReader.get_next_timeslot()
+       │   └─> HASchedulerReader reads HA state
+       │       └─> Returns ScheduleTimeslot (immutable)
+       │
+       ├─> IEnvironmentReader.get_current_state()
+       │   └─> HAEnvironmentReader reads HA sensors
+       │       └─> Returns EnvironmentState (immutable)
+       │
+       ├─> LHSCalculationService.calculate_lhs()
+       │   └─> IModelStorage.get_recent_slopes()
+       │       └─> HAModelStorage reads from HA storage
+       │           └─> Returns list[SlopeData] (immutable)
+       │
+       └─> Returns PredictionResult (immutable)
 
-L'extraction du prochain événement du scheduler nécessite d'analyser les attributs des entités switch du scheduler.
+3. Coordinator Schedules Timer
+   └─> Waits until anticipated_start_time
 
-Voir le fichier `SCHEDULER_INTEGRATION.md` pour les détails d'implémentation.
+4. Timer Fires at Anticipated Time
+   └─> HeatingApplicationService.trigger_heating()
+       ├─> ISchedulerCommander.trigger_schedule_action()
+       │   └─> HASchedulerCommander calls HA service
+       │
+       └─> IClimateCommander.set_hvac_mode("heat")
+           └─> HAClimateCommander calls HA service
 
-### Actions
+5. VTherm Heats Room
+   └─> Temperature rises
 
-#### Déclenchement Anticipé
+6. Slope Observation
+   └─> HeatingApplicationService.record_slope_observation()
+       └─> IModelStorage.save_slope()
+           └─> HAModelStorage persists to HA storage
+```
+
+## 🔒 Key Architectural Benefits
+
+### 1. **Testability**
+- Domain logic tested without Home Assistant
+- Fast unit tests (<1 second)
+- Easy to mock dependencies via interfaces
+
+### 2. **Maintainability**
+- Clear separation of concerns
+- Changes to HA API only affect infrastructure layer
+- Business logic remains stable
+
+### 3. **Flexibility**
+- Easy to swap implementations (e.g., different storage)
+- Domain can be reused in other contexts
+- Simple to add new features
+
+### 4. **Clarity**
+- Explicit contracts via interfaces
+- Immutable value objects prevent bugs
+- Single responsibility per component
+
+## 🚫 What NOT to Do
+
+### ❌ Don't Mix Layers
+
 ```python
-await hass.services.async_call(
-    "scheduler",
-    "run_action",
-    {"entity_id": scheduler_entity_id},
-    blocking=True,
-)
+# BAD: Domain service directly accessing Home Assistant
+class PredictionService:
+    def calculate(self, hass: HomeAssistant):
+        state = hass.states.get("climate.vtherm")  # NO!
 ```
 
-Cela déclenche immédiatement l'action programmée (changement de consigne du VTherm).
-
-## Événements Home Assistant
-
-### `intelligent_heating_pilot_anticipation_calculated`
-
-Déclenché après chaque calcul d'anticipation réussi.
-
-**Données** :
-```python
-{
-    "anticipated_start_time": datetime,
-    "next_schedule_time": datetime,
-    "next_target_temp": float,
-    "anticipation_minutes": float,
-    "current_temp": float,
-    "scheduler_entity": str,
-    "learned_heating_slope": float,
-}
-```
-
-## État des Listeners
-
-Le coordinator maintient des listeners sur :
-- **VTherm entity** : Pour capturer les changements de slope et température
-- **Scheduler entities** : Pour détecter les modifications de planning
-- **Capteurs optionnels** : Humidité, couverture nuageuse
-
-Tout changement d'état déclenche un appel à `coordinator.async_update()`.
-
-## Exemple de Flux Complet
-
-1. **7h00** : L'utilisateur configure un scheduler pour 21°C à 19h00
-2. **18h30** : SmartStarterVTherm détecte le prochain événement (19h00, 21°C)
-3. **18h30** : Température actuelle = 18°C, LHS = 2°C/h
-4. **18h30** : Calcul :
-   - ΔT = 21 - 18 = 3°C
-   - Anticipation base = (3 / 2) × 60 = 90 min
-   - Avec buffer = 95 min
-   - Démarrage anticipé = 19h00 - 95min = **17h25**
-5. **17h25** : Appel à `scheduler.run_action` → VTherm passe à 21°C
-6. **17h25-19h00** : Monitoring toutes les 2 min
-7. **18h50** : Si T_estimated > 21.5°C → Arrêt du chauffage
-8. **19h00** : Objectif atteint, température = ~21°C
-
-## Constantes Configurables
-
-Dans `const.py` :
+### ❌ Don't Put Business Logic in Infrastructure
 
 ```python
-DEFAULT_HEATING_SLOPE = 2.0  # °C/h - Slope par défaut avant apprentissage
-DEFAULT_ANTICIPATION_BUFFER = 5  # minutes - Buffer de sécurité
-MIN_ANTICIPATION_TIME = 10  # minutes - Anticipation minimale
-MAX_ANTICIPATION_TIME = 180  # minutes - Anticipation maximale (3h)
+# BAD: Business rule in adapter
+class HASchedulerReader:
+    async def get_next_timeslot(self):
+        timeslot = ...  # Read from HA
+        if timeslot.target_temp < 20:  # Business rule!
+            return None
 ```
 
-## Debugging
+### ❌ Don't Make Value Objects Mutable
 
-Activer les logs détaillés dans `configuration.yaml` :
+```python
+# BAD: Mutable value object
+@dataclass
+class EnvironmentState:  # Missing frozen=True
+    current_temp: float
 
-```yaml
-logger:
-  default: info
-  logs:
-    custom_components.intelligent_heating_pilot: debug
+# This allows bugs:
+state.current_temp = 999  # Oops!
 ```
 
-Les logs incluent :
-- Valeurs de slope collectées
-- Calculs d'anticipation détaillés
-- Attributs des entités scheduler
-- Détection de sur-chauffe
-- Appels de services
+## ✅ Do This Instead
 
-## Limitations Actuelles
+### ✅ Use Interfaces for All External Interactions
 
-1. **Extraction Scheduler** : La méthode `get_next_scheduler_event()` contient du code placeholder. Elle doit être adaptée à la structure réelle des attributs du HACS Scheduler Component.
+```python
+# GOOD: Domain depends on abstraction
+class PredictionService:
+    def __init__(self, scheduler: ISchedulerReader):
+        self._scheduler = scheduler  # Interface, not concrete class
+```
 
-2. **Multi-VTherm** : Version actuelle gère un seul VTherm par instance.
+### ✅ Keep Adapters Thin
 
-3. **Zones** : Pas de gestion des zones multiples.
+```python
+# GOOD: Adapter only translates
+class HASchedulerReader:
+    async def get_next_timeslot(self):
+        state = self._hass.states.get(...)
+        return ScheduleTimeslot(...)  # Just data translation
+```
 
-4. **Apprentissage Contextuel** : Le LHS est global, pas spécifique aux conditions météo.
+### ✅ Use Immutable Value Objects
 
-## Évolutions Futures
+```python
+# GOOD: Immutable value object
+@dataclass(frozen=True)
+class EnvironmentState:
+    current_temp: float
 
-- [ ] Apprentissage contextuel (LHS selon température extérieure)
-- [ ] Support multi-zones
-- [ ] Intégration avec prévisions météo
-- [ ] Mode "apprentissage" initial avec recommandations
-- [ ] Dashboard dédié pour visualiser les slopes et anticipations
-- [ ] Support d'autres schedulers (Google Calendar, etc.)
+# This prevents bugs:
+state.current_temp = 999  # Error: frozen dataclass!
+```
+
+## 📚 Further Reading
+
+- [Domain-Driven Design (Eric Evans)](https://www.domainlanguage.com/ddd/)
+- [Hexagonal Architecture (Ports and Adapters)](https://alistair.cockburn.us/hexagonal-architecture/)
+- [Clean Architecture (Robert C. Martin)](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
+- [Test-Driven Development](https://martinfowler.com/bliki/TestDrivenDevelopment.html)

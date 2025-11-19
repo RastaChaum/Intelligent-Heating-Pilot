@@ -17,11 +17,17 @@
   },
   "python.analysis.extraPaths": [
     "${workspaceFolder}/custom_components",
-    "${workspaceFolder}/.venv/lib/python3.13/site-packages"
+    "${workspaceFolder}/.venv/lib/python3.13/site-packages",
+    "./custom_components/intelligent_heating_pilot"
   ],
   "python.autoComplete.extraPaths": [
     "${workspaceFolder}/custom_components",
     "${workspaceFolder}/.venv/lib/python3.13/site-packages"
   ],
-  "python.analysis.typeCheckingMode": "basic"
+  "python.analysis.typeCheckingMode": "basic",
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true
 }

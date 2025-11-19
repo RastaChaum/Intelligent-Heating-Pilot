@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from ...domain.value_objects import EnvironmentState
+from ..vtherm_compat import get_vtherm_attribute
 
 if TYPE_CHECKING:
     pass
@@ -65,7 +66,8 @@ class HAEnvironmentReader:
             _LOGGER.warning("VTherm entity not found: %s", self._vtherm_entity_id)
             return None
         
-        current_temp_raw = vtherm_state.attributes.get("current_temperature")
+        # Use v8.0.0+ compatible attribute access
+        current_temp_raw = get_vtherm_attribute(vtherm_state, "current_temperature")
         if current_temp_raw is None:
             _LOGGER.warning("No current_temperature in VTherm %s", self._vtherm_entity_id)
             return None
@@ -113,7 +115,8 @@ class HAEnvironmentReader:
         if not vtherm_state:
             return None
         
-        slope_raw = vtherm_state.attributes.get("slope")
+        # Use v8.0.0+ compatible attribute access
+        slope_raw = get_vtherm_attribute(vtherm_state, "slope")
         if slope_raw is None:
             return None
         
@@ -125,6 +128,10 @@ class HAEnvironmentReader:
     def is_heating_active(self) -> bool:
         """Check if heating is currently active.
         
+        According to requirements: heating is active when:
+        1. hvac_mode == 'heat' (heating mode enabled)
+        2. current_temperature < target_temperature (demand for heat)
+        
         Returns:
             True if heating is ON, False otherwise
         """
@@ -132,10 +139,23 @@ class HAEnvironmentReader:
         if not vtherm_state:
             return False
         
-        hvac_action = vtherm_state.attributes.get("hvac_action")
+        # Check hvac_mode is 'heat'
         hvac_mode = vtherm_state.state
+        if hvac_mode != "heat":
+            return False
         
-        return hvac_action == "heating" or hvac_mode == "heat"
+        # Check current temp is lower than target temp (v8.0.0+ compatible)
+        current_temp = get_vtherm_attribute(vtherm_state, "current_temperature")
+        target_temp = get_vtherm_attribute(vtherm_state, "temperature")
+        
+        if current_temp is None or target_temp is None:
+            # If we can't determine temps, assume not heating
+            return False
+        
+        try:
+            return float(current_temp) < float(target_temp)
+        except (ValueError, TypeError):
+            return False
     
     def _get_float_state(self, entity_id: str | None) -> float | None:
         """Safely get float value from entity state.

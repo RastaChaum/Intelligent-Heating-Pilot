@@ -23,8 +23,12 @@ from .const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
+    CONF_LHS_RETENTION_DAYS,
+    CONF_LHS_WINDOW_HOURS,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
+    DEFAULT_LHS_RETENTION_DAYS,
+    DEFAULT_LHS_WINDOW_HOURS,
     DOMAIN,
 )
 from .infrastructure.adapters import (
@@ -68,6 +72,8 @@ class IntelligentHeatingPilotCoordinator:
         self._humidity_in = self._get_config_value(CONF_HUMIDITY_IN_ENTITY)
         self._humidity_out = self._get_config_value(CONF_HUMIDITY_OUT_ENTITY)
         self._cloud_cover = self._get_config_value(CONF_CLOUD_COVER_ENTITY)
+        self._lhs_window_hours = float(self._get_config_value(CONF_LHS_WINDOW_HOURS) or DEFAULT_LHS_WINDOW_HOURS)
+        self._lhs_retention_days = int(self._get_config_value(CONF_LHS_RETENTION_DAYS) or DEFAULT_LHS_RETENTION_DAYS)
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
@@ -90,16 +96,18 @@ class IntelligentHeatingPilotCoordinator:
     async def async_load(self) -> None:
         """Load and initialize all components."""
         # Create infrastructure adapters
-        self._model_storage = HAModelStorage(self.hass, self.config.entry_id)
+        self._model_storage = HAModelStorage(
+            self.hass,
+            self.config.entry_id,
+            retention_days=self._lhs_retention_days
+        )
         self._scheduler_reader = HASchedulerReader(
             self.hass,
             self._scheduler_entities,
             vtherm_entity_id=self._vtherm_entity,
         )
         
-        # Scheduler commander needs a specific entity (use first one)
-        primary_scheduler = self._scheduler_entities[0] if self._scheduler_entities else ""
-        self._scheduler_commander = HASchedulerCommander(self.hass, primary_scheduler)
+        self._scheduler_commander = HASchedulerCommander(self.hass)
         
         self._climate_commander = HAClimateCommander(self.hass, self._vtherm_entity)
         self._environment_reader = HAEnvironmentReader(
@@ -118,6 +126,7 @@ class IntelligentHeatingPilotCoordinator:
             scheduler_commander=self._scheduler_commander,
             climate_commander=self._climate_commander,
             environment_reader=self._environment_reader,
+            lhs_window_hours=self._lhs_window_hours,
         )
         
         # Create event bridge
@@ -181,11 +190,12 @@ class IntelligentHeatingPilotCoordinator:
                     "entry_id": self.config.entry_id,
                     "anticipated_start_time": anticipation_data["anticipated_start_time"].isoformat(),
                     "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
-                    "next_target_temp": anticipation_data["next_target_temp"],
+                    "next_target_temperature": anticipation_data["next_target_temperature"],
                     "anticipation_minutes": anticipation_data["anticipation_minutes"],
                     "current_temp": anticipation_data["current_temp"],
                     "learned_heating_slope": anticipation_data["learned_heating_slope"],
                     "confidence_level": anticipation_data["confidence_level"],
+                    "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
                 },
             )
     
@@ -275,16 +285,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Setup event listeners
     coordinator.setup_listeners()
     
-    # Initial update
-    await coordinator.async_update()
-    
-    # Delayed update after HA start
+    # Wait for HA to be fully started before first update
+    # This ensures all entities (especially scheduler entities) are available
     @callback
     def _ha_started(_event):
-        _LOGGER.debug("[%s] HA started, triggering update", entry.entry_id)
+        _LOGGER.info("[%s] HA started, triggering initial update", entry.entry_id)
         hass.async_create_task(coordinator.async_update())
     
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started)
+    # If HA already started, trigger update immediately, otherwise wait
+    if hass.is_running:
+        _LOGGER.debug("[%s] HA already running, triggering update now", entry.entry_id)
+        await coordinator.async_update()
+    else:
+        _LOGGER.debug("[%s] Waiting for HA start event before first update", entry.entry_id)
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started)
     
     # Small delayed update for late attribute population
     @callback

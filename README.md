@@ -1,20 +1,25 @@
 # Intelligent Heating Pilot (IHP)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-![Version](https://img.shields.io/badge/version-0.1.0--alpha-orange)
-![Status](https://img.shields.io/badge/status-alpha-red)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![Status](https://img.shields.io/badge/status-beta-yellow)
 
-> [!WARNING]
-> **🚧 ALPHA VERSION - USE AT YOUR OWN RISK 🚧**
+> [!NOTE]
+> **🚀 BETA VERSION (v0.3.0) 🚀**
 > 
-> This is the **first alpha release (v0.1.0-alpha)** of Intelligent Heating Pilot. While the core features are functional, this version is still in active development and testing.
+> Intelligent Heating Pilot is now in **beta**. Core features are stable and tested, with comprehensive documentation for users and contributors.
+>
+> **What's New in 0.3.0:**
+> - 📚 Complete documentation restructuring
+> - 🌍 All documentation in English
+> - 🤝 Clear contributor guidelines
+> - 🏗️ Detailed architecture documentation
 >
 > **Known Limitations:**
-> - ⚠️ **Multi-scheduler per VTherm NOT tested**: Using multiple schedulers for a single thermostat has not been validated yet
-> - 🧪 Multi-instance isolation (multiple IHP for different rooms) is newly implemented
-> - 📊 Statistical learning requires several days of data collection for optimal accuracy
+> - ⚠️ Multi-scheduler per VTherm configuration needs more testing
+> - 📊 Statistical learning requires 3-5 heating cycles for optimal accuracy
 >
-> **We encourage early adopters to test and provide feedback!** Please report any issues on [GitHub Issues](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues).
+> **Feedback Welcome!** Please report any issues on [GitHub Issues](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues).
 
 ---
 
@@ -133,116 +138,43 @@ service: intelligent_heating_pilot.reset_learning
 
 **Note**: The service uses the internal domain name `intelligent_heating_pilot` for backward compatibility with existing installations.
 
-## 🧠 Intelligent Calculation Logic (Statistical Learning)
+## 🧠 How IHP Works
 
-IHP goes beyond static calculations by employing **statistical learning** to dynamically adapt to your specific environment. Instead of relying on a fixed "thermal slope," the system continuously collects and aggregates thermal slope data from your VTherm to refine its predictions over time.
+IHP uses **statistical learning** to adapt to your specific heating system. Instead of using a fixed formula, it learns from your actual heating patterns.
 
-### How it works:
+### Simple Overview
 
-1. **Data Collection**: The integration continuously monitors your VTherm's `temperature_slope` attribute, which represents how quickly your room is heating up (in °C/h).
+1. **Learns from your system**: IHP monitors how fast your room heats up (from your VTherm's `temperature_slope` attribute)
+2. **Builds history**: Collects and stores heating observations over time
+3. **Calculates anticipation**: Determines when to start heating based on:
+   - Temperature difference needed
+   - Learned heating speed
+   - Current conditions (humidity, cloud cover)
+4. **Triggers heating**: Automatically starts your scheduler at the optimal time
 
-2. **Slope Aggregation**: IHP collects positive slope values (heating phases) and stores up to 100 recent observations. Negative slopes (cooling phases) are ignored to focus on heating behavior.
+### Key Features
 
-3. **Robust Statistical Analysis**: The Learned Heating Slope (LHS) is calculated using a **trimmed mean** approach:
-   - Sort all collected slope values
-   - Remove the top and bottom 10% (outliers)
-   - Calculate the average of the remaining values
-   - This provides a robust estimate resistant to extreme measurements
+- **Adaptive**: Continuously improves as it learns your system
+- **Robust**: Uses statistical methods to filter out anomalies
+- **Smart**: Adjusts for environmental factors
+- **Automatic**: No manual tuning required
 
-4. **Anticipation Calculation**: When a scheduled heating event approaches, IHP calculates:
-   ```
-   Base Time (minutes) = (Target Temp - Current Temp) / LHS × 60
-   ```
+### Quick Calculation
 
-5. **Environmental Corrections**: The base time is adjusted based on optional sensors:
-   - **High Indoor Humidity** (>70%): +10% time (humid air feels cooler, heating perception slower)
-   - **High Cloud Coverage** (>80%): +5% time (less solar gain, slower heating)
+For a typical scenario:
+- Need to heat 3°C (18°C → 21°C)
+- System heats at 2°C/hour
+- Result: Start heating ~90 minutes before target time
 
-6. **Final Anticipation**: Add safety buffer and apply limits:
-   ```
-   Final Time = Base Time × Corrections + 5 minutes buffer
-   Constrained between 10 and 180 minutes
-   ```
+**First time setup?** IHP starts with a conservative default and improves after 3-5 heating cycles.
 
-7. **Trigger Point**: IHP triggers the scheduler action at:
-   ```
-   Start Time = Schedule Time - Final Anticipation Time
-   ```
+### Reset Learning Data
 
-This statistical approach ensures IHP continuously improves its accuracy as it observes your heating system's real-world behavior, adapting to seasonal changes, VTherm configuration updates, and room characteristics.
-
-### Cold Start Behavior
-
-When IHP first starts or has no historical data, it uses a conservative default Learned Heating Slope (LHS) of **2.0°C/h**. As your VTherm heats the room, IHP begins collecting slope observations and the LHS becomes more accurate within a few heating cycles.
-
-**Note**: Outdoor temperature is **not** directly used in the calculation. The VTherm's thermal slope already reflects environmental conditions (outdoor temperature affects how fast the room heats). IHP learns from these real-world observations rather than applying theoretical corrections.
-
-### Calculation Example
-
-**Scenario:**
-- Current Temperature: 18°C
-- Target Temperature: 21°C
-- Learned Heating Slope (LHS): 2.0°C/h (from VTherm observations)
-- Indoor Humidity: 65% (below threshold, no correction)
-- Cloud Coverage: 85% (above 80%, applies correction)
-- Scheduled Target Time: 07:00
-
-**Step-by-Step Calculation:**
-
-1. **Temperature Delta**: 21 - 18 = **3°C**
-
-2. **Base Anticipation Time**: 3°C / 2.0°C/h × 60 = **90 minutes**
-
-3. **Environmental Corrections**:
-   - Humidity correction: None (65% < 70%)
-   - Cloud coverage correction: 1.05 (85% > 80%)
-   - Total correction factor: **1.05**
-
-4. **Corrected Time**: 90 × 1.05 = **94.5 minutes**
-
-5. **Add Safety Buffer**: 94.5 + 5 = **99.5 minutes**
-
-6. **Apply Limits**: min(max(99.5, 10), 180) = **99.5 minutes** ✓
-
-7. **Anticipated Start Time**: 07:00 - 99.5 min = **05:20:30**
-
-**Result: IHP will trigger the scheduler action at 05:20:30 to reach 21°C by 07:00**
-
-## 🔧 How IHP Learns Your Heating System
-
-IHP automatically learns from your [Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat) by reading its `temperature_slope` attribute. No manual configuration is required.
-
-### What is Thermal Slope?
-
-The thermal slope represents how quickly your room heats up, measured in °C/h. For example, if your room goes from 18°C to 20°C in one hour, the thermal slope is 2.0°C/h.
-
-**Factors influencing thermal slope:**
-- Room insulation quality
-- Radiator power and efficiency
-- Room volume
-- Heating system type
-- Outdoor temperature (cold weather slows heating)
-- Solar gain (sunny days speed heating)
-
-### Learning Process
-
-1. **VTherm measures**: Your VTherm continuously calculates the current thermal slope based on real-time temperature changes.
-
-2. **IHP observes**: IHP reads this slope value whenever your room is heating (positive slopes only).
-
-3. **Statistical aggregation**: IHP stores up to 100 recent slope observations and calculates a robust average (trimmed mean) to filter out outliers.
-
-4. **Continuous improvement**: As seasons change, insulation settles, or you adjust your VTherm settings, IHP automatically adapts its predictions.
-
-### Resetting Learning History
-
-If you make significant changes to your heating system (new radiators, insulation work, etc.), you can reset IHP's learning history:
+If you make major changes to your heating system (new radiators, insulation, etc.):
 
 ```yaml
 service: intelligent_heating_pilot.reset_learning
 ```
-
-IHP will start fresh with the default 2.0°C/h slope and begin learning again from your new system's behavior.
 
 ## 🐛 Troubleshooting
 
@@ -264,38 +196,57 @@ IHP will start fresh with the default 2.0°C/h slope and begin learning again fr
 - **Verify scheduler setup**: Make sure your scheduler entities have upcoming events configured.
 - **Review logs**: Check Home Assistant logs for error messages or warnings from IHP.
 
-## 🤝 Contribution
+### Need More Help?
 
-Contributions are welcome! Feel free to:
-- Report bugs
-- Suggest new features
-- Submit pull requests
+- 📖 [Full Documentation](https://github.com/RastaChaum/Intelligent-Heating-Pilot)
+- 🐛 [Report a Bug](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/new?template=bug_report.md)
+- 💬 [Discussions](https://github.com/RastaChaum/Intelligent-Heating-Pilot/discussions)
 
-### Development Guidelines
+## 🤝 Contributing
 
-This project follows **Domain-Driven Design (DDD)** and **Test-Driven Development (TDD)** principles:
+We welcome contributions! Whether you want to:
+- 🐛 Report bugs
+- ✨ Suggest new features
+- 💻 Submit code improvements
+- 📝 Improve documentation
 
-1. **Read the guidelines**: Start with [.github/copilot-instructions.md](.github/copilot-instructions.md)
-2. **Understand the architecture**: Review [DDD_ARCHITECTURE.md](DDD_ARCHITECTURE.md)
-3. **Write tests first**: Add unit tests before implementation
-4. **Keep domain pure**: No `homeassistant.*` imports in the `domain/` layer
-5. **Use interfaces**: All external interactions through ABCs
+**Please read our [Contributing Guide](CONTRIBUTING.md)** to get started.
 
-### Running Tests
+For technical documentation, see:
+- 🏗️ [Architecture Documentation](ARCHITECTURE.md) - DDD principles and system design
+- 🧪 [Testing Guide](CONTRIBUTING.md#testing) - How to write and run tests
 
-Run domain layer unit tests (no Home Assistant required):
+## 📚 Documentation
 
-```bash
-python -m unittest discover tests/unit/domain -v
-```
+### For Users
 
-All domain tests should pass and run in under 1 second.
+- **[Main README](README.md)** - You are here! Installation and usage guide
+- **[Changelog](CHANGELOG.md)** - Version history and release notes
+- **[Releases](https://github.com/RastaChaum/Intelligent-Heating-Pilot/releases)** - Download specific versions
+
+### For Contributors
+
+- **[Contributing Guide](CONTRIBUTING.md)** - How to contribute to the project
+- **[Architecture Documentation](ARCHITECTURE.md)** - Technical design and DDD principles
+- **[Copilot Instructions](.github/copilot-instructions.md)** - AI-assisted development guidelines
+
+### Community
+
+- **[Discussions](https://github.com/RastaChaum/Intelligent-Heating-Pilot/discussions)** - Ask questions, share ideas
+- **[Issues](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues)** - Report bugs or request features
 
 ## 📝 License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 👏 Acknowledgements
 
-- [Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat) for inspiration
-- The Home Assistant community
+- [Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat) by @jmcollin78 - The foundation for intelligent heating
+- [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) by @nielsfaber - Scheduling integration
+- The Home Assistant community for their continuous support and feedback
+
+## ⭐ Star History
+
+If you find this project useful, please consider giving it a star! It helps others discover the project.
+
+[![Star History Chart](https://api.star-history.com/svg?repos=RastaChaum/Intelligent-Heating-Pilot&type=Date)](https://star-history.com/#RastaChaum/Intelligent-Heating-Pilot&Date)
