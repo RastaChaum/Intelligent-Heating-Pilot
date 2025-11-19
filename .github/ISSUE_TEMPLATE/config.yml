@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/RastaChaum/Intelligent-Heating-Pilot/discussions
+    about: Ask questions, share ideas, or discuss the project
+  - name: 📖 Documentation
+    url: https://github.com/RastaChaum/Intelligent-Heating-Pilot/blob/main/README.md
+    about: Read the documentation and user guide
+  - name: 🏗️ Architecture
+    url: https://github.com/RastaChaum/Intelligent-Heating-Pilot/blob/main/ARCHITECTURE.md
+    about: Learn about the technical architecture
+  - name: 🤝 Contributing
+    url: https://github.com/RastaChaum/Intelligent-Heating-Pilot/blob/main/CONTRIBUTING.md
+    about: Learn how to contribute to the project
