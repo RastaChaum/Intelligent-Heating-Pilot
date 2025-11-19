@@ -192,11 +192,12 @@ class IntelligentHeatingPilotCoordinator:
                     "entry_id": self.config.entry_id,
                     "anticipated_start_time": anticipation_data["anticipated_start_time"].isoformat(),
                     "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
-                    "next_target_temp": anticipation_data["next_target_temp"],
+                    "next_target_temperature": anticipation_data["next_target_temperature"],
                     "anticipation_minutes": anticipation_data["anticipation_minutes"],
                     "current_temp": anticipation_data["current_temp"],
                     "learned_heating_slope": anticipation_data["learned_heating_slope"],
                     "confidence_level": anticipation_data["confidence_level"],
+                    "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
                 },
             )
     
