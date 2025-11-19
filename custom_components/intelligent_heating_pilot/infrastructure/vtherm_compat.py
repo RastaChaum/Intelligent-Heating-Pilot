@@ -18,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def get_vtherm_attribute(
-    state: "State",
+    state: State | None,
     attribute_name: str,
     default: Any = None,
 ) -> Any:
