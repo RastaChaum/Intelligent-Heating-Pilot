@@ -2,20 +2,13 @@
 import unittest
 from datetime import datetime
 from unittest.mock import Mock, MagicMock
-import sys
-import os
 
-# Add custom_components to path
-sys.path.insert(
-    0,
-    os.path.join(
-        os.path.dirname(__file__),
-        "../../../../custom_components/intelligent_heating_pilot",
-    ),
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.scheduler_reader import (
+    HASchedulerReader,
 )
-
-from infrastructure.adapters.scheduler_reader import HASchedulerReader
-from domain.value_objects import ScheduleTimeslot
+from custom_components.intelligent_heating_pilot.domain.value_objects import (
+    ScheduleTimeslot,
+)
 
 
 class TestHASchedulerReader(unittest.TestCase):

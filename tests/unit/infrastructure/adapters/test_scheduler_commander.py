@@ -2,19 +2,8 @@
 import unittest
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock
-import sys
-import os
 
-# Add custom_components to path
-sys.path.insert(
-    0,
-    os.path.join(
-        os.path.dirname(__file__),
-        "../../../../custom_components/intelligent_heating_pilot",
-    ),
-)
-
-from infrastructure.adapters.scheduler_commander import (
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.scheduler_commander import (
     HASchedulerCommander,
     SCHEDULER_DOMAIN,
     SERVICE_RUN_ACTION,

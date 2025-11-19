@@ -1,19 +1,11 @@
 """Tests for HAModelStorage adapter."""
 import unittest
 from unittest.mock import Mock, AsyncMock, patch
-import sys
-import os
 
-# Add custom_components to path
-sys.path.insert(
-    0,
-    os.path.join(
-        os.path.dirname(__file__),
-        "../../../../custom_components/intelligent_heating_pilot",
-    ),
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.model_storage import (
+    HAModelStorage,
+    DEFAULT_HEATING_SLOPE,
 )
-
-from infrastructure.adapters.model_storage import HAModelStorage, DEFAULT_HEATING_SLOPE
 
 
 class TestHAModelStorage(unittest.TestCase):
@@ -25,7 +17,7 @@ class TestHAModelStorage(unittest.TestCase):
         self.entry_id = "test_entry_123"
         
         # Mock the Store class
-        with patch('infrastructure.adapters.model_storage.Store') as mock_store_class:
+        with patch('custom_components.intelligent_heating_pilot.infrastructure.adapters.model_storage.Store') as mock_store_class:
             self.mock_store = Mock()
             self.mock_store.async_load = AsyncMock(return_value=None)
             self.mock_store.async_save = AsyncMock()
