@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.util import dt as dt_util
 
-from .application import HeatingApplicationService
+from .application import HeatingApplicationService, MLTrainingApplicationService
 from .const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_HUMIDITY_IN_ENTITY,
@@ -82,8 +82,9 @@ class IntelligentHeatingPilotCoordinator:
         self._climate_commander: HAClimateCommander | None = None
         self._environment_reader: HAEnvironmentReader | None = None
         
-        # Application service
+        # Application services
         self._app_service: HeatingApplicationService | None = None
+        self._ml_training_service: MLTrainingApplicationService | None = None
         
         # Event bridge
         self._event_bridge: HAEventBridge | None = None
@@ -128,6 +129,20 @@ class IntelligentHeatingPilotCoordinator:
             environment_reader=self._environment_reader,
             lhs_window_hours=self._lhs_window_hours,
         )
+        
+        # Create ML training service
+        # Note: Requires IHistoricalDataReader adapter to be implemented
+        # For now, service is initialized but cannot be used for training
+        # until historical data reader adapter is available
+        try:
+            self._ml_training_service = MLTrainingApplicationService(
+                historical_reader=None,  # TODO: Implement HAHistoricalDataReader adapter
+                model_storage=self._model_storage,
+            )
+            _LOGGER.debug("ML training service initialized (historical reader not yet available)")
+        except Exception as e:
+            _LOGGER.warning("Failed to initialize ML training service: %s", e)
+            self._ml_training_service = None
         
         # Create event bridge
         monitored_entities = []
@@ -325,7 +340,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 coordinator._lhs_cache = await coordinator._model_storage.get_learned_heating_slope()
                 coordinator._slopes_cache = await coordinator._model_storage.get_slopes_in_history()
     
+    async def handle_train_ml_model(call):
+        """Handle train_ml_model service to manually trigger ML model training."""
+        if not coordinator._ml_training_service:
+            _LOGGER.error("ML training service not available. Historical data reader not implemented.")
+            return
+        
+        # Get parameters from service call
+        lookback_months = call.data.get("lookback_months", 6)
+        min_cycles = call.data.get("min_cycles", 10)
+        
+        _LOGGER.info(
+            "Starting ML model training for room %s (lookback: %d months, min cycles: %d)",
+            coordinator._vtherm_entity,
+            lookback_months,
+            min_cycles,
+        )
+        
+        try:
+            result = await coordinator._ml_training_service.train_model_for_room(
+                climate_entity_id=coordinator._vtherm_entity,
+                weather_entity_id=coordinator._cloud_cover,
+                humidity_entity_id=coordinator._humidity_in,
+                lookback_months=lookback_months,
+                min_cycles=min_cycles,
+            )
+            
+            _LOGGER.info(
+                "ML model training completed: %d cycles extracted, %d training examples, "
+                "RMSE: %.2f min, MAE: %.2f min",
+                result.get("cycles_extracted", 0),
+                result.get("training_examples", 0),
+                result.get("rmse", 0),
+                result.get("mae", 0),
+            )
+        except Exception as e:
+            _LOGGER.error("ML model training failed: %s", e, exc_info=True)
+    
     hass.services.async_register(DOMAIN, "reset_learning", handle_reset_learning)
+    hass.services.async_register(DOMAIN, "train_ml_model", handle_train_ml_model)
     
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

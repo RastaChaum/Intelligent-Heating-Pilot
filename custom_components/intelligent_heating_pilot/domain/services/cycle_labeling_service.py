@@ -40,8 +40,8 @@ class CycleLabelingService:
         """
         optimal = actual_duration_minutes - error_minutes
         
-        # Ensure positive duration (minimum 5 minutes)
-        optimal = max(5.0, optimal)
+        # Ensure positive duration (minimum 0 minutes -> no preheating)
+        optimal = max(0.0, optimal)
         
         _LOGGER.debug(
             "Calculated optimal duration: %.1f min (actual: %.1f min, error: %.1f min)",
@@ -89,14 +89,14 @@ class CycleLabelingService:
         Raises:
             ValueError: If cycle data is invalid or incomplete.
         """
-        if cycle.target_reached_at is None:
+        if cycle.real_target_time is None:
             raise ValueError(
                 f"Cannot label cycle {cycle.cycle_id}: target never reached"
             )
         
         # Calculate error
         error = self.calculate_error_minutes(
-            cycle.target_reached_at,
+            cycle.real_target_time,
             cycle.target_time,
         )
         
@@ -119,7 +119,7 @@ class CycleLabelingService:
     def is_cycle_valid_for_training(
         self,
         cycle: HeatingCycle,
-        max_error_minutes: float = 30.0,
+        max_error_minutes: float = 90.0,
     ) -> bool:
         """Check if a heating cycle is valid for training.
         
@@ -136,7 +136,7 @@ class CycleLabelingService:
             True if cycle is valid for training, False otherwise.
         """
         # Must have reached target
-        if cycle.target_reached_at is None:
+        if cycle.real_target_time is None:
             _LOGGER.debug(
                 "Cycle %s invalid: target never reached",
                 cycle.cycle_id,

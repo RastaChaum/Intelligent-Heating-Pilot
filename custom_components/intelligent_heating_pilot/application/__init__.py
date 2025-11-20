@@ -6,14 +6,14 @@ and infrastructure adapters, implementing use cases.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from homeassistant.util import dt as dt_util
 
-from ..domain.entities import HeatingPilot
-from ..domain.services import PredictionService, LHSCalculationService
-from ..domain.value_objects import HeatingAction, HeatingDecision, SlopeData
+from ..domain.services import LHSCalculationService, PredictionService
+from ..domain.value_objects import SlopeData
+from .ml_training_service import MLTrainingApplicationService
 
 if TYPE_CHECKING:
     from ..infrastructure.adapters import (
@@ -25,6 +25,11 @@ if TYPE_CHECKING:
     )
 
 _LOGGER = logging.getLogger(__name__)
+
+__all__ = [
+    "HeatingApplicationService",
+    "MLTrainingApplicationService",
+]
 
 
 class HeatingApplicationService:
@@ -40,11 +45,11 @@ class HeatingApplicationService:
     
     def __init__(
         self,
-        scheduler_reader: "HASchedulerReader",
-        model_storage: "HAModelStorage",
-        scheduler_commander: "HASchedulerCommander",
-        climate_commander: "HAClimateCommander",
-        environment_reader: "HAEnvironmentReader",
+        scheduler_reader: HASchedulerReader,
+        model_storage: HAModelStorage,
+        scheduler_commander: HASchedulerCommander,
+        climate_commander: HAClimateCommander,
+        environment_reader: HAEnvironmentReader,
         lhs_window_hours: float = 6.0,
     ) -> None:
         """Initialize the application service.

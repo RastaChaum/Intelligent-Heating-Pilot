@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Any
 
 
 class IMLModelStorage(ABC):
@@ -15,14 +16,14 @@ class IMLModelStorage(ABC):
     @abstractmethod
     async def save_model(
         self,
-        room_id: str,
+        climate_entity_id: str,
         model_data: bytes,
-        metadata: dict[str, any],
+        metadata: dict[str, Any],
     ) -> None:
         """Save a trained ML model for a room.
         
         Args:
-            room_id: Identifier for the room
+            climate_entity_id: Identifier for the climate entity
             model_data: Serialized model bytes (e.g., from model.save_raw())
             metadata: Model metadata (training date, metrics, etc.)
         """
@@ -31,12 +32,12 @@ class IMLModelStorage(ABC):
     @abstractmethod
     async def load_model(
         self,
-        room_id: str,
-    ) -> tuple[bytes, dict[str, any]] | None:
+        climate_entity_id: str,
+    ) -> tuple[bytes, dict[str, Any]] | None:
         """Load a trained ML model for a room.
         
         Args:
-            room_id: Identifier for the room
+            climate_entity_id: Identifier for the climate entity
             
         Returns:
             Tuple of (model_data, metadata) if model exists, None otherwise.
@@ -44,11 +45,11 @@ class IMLModelStorage(ABC):
         pass
     
     @abstractmethod
-    async def model_exists(self, room_id: str) -> bool:
+    async def model_exists(self, climate_entity_id: str) -> bool:
         """Check if a trained model exists for a room.
         
         Args:
-            room_id: Identifier for the room
+            climate_entity_id: Identifier for the climate entity
             
         Returns:
             True if model exists, False otherwise.
@@ -56,11 +57,11 @@ class IMLModelStorage(ABC):
         pass
     
     @abstractmethod
-    async def get_model_metadata(self, room_id: str) -> dict[str, any] | None:
+    async def get_model_metadata(self, climate_entity_id: str) -> dict[str, Any] | None:
         """Get metadata for a trained model.
         
         Args:
-            room_id: Identifier for the room
+            climate_entity_id: Identifier for the climate entity
             
         Returns:
             Model metadata dict if model exists, None otherwise.
@@ -90,13 +91,13 @@ class IMLModelStorage(ABC):
     @abstractmethod
     async def get_new_training_examples(
         self,
-        room_id: str,
+        climate_entity_id: str,
         since: datetime | None = None,
-    ) -> list[dict[str, any]]:
+    ) -> list[dict[str, Any]]:
         """Get new training examples collected since last training.
         
         Args:
-            room_id: Identifier for the room
+            climate_entity_id: Identifier for the climate entity
             since: Only get examples after this timestamp
             
         Returns:
@@ -105,10 +106,10 @@ class IMLModelStorage(ABC):
         pass
     
     @abstractmethod
-    async def clear_training_examples(self, room_id: str) -> None:
+    async def clear_training_examples(self, climate_entity_id: str) -> None:
         """Clear collected training examples after model retraining.
         
         Args:
-            room_id: Identifier for the room
+            climate_entity_id: Identifier for the climate entity
         """
         pass
