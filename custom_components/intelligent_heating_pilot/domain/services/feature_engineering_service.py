@@ -63,6 +63,9 @@ class FeatureEngineeringService:
         if not history:
             return None
         
+        # Ensure history is sorted by timestamp
+        history.sort(key=lambda x: x[0])
+        
         target_time = current_time - timedelta(minutes=lag_minutes)
         
         # Find the two points to interpolate between

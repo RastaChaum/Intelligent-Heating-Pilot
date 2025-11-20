@@ -40,8 +40,8 @@ class CycleLabelingService:
         """
         optimal = actual_duration_minutes - error_minutes
         
-        # Ensure positive duration (minimum 5 minutes)
-        optimal = max(5.0, optimal)
+        # Ensure positive duration (minimum 0 minutes -> no preheating)
+        optimal = max(0.0, optimal)
         
         _LOGGER.debug(
             "Calculated optimal duration: %.1f min (actual: %.1f min, error: %.1f min)",
@@ -119,7 +119,7 @@ class CycleLabelingService:
     def is_cycle_valid_for_training(
         self,
         cycle: HeatingCycle,
-        max_error_minutes: float = 30.0,
+        max_error_minutes: float = 90.0,
     ) -> bool:
         """Check if a heating cycle is valid for training.
         
