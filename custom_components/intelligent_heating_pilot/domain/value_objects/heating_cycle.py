@@ -1,7 +1,8 @@
 """Heating cycle value object."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -30,6 +31,9 @@ class HeatingCycle:
     actual_duration_minutes: float  # How long heating actually took
     optimal_duration_minutes: float  # Calculated optimal duration based on error
     error_minutes: float  # target_reached_at - target_time in minutes (+ is late, - is early)
+    
+    # Auto-generated unique identifier (UUID)
+    cycle_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     
     def __post_init__(self) -> None:
         """Validate heating cycle data."""

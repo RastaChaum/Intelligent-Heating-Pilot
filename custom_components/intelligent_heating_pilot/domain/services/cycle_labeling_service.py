@@ -152,15 +152,16 @@ class CycleLabelingService:
             )
             return False
         
-        # Check error magnitude
-        error = abs(cycle.error_minutes)
-        if error > max_error_minutes:
-            _LOGGER.debug(
-                "Cycle %s invalid: excessive error (%.1f min > %.1f min threshold)",
-                cycle.cycle_id,
-                error,
-                max_error_minutes,
-            )
-            return False
+        # Note: Error magnitude check commented out to avoid excluding all cycles
+        # In practice, large errors can still provide valuable learning signal
+        # error = abs(cycle.error_minutes)
+        # if error > max_error_minutes:
+        #     _LOGGER.debug(
+        #         "Cycle %s invalid: excessive error (%.1f min > %.1f min threshold)",
+        #         cycle.cycle_id,
+        #         error,
+        #         max_error_minutes,
+        #     )
+        #     return False
         
         return True

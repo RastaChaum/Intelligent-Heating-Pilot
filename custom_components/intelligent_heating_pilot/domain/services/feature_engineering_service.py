@@ -77,7 +77,7 @@ class FeatureEngineeringService:
             # Collect values in this window
             window_values = [
                 val for ts, val in history
-                if window_start <= ts < window_end
+                if window_start < ts <= window_end
             ]
             
             if not window_values:
