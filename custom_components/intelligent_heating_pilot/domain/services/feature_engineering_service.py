@@ -10,7 +10,7 @@ from ..value_objects import LaggedFeatures
 _LOGGER = logging.getLogger(__name__)
 
 # Lag intervals in minutes
-LAG_INTERVALS = [15, 30, 60, 90]
+LAG_INTERVALS = [15, 30, 60, 90, 120, 180]
 
 
 class FeatureEngineeringService:
@@ -42,90 +42,67 @@ class FeatureEngineeringService:
         
         return hour_sin, hour_cos
     
-    def calculate_lagged_value(
+    def calculate_aggregated_lagged_values(
         self,
         history: list[tuple[datetime, float]],
         current_time: datetime,
-        lag_minutes: int,
-    ) -> float | None:
-        """Calculate lagged value from historical time series.
+        aggregation_func: str = "avg",
+    ) -> dict[int, float | None]:
+        """Calculate aggregated lagged values for all lag intervals.
         
-        Uses linear interpolation to estimate value at lagged timestamp.
+        For each lag interval, aggregates all values in the time window
+        between the current interval and the previous interval using
+        the specified aggregation function.
         
         Args:
             history: List of (timestamp, value) tuples, assumed sorted by time
             current_time: Current timestamp
-            lag_minutes: How many minutes to look back
+            aggregation_func: Aggregation function name ("avg", "min", "max", "median")
             
         Returns:
-            Interpolated value at lagged time, or None if insufficient history.
+            Dictionary mapping lag_minutes to aggregated value.
+            None if insufficient data for that interval.
         """
         if not history:
-            return None
+            return {lag: None for lag in LAG_INTERVALS}
         
-        target_time = current_time - timedelta(minutes=lag_minutes)
+        result = {}
+        prev_lag = 0
         
-        # Find the two points to interpolate between
-        before_point = None
-        after_point = None
-        
-        for ts, val in history:
-            if ts <= target_time:
-                before_point = (ts, val)
-            elif ts > target_time and after_point is None:
-                after_point = (ts, val)
-                break
-        
-        # Check if we have data at exactly the target time
-        if before_point and before_point[0] == target_time:
-            return before_point[1]
-        
-        # Check if we can interpolate
-        if before_point is None or after_point is None:
-            # Not enough history to calculate lag
-            return None
-        
-        # Linear interpolation
-        t0, v0 = before_point
-        t1, v1 = after_point
-        
-        total_seconds = (t1 - t0).total_seconds()
-        if total_seconds == 0:
-            return v0
-        
-        ratio = (target_time - t0).total_seconds() / total_seconds
-        interpolated = v0 + ratio * (v1 - v0)
-        
-        return interpolated
-    
-    def calculate_power_lagged_value(
-        self,
-        power_history: list[tuple[datetime, bool]],
-        current_time: datetime,
-        lag_minutes: int,
-    ) -> float | None:
-        """Calculate lagged power state value (0 or 1).
-        
-        Args:
-            power_history: List of (timestamp, is_heating) tuples
-            current_time: Current timestamp
-            lag_minutes: How many minutes to look back
+        for lag_min in LAG_INTERVALS:
+            # Define time window: (current_time - lag_min, current_time - prev_lag]
+            window_start = current_time - timedelta(minutes=lag_min)
+            window_end = current_time - timedelta(minutes=prev_lag)
             
-        Returns:
-            1.0 if heating was on at lagged time, 0.0 if off, None if no data.
-        """
-        if not power_history:
-            return None
+            # Collect values in this window
+            window_values = [
+                val for ts, val in history
+                if window_start < ts <= window_end
+            ]
+            
+            if not window_values:
+                result[lag_min] = None
+            else:
+                # Apply aggregation function
+                if aggregation_func == "avg":
+                    result[lag_min] = sum(window_values) / len(window_values)
+                elif aggregation_func == "min":
+                    result[lag_min] = min(window_values)
+                elif aggregation_func == "max":
+                    result[lag_min] = max(window_values)
+                elif aggregation_func == "median":
+                    sorted_vals = sorted(window_values)
+                    n = len(sorted_vals)
+                    if n % 2 == 0:
+                        result[lag_min] = (sorted_vals[n//2 - 1] + sorted_vals[n//2]) / 2
+                    else:
+                        result[lag_min] = sorted_vals[n//2]
+                else:
+                    raise ValueError(f"Unknown aggregation function: {aggregation_func}")
+            
+            prev_lag = lag_min
         
-        target_time = current_time - timedelta(minutes=lag_minutes)
-        
-        # Find the most recent state before or at target time
-        for ts, is_heating in reversed(power_history):
-            if ts <= target_time:
-                return 1.0 if is_heating else 0.0
-        
-        # No data before target time
-        return None
+        return result
     
     def create_lagged_features(
         self,
@@ -133,9 +110,14 @@ class FeatureEngineeringService:
         target_temp: float,
         current_time: datetime,
         temp_history: list[tuple[datetime, float]],
-        power_history: list[tuple[datetime, bool]],
+        power_history: list[tuple[datetime, float]],  # Now float (percentage)
+        current_slope: float | None = None,
         outdoor_temp: float | None = None,
         humidity: float | None = None,
+        cloud_coverage: float | None = None,
+        outdoor_temp_history: list[tuple[datetime, float]] | None = None,
+        humidity_history: list[tuple[datetime, float]] | None = None,
+        cloud_coverage_history: list[tuple[datetime, float]] | None = None,
     ) -> LaggedFeatures:
         """Create lagged features from historical data.
         
@@ -144,9 +126,14 @@ class FeatureEngineeringService:
             target_temp: Target temperature (°C)
             current_time: Current timestamp
             temp_history: Temperature history (timestamp, temp) tuples
-            power_history: Power state history (timestamp, is_heating) tuples
-            outdoor_temp: Outdoor temperature (°C)
-            humidity: Indoor humidity (%)
+            power_history: Power state history (timestamp, power_percentage) tuples
+            current_slope: Current temperature slope (°C/h)
+            outdoor_temp: Current outdoor temperature (°C)
+            humidity: Current indoor humidity (%)
+            cloud_coverage: Current cloud coverage (%)
+            outdoor_temp_history: Outdoor temperature history
+            humidity_history: Humidity history
+            cloud_coverage_history: Cloud coverage history
             
         Returns:
             LaggedFeatures object with all features calculated.
@@ -154,19 +141,36 @@ class FeatureEngineeringService:
         # Calculate time-of-day features
         hour_sin, hour_cos = self.calculate_time_of_day_features(current_time)
         
-        # Calculate lagged temperature values
-        temp_lags = {}
-        for lag_min in LAG_INTERVALS:
-            lag_val = self.calculate_lagged_value(temp_history, current_time, lag_min)
-            temp_lags[lag_min] = lag_val
+        # Calculate lagged temperature values (average aggregation)
+        temp_lags = self.calculate_aggregated_lagged_values(
+            temp_history, current_time, aggregation_func="avg"
+        )
         
-        # Calculate lagged power values
-        power_lags = {}
-        for lag_min in LAG_INTERVALS:
-            lag_val = self.calculate_power_lagged_value(
-                power_history, current_time, lag_min
+        # Calculate lagged power values (average aggregation)
+        power_lags = self.calculate_aggregated_lagged_values(
+            power_history, current_time, aggregation_func="avg"
+        )
+        
+        # Calculate lagged outdoor temperature values
+        outdoor_temp_lags = {lag: None for lag in LAG_INTERVALS}
+        if outdoor_temp_history:
+            outdoor_temp_lags = self.calculate_aggregated_lagged_values(
+                outdoor_temp_history, current_time, aggregation_func="avg"
             )
-            power_lags[lag_min] = lag_val
+        
+        # Calculate lagged humidity values
+        humidity_lags = {lag: None for lag in LAG_INTERVALS}
+        if humidity_history:
+            humidity_lags = self.calculate_aggregated_lagged_values(
+                humidity_history, current_time, aggregation_func="avg"
+            )
+        
+        # Calculate lagged cloud coverage values
+        cloud_coverage_lags = {lag: None for lag in LAG_INTERVALS}
+        if cloud_coverage_history:
+            cloud_coverage_lags = self.calculate_aggregated_lagged_values(
+                cloud_coverage_history, current_time, aggregation_func="avg"
+            )
         
         # Calculate temperature delta
         temp_delta = target_temp - current_temp
@@ -174,16 +178,40 @@ class FeatureEngineeringService:
         return LaggedFeatures(
             current_temp=current_temp,
             target_temp=target_temp,
+            current_slope=current_slope,
             temp_lag_15min=temp_lags[15],
             temp_lag_30min=temp_lags[30],
             temp_lag_60min=temp_lags[60],
             temp_lag_90min=temp_lags[90],
+            temp_lag_120min=temp_lags[120],
+            temp_lag_180min=temp_lags[180],
             power_lag_15min=power_lags[15],
             power_lag_30min=power_lags[30],
             power_lag_60min=power_lags[60],
             power_lag_90min=power_lags[90],
+            power_lag_120min=power_lags[120],
+            power_lag_180min=power_lags[180],
             outdoor_temp=outdoor_temp,
             humidity=humidity,
+            cloud_coverage=cloud_coverage,
+            outdoor_temp_lag_15min=outdoor_temp_lags[15],
+            outdoor_temp_lag_30min=outdoor_temp_lags[30],
+            outdoor_temp_lag_60min=outdoor_temp_lags[60],
+            outdoor_temp_lag_90min=outdoor_temp_lags[90],
+            outdoor_temp_lag_120min=outdoor_temp_lags[120],
+            outdoor_temp_lag_180min=outdoor_temp_lags[180],
+            humidity_lag_15min=humidity_lags[15],
+            humidity_lag_30min=humidity_lags[30],
+            humidity_lag_60min=humidity_lags[60],
+            humidity_lag_90min=humidity_lags[90],
+            humidity_lag_120min=humidity_lags[120],
+            humidity_lag_180min=humidity_lags[180],
+            cloud_coverage_lag_15min=cloud_coverage_lags[15],
+            cloud_coverage_lag_30min=cloud_coverage_lags[30],
+            cloud_coverage_lag_60min=cloud_coverage_lags[60],
+            cloud_coverage_lag_90min=cloud_coverage_lags[90],
+            cloud_coverage_lag_120min=cloud_coverage_lags[120],
+            cloud_coverage_lag_180min=cloud_coverage_lags[180],
             hour_sin=hour_sin,
             hour_cos=hour_cos,
             temp_delta=temp_delta,

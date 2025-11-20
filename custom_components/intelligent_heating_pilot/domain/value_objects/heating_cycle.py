@@ -1,7 +1,8 @@
 """Heating cycle value object."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -13,8 +14,7 @@ class HeatingCycle:
     relevant data for training the prediction model.
     """
     
-    cycle_id: str  # Unique identifier for the cycle
-    room_id: str  # Identifier for the room
+    room_id: str  # Identifier for the IHP device (unique device ID)
     
     # Timing information
     heating_started_at: datetime  # When heating actually started
@@ -25,15 +25,20 @@ class HeatingCycle:
     initial_temp: float  # Temperature when heating started (°C)
     target_temp: float  # Target temperature (°C)
     final_temp: float  # Temperature at target_time (°C)
+    initial_slope: float | None  # Temperature slope at start (°C/h)
     
     # Environmental data at start
     outdoor_temp: float | None  # Outdoor temperature at start (°C)
     humidity: float | None  # Indoor humidity at start (%)
+    cloud_coverage: float | None  # Cloud coverage at start (%)
     
     # Calculated values
     actual_duration_minutes: float  # How long heating actually took
     optimal_duration_minutes: float  # Calculated optimal duration based on error
     error_minutes: float  # target_reached_at - target_time in minutes (+ is late, - is early)
+    
+    # Auto-generated unique identifier (UUID)
+    cycle_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     
     def __post_init__(self) -> None:
         """Validate heating cycle data."""

@@ -48,86 +48,91 @@ class TestFeatureEngineeringService:
         assert abs(hour_sin - 1.0) < 0.01
         assert abs(hour_cos) < 0.01
     
-    def test_calculate_lagged_value_exact_match(self) -> None:
-        """Test lagged value calculation with exact timestamp match."""
+    def test_calculate_aggregated_lagged_values_avg(self) -> None:
+        """Test aggregated lagged value calculation with average."""
         history = [
             (datetime(2025, 1, 1, 6, 0), 20.0),
+            (datetime(2025, 1, 1, 6, 5), 20.2),
+            (datetime(2025, 1, 1, 6, 10), 20.4),
             (datetime(2025, 1, 1, 6, 15), 20.5),
+            (datetime(2025, 1, 1, 6, 20), 20.7),
+            (datetime(2025, 1, 1, 6, 25), 20.9),
             (datetime(2025, 1, 1, 6, 30), 21.0),
         ]
         current_time = datetime(2025, 1, 1, 6, 30)
-        lag_minutes = 15
         
-        value = self.service.calculate_lagged_value(history, current_time, lag_minutes)
+        result = self.service.calculate_aggregated_lagged_values(
+            history, current_time, aggregation_func="avg"
+        )
         
-        assert value == pytest.approx(20.5, abs=0.01)
+        # Check that we have values for all lag intervals
+        assert 15 in result
+        assert 30 in result
+        assert result[15] is not None
+        assert result[30] is not None
     
-    def test_calculate_lagged_value_interpolation(self) -> None:
-        """Test lagged value with linear interpolation."""
-        history = [
-            (datetime(2025, 1, 1, 6, 0), 20.0),
-            (datetime(2025, 1, 1, 6, 30), 21.0),
-        ]
-        current_time = datetime(2025, 1, 1, 6, 30)
-        lag_minutes = 15
-        
-        # Should interpolate between 20.0 and 21.0 at 6:15
-        value = self.service.calculate_lagged_value(history, current_time, lag_minutes)
-        
-        assert value == pytest.approx(20.5, abs=0.01)
-    
-    def test_calculate_lagged_value_not_enough_history(self) -> None:
-        """Test lagged value when history doesn't go back far enough."""
-        history = [
-            (datetime(2025, 1, 1, 6, 20), 20.5),
-            (datetime(2025, 1, 1, 6, 30), 21.0),
-        ]
-        current_time = datetime(2025, 1, 1, 6, 30)
-        lag_minutes = 30
-        
-        # Lag goes back to 6:00, but history only starts at 6:20
-        value = self.service.calculate_lagged_value(history, current_time, lag_minutes)
-        
-        assert value is None
-    
-    def test_calculate_lagged_value_empty_history(self) -> None:
-        """Test lagged value with empty history."""
+    def test_calculate_aggregated_lagged_values_empty(self) -> None:
+        """Test aggregated lagged values with empty history."""
         history: list[tuple[datetime, float]] = []
         current_time = datetime(2025, 1, 1, 6, 30)
-        lag_minutes = 15
         
-        value = self.service.calculate_lagged_value(history, current_time, lag_minutes)
-        
-        assert value is None
-    
-    def test_calculate_power_lagged_value(self) -> None:
-        """Test power state lagged value calculation."""
-        power_history = [
-            (datetime(2025, 1, 1, 6, 0), False),
-            (datetime(2025, 1, 1, 6, 10), True),
-            (datetime(2025, 1, 1, 6, 30), True),
-        ]
-        current_time = datetime(2025, 1, 1, 6, 30)
-        lag_minutes = 20
-        
-        # At 6:10 (20 min ago), power was True
-        value = self.service.calculate_power_lagged_value(
-            power_history, current_time, lag_minutes
+        result = self.service.calculate_aggregated_lagged_values(
+            history, current_time, aggregation_func="avg"
         )
         
-        assert value == pytest.approx(1.0, abs=0.01)
+        # All values should be None
+        assert all(v is None for v in result.values())
     
-    def test_calculate_power_lagged_value_off(self) -> None:
-        """Test power state lagged value when off."""
-        power_history = [
-            (datetime(2025, 1, 1, 6, 0), False),
-            (datetime(2025, 1, 1, 6, 30), False),
+    def test_calculate_aggregated_lagged_values_min(self) -> None:
+        """Test aggregated lagged values with min aggregation."""
+        history = [
+            (datetime(2025, 1, 1, 6, 0), 20.0),
+            (datetime(2025, 1, 1, 6, 10), 21.0),
+            (datetime(2025, 1, 1, 6, 20), 19.0),
+            (datetime(2025, 1, 1, 6, 30), 22.0),
         ]
         current_time = datetime(2025, 1, 1, 6, 30)
-        lag_minutes = 15
         
-        value = self.service.calculate_power_lagged_value(
-            power_history, current_time, lag_minutes
+        result = self.service.calculate_aggregated_lagged_values(
+            history, current_time, aggregation_func="min"
         )
         
-        assert value == pytest.approx(0.0, abs=0.01)
+        # Values between 6:15-6:30 (15 min lag): 19.0, 22.0 -> min=19.0
+        assert result[15] == 19.0
+    
+    def test_calculate_aggregated_lagged_values_max(self) -> None:
+        """Test aggregated lagged values with max aggregation."""
+        history = [
+            (datetime(2025, 1, 1, 6, 0), 20.0),
+            (datetime(2025, 1, 1, 6, 10), 21.0),
+            (datetime(2025, 1, 1, 6, 20), 19.0),
+            (datetime(2025, 1, 1, 6, 30), 22.0),
+        ]
+        current_time = datetime(2025, 1, 1, 6, 30)
+        
+        result = self.service.calculate_aggregated_lagged_values(
+            history, current_time, aggregation_func="max"
+        )
+        
+        # Values between 6:15-6:30 (15 min lag): 19.0, 22.0 -> max=22.0
+        assert result[15] == 22.0
+    
+    def test_calculate_aggregated_lagged_values_median(self) -> None:
+        """Test aggregated lagged values with median aggregation."""
+        history = [
+            (datetime(2025, 1, 1, 6, 0), 20.0),
+            (datetime(2025, 1, 1, 6, 5), 20.0),
+            (datetime(2025, 1, 1, 6, 10), 21.0),
+            (datetime(2025, 1, 1, 6, 15), 21.0),
+            (datetime(2025, 1, 1, 6, 20), 22.0),
+            (datetime(2025, 1, 1, 6, 25), 22.0),
+            (datetime(2025, 1, 1, 6, 30), 23.0),
+        ]
+        current_time = datetime(2025, 1, 1, 6, 30)
+        
+        result = self.service.calculate_aggregated_lagged_values(
+            history, current_time, aggregation_func="median"
+        )
+        
+        # Check that median is calculated
+        assert result[15] is not None
