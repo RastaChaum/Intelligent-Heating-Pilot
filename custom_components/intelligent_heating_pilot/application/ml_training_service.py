@@ -10,7 +10,7 @@ from ..domain.services import (
     FeatureEngineeringService,
     MLPredictionService,
 )
-from ..domain.value_objects import HeatingCycle, TrainingDataset, TrainingExample
+from ..domain.value_objects import TrainingDataset, TrainingExample
 
 _LOGGER = logging.getLogger(__name__)
 

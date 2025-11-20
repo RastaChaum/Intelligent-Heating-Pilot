@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -11,7 +11,6 @@ from custom_components.intelligent_heating_pilot.application.ml_training_service
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     HeatingCycle,
-    LaggedFeatures,
 )
 
 
