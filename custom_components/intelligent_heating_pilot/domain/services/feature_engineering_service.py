@@ -77,7 +77,7 @@ class FeatureEngineeringService:
             # Collect values in this window
             window_values = [
                 val for ts, val in history
-                if window_start < ts <= window_end
+                if window_start <= ts < window_end
             ]
             
             if not window_values:
@@ -108,6 +108,7 @@ class FeatureEngineeringService:
         self,
         current_temp: float,
         target_temp: float,
+        slope: float,
         current_time: datetime,
         temp_history: list[tuple[datetime, float]],
         slope_history: list[tuple[datetime, float]],

@@ -3,14 +3,11 @@ from __future__ import annotations
 
 import logging
 import pickle
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
 from ..value_objects import LaggedFeatures
-
-if TYPE_CHECKING:
-    import xgboost as xgb
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,7 +18,6 @@ try:
 except ImportError:
     _LOGGER.warning("XGBoost not available. ML predictions will not work.")
     XGBOOST_AVAILABLE = False
-    xgb = None  # type: ignore
 
 
 class MLPredictionService:
@@ -33,7 +29,7 @@ class MLPredictionService:
     
     def __init__(self) -> None:
         """Initialize the ML prediction service."""
-        self._model: xgb.XGBRegressor | None = None
+        self._model: Any | None = None
         self._is_trained = False
     
     def is_trained(self) -> bool:
