@@ -14,19 +14,24 @@ class HeatingCycle:
     relevant data for training the prediction model.
     """
     
-    cycle_id: str  # Unique identifier for the cycle
-    climate_entity_id: str  # Identifier for the climate entity (room)
+    room_id: str  # Identifier for the IHP device (unique device ID)
     
     # Timing information
     heating_started_at: datetime  # When heating actually started
     target_time: datetime  # When target temperature was supposed to be reached
-    real_target_time: datetime | None  # When target was actually reached (None if not reached)
+    target_reached_at: datetime | None  # When target was actually reached (None if not reached)
     
     # Temperature information
     initial_temp: float  # Temperature when heating started (°C)
     target_temp: float  # Target temperature (°C)
     final_temp: float  # Temperature at target_time (°C)
-       
+    initial_slope: float | None  # Temperature slope at start (°C/h)
+    
+    # Environmental data at start
+    outdoor_temp: float | None  # Outdoor temperature at start (°C)
+    humidity: float | None  # Indoor humidity at start (%)
+    cloud_coverage: float | None  # Cloud coverage at start (%)
+    
     # Calculated values
     actual_duration_minutes: float  # How long heating actually took
     optimal_duration_minutes: float  # Calculated optimal duration based on error

@@ -1,0 +1,450 @@
+"""Home Assistant Historical Data Reader Adapter.
+
+This adapter implements IHistoricalDataReader to extract heating cycles
+and historical sensor data from the Home Assistant recorder database.
+
+Supports SQLite, PostgreSQL, and MariaDB/MySQL backends.
+"""
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta
+from typing import Any
+
+from homeassistant.components import recorder
+from homeassistant.components.recorder import history
+from homeassistant.core import HomeAssistant, State
+from homeassistant.util import dt as dt_util
+
+from ...domain.interfaces.historical_data_reader import IHistoricalDataReader
+from ...domain.value_objects import HeatingCycle
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class HAHistoricalDataReader(IHistoricalDataReader):
+    """Home Assistant implementation of IHistoricalDataReader.
+    
+    Extracts historical data from HA recorder database (SQLite/PostgreSQL/MariaDB).
+    Uses the recorder component's history API for efficient queries.
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Initialize the historical data reader.
+        
+        Args:
+            hass: Home Assistant instance with recorder integration.
+        """
+        self._hass = hass
+        
+    async def get_heating_cycles(
+        self,
+        climate_entity_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> list[HeatingCycle]:
+        """Extract and reconstruct heating cycles from HA database.
+        
+        A heating cycle is detected by monitoring:
+        1. Climate entity HVAC mode changes (off → heat)
+        2. Temperature changes during heating
+        3. Time when target temperature is reached
+        
+        Args:
+            climate_entity_id: Entity ID of the climate/thermostat
+            start_date: Start of extraction period
+            end_date: End of extraction period
+            
+        Returns:
+            List of reconstructed HeatingCycle objects with errors calculated.
+        """
+        _LOGGER.debug(
+            "Extracting heating cycles for %s from %s to %s",
+            climate_entity_id,
+            start_date,
+            end_date,
+        )
+        
+        # Get climate entity history
+        states = await self._get_entity_states(
+            climate_entity_id,
+            start_date,
+            end_date,
+        )
+        
+        if not states:
+            _LOGGER.warning("No historical states found for %s", climate_entity_id)
+            return []
+        
+        # Reconstruct cycles from state changes
+        cycles = []
+        current_cycle_start: datetime | None = None
+        current_cycle_initial_temp: float | None = None
+        current_cycle_target_temp: float | None = None
+        
+        for i, state in enumerate(states):
+            hvac_mode = state.state
+            current_temp = self._safe_float(state.attributes.get("current_temperature"))
+            target_temp = self._safe_float(state.attributes.get("temperature"))
+            
+            # Detect cycle start: transition to "heat" mode
+            if hvac_mode == "heat" and current_cycle_start is None:
+                current_cycle_start = state.last_changed
+                current_cycle_initial_temp = current_temp
+                current_cycle_target_temp = target_temp
+                _LOGGER.debug(
+                    "Cycle started at %s (initial: %.1f°C, target: %.1f°C)",
+                    current_cycle_start,
+                    current_cycle_initial_temp or 0,
+                    current_cycle_target_temp or 0,
+                )
+            
+            # Detect cycle end: transition out of "heat" mode or target reached
+            elif hvac_mode != "heat" and current_cycle_start is not None:
+                cycle_end = state.last_changed
+                
+                # Find when target was reached (if at all)
+                target_reached_time = self._find_target_reached_time(
+                    states[i-20:i+1] if i >= 20 else states[:i+1],  # Look back up to 20 states
+                    current_cycle_target_temp or 20.0,
+                )
+                
+                if current_cycle_initial_temp and current_cycle_target_temp:
+                    # Calculate error: how late/early did we reach target
+                    error_minutes = 0.0
+                    if target_reached_time:
+                        # TODO: Get actual scheduled time from scheduler entity
+                        # For now, assume we wanted to reach target at cycle_end
+                        error_seconds = (target_reached_time - cycle_end).total_seconds()
+                        error_minutes = error_seconds / 60.0
+                    
+                    # Get environmental data at cycle start
+                    outdoor_temp = await self._get_outdoor_temp_at_time(current_cycle_start)
+                    humidity = await self._get_humidity_at_time(climate_entity_id, current_cycle_start)
+                    cloud_coverage = await self._get_cloud_coverage_at_time(current_cycle_start)
+                    slope = await self._get_slope_at_time(climate_entity_id, current_cycle_start)
+                    
+                    # Calculate durations
+                    actual_duration_minutes = (cycle_end - current_cycle_start).total_seconds() / 60.0
+                    optimal_duration_minutes = actual_duration_minutes - error_minutes
+                    
+                    cycle = HeatingCycle(
+                        room_id=climate_entity_id,  # Using entity ID as room identifier
+                        heating_started_at=current_cycle_start,
+                        target_time=cycle_end,  # TODO: Get from scheduler
+                        target_reached_at=target_reached_time,
+                        initial_temp=current_cycle_initial_temp,
+                        target_temp=current_cycle_target_temp,
+                        final_temp=current_temp or current_cycle_target_temp,
+                        initial_slope=slope,
+                        outdoor_temp=outdoor_temp,
+                        humidity=humidity,
+                        cloud_coverage=cloud_coverage,
+                        actual_duration_minutes=actual_duration_minutes,
+                        optimal_duration_minutes=optimal_duration_minutes,
+                        error_minutes=error_minutes,
+                    )
+                    cycles.append(cycle)
+                    _LOGGER.debug("Cycle completed: %s (error: %.1f min)", cycle.cycle_id, error_minutes)
+                
+                # Reset for next cycle
+                current_cycle_start = None
+                current_cycle_initial_temp = None
+                current_cycle_target_temp = None
+        
+        _LOGGER.info("Extracted %d heating cycles for %s", len(cycles), climate_entity_id)
+        return cycles
+    
+    async def get_room_humidity_history(
+        self,
+        humidity_entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        resolution_minutes: int = 5,
+    ) -> list[tuple[datetime, float]]:
+        """Retrieve historical humidity data from HA recorder."""
+        return await self._get_numeric_history(
+            humidity_entity_id,
+            start_time,
+            end_time,
+            resolution_minutes,
+        )
+    
+    async def get_room_temperature_history(
+        self,
+        climate_entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        resolution_minutes: int = 5,
+    ) -> list[tuple[datetime, float]]:
+        """Retrieve historical temperature data from climate entity."""
+        states = await self._get_entity_states(climate_entity_id, start_time, end_time)
+        
+        history_data = []
+        for state in states:
+            temp = self._safe_float(state.attributes.get("current_temperature"))
+            if temp is not None:
+                history_data.append((state.last_changed, temp))
+        
+        # Apply resolution sampling if needed
+        if resolution_minutes > 0 and history_data:
+            history_data = self._resample_history(history_data, resolution_minutes)
+        
+        return history_data
+    
+    async def get_radiator_power_history(
+        self,
+        climate_entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        resolution_minutes: int = 5,
+    ) -> list[tuple[datetime, float]]:
+        """Retrieve radiator power history from climate entity.
+        
+        For VersatileThermostat/other thermostats, power is typically represented
+        as a percentage (0-100) in a sensor attribute or related power sensor.
+        """
+        # Try to get power from climate entity attributes first
+        states = await self._get_entity_states(climate_entity_id, start_time, end_time)
+        
+        history_data = []
+        for state in states:
+            # Check common power attribute names
+            power = None
+            for attr in ["power_percent", "valve_position", "heating_power"]:
+                power = self._safe_float(state.attributes.get(attr))
+                if power is not None:
+                    break
+            
+            # If no power attribute, infer from HVAC mode (0 or 100)
+            if power is None:
+                power = 100.0 if state.state == "heat" else 0.0
+            
+            history_data.append((state.last_changed, power))
+        
+        # Apply resolution sampling
+        if resolution_minutes > 0 and history_data:
+            history_data = self._resample_history(history_data, resolution_minutes)
+        
+        return history_data
+    
+    async def get_room_slopes_history(
+        self,
+        climate_entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        resolution_minutes: int = 5,
+    ) -> list[tuple[datetime, float]]:
+        """Retrieve learned heating slopes from IHP storage.
+        
+        Note: This queries a custom sensor that stores learned slopes.
+        Entity ID pattern: sensor.ihp_{climate_entity}_learned_slope
+        """
+        # Construct slope sensor entity ID
+        sensor_id = climate_entity_id.replace("climate.", "sensor.ihp_")
+        sensor_id = f"{sensor_id}_learned_slope"
+        
+        return await self._get_numeric_history(
+            sensor_id,
+            start_time,
+            end_time,
+            resolution_minutes,
+        )
+    
+    async def get_cloud_coverage_history(
+        self,
+        cloud_coverage_entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        resolution_minutes: int = 15,
+    ) -> list[tuple[datetime, float]]:
+        """Retrieve cloud coverage history from weather entity."""
+        return await self._get_numeric_history(
+            cloud_coverage_entity_id,
+            start_time,
+            end_time,
+            resolution_minutes,
+        )
+    
+    async def get_outdoor_temperature_history(
+        self,
+        outdoor_temperature_entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        resolution_minutes: int = 15,
+    ) -> list[tuple[datetime, float]]:
+        """Retrieve outdoor temperature history."""
+        return await self._get_numeric_history(
+            outdoor_temperature_entity_id,
+            start_time,
+            end_time,
+            resolution_minutes,
+        )
+    
+    # Private helper methods
+    
+    async def _get_entity_states(
+        self,
+        entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> list[State]:
+        """Get historical states for an entity from recorder.
+        
+        Args:
+            entity_id: Entity to query
+            start_time: Start of period
+            end_time: End of period
+            
+        Returns:
+            List of State objects ordered by timestamp.
+        """
+        # Ensure we're in executor context for DB queries
+        def _get_states():
+            return history.state_changes_during_period(
+                self._hass,
+                start_time,
+                end_time,
+                entity_id,
+                no_attributes=False,
+                descending=False,
+            ).get(entity_id, [])
+        
+        try:
+            states = await recorder.get_instance(self._hass).async_add_executor_job(_get_states)
+            return states
+        except Exception as e:
+            _LOGGER.error("Failed to get states for %s: %s", entity_id, e)
+            return []
+    
+    async def _get_numeric_history(
+        self,
+        entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        resolution_minutes: int,
+    ) -> list[tuple[datetime, float]]:
+        """Generic method to get numeric sensor history.
+        
+        Args:
+            entity_id: Sensor entity ID
+            start_time: Start of period
+            end_time: End of period
+            resolution_minutes: Sampling resolution
+            
+        Returns:
+            List of (timestamp, value) tuples.
+        """
+        states = await self._get_entity_states(entity_id, start_time, end_time)
+        
+        history_data = []
+        for state in states:
+            value = self._safe_float(state.state)
+            if value is not None:
+                history_data.append((state.last_changed, value))
+        
+        # Apply resolution sampling
+        if resolution_minutes > 0 and history_data:
+            history_data = self._resample_history(history_data, resolution_minutes)
+        
+        return history_data
+    
+    async def _get_outdoor_temp_at_time(self, timestamp: datetime) -> float:
+        """Get outdoor temperature at specific time (for cycle labeling)."""
+        # TODO: Get outdoor temp entity from config
+        # For now, return a reasonable default
+        return 10.0
+    
+    async def _get_humidity_at_time(self, climate_entity_id: str, timestamp: datetime) -> float | None:
+        """Get humidity at specific time."""
+        # Try to get from associated humidity sensor
+        # TODO: Get humidity entity from config
+        return None
+    
+    async def _get_cloud_coverage_at_time(self, timestamp: datetime) -> float | None:
+        """Get cloud coverage at specific time."""
+        # TODO: Get cloud coverage entity from config
+        return None
+    
+    async def _get_slope_at_time(self, climate_entity_id: str, timestamp: datetime) -> float | None:
+        """Get learned slope at specific time."""
+        # TODO: Query slope history
+        return None
+    
+    def _find_target_reached_time(
+        self,
+        states: list[State],
+        target_temp: float,
+        tolerance: float = 0.3,
+    ) -> datetime | None:
+        """Find when target temperature was first reached in state history.
+        
+        Args:
+            states: List of states to search (ordered chronologically)
+            target_temp: Target temperature to find
+            tolerance: Acceptable temperature difference (±°C)
+            
+        Returns:
+            Timestamp when target was reached, or None if never reached.
+        """
+        for state in states:
+            current_temp = self._safe_float(state.attributes.get("current_temperature"))
+            if current_temp is not None:
+                if abs(current_temp - target_temp) <= tolerance:
+                    return state.last_changed
+        return None
+    
+    def _resample_history(
+        self,
+        history_data: list[tuple[datetime, float]],
+        resolution_minutes: int,
+    ) -> list[tuple[datetime, float]]:
+        """Downsample history data to specified resolution.
+        
+        Takes the average of values within each resolution window.
+        
+        Args:
+            history_data: Original data points
+            resolution_minutes: Target resolution in minutes
+            
+        Returns:
+            Resampled data at lower resolution.
+        """
+        if not history_data or resolution_minutes <= 0:
+            return history_data
+        
+        resampled = []
+        resolution_delta = timedelta(minutes=resolution_minutes)
+        
+        current_window_start = history_data[0][0]
+        window_values = []
+        
+        for timestamp, value in history_data:
+            if timestamp >= current_window_start + resolution_delta:
+                # Close current window
+                if window_values:
+                    avg_value = sum(window_values) / len(window_values)
+                    resampled.append((current_window_start, avg_value))
+                
+                # Start new window
+                current_window_start = current_window_start + resolution_delta
+                window_values = []
+            
+            window_values.append(value)
+        
+        # Close final window
+        if window_values:
+            avg_value = sum(window_values) / len(window_values)
+            resampled.append((current_window_start, avg_value))
+        
+        return resampled
+    
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        """Safely convert value to float, returning None on failure."""
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None

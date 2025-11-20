@@ -34,6 +34,7 @@ from .const import (
 from .infrastructure.adapters import (
     HAClimateCommander,
     HAEnvironmentReader,
+    HAHistoricalDataReader,
     HAModelStorage,
     HASchedulerCommander,
     HASchedulerReader,
@@ -77,6 +78,7 @@ class IntelligentHeatingPilotCoordinator:
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
+        self._historical_reader: HAHistoricalDataReader | None = None
         self._scheduler_reader: HASchedulerReader | None = None
         self._scheduler_commander: HASchedulerCommander | None = None
         self._climate_commander: HAClimateCommander | None = None
@@ -102,6 +104,7 @@ class IntelligentHeatingPilotCoordinator:
             self.config.entry_id,
             retention_days=self._lhs_retention_days
         )
+        self._historical_reader = HAHistoricalDataReader(self.hass)
         self._scheduler_reader = HASchedulerReader(
             self.hass,
             self._scheduler_entities,
@@ -130,18 +133,15 @@ class IntelligentHeatingPilotCoordinator:
             lhs_window_hours=self._lhs_window_hours,
         )
         
-        # Create ML training service
-        # Note: Requires IHistoricalDataReader adapter to be implemented
-        # For now, service is initialized but cannot be used for training
-        # until historical data reader adapter is available
+        # Create ML training service with historical data reader
         try:
             self._ml_training_service = MLTrainingApplicationService(
-                historical_reader=None,  # TODO: Implement HAHistoricalDataReader adapter
+                historical_reader=self._historical_reader,
                 model_storage=self._model_storage,
             )
-            _LOGGER.debug("ML training service initialized (historical reader not yet available)")
+            _LOGGER.info("ML training service initialized with historical data reader")
         except Exception as e:
-            _LOGGER.warning("Failed to initialize ML training service: %s", e)
+            _LOGGER.error("Failed to initialize ML training service: %s", e)
             self._ml_training_service = None
         
         # Create event bridge
