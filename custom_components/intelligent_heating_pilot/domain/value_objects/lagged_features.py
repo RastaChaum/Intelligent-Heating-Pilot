@@ -25,6 +25,14 @@ class LaggedFeatures:
     temp_lag_120min: float | None
     temp_lag_180min: float | None
     
+    # Lagged slopeed features -
+    slope_lag_15min: float | None
+    slope_lag_30min: float | None
+    slope_lag_60min: float | None
+    slope_lag_90min: float | None
+    slope_lag_120min: float | None
+    slope_lag_180min: float | None
+
     # Lagged heating power state (0=off, 1=on)
     power_lag_15min: float | None
     power_lag_30min: float | None
@@ -87,6 +95,12 @@ class LaggedFeatures:
             "temp_lag_90min": self.temp_lag_90min or 0.0,
             "temp_lag_120min": self.temp_lag_120min or 0.0,
             "temp_lag_180min": self.temp_lag_180min or 0.0,
+            "slope_lag_15min": self.slope_lag_15min or 0.0,
+            "slope_lag_30min": self.slope_lag_30min or 0.0,
+            "slope_lag_60min": self.slope_lag_60min or 0.0,
+            "slope_lag_90min": self.slope_lag_90min or 0.0,
+            "slope_lag_120min": self.slope_lag_120min or 0.0,
+            "slope_lag_180min": self.slope_lag_180min or 0.0,
             "power_lag_15min": self.power_lag_15min or 0.0,
             "power_lag_30min": self.power_lag_30min or 0.0,
             "power_lag_60min": self.power_lag_60min or 0.0,
@@ -136,6 +150,12 @@ class LaggedFeatures:
             "temp_lag_90min",
             "temp_lag_120min",
             "temp_lag_180min",
+            "slope_lag_15min",
+            "slope_lag_30min",
+            "slope_lag_60min",
+            "slope_lag_90min",
+            "slope_lag_120min",
+            "slope_lag_180min",
             "power_lag_15min",
             "power_lag_30min",
             "power_lag_60min",

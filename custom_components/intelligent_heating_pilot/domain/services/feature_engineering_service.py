@@ -77,7 +77,7 @@ class FeatureEngineeringService:
             # Collect values in this window
             window_values = [
                 val for ts, val in history
-                if window_start < ts <= window_end
+                if window_start <= ts < window_end
             ]
             
             if not window_values:
@@ -108,8 +108,10 @@ class FeatureEngineeringService:
         self,
         current_temp: float,
         target_temp: float,
+        slope: float,
         current_time: datetime,
         temp_history: list[tuple[datetime, float]],
+        slope_history: list[tuple[datetime, float]],
         power_history: list[tuple[datetime, float]],  # Now float (percentage)
         current_slope: float | None = None,
         outdoor_temp: float | None = None,
@@ -146,6 +148,11 @@ class FeatureEngineeringService:
             temp_history, current_time, aggregation_func="avg"
         )
         
+        # Calculate lagged slope values (average aggregation)
+        slope_lags = self.calculate_aggregated_lagged_values(
+            slope_history, current_time, aggregation_func="avg"
+        )
+
         # Calculate lagged power values (average aggregation)
         power_lags = self.calculate_aggregated_lagged_values(
             power_history, current_time, aggregation_func="avg"
@@ -185,6 +192,12 @@ class FeatureEngineeringService:
             temp_lag_90min=temp_lags[90],
             temp_lag_120min=temp_lags[120],
             temp_lag_180min=temp_lags[180],
+            slope_lag_15min=slope_lags[15],
+            slope_lag_30min=slope_lags[30],
+            slope_lag_60min=slope_lags[60],
+            slope_lag_90min=slope_lags[90],
+            slope_lag_120min=slope_lags[120],
+            slope_lag_180min=slope_lags[180],
             power_lag_15min=power_lags[15],
             power_lag_30min=power_lags[30],
             power_lag_60min=power_lags[60],
