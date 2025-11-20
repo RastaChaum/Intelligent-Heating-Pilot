@@ -90,12 +90,14 @@ class TestMLTrainingApplicationService:
             (datetime(2024, 1, 1, 5, 30, 0), 18.0),
         ]
         power_history = [
-            (datetime(2024, 1, 1, 4, 0, 0), False),
-            (datetime(2024, 1, 1, 5, 0, 0), False),
+            (datetime(2024, 1, 1, 4, 0, 0), 0.0),
+            (datetime(2024, 1, 1, 5, 0, 0), 0.0),
         ]
         
-        self.historical_reader.get_temperature_history.return_value = temp_history
-        self.historical_reader.get_power_state_history.return_value = power_history
+        # Set up mock to alternate between temp and power history
+        self.historical_reader.get_entity_history.side_effect = [
+            temp_history, power_history
+        ] * 15  # 15 cycles, 2 calls each
         
         # Mock model storage
         self.model_storage.save_model.return_value = None
@@ -180,11 +182,13 @@ class TestMLTrainingApplicationService:
             (datetime(2024, 1, 1, 5, 0, 0), 18.0),
         ]
         power_history = [
-            (datetime(2024, 1, 1, 4, 0, 0), False),
+            (datetime(2024, 1, 1, 4, 0, 0), 0.0),
         ]
         
-        self.historical_reader.get_temperature_history.return_value = temp_history
-        self.historical_reader.get_power_state_history.return_value = power_history
+        # Set up mock to alternate between temp and power history
+        self.historical_reader.get_entity_history.side_effect = [
+            temp_history, power_history
+        ] * 12  # 12 valid cycles, 2 calls each
         self.model_storage.save_model.return_value = None
         
         # WHEN: Training model
@@ -220,24 +224,27 @@ class TestMLTrainingApplicationService:
         # Mock history - empty for first few calls (simulating missing data)
         call_count = 0
         
-        def get_temp_history_side_effect(*args, **kwargs):
+        def get_entity_history_side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            if call_count <= 3:
-                # Return insufficient history for first 3 cycles
-                # These will have None lagged features, converted to 0.0
-                return []
-            return [
-                (datetime(2024, 1, 1, 4, 0, 0), 17.0),
-                (datetime(2024, 1, 1, 5, 0, 0), 18.0),
-            ]
+            # Alternates between temp and power calls (even=temp, odd=power)
+            if call_count % 2 == 1:  # Temperature call
+                if call_count <= 6:  # First 3 cycles
+                    # Return insufficient history for first 3 cycles
+                    # These will have None lagged features, converted to 0.0
+                    return []
+                return [
+                    (datetime(2024, 1, 1, 4, 0, 0), 17.0),
+                    (datetime(2024, 1, 1, 5, 0, 0), 18.0),
+                ]
+            else:  # Power call
+                return [
+                    (datetime(2024, 1, 1, 4, 0, 0), 0.0),
+                ]
         
-        self.historical_reader.get_temperature_history.side_effect = (
-            get_temp_history_side_effect
+        self.historical_reader.get_entity_history.side_effect = (
+            get_entity_history_side_effect
         )
-        self.historical_reader.get_power_state_history.return_value = [
-            (datetime(2024, 1, 1, 4, 0, 0), False),
-        ]
         self.model_storage.save_model.return_value = None
         
         # WHEN: Training model
@@ -274,12 +281,14 @@ class TestMLTrainingApplicationService:
             (cycle_start - timedelta(minutes=15), 18.0),
         ]
         power_history = [
-            (cycle_start - timedelta(minutes=90), False),
-            (cycle_start - timedelta(minutes=30), False),
+            (cycle_start - timedelta(minutes=90), 0.0),
+            (cycle_start - timedelta(minutes=30), 0.0),
         ]
         
-        self.historical_reader.get_temperature_history.return_value = temp_history
-        self.historical_reader.get_power_state_history.return_value = power_history
+        # Set up mock to alternate between temp and power history
+        self.historical_reader.get_entity_history.side_effect = [
+            temp_history, power_history
+        ] * 12  # 12 cycles, 2 calls each
         self.model_storage.save_model.return_value = None
         
         # WHEN: Training model
@@ -292,11 +301,10 @@ class TestMLTrainingApplicationService:
         assert result["status"] == "training_complete"
         assert result["training_examples"] == 12
         
-        # Verify history was fetched for each cycle
-        assert self.historical_reader.get_temperature_history.call_count == 12
-        assert self.historical_reader.get_power_state_history.call_count == 12
+        # Verify history was fetched for each cycle (2 calls per cycle: temp + power)
+        assert self.historical_reader.get_entity_history.call_count == 24  # 12 cycles * 2 calls
         
-        # Verify history fetch used correct time range (120 min before start)
-        first_call = self.historical_reader.get_temperature_history.call_args_list[0]
-        assert first_call[1]["start_time"] == cycle_start - timedelta(minutes=120)
+        # Verify history fetch used correct time range (200 min before start for buffer)
+        first_call = self.historical_reader.get_entity_history.call_args_list[0]
+        assert first_call[1]["start_time"] == cycle_start - timedelta(minutes=200)
         assert first_call[1]["end_time"] == cycle_start

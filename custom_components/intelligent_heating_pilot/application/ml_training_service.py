@@ -10,7 +10,7 @@ from ..domain.services import (
     FeatureEngineeringService,
     MLPredictionService,
 )
-from ..domain.value_objects import TrainingDataset, TrainingExample
+from ..domain.value_objects import TrainingExample
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -110,20 +110,20 @@ class MLTrainingApplicationService:
             
             # Step 3a: Get historical data for feature engineering
             # We need data from before cycle start to calculate lagged features
-            # Get history from 120 minutes before start to cycle start
-            history_start = cycle.heating_started_at - timedelta(minutes=120)
+            # Get history from 180 minutes before start to cover all lags (15, 30, 60, 90, 120, 180)
+            history_start = cycle.heating_started_at - timedelta(minutes=200)  # Extra buffer for interpolation
             history_end = cycle.heating_started_at
             
-            # Get temperature history for the room
-            temp_history = await self._historical_reader.get_temperature_history(
+            # Get temperature history for the room using generic entity history method
+            temp_history = await self._historical_reader.get_entity_history(
                 entity_id=cycle.room_id,
                 start_time=history_start,
                 end_time=history_end,
                 resolution_minutes=5,
             )
             
-            # Get power state history for the room
-            power_history = await self._historical_reader.get_power_state_history(
+            # Get power state history for the room using generic entity history method
+            power_history = await self._historical_reader.get_entity_history(
                 entity_id=cycle.room_id,
                 start_time=history_start,
                 end_time=history_end,
@@ -131,14 +131,25 @@ class MLTrainingApplicationService:
             
             # Step 3b: Create lagged features at cycle start time
             try:
+                # Calculate temperature delta for slope (simplified approach)
+                # In a full implementation, this would come from cycle data or be calculated
+                temp_delta = cycle.target_temp - cycle.initial_temp
+                
                 lagged_features = self._feature_engineer.create_lagged_features(
                     current_temp=cycle.initial_temp,
                     target_temp=cycle.target_temp,
+                    slope=temp_delta / 60.0,  # Simplified slope estimation (°C/h)
                     current_time=cycle.heating_started_at,
                     temp_history=temp_history,
+                    slope_history=[],  # Not available from HeatingCycle, will be calculated from temp_history
                     power_history=power_history,
+                    current_slope=None,  # Not available from HeatingCycle
                     outdoor_temp=cycle.outdoor_temp,
                     humidity=cycle.humidity,
+                    cloud_coverage=None,  # Not available from HeatingCycle
+                    outdoor_temp_history=None,  # Not available
+                    humidity_history=None,  # Not available
+                    cloud_coverage_history=None,  # Not available
                 )
                 
                 # Step 3c: Create training example
@@ -155,12 +166,14 @@ class MLTrainingApplicationService:
                     "temp_delta=%.1f°C, lagged_features=%d",
                     cycle.cycle_id,
                     optimal_duration,
-                    lagged_features.temp_delta,
+                    temp_delta,
                     len([f for f in [
                         lagged_features.temp_lag_15min,
                         lagged_features.temp_lag_30min,
                         lagged_features.temp_lag_60min,
                         lagged_features.temp_lag_90min,
+                        lagged_features.temp_lag_120min,
+                        lagged_features.temp_lag_180min,
                     ] if f is not None]),
                 )
             except Exception as e:
@@ -183,21 +196,15 @@ class MLTrainingApplicationService:
             len(valid_cycles),
         )
         
-        # Step 3d: Create training dataset
-        dataset = TrainingDataset(
-            room_id=room_id,
-            examples=training_examples,
-        )
-        
         # Step 4: Train the ML model
         # Convert training examples to X and y arrays
         X_train = [
             example.features.to_feature_dict()
-            for example in dataset.examples
+            for example in training_examples
         ]
         y_train = [
             example.target_duration_minutes
-            for example in dataset.examples
+            for example in training_examples
         ]
         
         # Convert feature dicts to ordered lists matching feature names

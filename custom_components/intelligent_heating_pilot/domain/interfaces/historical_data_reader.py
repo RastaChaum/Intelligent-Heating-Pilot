@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Any
 
 from ..value_objects import HeatingCycle
 
@@ -34,41 +35,25 @@ class IHistoricalDataReader(ABC):
         pass
     
     @abstractmethod
-    async def get_temperature_history(
+    async def get_entity_history(
         self,
         entity_id: str,
         start_time: datetime,
         end_time: datetime,
         resolution_minutes: int = 5,
-    ) -> list[tuple[datetime, float]]:
-        """Get temperature history for a sensor within a time range.
+    ) -> list[tuple[datetime, Any]]:
+        """Get generic entity history within a time range.
+        
+        This is a generic method that can retrieve history for any entity type
+        (temperature sensors, power states, humidity, etc.).
         
         Args:
-            entity_id: Sensor entity ID
+            entity_id: Entity ID to retrieve history for
             start_time: Start of time range
             end_time: End of time range
             resolution_minutes: Data resolution in minutes
             
         Returns:
-            List of (timestamp, temperature) tuples.
-        """
-        pass
-    
-    @abstractmethod
-    async def get_power_state_history(
-        self,
-        entity_id: str,
-        start_time: datetime,
-        end_time: datetime,
-    ) -> list[tuple[datetime, bool]]:
-        """Get heating power state history within a time range.
-        
-        Args:
-            entity_id: Climate/heater entity ID
-            start_time: Start of time range
-            end_time: End of time range
-            
-        Returns:
-            List of (timestamp, is_heating) tuples.
+            List of (timestamp, value) tuples. Value type depends on entity.
         """
         pass
