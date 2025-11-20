@@ -12,8 +12,11 @@ packages = []                                                # No packaging; HA 
 # Home Assistant 2025.9+ requires Python 3.13.2+
 python = ">=3.13.2,<3.14"
 
-# Runtime dependencies for standalone domain experimentation (keep minimal)
-# Domain code is pure standard library; no extra runtime deps required here.
+# Runtime dependencies for ML model
+xgboost = "^2.1"
+pandas = "^2.2"
+numpy = "^1.26"
+scikit-learn = "^1.5"  # For preprocessing utilities
 
 [tool.poetry.group.dev.dependencies]
 # Home Assistant for type checking & local import resolution (dev only!)
