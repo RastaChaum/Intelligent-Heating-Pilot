@@ -101,43 +101,155 @@ class MLTrainingApplicationService:
                 f"(minimum: {min_cycles})"
             )
         
-        # Step 3: Create training dataset
-        # Note: Feature engineering would need temperature/power history
-        # For now, we'll use a simplified approach
+        # Step 3: Create training dataset with feature engineering
         training_examples = []
         
         for cycle in valid_cycles:
-            # Calculate optimal label
+            # Calculate optimal label (Y target)
             optimal_duration = self._cycle_labeler.label_heating_cycle(cycle)
             
-            # In a full implementation, we would:
-            # 1. Get temperature history around cycle start
-            # 2. Get power history
-            # 3. Create lagged features
-            # For now, we'll skip this and just document the pattern
+            # Step 3a: Get historical data for feature engineering
+            # We need data from before cycle start to calculate lagged features
+            # Get history from 120 minutes before start to cycle start
+            history_start = cycle.heating_started_at - timedelta(minutes=120)
+            history_end = cycle.heating_started_at
             
-            # TODO: Implement full feature engineering pipeline
-            _LOGGER.debug(
-                "Cycle %s labeled with optimal duration: %.1f min",
-                cycle.cycle_id,
-                optimal_duration,
+            # Get temperature history for the room
+            temp_history = await self._historical_reader.get_temperature_history(
+                entity_id=cycle.room_id,
+                start_time=history_start,
+                end_time=history_end,
+                resolution_minutes=5,
+            )
+            
+            # Get power state history for the room
+            power_history = await self._historical_reader.get_power_state_history(
+                entity_id=cycle.room_id,
+                start_time=history_start,
+                end_time=history_end,
+            )
+            
+            # Step 3b: Create lagged features at cycle start time
+            try:
+                lagged_features = self._feature_engineer.create_lagged_features(
+                    current_temp=cycle.initial_temp,
+                    target_temp=cycle.target_temp,
+                    current_time=cycle.heating_started_at,
+                    temp_history=temp_history,
+                    power_history=power_history,
+                    outdoor_temp=cycle.outdoor_temp,
+                    humidity=cycle.humidity,
+                )
+                
+                # Step 3c: Create training example
+                example = TrainingExample(
+                    features=lagged_features,
+                    target_duration_minutes=optimal_duration,
+                    cycle_id=cycle.cycle_id,
+                )
+                
+                training_examples.append(example)
+                
+                _LOGGER.debug(
+                    "Created training example for cycle %s: optimal=%.1f min, "
+                    "temp_delta=%.1f°C, lagged_features=%d",
+                    cycle.cycle_id,
+                    optimal_duration,
+                    lagged_features.temp_delta,
+                    len([f for f in [
+                        lagged_features.temp_lag_15min,
+                        lagged_features.temp_lag_30min,
+                        lagged_features.temp_lag_60min,
+                        lagged_features.temp_lag_90min,
+                    ] if f is not None]),
+                )
+            except Exception as e:
+                _LOGGER.warning(
+                    "Failed to create features for cycle %s: %s. Skipping.",
+                    cycle.cycle_id,
+                    str(e),
+                )
+                continue
+        
+        if not training_examples:
+            raise ValueError(
+                "No training examples created after feature engineering. "
+                "This may indicate insufficient historical data."
             )
         
-        # Step 4: Train the model
-        # This is a simplified example - full implementation would use actual features
-        _LOGGER.warning(
-            "Full feature engineering not yet implemented. "
-            "Training would happen here with extracted features."
+        _LOGGER.info(
+            "Created %d training examples with features from %d valid cycles",
+            len(training_examples),
+            len(valid_cycles),
         )
         
-        # Step 5: Persist the model
-        # await self._model_storage.save_model(...)
+        # Step 3d: Create training dataset
+        dataset = TrainingDataset(
+            room_id=room_id,
+            examples=training_examples,
+        )
+        
+        # Step 4: Train the ML model
+        # Convert training examples to X and y arrays
+        X_train = [
+            example.features.to_feature_dict()
+            for example in dataset.examples
+        ]
+        y_train = [
+            example.target_duration_minutes
+            for example in dataset.examples
+        ]
+        
+        # Convert feature dicts to ordered lists matching feature names
+        feature_names = training_examples[0].features.get_feature_names()
+        X_train_arrays = [
+            [feature_dict[name] for name in feature_names]
+            for feature_dict in X_train
+        ]
+        
+        _LOGGER.info(
+            "Training XGBoost model with %d examples and %d features",
+            len(X_train_arrays),
+            len(feature_names),
+        )
+        
+        # Train the model
+        metrics = self._ml_service.train_model(
+            X_train=X_train_arrays,
+            y_train=y_train,
+        )
+        
+        _LOGGER.info(
+            "Model training complete. RMSE: %.2f min, MAE: %.2f min",
+            metrics["rmse"],
+            metrics["mae"],
+        )
+        
+        # Step 5: Persist the trained model
+        model_bytes = self._ml_service.serialize_model()
+        if model_bytes:
+            await self._model_storage.save_model(
+                room_id=room_id,
+                model_data=model_bytes,
+                metadata={
+                    "trained_at": datetime.now().isoformat(),
+                    "n_samples": len(training_examples),
+                    "n_features": len(feature_names),
+                    "rmse": metrics["rmse"],
+                    "mae": metrics["mae"],
+                    "lookback_months": lookback_months,
+                },
+            )
+            _LOGGER.info("Model persisted successfully for room %s", room_id)
         
         return {
-            "status": "training_pipeline_defined",
+            "status": "training_complete",
             "cycles_extracted": len(cycles),
             "cycles_valid": len(valid_cycles),
-            "note": "Full implementation requires historical data reader implementation",
+            "training_examples": len(training_examples),
+            "rmse": metrics["rmse"],
+            "mae": metrics["mae"],
+            "n_features": len(feature_names),
         }
     
     async def retrain_model_with_new_data(
