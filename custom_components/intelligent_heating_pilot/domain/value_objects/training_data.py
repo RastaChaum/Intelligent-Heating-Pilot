@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Union
 
 from .lagged_features import LaggedFeatures
+from .multi_room_features import MultiRoomFeatures
 
 
 @dataclass(frozen=True)
@@ -11,9 +13,10 @@ class TrainingExample:
     """A single training example for the ML model.
     
     Combines input features (X) with the target label (Y).
+    Supports both single-room (LaggedFeatures) and multi-room (MultiRoomFeatures) models.
     """
     
-    features: LaggedFeatures  # Input features (X)
+    features: Union[LaggedFeatures, MultiRoomFeatures]  # Input features (X)
     target_duration_minutes: float  # Target label (Y) - optimal preheat duration
     cycle_id: str  # Reference to the source heating cycle
     
