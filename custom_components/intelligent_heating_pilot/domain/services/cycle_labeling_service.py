@@ -89,14 +89,14 @@ class CycleLabelingService:
         Raises:
             ValueError: If cycle data is invalid or incomplete.
         """
-        if cycle.target_reached_at is None:
+        if cycle.real_target_time is None:
             raise ValueError(
                 f"Cannot label cycle {cycle.cycle_id}: target never reached"
             )
         
         # Calculate error
         error = self.calculate_error_minutes(
-            cycle.target_reached_at,
+            cycle.real_target_time,
             cycle.target_time,
         )
         
@@ -136,7 +136,7 @@ class CycleLabelingService:
             True if cycle is valid for training, False otherwise.
         """
         # Must have reached target
-        if cycle.target_reached_at is None:
+        if cycle.real_target_time is None:
             _LOGGER.debug(
                 "Cycle %s invalid: target never reached",
                 cycle.cycle_id,

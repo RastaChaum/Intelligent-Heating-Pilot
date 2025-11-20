@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from typing import Any
 
 from ..domain.interfaces import IHistoricalDataReader, IMLModelStorage
 from ..domain.services import (
@@ -48,14 +49,18 @@ class MLTrainingApplicationService:
     
     async def train_model_for_room(
         self,
-        room_id: str,
+        climate_entity_id: str,
+        weather_entity_id: str,
+        humidity_entity_id: str,
         lookback_months: int = 6,
         min_cycles: int = 10,
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """Train an ML model for a specific room using historical data.
         
         Args:
-            room_id: Identifier for the room/climate entity
+            climate_entity_id: Identifier for the room/climate entity
+            weather_entity_id: Identifier for the weather entity
+            humidity_entity_id: Identifier for the humidity entity
             lookback_months: How many months of historical data to use
             min_cycles: Minimum number of heating cycles required for training
             
@@ -67,7 +72,9 @@ class MLTrainingApplicationService:
         """
         _LOGGER.info(
             "Starting ML model training for room %s (lookback: %d months)",
-            room_id,
+            climate_entity_id,
+            weather_entity_id,
+            humidity_entity_id,
             lookback_months,
         )
         
@@ -76,7 +83,7 @@ class MLTrainingApplicationService:
         start_date = end_date - timedelta(days=lookback_months * 30)
         
         cycles = await self._historical_reader.get_heating_cycles(
-            room_id=room_id,
+            climate_entity_id=climate_entity_id,
             start_date=start_date,
             end_date=end_date,
         )
@@ -115,16 +122,41 @@ class MLTrainingApplicationService:
             history_end = cycle.heating_started_at
             
             # Get temperature history for the room using generic entity history method
-            temp_history = await self._historical_reader.get_entity_history(
-                entity_id=cycle.room_id,
+            temp_history = await self._historical_reader.get_room_temperature_history(
+                climate_entity_id=cycle.climate_entity_id,
                 start_time=history_start,
                 end_time=history_end,
                 resolution_minutes=5,
             )
             
             # Get power state history for the room using generic entity history method
-            power_history = await self._historical_reader.get_entity_history(
-                entity_id=cycle.room_id,
+            power_history = await self._historical_reader.get_radiator_power_history(
+                climate_entity_id=cycle.climate_entity_id,
+                start_time=history_start,
+                end_time=history_end,
+            )
+
+            # Get slope history for the room using generic entity history method
+            slope_history = await self._historical_reader.get_room_slopes_history(
+                climate_entity_id=cycle.climate_entity_id,
+                start_time=history_start,
+                end_time=history_end,
+            )
+
+            cloud_coverage_history = await self._historical_reader.get_cloud_coverage_history(
+                cloud_coverage_entity_id=weather_entity_id,
+                start_time=history_start,
+                end_time=history_end,
+            )
+
+            outdoor_temp_history = await self._historical_reader.get_outdoor_temperature_history(
+                outdoor_temperature_entity_id=weather_entity_id,
+                start_time=history_start,
+                end_time=history_end,
+            )            
+
+            humidity_history = await self._historical_reader.get_room_humidity_history(
+                humidity_entity_id=humidity_entity_id,               
                 start_time=history_start,
                 end_time=history_end,
             )
@@ -135,21 +167,26 @@ class MLTrainingApplicationService:
                 # In a full implementation, this would come from cycle data or be calculated
                 temp_delta = cycle.target_temp - cycle.initial_temp
                 
+                # Récupère la valeur (second élément) du dernier tuple de chaque historique
+                last_slope = slope_history[-1][1] if slope_history else None
+                last_outdoor_temp = outdoor_temp_history[-1][1] if outdoor_temp_history else None
+                last_cloud_coverage = cloud_coverage_history[-1][1] if cloud_coverage_history else None
+                last_humidity = humidity_history[-1][1] if humidity_history else None
+
                 lagged_features = self._feature_engineer.create_lagged_features(
                     current_temp=cycle.initial_temp,
                     target_temp=cycle.target_temp,
-                    slope=temp_delta / 60.0,  # Simplified slope estimation (°C/h)
                     current_time=cycle.heating_started_at,
                     temp_history=temp_history,
-                    slope_history=[],  # Not available from HeatingCycle, will be calculated from temp_history
+                    slope_history=slope_history,
                     power_history=power_history,
-                    current_slope=None,  # Not available from HeatingCycle
-                    outdoor_temp=cycle.outdoor_temp,
-                    humidity=cycle.humidity,
-                    cloud_coverage=None,  # Not available from HeatingCycle
-                    outdoor_temp_history=None,  # Not available
-                    humidity_history=None,  # Not available
-                    cloud_coverage_history=None,  # Not available
+                    current_slope=last_slope,
+                    outdoor_temp=last_outdoor_temp,
+                    humidity=last_humidity,
+                    cloud_coverage=last_cloud_coverage,
+                    outdoor_temp_history=outdoor_temp_history,
+                    humidity_history=humidity_history,
+                    cloud_coverage_history=cloud_coverage_history,
                 )
                 
                 # Step 3c: Create training example
@@ -207,10 +244,12 @@ class MLTrainingApplicationService:
             for example in training_examples
         ]
         
-        # Convert feature dicts to ordered lists matching feature names
+        # Convert feature dicts to flat arrays for XGBoost
+        # LaggedFeatures contains ~45 scalar float attributes, not time series
         feature_names = training_examples[0].features.get_feature_names()
         X_train_arrays = [
-            [feature_dict[name] for name in feature_names]
+            [float(feature_dict[name]) if feature_dict[name] is not None else 0.0 
+             for name in feature_names]
             for feature_dict in X_train
         ]
         
@@ -236,7 +275,7 @@ class MLTrainingApplicationService:
         model_bytes = self._ml_service.serialize_model()
         if model_bytes:
             await self._model_storage.save_model(
-                room_id=room_id,
+                climate_entity_id=climate_entity_id,
                 model_data=model_bytes,
                 metadata={
                     "trained_at": datetime.now().isoformat(),
@@ -247,7 +286,7 @@ class MLTrainingApplicationService:
                     "lookback_months": lookback_months,
                 },
             )
-            _LOGGER.info("Model persisted successfully for room %s", room_id)
+            _LOGGER.info("Model persisted successfully for room %s", climate_entity_id)
         
         return {
             "status": "training_complete",
@@ -261,8 +300,10 @@ class MLTrainingApplicationService:
     
     async def retrain_model_with_new_data(
         self,
-        room_id: str,
-    ) -> dict[str, any]:
+        climate_entity_id: str,
+        weather_entity_id: str,
+        humidity_entity_id: str,
+    ) -> dict[str, Any]:
         """Retrain model using both historical data and new collected examples.
         
         This implements the continuous learning loop:
@@ -273,20 +314,22 @@ class MLTrainingApplicationService:
         5. Persist updated model
         
         Args:
-            room_id: Identifier for the room
+            climate_entity_id: Identifier for the climate entity
+            weather_entity_id: Identifier for the weather entity
+            humidity_entity_id: Identifier for the humidity entity
             
         Returns:
             Dictionary with retraining results and metrics.
         """
-        _LOGGER.info("Starting model retraining for room %s", room_id)
+        _LOGGER.info("Starting model retraining for room %s", climate_entity_id)
         
         # Check if model exists
-        if not await self._model_storage.model_exists(room_id):
+        if not await self._model_storage.model_exists(climate_entity_id):
             _LOGGER.warning("No existing model found, performing initial training")
-            return await self.train_model_for_room(room_id)
+            return await self.train_model_for_room(climate_entity_id=climate_entity_id, weather_entity_id=weather_entity_id, humidity_entity_id=humidity_entity_id)
         
         # Get metadata to find last training time
-        metadata = await self._model_storage.get_model_metadata(room_id)
+        metadata = await self._model_storage.get_model_metadata(climate_entity_id)
         last_training = metadata.get("trained_at") if metadata else None
         
         since_time = None
@@ -295,7 +338,7 @@ class MLTrainingApplicationService:
         
         # Get new examples
         new_examples = await self._model_storage.get_new_training_examples(
-            room_id=room_id,
+            climate_entity_id=climate_entity_id,
             since=since_time,
         )
         

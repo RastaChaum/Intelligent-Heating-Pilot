@@ -108,7 +108,6 @@ class FeatureEngineeringService:
         self,
         current_temp: float,
         target_temp: float,
-        slope: float,
         current_time: datetime,
         temp_history: list[tuple[datetime, float]],
         slope_history: list[tuple[datetime, float]],
