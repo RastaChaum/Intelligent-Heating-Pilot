@@ -64,14 +64,6 @@ train_ml_model:
   name: Train ML Model
   description: Manually trigger ML model training for heating duration prediction. Requires historical data from Home Assistant database.
   fields:
-    room_id:
-      name: Room ID
-      description: Entity ID of the climate/thermostat device (optional, defaults to configured VTherm entity)
-      required: false
-      example: "climate.bedroom"
-      selector:
-        entity:
-          domain: climate
     lookback_months:
       name: Lookback Months
       description: Number of months of historical data to use for training

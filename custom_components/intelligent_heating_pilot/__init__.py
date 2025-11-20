@@ -347,20 +347,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
         
         # Get parameters from service call
-        room_id = call.data.get("room_id", coordinator._vtherm_entity)
         lookback_months = call.data.get("lookback_months", 6)
         min_cycles = call.data.get("min_cycles", 10)
         
         _LOGGER.info(
             "Starting ML model training for room %s (lookback: %d months, min cycles: %d)",
-            room_id,
+            coordinator._vtherm_entity,
             lookback_months,
             min_cycles,
         )
         
         try:
             result = await coordinator._ml_training_service.train_model_for_room(
-                room_id=room_id,
+                climate_entity_id=coordinator._vtherm_entity,
+                weather_entity_id=coordinator._cloud_cover,
+                humidity_entity_id=coordinator._humidity_in,
                 lookback_months=lookback_months,
                 min_cycles=min_cycles,
             )
