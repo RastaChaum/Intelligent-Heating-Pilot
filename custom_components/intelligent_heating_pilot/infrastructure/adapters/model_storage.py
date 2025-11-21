@@ -144,7 +144,7 @@ class HAModelStorage(IModelStorage):
         # Filter out old entries
         slope_data_list = [
             entry for entry in slope_data_list
-            if datetime.fromisoformat(entry["timestamp"]) > cutoff_time
+            if datetime.fromisoformat(entry["timestamp"]).replace(tzinfo=cutoff_time.tzinfo) > cutoff_time
         ]
         
         if len(slope_data_list) < original_count:
