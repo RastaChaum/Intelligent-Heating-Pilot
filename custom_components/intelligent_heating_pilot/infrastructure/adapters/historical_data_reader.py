@@ -27,6 +27,9 @@ _LOGGER = logging.getLogger(__name__)
 SCHEDULER_QUERY_WINDOW_HOURS = 23  # How far back to look for scheduler states
 SCHEDULER_MATCH_TOLERANCE_SECONDS = 10800  # 3 hours tolerance for matching scheduled times
 
+# Constants for cycle detection
+TEMP_GAP_THRESHOLD = 0.3  # Temperature gap threshold for cycle detection (°C)
+
 
 class HAHistoricalDataReader(IHistoricalDataReader):
     """Home Assistant implementation of IHistoricalDataReader.
@@ -99,9 +102,6 @@ class HAHistoricalDataReader(IHistoricalDataReader):
         current_cycle_start: datetime | None = None
         current_cycle_initial_temp: float | None = None
         current_cycle_target_temp: float | None = None
-        
-        # Temperature gap threshold for cycle detection (°C)
-        TEMP_GAP_THRESHOLD = 0.3
         
         for state in states:
             hvac_mode = state.state
