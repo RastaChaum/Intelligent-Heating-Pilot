@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from domain.value_objects.lagged_features import LaggedFeatures
+
 from .common_features import CommonFeatures
 from .room_features import RoomFeatures
 
@@ -79,77 +81,3 @@ class MultiRoomFeatures:
         # Common: 23 features
         # Each adjacent room: 16 features
         return 16 + 23 + (16 * len(self.adjacent_rooms))
-    
-    @classmethod
-    def from_lagged_features(
-        cls,
-        lagged_features: "LaggedFeatures",
-        adjacent_rooms: dict[str, RoomFeatures] | None = None,
-    ) -> MultiRoomFeatures:
-        """Create MultiRoomFeatures from a LaggedFeatures object.
-        
-        Helper method for backward compatibility with existing LaggedFeatures.
-        Splits the features into common and room-specific components.
-        
-        Args:
-            lagged_features: Original LaggedFeatures object
-            adjacent_rooms: Optional dict of adjacent room features
-            
-        Returns:
-            MultiRoomFeatures with split architecture.
-        """
-        # Import here to avoid circular dependency
-        from .lagged_features import LaggedFeatures
-        
-        # Extract common features
-        common = CommonFeatures(
-            outdoor_temp=lagged_features.outdoor_temp,
-            humidity=lagged_features.humidity,
-            cloud_coverage=lagged_features.cloud_coverage,
-            outdoor_temp_lag_15min=lagged_features.outdoor_temp_lag_15min,
-            outdoor_temp_lag_30min=lagged_features.outdoor_temp_lag_30min,
-            outdoor_temp_lag_60min=lagged_features.outdoor_temp_lag_60min,
-            outdoor_temp_lag_90min=lagged_features.outdoor_temp_lag_90min,
-            outdoor_temp_lag_120min=lagged_features.outdoor_temp_lag_120min,
-            outdoor_temp_lag_180min=lagged_features.outdoor_temp_lag_180min,
-            humidity_lag_15min=lagged_features.humidity_lag_15min,
-            humidity_lag_30min=lagged_features.humidity_lag_30min,
-            humidity_lag_60min=lagged_features.humidity_lag_60min,
-            humidity_lag_90min=lagged_features.humidity_lag_90min,
-            humidity_lag_120min=lagged_features.humidity_lag_120min,
-            humidity_lag_180min=lagged_features.humidity_lag_180min,
-            cloud_coverage_lag_15min=lagged_features.cloud_coverage_lag_15min,
-            cloud_coverage_lag_30min=lagged_features.cloud_coverage_lag_30min,
-            cloud_coverage_lag_60min=lagged_features.cloud_coverage_lag_60min,
-            cloud_coverage_lag_90min=lagged_features.cloud_coverage_lag_90min,
-            cloud_coverage_lag_120min=lagged_features.cloud_coverage_lag_120min,
-            cloud_coverage_lag_180min=lagged_features.cloud_coverage_lag_180min,
-            hour_sin=lagged_features.hour_sin,
-            hour_cos=lagged_features.hour_cos,
-        )
-        
-        # Extract target room features
-        target_room = RoomFeatures(
-            current_temp=lagged_features.current_temp,
-            target_temp=lagged_features.target_temp,
-            current_slope=lagged_features.current_slope,
-            temp_lag_15min=lagged_features.temp_lag_15min,
-            temp_lag_30min=lagged_features.temp_lag_30min,
-            temp_lag_60min=lagged_features.temp_lag_60min,
-            temp_lag_90min=lagged_features.temp_lag_90min,
-            temp_lag_120min=lagged_features.temp_lag_120min,
-            temp_lag_180min=lagged_features.temp_lag_180min,
-            power_lag_15min=lagged_features.power_lag_15min,
-            power_lag_30min=lagged_features.power_lag_30min,
-            power_lag_60min=lagged_features.power_lag_60min,
-            power_lag_90min=lagged_features.power_lag_90min,
-            power_lag_120min=lagged_features.power_lag_120min,
-            power_lag_180min=lagged_features.power_lag_180min,
-            temp_delta=lagged_features.temp_delta,
-        )
-        
-        return cls(
-            common=common,
-            target_room=target_room,
-            adjacent_rooms=adjacent_rooms or {},
-        )

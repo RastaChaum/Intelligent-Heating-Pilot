@@ -88,19 +88,22 @@ class HAHistoricalDataReader(IHistoricalDataReader):
             target_temp = self._safe_float(state.attributes.get("temperature"))
             
             # Detect cycle start: transition to "heat" mode
-            if hvac_mode == "heat" and current_cycle_start is None:
+            if (hvac_mode == "heat" and current_cycle_start is None and 
+                current_temp is not None and target_temp is not None and 
+                (current_temp + 0.4) <= target_temp):
+
                 current_cycle_start = state.last_changed
                 current_cycle_initial_temp = current_temp
                 current_cycle_target_temp = target_temp
                 _LOGGER.debug(
                     "Cycle started at %s (initial: %.1f°C, target: %.1f°C)",
                     current_cycle_start,
-                    current_cycle_initial_temp or 0,
-                    current_cycle_target_temp or 0,
+                    current_cycle_initial_temp,
+                    current_cycle_target_temp,
                 )
             
             # Detect cycle end: transition out of "heat" mode or target reached
-            elif hvac_mode != "heat" and current_cycle_start is not None:
+            elif hvac_mode == "heat" and current_cycle_start is not None and current_temp is not None and target_temp is not None and ((current_temp + 0.4) > target_temp):
                 cycle_end = state.last_changed
                 
                 # Find when target was reached (if at all)
