@@ -104,7 +104,39 @@ This ensures:
 - 11:59 PM and 12:01 AM are close in feature space
 - Daily patterns (morning warmup, evening cooldown) are captured
 
-### 4. XGBoost Model
+### 4. Heating Cycle Detection (Simplified Approach)
+
+The system detects heating cycles using a simple, robust algorithm **independent of scheduling**:
+
+**Cycle Detection Rules:**
+
+A heating cycle **starts** when:
+- Thermostat is in "heat" mode, **AND**
+- Room temperature is at least **0.3°C below** the target temperature
+
+A heating cycle **ends** when either:
+- Thermostat leaves "heat" mode, **OR**
+- Temperature gap becomes **less than 0.3°C**
+
+**Example:**
+```
+Time    HVAC    Current  Target   Gap     Status
+-----   -----   -------  ------   ----    -----------
+07:00   heat    19.5°C   20.0°C   0.5°C   ✅ CYCLE START
+07:15   heat    19.6°C   20.0°C   0.4°C   (heating)
+07:30   heat    19.8°C   20.0°C   0.2°C   ✅ CYCLE END
+07:45   heat    19.9°C   20.0°C   0.1°C   (no cycle)
+```
+
+**Benefits of this approach:**
+- **Decoupled from scheduling**: Works with or without scheduler entities
+- **Simpler logic**: Easy to understand and debug
+- **More robust**: Learns actual heating behavior, not scheduling compliance
+- **Chronological processing**: Cycles are detected one after another
+
+**Note:** While the scheduler time can optionally be used to calculate prediction error (for continuous learning), it's not required for cycle detection itself. This makes the model learn the fundamental heating duration needed, regardless of when heating was scheduled.
+
+### 5. XGBoost Model
 
 We use **XGBoost Regressor** for prediction:
 
