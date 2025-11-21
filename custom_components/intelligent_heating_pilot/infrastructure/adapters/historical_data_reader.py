@@ -23,6 +23,10 @@ from ...domain.value_objects import HeatingCycle
 
 _LOGGER = logging.getLogger(__name__)
 
+# Constants for scheduler time matching
+SCHEDULER_QUERY_WINDOW_HOURS = 23  # How far back to look for scheduler states
+SCHEDULER_MATCH_TOLERANCE_SECONDS = 10800  # 3 hours tolerance for matching scheduled times
+
 
 class HAHistoricalDataReader(IHistoricalDataReader):
     """Home Assistant implementation of IHistoricalDataReader.
@@ -31,13 +35,19 @@ class HAHistoricalDataReader(IHistoricalDataReader):
     Uses the recorder component's history API for efficient queries.
     """
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        scheduler_entity_ids: list[str] | None = None,
+    ) -> None:
         """Initialize the historical data reader.
         
         Args:
             hass: Home Assistant instance with recorder integration.
+            scheduler_entity_ids: List of scheduler entity IDs to query for scheduled times.
         """
         self._hass = hass
+        self._scheduler_entity_ids = scheduler_entity_ids or []
         
     async def get_heating_cycles(
         self,
@@ -90,30 +100,40 @@ class HAHistoricalDataReader(IHistoricalDataReader):
             target_temp = self._safe_float(get_vtherm_attribute(state, "temperature"))
             
             # Detect cycle start: transition to "heat" mode
-            if hvac_mode == "heat" and current_cycle_start is None and current_temp is not None and target_temp is not None and (current_temp + 0.4 <= target_temp):
+            if (hvac_mode == "heat" and current_cycle_start is None and 
+                current_temp is not None and target_temp is not None and 
+                (current_temp + 0.4) <= target_temp):
+
                 current_cycle_start = state.last_changed
                 current_cycle_initial_temp = current_temp
                 current_cycle_target_temp = target_temp
                 _LOGGER.debug(
                     "Cycle started at %s (initial: %.1f°C, target: %.1f°C)",
                     current_cycle_start,
-                    current_cycle_initial_temp or 0,
-                    current_cycle_target_temp or 0,
+                    current_cycle_initial_temp,
+                    current_cycle_target_temp,
                 )
             
             # Detect cycle end: transition out of "heat" mode or target reached
-            elif hvac_mode == "heat" and current_cycle_start is not None and current_temp is not None and current_cycle_target_temp is not None and (current_temp + 0.4 > current_cycle_target_temp):
+            elif hvac_mode == "heat" and current_cycle_start is not None and current_temp is not None and target_temp is not None and ((current_temp + 0.4) > target_temp):
                 cycle_end = state.last_changed
                 target_reached_time = cycle_end
 
                                 
                 if current_cycle_initial_temp and current_cycle_target_temp:
+                    # Get actual scheduled time from scheduler entity
+                    scheduled_time = await self._get_scheduled_target_time(
+                        current_cycle_start,
+                        cycle_end,
+                    )
+                    
+                    # Use scheduled time if found, otherwise fall back to cycle_end
+                    target_time = scheduled_time if scheduled_time else cycle_end
+                    
                     # Calculate error: how late/early did we reach target
                     error_minutes = 0.0
                     if target_reached_time:
-                        # TODO: Get actual scheduled time from scheduler entity
-                        # For now, assume we wanted to reach target at cycle_end
-                        error_seconds = (target_reached_time - cycle_end).total_seconds()
+                        error_seconds = (target_reached_time - target_time).total_seconds()
                         error_minutes = error_seconds / 60.0
                     
                     # Get environmental data at cycle start
@@ -126,7 +146,7 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                     cycle = HeatingCycle(
                         climate_entity_id=climate_entity_id,  # Using entity ID as room identifier
                         heating_started_at=current_cycle_start,
-                        target_time=cycle_end,  # TODO: Get from scheduler
+                        target_time=target_time,
                         target_reached_at=target_reached_time,
                         initial_temp=current_cycle_initial_temp,
                         target_temp=current_cycle_target_temp,
@@ -137,7 +157,19 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                         error_minutes=error_minutes,
                     )
                     cycles.append(cycle)
-                    _LOGGER.debug("Cycle completed: %s (error: %.1f min)", cycle.cycle_id, error_minutes)
+                    if scheduled_time:
+                        _LOGGER.debug(
+                            "Cycle completed: %s (scheduled: %s, error: %.1f min)",
+                            cycle.cycle_id,
+                            scheduled_time.strftime("%H:%M"),
+                            error_minutes,
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "Cycle completed: %s (no scheduled time found, using cycle_end, error: %.1f min)",
+                            cycle.cycle_id,
+                            error_minutes,
+                        )
                 
                 # Reset for next cycle
                 current_cycle_start = None
@@ -347,6 +379,114 @@ class HAHistoricalDataReader(IHistoricalDataReader):
        
     async def _get_slope_at_time(self, climate_entity_id: str, timestamp: datetime) -> float | None:
         """Get learned slope at specific time."""
+        states = await self._get_entity_states(climate_entity_id, timestamp, timestamp + timedelta(minutes=1))
+        for state in states:
+            temp = self._safe_float(get_vtherm_attribute(state, "temperature_slope"))
+            if temp is not None:
+                return temp
+            
+        return None
+    
+    async def _get_scheduled_target_time(
+        self,
+        cycle_start: datetime,
+        cycle_end: datetime,
+    ) -> datetime | None:
+        """Get the scheduled target time from scheduler entity history.
+        
+        Queries scheduler entities to find what time was scheduled to reach
+        the target temperature during this heating cycle.
+        
+        Args:
+            cycle_start: When heating started
+            cycle_end: When heating ended
+            
+        Returns:
+            The scheduled target time, or None if not found.
+        """
+        if not self._scheduler_entity_ids:
+            _LOGGER.debug("No scheduler entities configured for historical lookup")
+            return None
+        
+        for entity_id in self._scheduler_entity_ids:
+            states = await self._get_entity_states(entity_id, cycle_start - timedelta(minutes=15), cycle_end + timedelta(hours=3))
+            
+            if not states:
+                _LOGGER.debug("No scheduler history found for %s", entity_id)
+                continue
+            
+            # Look for scheduler state with next_trigger around cycle_end time
+            for state in states:
+                next_trigger = self._parse_next_trigger(state.attributes.get("next_trigger"))
+                
+                if next_trigger:
+                    # Ensure both datetimes have timezone info for comparison
+                    cycle_end_aware = cycle_end if cycle_end.tzinfo else dt_util.as_local(cycle_end)
+                    
+                    # Check if this scheduled time is within reasonable range of cycle
+                    # The schedule should be between cycle_start and a reasonable time after cycle_end
+                    time_diff = abs((next_trigger - cycle_end_aware).total_seconds())
+                    
+                    # If next_trigger is close to cycle_end, this is likely our schedule
+                    if time_diff <= SCHEDULER_MATCH_TOLERANCE_SECONDS:
+                        _LOGGER.debug(
+                            "Found scheduled time %s from %s (diff: %.1f min for cycle %s to %s)",
+                            next_trigger,
+                            entity_id,
+                            time_diff / 60.0,
+                            cycle_start,
+                            cycle_end,
+                        )
+                        return next_trigger
+        
+        _LOGGER.debug("No matching scheduled time found for cycle %s to %s", cycle_start, cycle_end)
+        return None
+    
+    def _parse_next_trigger(self, next_trigger_raw: str | None) -> datetime | None:
+        """Parse next_trigger attribute to datetime.
+        
+        Args:
+            next_trigger_raw: Raw next_trigger value from scheduler
+            
+        Returns:
+            Parsed datetime with timezone, or None if parsing fails
+        """
+        if not next_trigger_raw:
+            return None
+        
+        # Try HA's robust datetime parser first
+        parsed = dt_util.parse_datetime(str(next_trigger_raw))
+        
+        # Fallback to ISO format parsing
+        if parsed is None:
+            try:
+                parsed = datetime.fromisoformat(str(next_trigger_raw))
+            except ValueError:
+                _LOGGER.debug("Failed to parse next_trigger: %s", next_trigger_raw)
+                return None
+        
+        # Ensure timezone is set
+        if parsed and parsed.tzinfo is None:
+            parsed = dt_util.as_local(parsed)
+        
+        return parsed
+    
+    def _find_target_reached_time(
+        self,
+        states: list[State],
+        target_temp: float,
+        tolerance: float = 0.3,
+    ) -> datetime | None:
+        """Find when target temperature was first reached in state history.
+        
+        Args:
+            states: List of states to search (ordered chronologically)
+            target_temp: Target temperature to find
+            tolerance: Acceptable temperature difference (±°C)
+            
+        Returns:
+            Timestamp when target was reached, or None if never reached.
+        """
         states = await self._get_entity_states(climate_entity_id, timestamp, timestamp + timedelta(minutes=1))
         
         for state in states:
