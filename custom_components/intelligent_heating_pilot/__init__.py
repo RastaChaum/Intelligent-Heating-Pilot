@@ -16,7 +16,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
+from infrastructure.adapters.ml_model_storage import HAMLModelStorage
 
 from .application import HeatingApplicationService, MLTrainingApplicationService
 from .const import (
@@ -78,6 +80,7 @@ class IntelligentHeatingPilotCoordinator:
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
+        self._ml_storage: HAMLModelStorage | None = None
         self._historical_reader: HAHistoricalDataReader | None = None
         self._scheduler_reader: HASchedulerReader | None = None
         self._scheduler_commander: HASchedulerCommander | None = None
@@ -104,10 +107,11 @@ class IntelligentHeatingPilotCoordinator:
             self.config.entry_id,
             retention_days=self._lhs_retention_days
         )
-        self._historical_reader = HAHistoricalDataReader(
-            self.hass,
-            scheduler_entity_ids=self._scheduler_entities,
+        self._ml_storage = HAMLModelStorage(
+            Store(self.hass, 1, self.config.entry_id)
         )
+
+        self._historical_reader = HAHistoricalDataReader(self.hass)
         self._scheduler_reader = HASchedulerReader(
             self.hass,
             self._scheduler_entities,
@@ -140,7 +144,7 @@ class IntelligentHeatingPilotCoordinator:
         try:
             self._ml_training_service = MLTrainingApplicationService(
                 historical_reader=self._historical_reader,
-                model_storage=self._model_storage,
+                model_storage=self._ml_storage,
             )
             _LOGGER.info("ML training service initialized with historical data reader")
         except Exception as e:
