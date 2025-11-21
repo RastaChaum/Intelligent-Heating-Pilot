@@ -21,6 +21,10 @@ from ...domain.value_objects import HeatingCycle
 
 _LOGGER = logging.getLogger(__name__)
 
+# Constants for scheduler time matching
+SCHEDULER_QUERY_WINDOW_HOURS = 2  # How far back to look for scheduler states
+SCHEDULER_MATCH_TOLERANCE_SECONDS = 7200  # 2 hours tolerance for matching scheduled times
+
 
 class HAHistoricalDataReader(IHistoricalDataReader):
     """Home Assistant implementation of IHistoricalDataReader.
@@ -30,7 +34,7 @@ class HAHistoricalDataReader(IHistoricalDataReader):
     """
 
     def __init__(
-        self, 
+        self,
         hass: HomeAssistant,
         scheduler_entity_ids: list[str] | None = None,
     ) -> None:
@@ -419,7 +423,7 @@ class HAHistoricalDataReader(IHistoricalDataReader):
         
         # Query scheduler states during the heating cycle
         # Look a bit before cycle_start to catch the schedule that triggered it
-        query_start = cycle_start - timedelta(hours=2)
+        query_start = cycle_start - timedelta(hours=SCHEDULER_QUERY_WINDOW_HOURS)
         query_end = cycle_end + timedelta(minutes=5)
         
         for entity_id in self._scheduler_entity_ids:
@@ -441,8 +445,8 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                     # The schedule should be between cycle_start and a reasonable time after cycle_end
                     time_diff = abs((next_trigger - cycle_end_aware).total_seconds())
                     
-                    # If next_trigger is close to cycle_end (within 2 hours), this is likely our schedule
-                    if time_diff <= 7200:  # 2 hours tolerance
+                    # If next_trigger is close to cycle_end, this is likely our schedule
+                    if time_diff <= SCHEDULER_MATCH_TOLERANCE_SECONDS:
                         _LOGGER.debug(
                             "Found scheduled time %s from %s (diff: %.1f min)",
                             next_trigger,

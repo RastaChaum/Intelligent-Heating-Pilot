@@ -69,7 +69,7 @@ class TestHAHistoricalDataReader:
         """Test that None is returned when no scheduler entities configured."""
         cycle_start = datetime.now()
         cycle_end = cycle_start + timedelta(hours=1)
-        
+
         result = await reader_without_scheduler._get_scheduled_target_time(
             cycle_start, cycle_end
         )
