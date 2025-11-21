@@ -22,8 +22,8 @@ from ...domain.value_objects import HeatingCycle
 _LOGGER = logging.getLogger(__name__)
 
 # Constants for scheduler time matching
-SCHEDULER_QUERY_WINDOW_HOURS = 2  # How far back to look for scheduler states
-SCHEDULER_MATCH_TOLERANCE_SECONDS = 7200  # 2 hours tolerance for matching scheduled times
+SCHEDULER_QUERY_WINDOW_HOURS = 23  # How far back to look for scheduler states
+SCHEDULER_MATCH_TOLERANCE_SECONDS = 10800  # 3 hours tolerance for matching scheduled times
 
 
 class HAHistoricalDataReader(IHistoricalDataReader):
@@ -421,13 +421,8 @@ class HAHistoricalDataReader(IHistoricalDataReader):
             _LOGGER.debug("No scheduler entities configured for historical lookup")
             return None
         
-        # Query scheduler states during the heating cycle
-        # Look a bit before cycle_start to catch the schedule that triggered it
-        query_start = cycle_start - timedelta(hours=SCHEDULER_QUERY_WINDOW_HOURS)
-        query_end = cycle_end + timedelta(minutes=5)
-        
         for entity_id in self._scheduler_entity_ids:
-            states = await self._get_entity_states(entity_id, query_start, query_end)
+            states = await self._get_entity_states(entity_id, cycle_start - timedelta(minutes=15), cycle_end + timedelta(hours=3))
             
             if not states:
                 _LOGGER.debug("No scheduler history found for %s", entity_id)
@@ -448,10 +443,12 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                     # If next_trigger is close to cycle_end, this is likely our schedule
                     if time_diff <= SCHEDULER_MATCH_TOLERANCE_SECONDS:
                         _LOGGER.debug(
-                            "Found scheduled time %s from %s (diff: %.1f min)",
+                            "Found scheduled time %s from %s (diff: %.1f min for cycle %s to %s)",
                             next_trigger,
                             entity_id,
                             time_diff / 60.0,
+                            cycle_start,
+                            cycle_end,
                         )
                         return next_trigger
         

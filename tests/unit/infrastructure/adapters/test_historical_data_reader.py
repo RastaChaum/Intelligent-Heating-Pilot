@@ -77,6 +77,67 @@ class TestHAHistoricalDataReader:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_get_scheduled_target_time_with_matching_schedule_outofrange(
+        self, reader_with_scheduler, mock_hass
+    ):
+        """Test finding scheduled time from scheduler history."""
+        from homeassistant.util import dt as dt_util
+        
+        cycle_start = dt_util.as_local(datetime(2024, 1, 15, 7, 0, 0))
+        cycle_end = dt_util.as_local(datetime(2024, 1, 15, 8, 0, 0))
+        expected_scheduled_time = dt_util.as_local(datetime(2024, 1, 15, 11, 1, 0))
+        
+        # Mock scheduler state with next_trigger
+        mock_state = Mock()
+        mock_state.attributes = {
+            "next_trigger": expected_scheduled_time.isoformat(),
+        }
+        
+        # Mock _get_entity_states to return our mock state
+        reader_with_scheduler._get_entity_states = AsyncMock(
+            return_value=[mock_state]
+        )
+        
+        result = await reader_with_scheduler._get_scheduled_target_time(
+            cycle_start, cycle_end
+        )
+        
+        assert result is None
+        # Check that times are close (allowing for timezone differences)
+
+
+    @pytest.mark.asyncio
+    async def test_get_scheduled_target_time_with_matching_schedule_after(
+        self, reader_with_scheduler, mock_hass
+    ):
+        """Test finding scheduled time from scheduler history."""
+        from homeassistant.util import dt as dt_util
+        
+        cycle_start = dt_util.as_local(datetime(2024, 1, 15, 7, 0, 0))
+        cycle_end = dt_util.as_local(datetime(2024, 1, 15, 8, 0, 0))
+        expected_scheduled_time = dt_util.as_local(datetime(2024, 1, 15, 9, 0, 0))
+        
+        # Mock scheduler state with next_trigger
+        mock_state = Mock()
+        mock_state.attributes = {
+            "next_trigger": expected_scheduled_time.isoformat(),
+        }
+        
+        # Mock _get_entity_states to return our mock state
+        reader_with_scheduler._get_entity_states = AsyncMock(
+            return_value=[mock_state]
+        )
+        
+        result = await reader_with_scheduler._get_scheduled_target_time(
+            cycle_start, cycle_end
+        )
+        
+        assert result is not None
+        # Check that times are close (allowing for timezone differences)
+        time_diff = abs((result - expected_scheduled_time).total_seconds())
+        assert time_diff < 10800  # Within 3 hours
+
+    @pytest.mark.asyncio
     async def test_get_scheduled_target_time_with_matching_schedule(
         self, reader_with_scheduler, mock_hass
     ):
