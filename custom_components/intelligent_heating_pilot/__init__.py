@@ -104,7 +104,10 @@ class IntelligentHeatingPilotCoordinator:
             self.config.entry_id,
             retention_days=self._lhs_retention_days
         )
-        self._historical_reader = HAHistoricalDataReader(self.hass)
+        self._historical_reader = HAHistoricalDataReader(
+            self.hass,
+            scheduler_entity_ids=self._scheduler_entities,
+        )
         self._scheduler_reader = HASchedulerReader(
             self.hass,
             self._scheduler_entities,

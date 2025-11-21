@@ -29,13 +29,19 @@ class HAHistoricalDataReader(IHistoricalDataReader):
     Uses the recorder component's history API for efficient queries.
     """
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(
+        self, 
+        hass: HomeAssistant,
+        scheduler_entity_ids: list[str] | None = None,
+    ) -> None:
         """Initialize the historical data reader.
         
         Args:
             hass: Home Assistant instance with recorder integration.
+            scheduler_entity_ids: List of scheduler entity IDs to query for scheduled times.
         """
         self._hass = hass
+        self._scheduler_entity_ids = scheduler_entity_ids or []
         
     async def get_heating_cycles(
         self,
@@ -113,12 +119,19 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                 )
                 
                 if current_cycle_initial_temp and current_cycle_target_temp:
+                    # Get actual scheduled time from scheduler entity
+                    scheduled_time = await self._get_scheduled_target_time(
+                        current_cycle_start,
+                        cycle_end,
+                    )
+                    
+                    # Use scheduled time if found, otherwise fall back to cycle_end
+                    target_time = scheduled_time if scheduled_time else cycle_end
+                    
                     # Calculate error: how late/early did we reach target
                     error_minutes = 0.0
                     if target_reached_time:
-                        # TODO: Get actual scheduled time from scheduler entity
-                        # For now, assume we wanted to reach target at cycle_end
-                        error_seconds = (target_reached_time - cycle_end).total_seconds()
+                        error_seconds = (target_reached_time - target_time).total_seconds()
                         error_minutes = error_seconds / 60.0
                     
                     # Get environmental data at cycle start
@@ -134,7 +147,7 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                     cycle = HeatingCycle(
                         climate_entity_id=climate_entity_id,  # Using entity ID as room identifier
                         heating_started_at=current_cycle_start,
-                        target_time=cycle_end,  # TODO: Get from scheduler
+                        target_time=target_time,
                         target_reached_at=target_reached_time,
                         initial_temp=current_cycle_initial_temp,
                         target_temp=current_cycle_target_temp,
@@ -145,7 +158,19 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                         error_minutes=error_minutes,
                     )
                     cycles.append(cycle)
-                    _LOGGER.debug("Cycle completed: %s (error: %.1f min)", cycle.cycle_id, error_minutes)
+                    if scheduled_time:
+                        _LOGGER.debug(
+                            "Cycle completed: %s (scheduled: %s, error: %.1f min)",
+                            cycle.cycle_id,
+                            scheduled_time.strftime("%H:%M"),
+                            error_minutes,
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "Cycle completed: %s (no scheduled time found, using cycle_end, error: %.1f min)",
+                            cycle.cycle_id,
+                            error_minutes,
+                        )
                 
                 # Reset for next cycle
                 current_cycle_start = None
@@ -370,6 +395,93 @@ class HAHistoricalDataReader(IHistoricalDataReader):
         """Get learned slope at specific time."""
         # TODO: Query slope history
         return None
+    
+    async def _get_scheduled_target_time(
+        self,
+        cycle_start: datetime,
+        cycle_end: datetime,
+    ) -> datetime | None:
+        """Get the scheduled target time from scheduler entity history.
+        
+        Queries scheduler entities to find what time was scheduled to reach
+        the target temperature during this heating cycle.
+        
+        Args:
+            cycle_start: When heating started
+            cycle_end: When heating ended
+            
+        Returns:
+            The scheduled target time, or None if not found.
+        """
+        if not self._scheduler_entity_ids:
+            _LOGGER.debug("No scheduler entities configured for historical lookup")
+            return None
+        
+        # Query scheduler states during the heating cycle
+        # Look a bit before cycle_start to catch the schedule that triggered it
+        query_start = cycle_start - timedelta(hours=2)
+        query_end = cycle_end + timedelta(minutes=5)
+        
+        for entity_id in self._scheduler_entity_ids:
+            states = await self._get_entity_states(entity_id, query_start, query_end)
+            
+            if not states:
+                _LOGGER.debug("No scheduler history found for %s", entity_id)
+                continue
+            
+            # Look for scheduler state with next_trigger around cycle_end time
+            for state in states:
+                next_trigger = self._parse_next_trigger(state.attributes.get("next_trigger"))
+                
+                if next_trigger:
+                    # Ensure both datetimes have timezone info for comparison
+                    cycle_end_aware = cycle_end if cycle_end.tzinfo else dt_util.as_local(cycle_end)
+                    
+                    # Check if this scheduled time is within reasonable range of cycle
+                    # The schedule should be between cycle_start and a reasonable time after cycle_end
+                    time_diff = abs((next_trigger - cycle_end_aware).total_seconds())
+                    
+                    # If next_trigger is close to cycle_end (within 2 hours), this is likely our schedule
+                    if time_diff <= 7200:  # 2 hours tolerance
+                        _LOGGER.debug(
+                            "Found scheduled time %s from %s (diff: %.1f min)",
+                            next_trigger,
+                            entity_id,
+                            time_diff / 60.0,
+                        )
+                        return next_trigger
+        
+        _LOGGER.debug("No matching scheduled time found for cycle %s to %s", cycle_start, cycle_end)
+        return None
+    
+    def _parse_next_trigger(self, next_trigger_raw: str | None) -> datetime | None:
+        """Parse next_trigger attribute to datetime.
+        
+        Args:
+            next_trigger_raw: Raw next_trigger value from scheduler
+            
+        Returns:
+            Parsed datetime with timezone, or None if parsing fails
+        """
+        if not next_trigger_raw:
+            return None
+        
+        # Try HA's robust datetime parser first
+        parsed = dt_util.parse_datetime(str(next_trigger_raw))
+        
+        # Fallback to ISO format parsing
+        if parsed is None:
+            try:
+                parsed = datetime.fromisoformat(str(next_trigger_raw))
+            except ValueError:
+                _LOGGER.debug("Failed to parse next_trigger: %s", next_trigger_raw)
+                return None
+        
+        # Ensure timezone is set
+        if parsed and parsed.tzinfo is None:
+            parsed = dt_util.as_local(parsed)
+        
+        return parsed
     
     def _find_target_reached_time(
         self,
