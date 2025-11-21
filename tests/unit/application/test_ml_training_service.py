@@ -42,7 +42,7 @@ class TestMLTrainingApplicationService:
     def _create_test_cycle(
         self,
         cycle_id: str,
-        room_id: str = "test_room",
+        climate_entity_id: str = "test_room",
         heating_started_at: datetime | None = None,
         target_reached_at: datetime | None = None,
         initial_temp: float = 18.0,
@@ -51,6 +51,7 @@ class TestMLTrainingApplicationService:
         actual_duration_minutes: float = 60.0,
         optimal_duration_minutes: float = 55.0,
         error_minutes: float = 5.0,
+        initial_slope: float = 0.5,
     ) -> HeatingCycle:
         """Create a test heating cycle."""
         if heating_started_at is None:
@@ -63,11 +64,12 @@ class TestMLTrainingApplicationService:
         target_time = heating_started_at + timedelta(minutes=actual_duration_minutes)
         
         return HeatingCycle(
+            initial_slope=initial_slope,
             cycle_id=cycle_id,
-            climate_entity_id=room_id,
+            climate_entity_id=climate_entity_id,
             heating_started_at=heating_started_at,
             target_time=target_time,
-            real_target_time=target_reached_at,
+            target_reached_at=target_reached_at,
             initial_temp=initial_temp,
             target_temp=target_temp,
             final_temp=final_temp,
@@ -170,11 +172,11 @@ class TestMLTrainingApplicationService:
         # Invalid cycle: target never reached
         # Create manually to bypass validation that would prevent None target_reached_at
         invalid_cycle = HeatingCycle(
-            cycle_id="invalid_1",
             climate_entity_id="test_room",
+            initial_slope=0.5,
             heating_started_at=datetime(2024, 1, 13, 6, 0, 0),
             target_time=datetime(2024, 1, 13, 7, 0, 0),
-            real_target_time=None,  # Invalid: target never reached
+            target_reached_at=None,  # Invalid: target never reached
             initial_temp=18.0,
             target_temp=21.0,
             final_temp=19.0,  # Didn't reach target

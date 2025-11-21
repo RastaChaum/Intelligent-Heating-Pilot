@@ -129,7 +129,7 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                     optimal_duration_minutes = actual_duration_minutes - error_minutes
                     
                     cycle = HeatingCycle(
-                        room_id=climate_entity_id,  # Using entity ID as room identifier
+                        climate_entity_id=climate_entity_id,  # Using entity ID as room identifier
                         heating_started_at=current_cycle_start,
                         target_time=cycle_end,  # TODO: Get from scheduler
                         target_reached_at=target_reached_time,
@@ -137,9 +137,6 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                         target_temp=current_cycle_target_temp,
                         final_temp=current_temp or current_cycle_target_temp,
                         initial_slope=slope,
-                        outdoor_temp=outdoor_temp,
-                        humidity=humidity,
-                        cloud_coverage=cloud_coverage,
                         actual_duration_minutes=actual_duration_minutes,
                         optimal_duration_minutes=optimal_duration_minutes,
                         error_minutes=error_minutes,
