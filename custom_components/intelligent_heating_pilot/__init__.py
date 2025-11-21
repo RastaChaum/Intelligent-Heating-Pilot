@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
-from infrastructure.adapters.ml_model_storage import HAMLModelStorage
+from .infrastructure.adapters.ml_model_storage import HAMLModelStorage
 
 from .application import HeatingApplicationService, MLTrainingApplicationService
 from .const import (

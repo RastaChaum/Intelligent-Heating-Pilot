@@ -471,7 +471,7 @@ class HAHistoricalDataReader(IHistoricalDataReader):
         
         return parsed
     
-    def _find_target_reached_time(
+    async def _find_target_reached_time(
         self,
         states: list[State],
         target_temp: float,
@@ -487,12 +487,10 @@ class HAHistoricalDataReader(IHistoricalDataReader):
         Returns:
             Timestamp when target was reached, or None if never reached.
         """
-        states = await self._get_entity_states(climate_entity_id, timestamp, timestamp + timedelta(minutes=1))
-        
         for state in states:
-            temp = self._safe_float(get_vtherm_attribute(state, "temperature_slope"))
-            if temp is not None:
-                return temp
+            current_temp = self._safe_float(get_vtherm_attribute(state, "current_temperature"))
+            if current_temp is not None and abs(current_temp - target_temp) <= tolerance:
+                return state.last_changed
             
         return None
         

@@ -42,29 +42,6 @@ def create_test_features(
         power_lag_90min=0.0,
         power_lag_120min=0.0,
         power_lag_180min=0.0,
-        outdoor_temp=10.0,
-        humidity=50.0,
-        cloud_coverage=30.0,
-        outdoor_temp_lag_15min=10.0,
-        outdoor_temp_lag_30min=10.0,
-        outdoor_temp_lag_60min=10.0,
-        outdoor_temp_lag_90min=10.0,
-        outdoor_temp_lag_120min=10.0,
-        outdoor_temp_lag_180min=10.0,
-        humidity_lag_15min=50.0,
-        humidity_lag_30min=50.0,
-        humidity_lag_60min=50.0,
-        humidity_lag_90min=50.0,
-        humidity_lag_120min=50.0,
-        humidity_lag_180min=50.0,
-        cloud_coverage_lag_15min=30.0,
-        cloud_coverage_lag_30min=30.0,
-        cloud_coverage_lag_60min=30.0,
-        cloud_coverage_lag_90min=30.0,
-        cloud_coverage_lag_120min=30.0,
-        cloud_coverage_lag_180min=30.0,
-        hour_sin=0.5,
-        hour_cos=0.866,
     )
 
 
@@ -87,8 +64,6 @@ class TestMLPredictionService:
         
         # Create training data - now with extended features (41 features total)
         # Use the helper to get full feature dict
-        test_features = create_test_features()
-        feature_names = test_features.get_feature_names()
         
         X_train = [
             list(create_test_features(20.0, 22.0).to_feature_dict().values()),

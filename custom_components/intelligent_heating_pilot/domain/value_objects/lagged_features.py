@@ -75,3 +75,34 @@ class LaggedFeatures:
             "power_lag_120min": self.power_lag_120min or 0.0,
             "power_lag_180min": self.power_lag_180min or 0.0,
         }
+
+    @classmethod
+    def get_feature_names(cls) -> list[str]:
+        """Get ordered list of feature names for ML model.
+        
+        Returns:
+            List of feature names in the order they should be used.
+        """
+        return ["current_temp",
+            "target_temp",
+            "temp_delta",
+            "current_slope",
+            "temp_lag_15min",
+            "temp_lag_30min",
+            "temp_lag_60min",
+            "temp_lag_90min",
+            "temp_lag_120min",
+            "temp_lag_180min",
+            "slope_lag_15min",
+            "slope_lag_30min",
+            "slope_lag_60min",
+            "slope_lag_90min",
+            "slope_lag_120min",
+            "slope_lag_180min",
+            "power_lag_15min",
+            "power_lag_30min",
+            "power_lag_60min",
+            "power_lag_90min",
+            "power_lag_120min",
+            "power_lag_180min",
+        ]
