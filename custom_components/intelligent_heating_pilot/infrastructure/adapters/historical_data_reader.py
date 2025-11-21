@@ -16,6 +16,8 @@ from homeassistant.components.recorder import history
 from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 
+from ..vtherm_compat import get_vtherm_attribute
+
 from ...domain.interfaces.historical_data_reader import IHistoricalDataReader
 from ...domain.value_objects import HeatingCycle
 
@@ -84,11 +86,11 @@ class HAHistoricalDataReader(IHistoricalDataReader):
         
         for i, state in enumerate(states):
             hvac_mode = state.state
-            current_temp = self._safe_float(state.attributes.get("current_temperature"))
-            target_temp = self._safe_float(state.attributes.get("temperature"))
+            current_temp = self._safe_float(get_vtherm_attribute(state, "current_temperature"))
+            target_temp = self._safe_float(get_vtherm_attribute(state, "temperature"))
             
             # Detect cycle start: transition to "heat" mode
-            if hvac_mode == "heat" and current_cycle_start is None:
+            if hvac_mode == "heat" and current_cycle_start is None and current_temp is not None and target_temp is not None and (current_temp + 0.4 <= target_temp):
                 current_cycle_start = state.last_changed
                 current_cycle_initial_temp = current_temp
                 current_cycle_target_temp = target_temp
@@ -100,15 +102,11 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                 )
             
             # Detect cycle end: transition out of "heat" mode or target reached
-            elif hvac_mode != "heat" and current_cycle_start is not None:
+            elif hvac_mode == "heat" and current_cycle_start is not None and current_temp is not None and current_cycle_target_temp is not None and (current_temp + 0.4 > current_cycle_target_temp):
                 cycle_end = state.last_changed
-                
-                # Find when target was reached (if at all)
-                target_reached_time = self._find_target_reached_time(
-                    states[i-20:i+1] if i >= 20 else states[:i+1],  # Look back up to 20 states
-                    current_cycle_target_temp or 20.0,
-                )
-                
+                target_reached_time = cycle_end
+
+                                
                 if current_cycle_initial_temp and current_cycle_target_temp:
                     # Calculate error: how late/early did we reach target
                     error_minutes = 0.0
@@ -119,9 +117,6 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                         error_minutes = error_seconds / 60.0
                     
                     # Get environmental data at cycle start
-                    outdoor_temp = await self._get_outdoor_temp_at_time(current_cycle_start)
-                    humidity = await self._get_humidity_at_time(climate_entity_id, current_cycle_start)
-                    cloud_coverage = await self._get_cloud_coverage_at_time(current_cycle_start)
                     slope = await self._get_slope_at_time(climate_entity_id, current_cycle_start)
                     
                     # Calculate durations
@@ -148,7 +143,7 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                 current_cycle_start = None
                 current_cycle_initial_temp = None
                 current_cycle_target_temp = None
-        
+
         _LOGGER.info("Extracted %d heating cycles for %s", len(cycles), climate_entity_id)
         return cycles
     
@@ -179,7 +174,7 @@ class HAHistoricalDataReader(IHistoricalDataReader):
         
         history_data = []
         for state in states:
-            temp = self._safe_float(state.attributes.get("current_temperature"))
+            temp = self._safe_float(get_vtherm_attribute(state, "current_temperature"))
             if temp is not None:
                 history_data.append((state.last_changed, temp))
         
@@ -209,7 +204,7 @@ class HAHistoricalDataReader(IHistoricalDataReader):
             # Check common power attribute names
             power = None
             for attr in ["power_percent", "valve_position", "heating_power"]:
-                power = self._safe_float(state.attributes.get(attr))
+                power = self._safe_float(get_vtherm_attribute(state, attr))
                 if power is not None:
                     break
             
@@ -237,16 +232,20 @@ class HAHistoricalDataReader(IHistoricalDataReader):
         Note: This queries a custom sensor that stores learned slopes.
         Entity ID pattern: sensor.ihp_{climate_entity}_learned_slope
         """
-        # Construct slope sensor entity ID
-        sensor_id = climate_entity_id.replace("climate.", "sensor.ihp_")
-        sensor_id = f"{sensor_id}_learned_slope"
+        """Retrieve historical temperature data from climate entity."""
+        states = await self._get_entity_states(climate_entity_id, start_time, end_time)
         
-        return await self._get_numeric_history(
-            sensor_id,
-            start_time,
-            end_time,
-            resolution_minutes,
-        )
+        history_data = []
+        for state in states:
+            temp = self._safe_float(get_vtherm_attribute(state, "temperature_slope"))
+            if temp is not None:
+                history_data.append((state.last_changed, temp))
+        
+        # Apply resolution sampling if needed
+        if resolution_minutes > 0 and history_data:
+            history_data = self._resample_history(history_data, resolution_minutes)
+        
+        return history_data
     
     async def get_cloud_coverage_history(
         self,
@@ -345,52 +344,18 @@ class HAHistoricalDataReader(IHistoricalDataReader):
             history_data = self._resample_history(history_data, resolution_minutes)
         
         return history_data
-    
-    async def _get_outdoor_temp_at_time(self, timestamp: datetime) -> float:
-        """Get outdoor temperature at specific time (for cycle labeling)."""
-        # TODO: Get outdoor temp entity from config
-        # For now, return a reasonable default
-        return 10.0
-    
-    async def _get_humidity_at_time(self, climate_entity_id: str, timestamp: datetime) -> float | None:
-        """Get humidity at specific time."""
-        # Try to get from associated humidity sensor
-        # TODO: Get humidity entity from config
-        return None
-    
-    async def _get_cloud_coverage_at_time(self, timestamp: datetime) -> float | None:
-        """Get cloud coverage at specific time."""
-        # TODO: Get cloud coverage entity from config
-        return None
-    
+       
     async def _get_slope_at_time(self, climate_entity_id: str, timestamp: datetime) -> float | None:
         """Get learned slope at specific time."""
-        # TODO: Query slope history
-        return None
-    
-    def _find_target_reached_time(
-        self,
-        states: list[State],
-        target_temp: float,
-        tolerance: float = 0.3,
-    ) -> datetime | None:
-        """Find when target temperature was first reached in state history.
+        states = await self._get_entity_states(climate_entity_id, timestamp, timestamp + timedelta(minutes=1))
         
-        Args:
-            states: List of states to search (ordered chronologically)
-            target_temp: Target temperature to find
-            tolerance: Acceptable temperature difference (±°C)
-            
-        Returns:
-            Timestamp when target was reached, or None if never reached.
-        """
         for state in states:
-            current_temp = self._safe_float(state.attributes.get("current_temperature"))
-            if current_temp is not None:
-                if abs(current_temp - target_temp) <= tolerance:
-                    return state.last_changed
+            temp = self._safe_float(get_vtherm_attribute(state, "temperature_slope"))
+            if temp is not None:
+                return temp
+            
         return None
-    
+        
     def _resample_history(
         self,
         history_data: list[tuple[datetime, float]],
