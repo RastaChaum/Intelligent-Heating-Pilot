@@ -353,7 +353,7 @@ class HeatingApplicationService:
         estimated_temp = environment.current_temp + (current_slope * time_to_target)
         
         # Check overshoot threshold
-        overshoot_threshold = timeslot.target_temp + 0.5
+        overshoot_threshold = timeslot.target_temp + 0.2  # 0.2°C buffer
         
         if estimated_temp > overshoot_threshold:
             _LOGGER.warning(
