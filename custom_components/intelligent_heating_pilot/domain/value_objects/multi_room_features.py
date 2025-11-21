@@ -3,9 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from domain.value_objects.lagged_features import LaggedFeatures
-
 from .common_features import CommonFeatures
+from .lagged_features import LaggedFeatures
 from .room_features import RoomFeatures
 
 
