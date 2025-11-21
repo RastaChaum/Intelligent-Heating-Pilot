@@ -57,10 +57,16 @@ class HAHistoricalDataReader(IHistoricalDataReader):
     ) -> list[HeatingCycle]:
         """Extract and reconstruct heating cycles from HA database.
         
-        A heating cycle is detected by monitoring:
-        1. Climate entity HVAC mode changes (off → heat)
-        2. Temperature changes during heating
-        3. Time when target temperature is reached
+        A heating cycle is defined as a period where:
+        - The thermostat is in "heat" mode, AND
+        - The room temperature is at least 0.3°C below the target temperature
+        
+        The cycle starts when both conditions are met, and ends when either:
+        - The thermostat leaves "heat" mode, OR
+        - The temperature gap becomes less than 0.3°C
+        
+        This approach decouples cycle detection from scheduling, making the model
+        learn heating duration independently of when heating is scheduled.
         
         Args:
             climate_entity_id: Entity ID of the climate/thermostat
@@ -88,88 +94,99 @@ class HAHistoricalDataReader(IHistoricalDataReader):
             _LOGGER.warning("No historical states found for %s", climate_entity_id)
             return []
         
-        # Reconstruct cycles from state changes
+        # Reconstruct cycles from state changes chronologically
         cycles = []
         current_cycle_start: datetime | None = None
         current_cycle_initial_temp: float | None = None
         current_cycle_target_temp: float | None = None
         
-        for i, state in enumerate(states):
+        # Temperature gap threshold for cycle detection (°C)
+        TEMP_GAP_THRESHOLD = 0.3
+        
+        for state in states:
             hvac_mode = state.state
             current_temp = self._safe_float(get_vtherm_attribute(state, "current_temperature"))
             target_temp = self._safe_float(get_vtherm_attribute(state, "temperature"))
             
-            # Detect cycle start: transition to "heat" mode
-            if (hvac_mode == "heat" and current_cycle_start is None and 
-                current_temp is not None and target_temp is not None and 
-                (current_temp + 0.4) <= target_temp):
-
+            # Skip if we don't have valid temperature data
+            if current_temp is None or target_temp is None:
+                continue
+            
+            # Calculate temperature gap
+            temp_gap = target_temp - current_temp
+            
+            # Check if we're in a heating cycle state
+            in_heating_cycle = hvac_mode == "heat" and temp_gap >= TEMP_GAP_THRESHOLD
+            
+            # CYCLE START: Conditions met and not already in a cycle
+            if in_heating_cycle and current_cycle_start is None:
                 current_cycle_start = state.last_changed
                 current_cycle_initial_temp = current_temp
                 current_cycle_target_temp = target_temp
                 _LOGGER.debug(
-                    "Cycle started at %s (initial: %.1f°C, target: %.1f°C)",
+                    "Cycle started at %s (initial: %.1f°C, target: %.1f°C, gap: %.1f°C)",
                     current_cycle_start,
                     current_cycle_initial_temp,
                     current_cycle_target_temp,
+                    temp_gap,
                 )
             
-            # Detect cycle end: transition out of "heat" mode or target reached
-            elif hvac_mode == "heat" and current_cycle_start is not None and current_temp is not None and target_temp is not None and ((current_temp + 0.4) > target_temp):
+            # CYCLE END: Conditions no longer met while in a cycle
+            elif not in_heating_cycle and current_cycle_start is not None:
                 cycle_end = state.last_changed
+                
+                # Calculate cycle duration
+                actual_duration_minutes = (cycle_end - current_cycle_start).total_seconds() / 60.0
+                
+                # Get environmental data at cycle start
+                slope = await self._get_slope_at_time(climate_entity_id, current_cycle_start)
+                
+                # For this simplified approach:
+                # - target_time = cycle_end (when we actually reached the target)
+                # - target_reached_at = cycle_end (same)
+                # - error_minutes = 0 (no scheduling error in this simple model)
+                # - optimal_duration_minutes = actual_duration_minutes
                 target_reached_time = cycle_end
-
-                                
-                if current_cycle_initial_temp and current_cycle_target_temp:
-                    # Get actual scheduled time from scheduler entity
-                    scheduled_time = await self._get_scheduled_target_time(
-                        current_cycle_start,
-                        cycle_end,
-                    )
-                    
-                    # Use scheduled time if found, otherwise fall back to cycle_end
-                    target_time = scheduled_time if scheduled_time else cycle_end
-                    
-                    # Calculate error: how late/early did we reach target
-                    error_minutes = 0.0
-                    if target_reached_time:
-                        error_seconds = (target_reached_time - target_time).total_seconds()
-                        error_minutes = error_seconds / 60.0
-                    
-                    # Get environmental data at cycle start
-                    slope = await self._get_slope_at_time(climate_entity_id, current_cycle_start)
-                    
-                    # Calculate durations
-                    actual_duration_minutes = (cycle_end - current_cycle_start).total_seconds() / 60.0
-                    optimal_duration_minutes = actual_duration_minutes - error_minutes
-                    
-                    cycle = HeatingCycle(
-                        climate_entity_id=climate_entity_id,  # Using entity ID as room identifier
-                        heating_started_at=current_cycle_start,
-                        target_time=target_time,
-                        target_reached_at=target_reached_time,
-                        initial_temp=current_cycle_initial_temp,
-                        target_temp=current_cycle_target_temp,
-                        final_temp=current_temp or current_cycle_target_temp,
-                        initial_slope=slope,
-                        actual_duration_minutes=actual_duration_minutes,
-                        optimal_duration_minutes=optimal_duration_minutes,
-                        error_minutes=error_minutes,
-                    )
-                    cycles.append(cycle)
-                    if scheduled_time:
-                        _LOGGER.debug(
-                            "Cycle completed: %s (scheduled: %s, error: %.1f min)",
-                            cycle.cycle_id,
-                            scheduled_time.strftime("%H:%M"),
-                            error_minutes,
-                        )
-                    else:
-                        _LOGGER.debug(
-                            "Cycle completed: %s (no scheduled time found, using cycle_end, error: %.1f min)",
-                            cycle.cycle_id,
-                            error_minutes,
-                        )
+                
+                # Get scheduled time if available (optional, for future reference)
+                scheduled_time = await self._get_scheduled_target_time(
+                    current_cycle_start,
+                    cycle_end,
+                )
+                
+                # Calculate error if we have a scheduled time
+                error_minutes = 0.0
+                if scheduled_time:
+                    error_seconds = (target_reached_time - scheduled_time).total_seconds()
+                    error_minutes = error_seconds / 60.0
+                    target_time = scheduled_time
+                else:
+                    target_time = cycle_end
+                
+                optimal_duration_minutes = actual_duration_minutes - error_minutes
+                
+                cycle = HeatingCycle(
+                    climate_entity_id=climate_entity_id,
+                    heating_started_at=current_cycle_start,
+                    target_time=target_time,
+                    target_reached_at=target_reached_time,
+                    initial_temp=current_cycle_initial_temp,
+                    target_temp=current_cycle_target_temp,
+                    final_temp=current_temp,
+                    initial_slope=slope,
+                    actual_duration_minutes=actual_duration_minutes,
+                    optimal_duration_minutes=optimal_duration_minutes,
+                    error_minutes=error_minutes,
+                )
+                cycles.append(cycle)
+                
+                _LOGGER.debug(
+                    "Cycle completed: %s (duration: %.1f min, final_temp: %.1f°C, gap: %.1f°C)",
+                    cycle.cycle_id,
+                    actual_duration_minutes,
+                    current_temp,
+                    temp_gap,
+                )
                 
                 # Reset for next cycle
                 current_cycle_start = None
