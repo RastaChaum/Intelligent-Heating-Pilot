@@ -1,6 +1,6 @@
 """Tests for domain value objects."""
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import sys
 import os
@@ -20,6 +20,7 @@ from domain.value_objects import (
     PredictionResult,
     HeatingDecision,
     HeatingAction,
+    HeatingCycle,
 )
 
 # Import fixtures
@@ -226,6 +227,151 @@ class TestHeatingDecision(unittest.TestCase):
         self.assertEqual(decision.action, HeatingAction.NO_ACTION)
         self.assertIsNone(decision.target_temp)
         self.assertEqual(decision.reason, "Already at target temperature")
+
+
+class TestHeatingCycle(unittest.TestCase):
+    """Tests for HeatingCycle value object."""
+
+    def test_create_valid_heating_cycle(self):
+        """Test creating a valid heating cycle."""
+        cycle_start = datetime.now()
+        cycle_end = cycle_start + timedelta(minutes=60)
+        
+        cycle = HeatingCycle(
+            climate_entity_id="climate.bedroom",
+            cycle_start=cycle_start,
+            cycle_end=cycle_end,
+            duration_minutes=60.0,
+            initial_temp=18.0,
+            target_temp=21.0,
+            final_temp=20.5,
+            initial_slope=0.5,
+            final_slope=0.2,
+            initial_humidity=50.0,
+            final_humidity=48.0,
+            initial_outdoor_temp=5.0,
+            initial_outdoor_humidity=80.0,
+            initial_cloud_coverage=50.0,
+            final_outdoor_temp=6.0,
+            final_outdoor_humidity=78.0,
+            final_cloud_coverage=45.0,
+        )
+        
+        self.assertEqual(cycle.climate_entity_id, "climate.bedroom")
+        self.assertEqual(cycle.duration_minutes, 60.0)
+        self.assertEqual(cycle.initial_temp, 18.0)
+        self.assertEqual(cycle.target_temp, 21.0)
+        self.assertEqual(cycle.final_temp, 20.5)
+        self.assertIsNotNone(cycle.cycle_id)  # UUID should be generated
+
+    def test_heating_cycle_with_minimal_fields(self):
+        """Test heating cycle with only required fields."""
+        cycle_start = datetime.now()
+        cycle_end = cycle_start + timedelta(minutes=30)
+        
+        cycle = HeatingCycle(
+            climate_entity_id="climate.bedroom",
+            cycle_start=cycle_start,
+            cycle_end=cycle_end,
+            duration_minutes=30.0,
+            initial_temp=18.5,
+            target_temp=21.0,
+            final_temp=19.8,
+            initial_slope=None,
+            final_slope=None,
+            initial_humidity=None,
+            final_humidity=None,
+            initial_outdoor_temp=None,
+            initial_outdoor_humidity=None,
+            initial_cloud_coverage=None,
+            final_outdoor_temp=None,
+            final_outdoor_humidity=None,
+            final_cloud_coverage=None,
+        )
+        
+        self.assertEqual(cycle.duration_minutes, 30.0)
+        self.assertIsNone(cycle.initial_slope)
+        self.assertIsNone(cycle.initial_humidity)
+
+    def test_heating_cycle_negative_duration(self):
+        """Test that negative duration is rejected."""
+        cycle_start = datetime.now()
+        cycle_end = cycle_start + timedelta(minutes=60)
+        
+        with self.assertRaises(ValueError):
+            HeatingCycle(
+                climate_entity_id="climate.bedroom",
+                cycle_start=cycle_start,
+                cycle_end=cycle_end,
+                duration_minutes=-10.0,  # Invalid
+                initial_temp=18.0,
+                target_temp=21.0,
+                final_temp=20.5,
+                initial_slope=None,
+                final_slope=None,
+                initial_humidity=None,
+                final_humidity=None,
+                initial_outdoor_temp=None,
+                initial_outdoor_humidity=None,
+                initial_cloud_coverage=None,
+                final_outdoor_temp=None,
+                final_outdoor_humidity=None,
+                final_cloud_coverage=None,
+            )
+
+    def test_heating_cycle_initial_temp_above_target(self):
+        """Test that initial_temp above target_temp is rejected."""
+        cycle_start = datetime.now()
+        cycle_end = cycle_start + timedelta(minutes=60)
+        
+        with self.assertRaises(ValueError):
+            HeatingCycle(
+                climate_entity_id="climate.bedroom",
+                cycle_start=cycle_start,
+                cycle_end=cycle_end,
+                duration_minutes=60.0,
+                initial_temp=22.0,  # Above target
+                target_temp=21.0,
+                final_temp=21.5,
+                initial_slope=None,
+                final_slope=None,
+                initial_humidity=None,
+                final_humidity=None,
+                initial_outdoor_temp=None,
+                initial_outdoor_humidity=None,
+                initial_cloud_coverage=None,
+                final_outdoor_temp=None,
+                final_outdoor_humidity=None,
+                final_cloud_coverage=None,
+            )
+
+    def test_heating_cycle_is_immutable(self):
+        """Test that HeatingCycle is immutable."""
+        cycle_start = datetime.now()
+        cycle_end = cycle_start + timedelta(minutes=60)
+        
+        cycle = HeatingCycle(
+            climate_entity_id="climate.bedroom",
+            cycle_start=cycle_start,
+            cycle_end=cycle_end,
+            duration_minutes=60.0,
+            initial_temp=18.0,
+            target_temp=21.0,
+            final_temp=20.5,
+            initial_slope=None,
+            final_slope=None,
+            initial_humidity=None,
+            final_humidity=None,
+            initial_outdoor_temp=None,
+            initial_outdoor_humidity=None,
+            initial_cloud_coverage=None,
+            final_outdoor_temp=None,
+            final_outdoor_humidity=None,
+            final_cloud_coverage=None,
+        )
+        
+        with self.assertRaises(AttributeError):
+            cycle.duration_minutes = 90.0  # Should fail
 
 
 if __name__ == "__main__":

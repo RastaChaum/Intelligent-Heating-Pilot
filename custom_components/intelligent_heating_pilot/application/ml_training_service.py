@@ -86,15 +86,27 @@ class MLTrainingApplicationService:
             climate_entity_id=climate_entity_id,
             start_date=start_date,
             end_date=end_date,
+            humidity_entity_id=humidity_entity_id,
+            outdoor_temp_entity_id=weather_entity_id,
+            outdoor_humidity_entity_id=weather_entity_id,  # Often same entity provides temp and humidity
+            cloud_coverage_entity_id=weather_entity_id,
         )
         
         _LOGGER.info("Extracted %d heating cycles from database", len(cycles))
         
         # Step 2: Filter valid cycles for training
-        valid_cycles = [
-            cycle for cycle in cycles
-            if self._cycle_labeler.is_cycle_valid_for_training(cycle)
-        ]
+        valid_cycles = []
+        for cycle in cycles:
+            power_history = await self._historical_reader.get_radiator_power_history(
+                climate_entity_id=cycle.climate_entity_id,
+                start_time=cycle.cycle_start,
+                end_time=cycle.cycle_end,
+            )
+            if power_history:
+                avg_power = sum(power for ts, power in power_history) / len(power_history)
+                
+            if self._cycle_labeler.is_cycle_valid_for_training(cycle, avg_power=avg_power if power_history else 50.0):
+                valid_cycles.append(cycle)
         
         _LOGGER.info(
             "Filtered to %d valid cycles (removed %d invalid)",
@@ -118,8 +130,8 @@ class MLTrainingApplicationService:
             # Step 3a: Get historical data for feature engineering
             # We need data from before cycle start to calculate lagged features
             # Get history from 180 minutes before start to cover all lags (15, 30, 60, 90, 120, 180)
-            history_start = cycle.heating_started_at - timedelta(minutes=200)  # Extra buffer for interpolation
-            history_end = cycle.heating_started_at
+            history_start = cycle.cycle_start - timedelta(minutes=200)  # Extra buffer for interpolation
+            history_end = cycle.cycle_start
             
             # Get temperature history for the room using generic entity history method
             temp_history = await self._historical_reader.get_room_temperature_history(
@@ -176,7 +188,7 @@ class MLTrainingApplicationService:
                 lagged_features = self._feature_engineer.create_lagged_features(
                     current_temp=cycle.initial_temp,
                     target_temp=cycle.target_temp,
-                    current_time=cycle.heating_started_at,
+                    current_time=cycle.cycle_start,
                     temp_history=temp_history,
                     slope_history=slope_history,
                     power_history=power_history,

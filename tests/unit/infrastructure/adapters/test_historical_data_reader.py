@@ -76,6 +76,10 @@ class TestHAHistoricalDataReader:
         
         assert result is None
 
+    # Note: The following tests are kept for backwards compatibility with the scheduler
+    # integration code that remains in the adapter, but is no longer used for cycle detection.
+    # These tests may be removed in a future refactoring when scheduler methods are cleaned up.
+
     @pytest.mark.asyncio
     async def test_get_scheduled_target_time_with_matching_schedule_outofrange(
         self, reader_with_scheduler, mock_hass

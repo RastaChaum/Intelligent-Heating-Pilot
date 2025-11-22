@@ -21,16 +21,28 @@ class IHistoricalDataReader(ABC):
         climate_entity_id: str,
         start_date: datetime,
         end_date: datetime,
+        humidity_entity_id: str | None = None,
+        outdoor_temp_entity_id: str | None = None,
+        outdoor_humidity_entity_id: str | None = None,
+        cloud_coverage_entity_id: str | None = None,
     ) -> list[HeatingCycle]:
         """Extract and reconstruct heating cycles for a room within a date range.
+
+        A heating cycle is detected when the thermostat is in "heat" mode
+        and room temperature is at least 0.3°C below target temperature.
+        The cycle ends when either condition is no longer met.
 
         Args:
             climate_entity_id: Identifier for the room/climate entity
             start_date: Start of date range (inclusive)
             end_date: End of date range (exclusive)
+            humidity_entity_id: Optional indoor humidity sensor entity
+            outdoor_temp_entity_id: Optional outdoor temperature sensor entity
+            outdoor_humidity_entity_id: Optional outdoor humidity sensor entity
+            cloud_coverage_entity_id: Optional cloud coverage sensor entity
 
         Returns:
-            List of reconstructed heating cycles with calculated labels.
+            List of reconstructed heating cycles with environmental data.
         """
         pass
 

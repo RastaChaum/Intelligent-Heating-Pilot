@@ -1,8 +1,7 @@
-"""Cycle labeling service for calculating optimal heating durations."""
+"""Cycle labeling service for calculating heating durations."""
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
 
 from ..value_objects import HeatingCycle
 
@@ -10,66 +9,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class CycleLabelingService:
-    """Service for calculating optimal heating durations using error-driven labeling.
+    """Service for calculating heating duration labels from observed cycles.
     
-    This service implements the error-driven labeling methodology:
-    - Observes when target temperature was actually reached
-    - Calculates the error (late/early) relative to target time
-    - Computes optimal duration that would have eliminated the error
+    With the simplified cycle detection approach, cycles are detected based on
+    actual heating behavior (heat mode + temperature delta >= 0.3°C).
+    The label is simply the actual duration it took to heat the room.
     """
-    
-    def calculate_optimal_duration(
-        self,
-        actual_duration_minutes: float,
-        error_minutes: float,
-    ) -> float:
-        """Calculate optimal duration based on observed error.
-        
-        Formula: optimal_duration = actual_duration - error
-        
-        If heating finished early (negative error): optimal should be longer
-        If heating finished late (positive error): optimal should be shorter
-        
-        Args:
-            actual_duration_minutes: How long heating actually took
-            error_minutes: Difference between target_reached_at and target_time
-                          (positive = late, negative = early)
-        
-        Returns:
-            Optimal duration in minutes that would have reached target on time.
-        """
-        optimal = actual_duration_minutes - error_minutes
-        
-        # Ensure positive duration (minimum 0 minutes -> no preheating)
-        optimal = max(0.0, optimal)
-        
-        _LOGGER.debug(
-            "Calculated optimal duration: %.1f min (actual: %.1f min, error: %.1f min)",
-            optimal,
-            actual_duration_minutes,
-            error_minutes,
-        )
-        
-        return optimal
-    
-    def calculate_error_minutes(
-        self,
-        target_reached_at: datetime,
-        target_time: datetime,
-    ) -> float:
-        """Calculate error in minutes between actual and target times.
-        
-        Args:
-            target_reached_at: When target temperature was actually reached
-            target_time: When target temperature should have been reached
-            
-        Returns:
-            Error in minutes (positive = late, negative = early).
-        """
-        delta = target_reached_at - target_time
-        error_minutes = delta.total_seconds() / 60.0
-        
-        return error_minutes
     
     def label_heating_cycle(
         self,
@@ -77,91 +22,89 @@ class CycleLabelingService:
     ) -> float:
         """Calculate the target label (Y) for a heating cycle.
         
-        This is the main labeling function that takes a reconstructed
-        heating cycle and calculates the optimal duration label.
+        The label is the actual duration of the heating cycle, which represents
+        the time it took to heat from initial_temp toward target_temp under
+        the observed environmental conditions.
         
         Args:
             cycle: Heating cycle with observed data
             
         Returns:
-            Optimal duration in minutes (the Y label for ML training).
-            
-        Raises:
-            ValueError: If cycle data is invalid or incomplete.
+            Duration in minutes (the Y label for ML training).
         """
-        if cycle.target_reached_at is None:
-            raise ValueError(
-                f"Cannot label cycle {cycle.cycle_id}: target never reached"
-            )
-        
-        # Calculate error
-        error = self.calculate_error_minutes(
-            cycle.target_reached_at,
-            cycle.target_time,
-        )
-        
-        # Calculate optimal duration
-        optimal = self.calculate_optimal_duration(
-            cycle.actual_duration_minutes,
-            error,
-        )
+        duration = cycle.duration_minutes
         
         _LOGGER.debug(
-            "Labeled cycle %s: optimal=%.1f min (actual=%.1f min, error=%.1f min)",
+            "Labeled cycle %s: duration=%.1f min (%.1f→%.1f°C)",
             cycle.cycle_id,
-            optimal,
-            cycle.actual_duration_minutes,
-            error,
+            duration,
+            cycle.initial_temp,
+            cycle.final_temp,
         )
         
-        return optimal
+        return duration
     
     def is_cycle_valid_for_training(
         self,
         cycle: HeatingCycle,
-        max_error_minutes: float = 90.0,
+        min_duration_minutes: float = 10.0,
+        max_duration_minutes: float = 360.0,
+        min_temp_increase: float = 0.1,
+        avg_power: float = 0.0,
     ) -> bool:
         """Check if a heating cycle is valid for training.
         
         Filters out cycles with:
-        - Missing target_reached_at (target never reached)
-        - Excessive error (system malfunction or unusual conditions)
-        - Negative or zero actual duration
+        - Very short duration (likely noise or false positives)
+        - Extremely long duration (system malfunction or unusual conditions)
+        - No meaningful temperature increase
         
         Args:
             cycle: Heating cycle to validate
-            max_error_minutes: Maximum acceptable error in minutes
+            min_duration_minutes: Minimum acceptable duration
+            max_duration_minutes: Maximum acceptable duration
+            min_temp_increase: Minimum temperature increase required (°C)
             
         Returns:
             True if cycle is valid for training, False otherwise.
         """
-        # Must have reached target
-        if cycle.target_reached_at is None:
+        # Heat must have run at last avg_power
+        if avg_power <= 20.0:
             _LOGGER.debug(
-                "Cycle %s invalid: target never reached",
+                "Cycle %s invalid: no heating power detected (avg_power=%.1f%% < 20.0%)",
                 cycle.cycle_id,
+                avg_power,
+            )
+            return False
+
+        # Must have positive duration within reasonable bounds
+        if cycle.duration_minutes < min_duration_minutes:
+            _LOGGER.debug(
+                "Cycle %s invalid: too short (%.1f min < %.1f min)",
+                cycle.cycle_id,
+                cycle.duration_minutes,
+                min_duration_minutes,
             )
             return False
         
-        # Must have positive duration
-        if cycle.actual_duration_minutes <= 0:
+        if cycle.duration_minutes > max_duration_minutes:
             _LOGGER.debug(
-                "Cycle %s invalid: non-positive duration (%.1f min)",
+                "Cycle %s invalid: too long (%.1f min > %.1f min)",
                 cycle.cycle_id,
-                cycle.actual_duration_minutes,
+                cycle.duration_minutes,
+                max_duration_minutes,
             )
             return False
         
-        # Note: Error magnitude check commented out to avoid excluding all cycles
-        # In practice, large errors can still provide valuable learning signal
-        # error = abs(cycle.error_minutes)
-        # if error > max_error_minutes:
-        #     _LOGGER.debug(
-        #         "Cycle %s invalid: excessive error (%.1f min > %.1f min threshold)",
-        #         cycle.cycle_id,
-        #         error,
-        #         max_error_minutes,
-        #     )
-        #     return False
+        # Must show some temperature increase
+        temp_increase = cycle.final_temp - cycle.initial_temp
+        if temp_increase < min_temp_increase:
+            _LOGGER.debug(
+                "Cycle %s invalid: insufficient temperature increase (%.2f°C < %.2f°C)",
+                cycle.cycle_id,
+                temp_increase,
+                min_temp_increase,
+            )
+            return False
         
         return True

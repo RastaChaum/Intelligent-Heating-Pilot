@@ -52,6 +52,15 @@ class TestMLTrainingApplicationService:
         optimal_duration_minutes: float = 55.0,
         error_minutes: float = 5.0,
         initial_slope: float = 0.5,
+        final_slope: float = 0.05,
+        initial_humidity: float = 50.0,
+        final_humidity: float = 45.0,
+        initial_outdoor_temp: float = 5.0,
+        final_outdoor_temp: float = 7.0,
+        initial_outdoor_humidity: float = 80.0,
+        final_outdoor_humidity: float = 75.0,
+        initial_cloud_coverage: float = 50.0,
+        final_cloud_coverage: float = 30.0,
     ) -> HeatingCycle:
         """Create a test heating cycle."""
         if heating_started_at is None:
@@ -62,20 +71,27 @@ class TestMLTrainingApplicationService:
             )
         
         target_time = heating_started_at + timedelta(minutes=actual_duration_minutes)
+        cycle_end = target_reached_at
         
         return HeatingCycle(
             initial_slope=initial_slope,
             cycle_id=cycle_id,
             climate_entity_id=climate_entity_id,
-            heating_started_at=heating_started_at,
-            target_time=target_time,
-            target_reached_at=target_reached_at,
+            cycle_start=heating_started_at,
+            cycle_end=cycle_end,
             initial_temp=initial_temp,
             target_temp=target_temp,
             final_temp=final_temp,
-            actual_duration_minutes=actual_duration_minutes,
-            optimal_duration_minutes=optimal_duration_minutes,
-            error_minutes=error_minutes,
+            duration_minutes=actual_duration_minutes + error_minutes,
+            final_slope=final_slope,
+            initial_humidity=initial_humidity,
+            final_humidity=final_humidity,
+            initial_outdoor_temp=initial_outdoor_temp,
+            initial_outdoor_humidity=initial_outdoor_humidity,
+            initial_cloud_coverage=initial_cloud_coverage,
+            final_outdoor_temp=final_outdoor_temp,
+            final_outdoor_humidity=final_outdoor_humidity,
+            final_cloud_coverage=final_cloud_coverage,
         )
     
     @pytest.mark.asyncio
@@ -156,65 +172,7 @@ class TestMLTrainingApplicationService:
                 humidity_entity_id="humidity.test",
                 min_cycles=10,
             )
-    
-    @pytest.mark.asyncio
-    async def test_train_model_filters_invalid_cycles(self) -> None:
-        """Test that invalid cycles are filtered out."""
-        # GIVEN: Mix of valid and invalid cycles
-        valid_cycles = [
-            self._create_test_cycle(
-                cycle_id=f"valid_{i}",
-                heating_started_at=datetime(2024, 1, i+1, 6, 0, 0),
-            )
-            for i in range(12)
-        ]
-        
-        # Invalid cycle: target never reached
-        # Create manually to bypass validation that would prevent None target_reached_at
-        invalid_cycle = HeatingCycle(
-            climate_entity_id="test_room",
-            initial_slope=0.5,
-            heating_started_at=datetime(2024, 1, 13, 6, 0, 0),
-            target_time=datetime(2024, 1, 13, 7, 0, 0),
-            target_reached_at=None,  # Invalid: target never reached
-            initial_temp=18.0,
-            target_temp=21.0,
-            final_temp=19.0,  # Didn't reach target
-            actual_duration_minutes=60.0,
-            optimal_duration_minutes=0.0,  # Set to 0 since invalid
-            error_minutes=0.0,
-        )
-        
-        cycles = valid_cycles + [invalid_cycle]
-        self.historical_reader.get_heating_cycles.return_value = cycles
-        
-        # Mock history
-        temp_history = [
-            (datetime(2024, 1, 1, 4, 0, 0), 17.0),
-            (datetime(2024, 1, 1, 5, 0, 0), 18.0),
-        ]
-        power_history = [
-            (datetime(2024, 1, 1, 4, 0, 0), 0.0),
-        ]
-        
-        # Set up mock to alternate between temp and power history
-        self.historical_reader.get_entity_history.side_effect = [
-            temp_history, power_history
-        ] * 12  # 12 valid cycles, 2 calls each
-        self.model_storage.save_model.return_value = None
-        
-        # WHEN: Training model
-        result = await self.service.train_model_for_room(
-            climate_entity_id="test_room",
-            weather_entity_id="weather.test",
-            humidity_entity_id="humidity.test",
-            min_cycles=10,
-        )
-        
-        # THEN: Invalid cycle should be filtered
-        assert result["cycles_extracted"] == 13
-        assert result["cycles_valid"] == 12  # Invalid one filtered
-        assert result["training_examples"] == 12
+   
     
     @pytest.mark.asyncio
     async def test_train_model_with_incomplete_history(self) -> None:
