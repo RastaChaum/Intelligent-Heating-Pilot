@@ -54,21 +54,31 @@ class HAHistoricalDataReader(IHistoricalDataReader):
         climate_entity_id: str,
         start_date: datetime,
         end_date: datetime,
+        humidity_entity_id: str | None = None,
+        outdoor_temp_entity_id: str | None = None,
+        outdoor_humidity_entity_id: str | None = None,
+        cloud_coverage_entity_id: str | None = None,
     ) -> list[HeatingCycle]:
         """Extract and reconstruct heating cycles from HA database.
         
-        A heating cycle is detected by monitoring:
-        1. Climate entity HVAC mode changes (off → heat)
-        2. Temperature changes during heating
-        3. Time when target temperature is reached
+        A heating cycle is detected when:
+        1. Thermostat is in "heat" mode
+        2. Room temperature is at least 0.3°C below target temperature
+        
+        The cycle ends when either condition is no longer met.
+        This approach is scheduler-independent and focuses on actual heating behavior.
         
         Args:
             climate_entity_id: Entity ID of the climate/thermostat
             start_date: Start of extraction period
             end_date: End of extraction period
+            humidity_entity_id: Optional indoor humidity sensor entity
+            outdoor_temp_entity_id: Optional outdoor temperature sensor entity
+            outdoor_humidity_entity_id: Optional outdoor humidity sensor entity
+            cloud_coverage_entity_id: Optional cloud coverage sensor entity
             
         Returns:
-            List of reconstructed HeatingCycle objects with errors calculated.
+            List of reconstructed HeatingCycle objects with environmental data.
         """
         _LOGGER.debug(
             "Extracting heating cycles for %s from %s to %s",
@@ -88,88 +98,92 @@ class HAHistoricalDataReader(IHistoricalDataReader):
             _LOGGER.warning("No historical states found for %s", climate_entity_id)
             return []
         
-        # Reconstruct cycles from state changes
+        # Reconstruct cycles from state changes chronologically
         cycles = []
         current_cycle_start: datetime | None = None
         current_cycle_initial_temp: float | None = None
         current_cycle_target_temp: float | None = None
         
-        for i, state in enumerate(states):
+        for state in states:
             hvac_mode = state.state
             current_temp = self._safe_float(get_vtherm_attribute(state, "current_temperature"))
             target_temp = self._safe_float(get_vtherm_attribute(state, "temperature"))
             
-            # Detect cycle start: transition to "heat" mode
-            if (hvac_mode == "heat" and current_cycle_start is None and 
-                current_temp is not None and target_temp is not None and 
-                (current_temp + 0.4) <= target_temp):
-
+            # Check if cycle conditions are met
+            is_heating = hvac_mode == "heat"
+            has_temp_delta = (current_temp is not None and target_temp is not None and 
+                            (target_temp - current_temp) >= 0.3)
+            
+            # Detect cycle start
+            if is_heating and has_temp_delta and current_cycle_start is None:
                 current_cycle_start = state.last_changed
                 current_cycle_initial_temp = current_temp
                 current_cycle_target_temp = target_temp
                 _LOGGER.debug(
-                    "Cycle started at %s (initial: %.1f°C, target: %.1f°C)",
+                    "Cycle started at %s (initial: %.1f°C, target: %.1f°C, delta: %.1f°C)",
                     current_cycle_start,
                     current_cycle_initial_temp,
                     current_cycle_target_temp,
+                    current_cycle_target_temp - current_cycle_initial_temp,
                 )
             
-            # Detect cycle end: transition out of "heat" mode or target reached
-            elif hvac_mode == "heat" and current_cycle_start is not None and current_temp is not None and target_temp is not None and ((current_temp + 0.4) > target_temp):
+            # Detect cycle end: conditions no longer met
+            elif current_cycle_start is not None and (not is_heating or not has_temp_delta):
                 cycle_end = state.last_changed
-                target_reached_time = cycle_end
-
-                                
-                if current_cycle_initial_temp and current_cycle_target_temp:
-                    # Get actual scheduled time from scheduler entity
-                    scheduled_time = await self._get_scheduled_target_time(
-                        current_cycle_start,
-                        cycle_end,
-                    )
-                    
-                    # Use scheduled time if found, otherwise fall back to cycle_end
-                    target_time = scheduled_time if scheduled_time else cycle_end
-                    
-                    # Calculate error: how late/early did we reach target
-                    error_minutes = 0.0
-                    if target_reached_time:
-                        error_seconds = (target_reached_time - target_time).total_seconds()
-                        error_minutes = error_seconds / 60.0
-                    
-                    # Get environmental data at cycle start
-                    slope = await self._get_slope_at_time(climate_entity_id, current_cycle_start)
-                    
-                    # Calculate durations
-                    actual_duration_minutes = (cycle_end - current_cycle_start).total_seconds() / 60.0
-                    optimal_duration_minutes = actual_duration_minutes - error_minutes
-                    
-                    cycle = HeatingCycle(
-                        climate_entity_id=climate_entity_id,  # Using entity ID as room identifier
-                        heating_started_at=current_cycle_start,
-                        target_time=target_time,
-                        target_reached_at=target_reached_time,
-                        initial_temp=current_cycle_initial_temp,
-                        target_temp=current_cycle_target_temp,
-                        final_temp=current_temp or current_cycle_target_temp,
-                        initial_slope=slope,
-                        actual_duration_minutes=actual_duration_minutes,
-                        optimal_duration_minutes=optimal_duration_minutes,
-                        error_minutes=error_minutes,
-                    )
-                    cycles.append(cycle)
-                    if scheduled_time:
-                        _LOGGER.debug(
-                            "Cycle completed: %s (scheduled: %s, error: %.1f min)",
-                            cycle.cycle_id,
-                            scheduled_time.strftime("%H:%M"),
-                            error_minutes,
-                        )
-                    else:
-                        _LOGGER.debug(
-                            "Cycle completed: %s (no scheduled time found, using cycle_end, error: %.1f min)",
-                            cycle.cycle_id,
-                            error_minutes,
-                        )
+                final_temp = current_temp if current_temp is not None else current_cycle_target_temp
+                
+                # Calculate duration
+                duration_minutes = (cycle_end - current_cycle_start).total_seconds() / 60.0
+                
+                # Skip very short cycles (likely noise)
+                if duration_minutes < 5.0:
+                    _LOGGER.debug("Skipping very short cycle (%.1f min)", duration_minutes)
+                    current_cycle_start = None
+                    current_cycle_initial_temp = None
+                    current_cycle_target_temp = None
+                    continue
+                
+                # Get environmental data at cycle start
+                initial_slope = await self._get_slope_at_time(climate_entity_id, current_cycle_start)
+                initial_humidity = await self._get_humidity_at_time(humidity_entity_id, current_cycle_start) if humidity_entity_id else None
+                initial_outdoor_temp = await self._get_outdoor_temp_at_time(outdoor_temp_entity_id, current_cycle_start) if outdoor_temp_entity_id else None
+                initial_outdoor_humidity = await self._get_outdoor_humidity_at_time(outdoor_humidity_entity_id, current_cycle_start) if outdoor_humidity_entity_id else None
+                initial_cloud_coverage = await self._get_cloud_coverage_at_time(cloud_coverage_entity_id, current_cycle_start) if cloud_coverage_entity_id else None
+                
+                # Get environmental data at cycle end
+                final_slope = await self._get_slope_at_time(climate_entity_id, cycle_end)
+                final_humidity = await self._get_humidity_at_time(humidity_entity_id, cycle_end) if humidity_entity_id else None
+                final_outdoor_temp = await self._get_outdoor_temp_at_time(outdoor_temp_entity_id, cycle_end) if outdoor_temp_entity_id else None
+                final_outdoor_humidity = await self._get_outdoor_humidity_at_time(outdoor_humidity_entity_id, cycle_end) if outdoor_humidity_entity_id else None
+                final_cloud_coverage = await self._get_cloud_coverage_at_time(cloud_coverage_entity_id, cycle_end) if cloud_coverage_entity_id else None
+                
+                cycle = HeatingCycle(
+                    climate_entity_id=climate_entity_id,
+                    cycle_start=current_cycle_start,
+                    cycle_end=cycle_end,
+                    duration_minutes=duration_minutes,
+                    initial_temp=current_cycle_initial_temp,
+                    target_temp=current_cycle_target_temp,
+                    final_temp=final_temp,
+                    initial_slope=initial_slope,
+                    final_slope=final_slope,
+                    initial_humidity=initial_humidity,
+                    final_humidity=final_humidity,
+                    initial_outdoor_temp=initial_outdoor_temp,
+                    initial_outdoor_humidity=initial_outdoor_humidity,
+                    initial_cloud_coverage=initial_cloud_coverage,
+                    final_outdoor_temp=final_outdoor_temp,
+                    final_outdoor_humidity=final_outdoor_humidity,
+                    final_cloud_coverage=final_cloud_coverage,
+                )
+                cycles.append(cycle)
+                _LOGGER.debug(
+                    "Cycle completed: %s (duration: %.1f min, temp: %.1f→%.1f°C)",
+                    cycle.cycle_id,
+                    duration_minutes,
+                    current_cycle_initial_temp,
+                    final_temp,
+                )
                 
                 # Reset for next cycle
                 current_cycle_start = None
@@ -379,12 +393,56 @@ class HAHistoricalDataReader(IHistoricalDataReader):
        
     async def _get_slope_at_time(self, climate_entity_id: str, timestamp: datetime) -> float | None:
         """Get learned slope at specific time."""
-        states = await self._get_entity_states(climate_entity_id, timestamp, timestamp + timedelta(minutes=1))
+        states = await self._get_entity_states(climate_entity_id, timestamp - timedelta(minutes=1), timestamp + timedelta(minutes=1))
         for state in states:
             temp = self._safe_float(get_vtherm_attribute(state, "temperature_slope"))
             if temp is not None:
                 return temp
             
+        return None
+    
+    async def _get_humidity_at_time(self, humidity_entity_id: str | None, timestamp: datetime) -> float | None:
+        """Get humidity at specific time."""
+        if not humidity_entity_id:
+            return None
+        states = await self._get_entity_states(humidity_entity_id, timestamp - timedelta(minutes=1), timestamp + timedelta(minutes=1))
+        for state in states:
+            value = self._safe_float(state.state)
+            if value is not None:
+                return value
+        return None
+    
+    async def _get_outdoor_temp_at_time(self, outdoor_temp_entity_id: str | None, timestamp: datetime) -> float | None:
+        """Get outdoor temperature at specific time."""
+        if not outdoor_temp_entity_id:
+            return None
+        states = await self._get_entity_states(outdoor_temp_entity_id, timestamp - timedelta(minutes=1), timestamp + timedelta(minutes=1))
+        for state in states:
+            value = self._safe_float(state.state)
+            if value is not None:
+                return value
+        return None
+    
+    async def _get_outdoor_humidity_at_time(self, outdoor_humidity_entity_id: str | None, timestamp: datetime) -> float | None:
+        """Get outdoor humidity at specific time."""
+        if not outdoor_humidity_entity_id:
+            return None
+        states = await self._get_entity_states(outdoor_humidity_entity_id, timestamp - timedelta(minutes=1), timestamp + timedelta(minutes=1))
+        for state in states:
+            value = self._safe_float(state.state)
+            if value is not None:
+                return value
+        return None
+    
+    async def _get_cloud_coverage_at_time(self, cloud_coverage_entity_id: str | None, timestamp: datetime) -> float | None:
+        """Get cloud coverage at specific time."""
+        if not cloud_coverage_entity_id:
+            return None
+        states = await self._get_entity_states(cloud_coverage_entity_id, timestamp - timedelta(minutes=1), timestamp + timedelta(minutes=1))
+        for state in states:
+            value = self._safe_float(state.state)
+            if value is not None:
+                return value
         return None
     
     async def _get_scheduled_target_time(
