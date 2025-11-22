@@ -119,11 +119,11 @@ class MLPredictionService:
         
         return metrics
     
-    def predict_duration(self, features: LaggedFeatures) -> float | None:
+    def predict_duration(self, features: CycleFeatures | LaggedFeatures) -> float | None:
         """Predict optimal heating duration given features.
         
         Args:
-            features: Lagged features for prediction
+            features: CycleFeatures or LaggedFeatures for prediction
             
         Returns:
             Predicted duration in minutes, or None if model not trained.
@@ -134,7 +134,8 @@ class MLPredictionService:
         
         # Convert features to array
         feature_dict = features.to_feature_dict()
-        feature_names = LaggedFeatures.get_feature_names()
+        # Get feature names from the features object itself
+        feature_names = features.get_feature_names()
         X = np.array([[feature_dict[name] for name in feature_names]], dtype=np.float32)
         
         # Make prediction
@@ -182,8 +183,12 @@ class MLPredictionService:
         
         _LOGGER.info("Model deserialized successfully")
     
-    def get_feature_importance(self) -> dict[str, float] | None:
+    def get_feature_importance(self, feature_names: list[str] | None = None) -> dict[str, float] | None:
         """Get feature importance scores from the trained model.
+        
+        Args:
+            feature_names: Optional list of feature names. If not provided,
+                          uses CycleFeatures names by default.
         
         Returns:
             Dictionary mapping feature names to importance scores,
@@ -193,7 +198,8 @@ class MLPredictionService:
             return None
         
         importance_values = self._model.feature_importances_
-        feature_names = LaggedFeatures.get_feature_names()
+        if feature_names is None:
+            feature_names = CycleFeatures.get_feature_names()
         
         return {
             name: float(importance)

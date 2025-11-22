@@ -11,7 +11,7 @@ from ..domain.services import (
     FeatureEngineeringService,
     MLPredictionService,
 )
-from ..domain.value_objects import TrainingExample
+from ..domain.value_objects import CycleFeatures, TrainingExample
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,12 +20,11 @@ class MLTrainingApplicationService:
     """Application service for training and managing ML models.
     
     This service orchestrates the complete training pipeline:
-    1. Extract historical data from database
-    2. Reconstruct heating cycles
-    3. Engineer features with lagged values
-    4. Label cycles with optimal durations
-    5. Train XGBoost model
-    6. Persist trained model
+    1. Extract historical heating cycles from database
+    2. Extract features from cycle start data only (no lagged features)
+    3. Label cycles with optimal durations
+    4. Train XGBoost model
+    5. Persist trained model
     """
     
     def __init__(
@@ -104,8 +103,10 @@ class MLTrainingApplicationService:
             )
             if power_history:
                 avg_power = sum(power for ts, power in power_history) / len(power_history)
+            else:
+                avg_power = 50.0  # Default power if no history available
                 
-            if self._cycle_labeler.is_cycle_valid_for_training(cycle, avg_power=avg_power if power_history else 50.0):
+            if self._cycle_labeler.is_cycle_valid_for_training(cycle, avg_power=avg_power):
                 valid_cycles.append(cycle)
         
         _LOGGER.info(
@@ -127,83 +128,14 @@ class MLTrainingApplicationService:
             # Calculate optimal label (Y target)
             optimal_duration = self._cycle_labeler.label_heating_cycle(cycle)
             
-            # Step 3a: Get historical data for feature engineering
-            # We need data from before cycle start to calculate lagged features
-            # Get history from 180 minutes before start to cover all lags (15, 30, 60, 90, 120, 180)
-            history_start = cycle.cycle_start - timedelta(minutes=200)  # Extra buffer for interpolation
-            history_end = cycle.cycle_start
-            
-            # Get temperature history for the room using generic entity history method
-            temp_history = await self._historical_reader.get_room_temperature_history(
-                climate_entity_id=cycle.climate_entity_id,
-                start_time=history_start,
-                end_time=history_end,
-                resolution_minutes=5,
-            )
-            
-            # Get power state history for the room using generic entity history method
-            power_history = await self._historical_reader.get_radiator_power_history(
-                climate_entity_id=cycle.climate_entity_id,
-                start_time=history_start,
-                end_time=history_end,
-            )
-
-            # Get slope history for the room using generic entity history method
-            slope_history = await self._historical_reader.get_room_slopes_history(
-                climate_entity_id=cycle.climate_entity_id,
-                start_time=history_start,
-                end_time=history_end,
-            )
-
-            cloud_coverage_history = await self._historical_reader.get_cloud_coverage_history(
-                cloud_coverage_entity_id=weather_entity_id,
-                start_time=history_start,
-                end_time=history_end,
-            )
-
-            outdoor_temp_history = await self._historical_reader.get_outdoor_temperature_history(
-                outdoor_temperature_entity_id=weather_entity_id,
-                start_time=history_start,
-                end_time=history_end,
-            )            
-
-            humidity_history = await self._historical_reader.get_room_humidity_history(
-                humidity_entity_id=humidity_entity_id,               
-                start_time=history_start,
-                end_time=history_end,
-            )
-            
-            # Step 3b: Create lagged features at cycle start time
+            # Step 3a: Create features from cycle start data only
             try:
-                # Calculate temperature delta for slope (simplified approach)
-                # In a full implementation, this would come from cycle data or be calculated
-                temp_delta = cycle.target_temp - cycle.initial_temp
+                # Extract features available at cycle start (no lagged features)
+                cycle_features = self._feature_engineer.create_cycle_features(cycle)
                 
-                # Récupère la valeur (second élément) du dernier tuple de chaque historique
-                last_slope = slope_history[-1][1] if slope_history else None
-                last_outdoor_temp = outdoor_temp_history[-1][1] if outdoor_temp_history else None
-                last_cloud_coverage = cloud_coverage_history[-1][1] if cloud_coverage_history else None
-                last_humidity = humidity_history[-1][1] if humidity_history else None
-
-                lagged_features = self._feature_engineer.create_lagged_features(
-                    current_temp=cycle.initial_temp,
-                    target_temp=cycle.target_temp,
-                    current_time=cycle.cycle_start,
-                    temp_history=temp_history,
-                    slope_history=slope_history,
-                    power_history=power_history,
-                    current_slope=last_slope,
-                    outdoor_temp=last_outdoor_temp,
-                    humidity=last_humidity,
-                    cloud_coverage=last_cloud_coverage,
-                    outdoor_temp_history=outdoor_temp_history,
-                    humidity_history=humidity_history,
-                    cloud_coverage_history=cloud_coverage_history,
-                )
-                
-                # Step 3c: Create training example
+                # Step 3b: Create training example
                 example = TrainingExample(
-                    features=lagged_features,
+                    features=cycle_features,
                     target_duration_minutes=optimal_duration,
                     cycle_id=cycle.cycle_id,
                 )
@@ -212,18 +144,10 @@ class MLTrainingApplicationService:
                 
                 _LOGGER.debug(
                     "Created training example for cycle %s: optimal=%.1f min, "
-                    "temp_delta=%.1f°C, lagged_features=%d",
+                    "temp_delta=%.1f°C",
                     cycle.cycle_id,
                     optimal_duration,
-                    temp_delta,
-                    len([f for f in [
-                        lagged_features.temp_lag_15min,
-                        lagged_features.temp_lag_30min,
-                        lagged_features.temp_lag_60min,
-                        lagged_features.temp_lag_90min,
-                        lagged_features.temp_lag_120min,
-                        lagged_features.temp_lag_180min,
-                    ] if f is not None]),
+                    cycle_features.temp_delta,
                 )
             except Exception as e:
                 _LOGGER.warning(
@@ -257,7 +181,7 @@ class MLTrainingApplicationService:
         ]
         
         # Convert feature dicts to flat arrays for XGBoost
-        # LaggedFeatures contains ~45 scalar float attributes, not time series
+        # CycleFeatures contains scalar float attributes available at cycle start
         feature_names = training_examples[0].features.get_feature_names()
         X_train_arrays = [
             [float(feature_dict[name]) if feature_dict[name] is not None else 0.0 

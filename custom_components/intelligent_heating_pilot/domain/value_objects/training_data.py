@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Union
 
+from .cycle_features import CycleFeatures
 from .lagged_features import LaggedFeatures
 from .multi_room_features import MultiRoomFeatures
 
@@ -13,10 +14,10 @@ class TrainingExample:
     """A single training example for the ML model.
     
     Combines input features (X) with the target label (Y).
-    Supports both single-room (LaggedFeatures) and multi-room (MultiRoomFeatures) models.
+    Supports single-room (CycleFeatures or LaggedFeatures) and multi-room (MultiRoomFeatures) models.
     """
     
-    features: Union[LaggedFeatures, MultiRoomFeatures]  # Input features (X)
+    features: Union[CycleFeatures, LaggedFeatures, MultiRoomFeatures]  # Input features (X)
     target_duration_minutes: float  # Target label (Y) - optimal preheat duration
     cycle_id: str  # Reference to the source heating cycle
     

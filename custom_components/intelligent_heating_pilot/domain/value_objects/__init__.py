@@ -5,6 +5,7 @@ Value objects are immutable data carriers that represent concepts in the domain.
 from __future__ import annotations
 
 from .common_features import CommonFeatures
+from .cycle_features import CycleFeatures
 from .environment_state import EnvironmentState
 from .heating_cycle import HeatingCycle
 from .heating_decision import HeatingAction, HeatingDecision
@@ -18,6 +19,7 @@ from .training_data import TrainingDataset, TrainingExample
 
 __all__ = [
     "CommonFeatures",
+    "CycleFeatures",
     "EnvironmentState",
     "HeatingAction",
     "HeatingCycle",

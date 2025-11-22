@@ -5,7 +5,7 @@ import logging
 import math
 from datetime import datetime, timedelta
 
-from ..value_objects import LaggedFeatures
+from ..value_objects import CycleFeatures, HeatingCycle, LaggedFeatures
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -204,4 +204,30 @@ class FeatureEngineeringService:
             power_lag_120min=power_lags[120],
             power_lag_180min=power_lags[180],
             temp_delta=temp_delta,
+        )
+    
+    def create_cycle_features(self, cycle: HeatingCycle) -> CycleFeatures:
+        """Create features from heating cycle data available at cycle start.
+        
+        This method extracts only the data that would be available at the
+        beginning of the heating cycle, preventing any forward-looking data leakage.
+        
+        Args:
+            cycle: The heating cycle containing initial conditions
+            
+        Returns:
+            CycleFeatures object with features available at cycle start.
+        """
+        # Calculate temperature delta
+        temp_delta = cycle.target_temp - cycle.initial_temp
+        
+        return CycleFeatures(
+            current_temp=cycle.initial_temp,
+            target_temp=cycle.target_temp,
+            temp_delta=temp_delta,
+            current_slope=cycle.initial_slope,
+            outdoor_temp=cycle.initial_outdoor_temp,
+            outdoor_humidity=cycle.initial_outdoor_humidity,
+            humidity=cycle.initial_humidity,
+            cloud_coverage=cycle.initial_cloud_coverage,
         )
