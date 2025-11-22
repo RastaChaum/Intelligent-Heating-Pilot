@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from .climate_commander import HAClimateCommander
 from .environment_reader import HAEnvironmentReader
+from .historical_data_reader import HAHistoricalDataReader
 from .model_storage import HAModelStorage
 from .scheduler_commander import HASchedulerCommander
 from .scheduler_reader import HASchedulerReader
@@ -14,6 +15,7 @@ from .scheduler_reader import HASchedulerReader
 __all__ = [
     "HAClimateCommander",
     "HAEnvironmentReader",
+    "HAHistoricalDataReader",
     "HAModelStorage",
     "HASchedulerCommander",
     "HASchedulerReader",

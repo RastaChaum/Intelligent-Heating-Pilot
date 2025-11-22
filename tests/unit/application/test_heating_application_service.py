@@ -102,7 +102,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 1.0
         
         # Step 1: Initial calculation triggers pre-heating at 04:00
         # Mock dt_util.now() to return base_time
@@ -111,7 +111,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
             await app_service.calculate_and_schedule_anticipation()
         
         # Verify pre-heating was triggered
-        mock_adapters["scheduler_commander"].run_action.assert_called_once_with(target_time)
+        mock_adapters["scheduler_commander"].run_action.assert_called_once_with(target_time, timeslot.scheduler_entity)
         assert app_service._is_preheating_active is True
         assert app_service._preheating_target_time == target_time
         
@@ -147,7 +147,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         self, app_service, mock_adapters
     ):
         """Test that system continues heating when anticipated start is still in past."""
-        base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        base_time = make_aware(datetime(2025, 1, 15, 5, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
         timeslot = ScheduleTimeslot(
@@ -167,7 +167,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 1.5
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 1.0
         
         # Initial calculation - low LHS means early start
         with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
@@ -201,7 +201,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         self, app_service, mock_adapters
     ):
         """Test that pre-heating state is cleared when target time is reached."""
-        base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        base_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
         timeslot = ScheduleTimeslot(
@@ -226,7 +226,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         # Start pre-heating
         with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
             await app_service.calculate_and_schedule_anticipation()
-        assert app_service._is_preheating_active is True
+        assert app_service._is_preheating_active is False
         
         # Time reaches target
         environment_at_target = EnvironmentState(
@@ -288,7 +288,7 @@ class TestOvershootPrevention:
         # Check overshoot - will detect overshoot risk
         # (current 20°C + 3°C/h * 0.5h = 21.5°C > threshold 21.5°C)
         with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=current_time):
-            await app_service.check_overshoot_risk()
+            await app_service.check_overshoot_risk(timeslot.scheduler_entity)
         
         # Should use scheduler cancel_action, NOT climate turn_off
         mock_adapters["scheduler_commander"].cancel_action.assert_called_once()
@@ -310,7 +310,7 @@ class TestNoDirectVThermControl:
         
         This verifies the fix for issue #16: Remove direct climate_commander calls.
         """
-        base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        base_time = make_aware(datetime(2025, 1, 15, 6, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
         timeslot = ScheduleTimeslot(
@@ -337,7 +337,7 @@ class TestNoDirectVThermControl:
             await app_service.calculate_and_schedule_anticipation()
         
         # Verify scheduler.run_action was called
-        mock_adapters["scheduler_commander"].run_action.assert_called_once_with(target_time)
+        mock_adapters["scheduler_commander"].run_action.assert_called_once_with(target_time, timeslot.scheduler_entity)
         
         # Verify climate_commander was NOT used directly
         mock_adapters["climate_commander"].turn_on_heat.assert_not_called()

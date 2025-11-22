@@ -16,9 +16,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
+from .infrastructure.adapters.ml_model_storage import HAMLModelStorage
 
-from .application import HeatingApplicationService
+from .application import HeatingApplicationService, MLTrainingApplicationService
 from .const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_HUMIDITY_IN_ENTITY,
@@ -34,6 +36,7 @@ from .const import (
 from .infrastructure.adapters import (
     HAClimateCommander,
     HAEnvironmentReader,
+    HAHistoricalDataReader,
     HAModelStorage,
     HASchedulerCommander,
     HASchedulerReader,
@@ -77,13 +80,16 @@ class IntelligentHeatingPilotCoordinator:
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
+        self._ml_storage: HAMLModelStorage | None = None
+        self._historical_reader: HAHistoricalDataReader | None = None
         self._scheduler_reader: HASchedulerReader | None = None
         self._scheduler_commander: HASchedulerCommander | None = None
         self._climate_commander: HAClimateCommander | None = None
         self._environment_reader: HAEnvironmentReader | None = None
         
-        # Application service
+        # Application services
         self._app_service: HeatingApplicationService | None = None
+        self._ml_training_service: MLTrainingApplicationService | None = None
         
         # Event bridge
         self._event_bridge: HAEventBridge | None = None
@@ -101,6 +107,11 @@ class IntelligentHeatingPilotCoordinator:
             self.config.entry_id,
             retention_days=self._lhs_retention_days
         )
+        self._ml_storage = HAMLModelStorage(
+            Store(self.hass, 1, self.config.entry_id)
+        )
+
+        self._historical_reader = HAHistoricalDataReader(self.hass)
         self._scheduler_reader = HASchedulerReader(
             self.hass,
             self._scheduler_entities,
@@ -128,6 +139,17 @@ class IntelligentHeatingPilotCoordinator:
             environment_reader=self._environment_reader,
             lhs_window_hours=self._lhs_window_hours,
         )
+        
+        # Create ML training service with historical data reader
+        try:
+            self._ml_training_service = MLTrainingApplicationService(
+                historical_reader=self._historical_reader,
+                model_storage=self._ml_storage,
+            )
+            _LOGGER.info("ML training service initialized with historical data reader")
+        except Exception as e:
+            _LOGGER.error("Failed to initialize ML training service: %s", e)
+            self._ml_training_service = None
         
         # Create event bridge
         monitored_entities = []
@@ -325,7 +347,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 coordinator._lhs_cache = await coordinator._model_storage.get_learned_heating_slope()
                 coordinator._slopes_cache = await coordinator._model_storage.get_slopes_in_history()
     
+    async def handle_train_ml_model(call):
+        """Handle train_ml_model service to manually trigger ML model training."""
+        if not coordinator._ml_training_service:
+            _LOGGER.error("ML training service not available. Historical data reader not implemented.")
+            return
+        
+        # Get parameters from service call
+        lookback_months = call.data.get("lookback_months", 6)
+        min_cycles = call.data.get("min_cycles", 10)
+        
+        _LOGGER.info(
+            "Starting ML model training for room %s (lookback: %d months, min cycles: %d)",
+            coordinator._vtherm_entity,
+            lookback_months,
+            min_cycles,
+        )
+        
+        try:
+            result = await coordinator._ml_training_service.train_model_for_room(
+                climate_entity_id=coordinator._vtherm_entity,
+                weather_entity_id=coordinator._cloud_cover,
+                humidity_entity_id=coordinator._humidity_in,
+                lookback_months=lookback_months,
+                min_cycles=min_cycles,
+            )
+            
+            _LOGGER.info(
+                "ML model training completed: %d cycles extracted, %d training examples, "
+                "RMSE: %.2f min, MAE: %.2f min",
+                result.get("cycles_extracted", 0),
+                result.get("training_examples", 0),
+                result.get("rmse", 0),
+                result.get("mae", 0),
+            )
+        except Exception as e:
+            _LOGGER.error("ML model training failed: %s", e, exc_info=True)
+    
     hass.services.async_register(DOMAIN, "reset_learning", handle_reset_learning)
+    hass.services.async_register(DOMAIN, "train_ml_model", handle_train_ml_model)
     
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
