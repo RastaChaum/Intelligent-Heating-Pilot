@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .lagged_features import LaggedFeatures
+from .cycle_features import CycleFeatures
 
 
 @dataclass(frozen=True)
@@ -11,10 +11,10 @@ class RoomFeatures:
     """Room-specific thermal features.
     
     These features are unique to each individual room and capture
-    its specific thermal behavior and state.
+    its specific thermal behavior and state at the start of a heating cycle.
     """
     
-    lagged_features: LaggedFeatures  # Lagged features for the specific room 
+    cycle_features: CycleFeatures  # Cycle features for the specific room 
         
     def to_feature_dict(self, prefix: str = "") -> dict[str, float]:
         """Convert to dictionary for ML model input.
@@ -26,30 +26,13 @@ class RoomFeatures:
             Dictionary with feature names as keys and values as floats.
             None values are replaced with 0.0.
         """
-        return {
-            f"{prefix}current_temp": self.lagged_features.current_temp,
-            f"{prefix}target_temp": self.lagged_features.target_temp,
-            f"{prefix}temp_delta": self.lagged_features.temp_delta,
-            f"{prefix}current_slope": self.lagged_features.current_slope or 0.0,
-            f"{prefix}slope_lag_15min": self.lagged_features.slope_lag_15min or 0.0,
-            f"{prefix}slope_lag_30min": self.lagged_features.slope_lag_30min or 0.0,
-            f"{prefix}slope_lag_60min": self.lagged_features.slope_lag_60min or 0.0,
-            f"{prefix}slope_lag_90min": self.lagged_features.slope_lag_90min or 0.0,
-            f"{prefix}slope_lag_120min": self.lagged_features.slope_lag_120min or 0.0,
-            f"{prefix}slope_lag_180min": self.lagged_features.slope_lag_180min or 0.0,
-            f"{prefix}temp_lag_15min": self.lagged_features.temp_lag_15min or 0.0,
-            f"{prefix}temp_lag_30min": self.lagged_features.temp_lag_30min or 0.0,
-            f"{prefix}temp_lag_60min": self.lagged_features.temp_lag_60min or 0.0,
-            f"{prefix}temp_lag_90min": self.lagged_features.temp_lag_90min or 0.0,
-            f"{prefix}temp_lag_120min": self.lagged_features.temp_lag_120min or 0.0,
-            f"{prefix}temp_lag_180min": self.lagged_features.temp_lag_180min or 0.0,
-            f"{prefix}power_lag_15min": self.lagged_features.power_lag_15min or 0.0,
-            f"{prefix}power_lag_30min": self.lagged_features.power_lag_30min or 0.0,
-            f"{prefix}power_lag_60min": self.lagged_features.power_lag_60min or 0.0,
-            f"{prefix}power_lag_90min": self.lagged_features.power_lag_90min or 0.0,
-            f"{prefix}power_lag_120min": self.lagged_features.power_lag_120min or 0.0,
-            f"{prefix}power_lag_180min": self.lagged_features.power_lag_180min or 0.0,
-        }
+        # Get base features from cycle_features
+        base_dict = self.cycle_features.to_feature_dict()
+        
+        # Add prefix if needed
+        if prefix:
+            return {f"{prefix}{key}": value for key, value in base_dict.items()}
+        return base_dict
     
     @staticmethod
     def get_feature_names(prefix: str = "") -> list[str]:
@@ -61,27 +44,10 @@ class RoomFeatures:
         Returns:
             List of feature names in consistent order.
         """
-        return [
-            f"{prefix}current_temp",
-            f"{prefix}target_temp",
-            f"{prefix}temp_delta",
-            f"{prefix}current_slope",
-            f"{prefix}slope_lag_15min",
-            f"{prefix}slope_lag_30min",
-            f"{prefix}slope_lag_60min",
-            f"{prefix}slope_lag_90min",
-            f"{prefix}slope_lag_120min",
-            f"{prefix}slope_lag_180min",
-            f"{prefix}temp_lag_15min",
-            f"{prefix}temp_lag_30min",
-            f"{prefix}temp_lag_60min",
-            f"{prefix}temp_lag_90min",
-            f"{prefix}temp_lag_120min",
-            f"{prefix}temp_lag_180min",
-            f"{prefix}power_lag_15min",
-            f"{prefix}power_lag_30min",
-            f"{prefix}power_lag_60min",
-            f"{prefix}power_lag_90min",
-            f"{prefix}power_lag_120min",
-            f"{prefix}power_lag_180min",
-        ]
+        # Get base feature names from CycleFeatures
+        base_names = CycleFeatures.get_feature_names()
+        
+        # Add prefix if needed
+        if prefix:
+            return [f"{prefix}{name}" for name in base_names]
+        return base_names
