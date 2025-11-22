@@ -73,6 +73,15 @@ class HeatingApplicationService:
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None  # Track which scheduler is being used
     
+    def _clear_anticipation_state(self) -> None:
+        """Clear all anticipation tracking state."""
+        self._is_preheating_active = False
+        self._preheating_target_time = None
+        self._last_scheduled_time = None
+        self._last_scheduled_lhs = None
+        self._active_scheduler_entity = None
+        _LOGGER.debug("Anticipation state cleared")
+    
     async def process_slope_update(self, new_slope: float) -> None:
         """Process a new slope value from VTherm.
         
@@ -165,12 +174,7 @@ class HeatingApplicationService:
                     "Active scheduler %s has been disabled. Clearing anticipation state.",
                     self._active_scheduler_entity
                 )
-                # Clear all tracking state
-                self._is_preheating_active = False
-                self._preheating_target_time = None
-                self._last_scheduled_time = None
-                self._last_scheduled_lhs = None
-                self._active_scheduler_entity = None
+                self._clear_anticipation_state()
                 # Return None to clear sensor values
                 return None
         
@@ -284,9 +288,7 @@ class HeatingApplicationService:
             )
             # If we were tracking this scheduler, clear the state
             if self._active_scheduler_entity == scheduler_entity_id:
-                self._is_preheating_active = False
-                self._preheating_target_time = None
-                self._active_scheduler_entity = None
+                self._clear_anticipation_state()
             return
         
         # Check if we're currently pre-heating and should revert
@@ -309,9 +311,7 @@ class HeatingApplicationService:
                         "Scheduler %s is now disabled. Cannot cancel action.",
                         scheduler_entity_id
                     )
-                self._is_preheating_active = False
-                self._preheating_target_time = None
-                self._active_scheduler_entity = None
+                self._clear_anticipation_state()
                 # Update tracking for new anticipated time
                 self._last_scheduled_time = anticipated_start
                 self._last_scheduled_lhs = lhs
@@ -420,9 +420,7 @@ class HeatingApplicationService:
                     "Scheduler %s is disabled. Cannot cancel action for overshoot prevention.",
                     scheduler_entity_id
                 )
-            self._is_preheating_active = False
-            self._preheating_target_time = None
-            self._active_scheduler_entity = None
+            self._clear_anticipation_state()
     
     async def reset_learned_slopes(self) -> None:
         """Reset all learned slope history."""

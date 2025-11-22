@@ -294,6 +294,10 @@ class HASchedulerReader(ISchedulerReader):
     def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
         """Check if a specific scheduler is enabled.
         
+        A scheduler is considered enabled if its state is NOT "off".
+        This includes states like "on", "idle", "waiting", etc.
+        Only the explicit "off" state means the scheduler is disabled.
+        
         Args:
             scheduler_entity_id: The scheduler entity ID to check
             
