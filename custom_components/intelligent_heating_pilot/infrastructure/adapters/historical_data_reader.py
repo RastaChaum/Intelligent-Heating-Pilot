@@ -119,12 +119,13 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                 current_cycle_start = state.last_changed
                 current_cycle_initial_temp = current_temp
                 current_cycle_target_temp = target_temp
+                delta_temp = current_cycle_target_temp - current_cycle_initial_temp if current_cycle_initial_temp is not None and current_cycle_target_temp is not None else 0.0
                 _LOGGER.debug(
                     "Cycle started at %s (initial: %.1f°C, target: %.1f°C, delta: %.1f°C)",
                     current_cycle_start,
                     current_cycle_initial_temp,
                     current_cycle_target_temp,
-                    current_cycle_target_temp - current_cycle_initial_temp,
+                    delta_temp,
                 )
             
             # Detect cycle end: conditions no longer met
@@ -162,9 +163,9 @@ class HAHistoricalDataReader(IHistoricalDataReader):
                     cycle_start=current_cycle_start,
                     cycle_end=cycle_end,
                     duration_minutes=duration_minutes,
-                    initial_temp=current_cycle_initial_temp,
-                    target_temp=current_cycle_target_temp,
-                    final_temp=final_temp,
+                    initial_temp=current_cycle_initial_temp if current_cycle_initial_temp is not None else 0.0,
+                    target_temp=current_cycle_target_temp if current_cycle_target_temp is not None else 0.0,
+                    final_temp=final_temp if final_temp is not None else 0.0,
                     initial_slope=initial_slope,
                     final_slope=final_slope,
                     initial_humidity=initial_humidity,

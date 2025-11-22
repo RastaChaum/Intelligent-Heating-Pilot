@@ -47,9 +47,10 @@ class CycleLabelingService:
     def is_cycle_valid_for_training(
         self,
         cycle: HeatingCycle,
-        min_duration_minutes: float = 5.0,
+        min_duration_minutes: float = 10.0,
         max_duration_minutes: float = 360.0,
         min_temp_increase: float = 0.1,
+        avg_power: float = 0.0,
     ) -> bool:
         """Check if a heating cycle is valid for training.
         
@@ -67,6 +68,15 @@ class CycleLabelingService:
         Returns:
             True if cycle is valid for training, False otherwise.
         """
+        # Heat must have run at last avg_power
+        if avg_power <= 20.0:
+            _LOGGER.debug(
+                "Cycle %s invalid: no heating power detected (avg_power=%.1f%% < 20.0%)",
+                cycle.cycle_id,
+                avg_power,
+            )
+            return False
+
         # Must have positive duration within reasonable bounds
         if cycle.duration_minutes < min_duration_minutes:
             _LOGGER.debug(

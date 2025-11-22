@@ -95,10 +95,18 @@ class MLTrainingApplicationService:
         _LOGGER.info("Extracted %d heating cycles from database", len(cycles))
         
         # Step 2: Filter valid cycles for training
-        valid_cycles = [
-            cycle for cycle in cycles
-            if self._cycle_labeler.is_cycle_valid_for_training(cycle)
-        ]
+        valid_cycles = []
+        for cycle in cycles:
+            power_history = await self._historical_reader.get_radiator_power_history(
+                climate_entity_id=cycle.climate_entity_id,
+                start_time=cycle.cycle_start,
+                end_time=cycle.cycle_end,
+            )
+            if power_history:
+                avg_power = sum(power for ts, power in power_history) / len(power_history)
+                
+            if self._cycle_labeler.is_cycle_valid_for_training(cycle, avg_power=avg_power if power_history else 50.0):
+                valid_cycles.append(cycle)
         
         _LOGGER.info(
             "Filtered to %d valid cycles (removed %d invalid)",
