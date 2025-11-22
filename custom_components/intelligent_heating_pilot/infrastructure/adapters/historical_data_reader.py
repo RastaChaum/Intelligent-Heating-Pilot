@@ -392,7 +392,11 @@ class HAHistoricalDataReader(IHistoricalDataReader):
         return history_data
        
     async def _get_slope_at_time(self, climate_entity_id: str, timestamp: datetime) -> float | None:
-        """Get learned slope at specific time."""
+        """Get learned slope at specific time.
+        
+        Queries a small window around the timestamp (±1 minute) to account for
+        slight timing differences in state updates.
+        """
         states = await self._get_entity_states(climate_entity_id, timestamp - timedelta(minutes=1), timestamp + timedelta(minutes=1))
         for state in states:
             temp = self._safe_float(get_vtherm_attribute(state, "temperature_slope"))

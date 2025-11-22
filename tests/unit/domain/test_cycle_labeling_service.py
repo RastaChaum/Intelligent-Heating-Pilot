@@ -185,7 +185,7 @@ class TestCycleLabelingService(unittest.TestCase):
             final_cloud_coverage=None,
         )
         
-        # Should be rejected with default thresholds (min_duration=5.0, min_temp_increase=0.1)
+        # Should pass with default thresholds (min_duration=5.0, min_temp_increase=0.1)
         self.assertTrue(self.service.is_cycle_valid_for_training(cycle))
         
         # Should be rejected with stricter thresholds

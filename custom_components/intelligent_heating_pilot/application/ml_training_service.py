@@ -88,6 +88,7 @@ class MLTrainingApplicationService:
             end_date=end_date,
             humidity_entity_id=humidity_entity_id,
             outdoor_temp_entity_id=weather_entity_id,
+            outdoor_humidity_entity_id=weather_entity_id,  # Often same entity provides temp and humidity
             cloud_coverage_entity_id=weather_entity_id,
         )
         
