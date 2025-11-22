@@ -23,3 +23,15 @@ class ISchedulerReader(ABC):
             The next schedule timeslot, or None if no timeslots are scheduled.
         """
         pass
+    
+    @abstractmethod
+    def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
+        """Check if a specific scheduler is enabled.
+        
+        Args:
+            scheduler_entity_id: The scheduler entity ID to check
+            
+        Returns:
+            True if the scheduler is enabled (state != "off"), False otherwise
+        """
+        pass
