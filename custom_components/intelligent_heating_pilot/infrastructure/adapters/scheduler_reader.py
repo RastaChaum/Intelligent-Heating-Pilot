@@ -78,6 +78,11 @@ class HASchedulerReader(ISchedulerReader):
                     _LOGGER.debug("Scheduler entity not yet available (HA starting): %s", entity_id)
                 continue
             
+            # Skip disabled schedulers (state is "off")
+            if state.state == "off":
+                _LOGGER.debug("Scheduler %s is disabled (state: off), skipping", entity_id)
+                continue
+            
             # Extract next trigger time and target temperature
             next_time, target_temp = self._extract_timeslot_data(state)
             
