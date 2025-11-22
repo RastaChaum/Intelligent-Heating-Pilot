@@ -291,6 +291,24 @@ class HASchedulerReader(ISchedulerReader):
         
         return None
 
+    def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
+        """Check if a specific scheduler is enabled.
+        
+        Args:
+            scheduler_entity_id: The scheduler entity ID to check
+            
+        Returns:
+            True if the scheduler is enabled (state != "off"), False otherwise
+        """
+        state = self._hass.states.get(scheduler_entity_id)
+        if not state:
+            _LOGGER.debug("Scheduler entity not found when checking state: %s", scheduler_entity_id)
+            return False
+        
+        is_enabled = state.state != "off"
+        _LOGGER.debug("Scheduler %s state: %s (enabled: %s)", scheduler_entity_id, state.state, is_enabled)
+        return is_enabled
+    
     def _resolve_preset_temperature(self, preset: str) -> float | None:
         """Resolve a preset name to a numeric temperature using VTherm attributes.
         

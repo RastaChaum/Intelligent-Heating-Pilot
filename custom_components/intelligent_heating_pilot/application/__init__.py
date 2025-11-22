@@ -71,6 +71,7 @@ class HeatingApplicationService:
         self._last_scheduled_lhs: float | None = None
         self._is_preheating_active: bool = False
         self._preheating_target_time: datetime | None = None
+        self._active_scheduler_entity: str | None = None  # Track which scheduler is being used
     
     async def process_slope_update(self, new_slope: float) -> None:
         """Process a new slope value from VTherm.
@@ -157,10 +158,30 @@ class HeatingApplicationService:
         Returns:
             Dict with anticipation data for sensors, or None if not applicable
         """
+        # Check if the currently tracked scheduler has been disabled
+        if self._active_scheduler_entity:
+            if not self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
+                _LOGGER.warning(
+                    "Active scheduler %s has been disabled. Clearing anticipation state.",
+                    self._active_scheduler_entity
+                )
+                # Clear all tracking state
+                self._is_preheating_active = False
+                self._preheating_target_time = None
+                self._last_scheduled_time = None
+                self._last_scheduled_lhs = None
+                self._active_scheduler_entity = None
+                # Return None to clear sensor values
+                return None
+        
         # Get next timeslot
         timeslot = await self._scheduler_reader.get_next_timeslot()
         if not timeslot:
             _LOGGER.debug("No scheduled timeslot found")
+            # Clear active scheduler tracking if no timeslot is available
+            if self._active_scheduler_entity:
+                _LOGGER.debug("Clearing active scheduler tracking (no timeslot available)")
+                self._active_scheduler_entity = None
             return None
         
         # Get current environment
@@ -255,6 +276,19 @@ class HeatingApplicationService:
         """
         now = dt_util.now()
         
+        # Check if scheduler is enabled before proceeding
+        if not self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
+            _LOGGER.warning(
+                "Scheduler %s is disabled. Skipping anticipation scheduling.",
+                scheduler_entity_id
+            )
+            # If we were tracking this scheduler, clear the state
+            if self._active_scheduler_entity == scheduler_entity_id:
+                self._is_preheating_active = False
+                self._preheating_target_time = None
+                self._active_scheduler_entity = None
+            return
+        
         # Check if we're currently pre-heating and should revert
         if self._is_preheating_active:
             # If anticipated start moved to the future (after now), we should stop pre-heating
@@ -267,9 +301,17 @@ class HeatingApplicationService:
                     self._last_scheduled_lhs or 0.0,
                     lhs
                 )
-                await self._scheduler_commander.cancel_action(scheduler_entity_id)
+                # Check scheduler is still enabled before calling cancel_action
+                if self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
+                    await self._scheduler_commander.cancel_action(scheduler_entity_id)
+                else:
+                    _LOGGER.warning(
+                        "Scheduler %s is now disabled. Cannot cancel action.",
+                        scheduler_entity_id
+                    )
                 self._is_preheating_active = False
                 self._preheating_target_time = None
+                self._active_scheduler_entity = None
                 # Update tracking for new anticipated time
                 self._last_scheduled_time = anticipated_start
                 self._last_scheduled_lhs = lhs
@@ -280,6 +322,7 @@ class HeatingApplicationService:
                 _LOGGER.info("Target time reached, pre-heating complete")
                 self._is_preheating_active = False
                 self._preheating_target_time = None
+                self._active_scheduler_entity = None
                 return
         
         # Check for duplicate scheduling (only if not already pre-heating)
@@ -302,11 +345,19 @@ class HeatingApplicationService:
                 "Anticipated start %s is past, triggering pre-heating immediately",
                 anticipated_start.isoformat()
             )
-            # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
-            # Respects scheduler conditions (skip_conditions=False in the adapter)
-            await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
-            self._is_preheating_active = True
-            self._preheating_target_time = target_time
+            # Check scheduler is enabled before calling run_action
+            if self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
+                # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
+                # Respects scheduler conditions (skip_conditions=False in the adapter)
+                await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
+                self._is_preheating_active = True
+                self._preheating_target_time = target_time
+                self._active_scheduler_entity = scheduler_entity_id
+            else:
+                _LOGGER.warning(
+                    "Scheduler %s is disabled. Cannot trigger pre-heating.",
+                    scheduler_entity_id
+                )
             return
         
         # If both are in past, skip
@@ -321,6 +372,8 @@ class HeatingApplicationService:
             target_time.isoformat(),
             (anticipated_start - now).total_seconds() / 60.0
         )
+        # Track which scheduler we're anticipating for
+        self._active_scheduler_entity = scheduler_entity_id
         # Note: Actual scheduling is triggered by periodic updates from event_bridge
     
     async def check_overshoot_risk(self, scheduler_entity_id: str) -> None:
@@ -357,11 +410,19 @@ class HeatingApplicationService:
                 estimated_temp,
                 timeslot.target_temp
             )
-            # Revert to current scheduled state instead of directly turning off
-            # This respects scheduler conditions and returns to the proper setpoint
-            await self._scheduler_commander.cancel_action(scheduler_entity_id)
+            # Check scheduler is enabled before calling cancel_action
+            if self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
+                # Revert to current scheduled state instead of directly turning off
+                # This respects scheduler conditions and returns to the proper setpoint
+                await self._scheduler_commander.cancel_action(scheduler_entity_id)
+            else:
+                _LOGGER.warning(
+                    "Scheduler %s is disabled. Cannot cancel action for overshoot prevention.",
+                    scheduler_entity_id
+                )
             self._is_preheating_active = False
             self._preheating_target_time = None
+            self._active_scheduler_entity = None
     
     async def reset_learned_slopes(self) -> None:
         """Reset all learned slope history."""

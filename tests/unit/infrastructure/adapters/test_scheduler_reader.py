@@ -335,6 +335,37 @@ class TestHASchedulerReader(unittest.TestCase):
         # Should return None for 0 values
         result = reader._resolve_preset_temperature("eco")
         self.assertIsNone(result)
+    
+    def test_is_scheduler_enabled_on(self):
+        """Test that is_scheduler_enabled returns True for enabled schedulers."""
+        mock_state = Mock()
+        mock_state.state = "on"
+        self.mock_hass.states.get.return_value = mock_state
+        
+        result = self.reader.is_scheduler_enabled("switch.heating_schedule")
+        
+        self.assertTrue(result)
+        self.mock_hass.states.get.assert_called_once_with("switch.heating_schedule")
+    
+    def test_is_scheduler_enabled_off(self):
+        """Test that is_scheduler_enabled returns False for disabled schedulers."""
+        mock_state = Mock()
+        mock_state.state = "off"
+        self.mock_hass.states.get.return_value = mock_state
+        
+        result = self.reader.is_scheduler_enabled("switch.heating_schedule")
+        
+        self.assertFalse(result)
+        self.mock_hass.states.get.assert_called_once_with("switch.heating_schedule")
+    
+    def test_is_scheduler_enabled_entity_not_found(self):
+        """Test that is_scheduler_enabled returns False when entity not found."""
+        self.mock_hass.states.get.return_value = None
+        
+        result = self.reader.is_scheduler_enabled("switch.heating_schedule")
+        
+        self.assertFalse(result)
+        self.mock_hass.states.get.assert_called_once_with("switch.heating_schedule")
 
 
 if __name__ == "__main__":
