@@ -1,4 +1,5 @@
 """Tests for HASchedulerReader adapter."""
+import asyncio
 import unittest
 from datetime import datetime
 from unittest.mock import Mock, MagicMock
@@ -30,7 +31,6 @@ class TestHASchedulerReader(unittest.TestCase):
         reader = HASchedulerReader(self.mock_hass, [])
         
         # Execute
-        import asyncio
         result = asyncio.run(reader.get_next_timeslot())
         
         # Assert
@@ -42,7 +42,6 @@ class TestHASchedulerReader(unittest.TestCase):
         self.mock_hass.states.get.return_value = None
         
         # Execute
-        import asyncio
         result = asyncio.run(self.reader.get_next_timeslot())
         
         # Assert
@@ -67,7 +66,6 @@ class TestHASchedulerReader(unittest.TestCase):
         self.mock_hass.states.get.return_value = mock_state
         
         # Execute
-        import asyncio
         result = asyncio.run(self.reader.get_next_timeslot())
         
         # Assert
@@ -95,7 +93,6 @@ class TestHASchedulerReader(unittest.TestCase):
         self.mock_hass.states.get.return_value = mock_state
         
         # Execute
-        import asyncio
         result = asyncio.run(self.reader.get_next_timeslot())
         
         # Assert: should return None since scheduler is disabled
@@ -136,7 +133,6 @@ class TestHASchedulerReader(unittest.TestCase):
         self.mock_hass.states.get.side_effect = mock_get_state
         
         # Execute
-        import asyncio
         result = asyncio.run(reader.get_next_timeslot())
         
         # Assert: should return the earlier timeslot
@@ -179,7 +175,6 @@ class TestHASchedulerReader(unittest.TestCase):
         self.mock_hass.states.get.side_effect = mock_get_state
         
         # Execute
-        import asyncio
         result = asyncio.run(reader.get_next_timeslot())
         
         # Assert: should return the enabled scheduler's timeslot
@@ -222,7 +217,6 @@ class TestHASchedulerReader(unittest.TestCase):
         self.mock_hass.states.get.side_effect = mock_get_state
         
         # Execute
-        import asyncio
         result = asyncio.run(reader.get_next_timeslot())
         
         # Assert: should return None since all schedulers are disabled
