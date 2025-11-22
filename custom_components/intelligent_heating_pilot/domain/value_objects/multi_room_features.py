@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .common_features import CommonFeatures
-from .lagged_features import LaggedFeatures
 from .room_features import RoomFeatures
 
 
@@ -76,7 +75,7 @@ class MultiRoomFeatures:
         Returns:
             Total feature count.
         """
-        # Target room: 16 features
+        # Target room: 8 features (from CycleFeatures)
         # Common: 23 features
-        # Each adjacent room: 16 features
-        return 16 + 23 + (16 * len(self.adjacent_rooms))
+        # Each adjacent room: 8 features (from CycleFeatures)
+        return 8 + 23 + (8 * len(self.adjacent_rooms))

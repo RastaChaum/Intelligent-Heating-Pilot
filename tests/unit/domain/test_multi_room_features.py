@@ -7,10 +7,32 @@ import pytest
 
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     CommonFeatures,
-    LaggedFeatures,
+    CycleFeatures,
     MultiRoomFeatures,
     RoomFeatures,
 )
+
+
+def create_test_cycle_features(
+    current_temp: float = 20.0,
+    target_temp: float = 22.0,
+    current_slope: float = 0.3,
+    outdoor_temp: float = 5.0,
+    outdoor_humidity: float = 80.0,
+    humidity: float = 50.0,
+    cloud_coverage: float = 40.0,
+) -> CycleFeatures:
+    """Helper to create test CycleFeatures."""
+    return CycleFeatures(
+        current_temp=current_temp,
+        target_temp=target_temp,
+        temp_delta=target_temp - current_temp,
+        current_slope=current_slope,
+        outdoor_temp=outdoor_temp,
+        outdoor_humidity=outdoor_humidity,
+        humidity=humidity,
+        cloud_coverage=cloud_coverage,
+    )
 
 
 class TestCommonFeatures:
@@ -87,101 +109,44 @@ class TestRoomFeatures:
     
     def test_create_room_features(self) -> None:
         """Test creating room features."""
-        laggued = LaggedFeatures(
+        from custom_components.intelligent_heating_pilot.domain.value_objects import CycleFeatures
+        
+        cycle_feats = CycleFeatures(
             current_temp=20.0,
             target_temp=22.0,
-            current_slope=0.3,
-            temp_lag_15min=19.8,
-            temp_lag_30min=19.6,
-            temp_lag_60min=19.4,
-            temp_lag_90min=19.2,
-            temp_lag_120min=19.0,
-            temp_lag_180min=18.8,
-            power_lag_15min=1.0,
-            power_lag_30min=1.0,
-            power_lag_60min=0.5,
-            power_lag_90min=0.0,
-            power_lag_120min=0.0,
-            power_lag_180min=0.0,
-            slope_lag_15min=0.3,
-            slope_lag_30min=0.3,
-            slope_lag_60min=0.3,
-            slope_lag_90min=0.3,
-            slope_lag_120min=0.3,
-            slope_lag_180min=0.3,
             temp_delta=2.0,
+            current_slope=0.3,
+            outdoor_temp=5.0,
+            outdoor_humidity=80.0,
+            humidity=50.0,
+            cloud_coverage=40.0,
         )
-        room = RoomFeatures(laggued)
+        room = RoomFeatures(cycle_feats)
         
-        assert room.lagged_features.current_temp == 20.0
-        assert room.lagged_features.temp_delta == 2.0
+        assert room.cycle_features.current_temp == 20.0
+        assert room.cycle_features.temp_delta == 2.0
     
     def test_room_features_to_dict_no_prefix(self) -> None:
         """Test converting room features to dictionary without prefix."""
-        laggued = LaggedFeatures(
-            current_temp=20.0,
-            target_temp=22.0,
-            current_slope=0.3,
-            temp_lag_15min=19.8,
-            temp_lag_30min=19.6,
-            temp_lag_60min=19.4,
-            temp_lag_90min=19.2,
-            temp_lag_120min=19.0,
-            temp_lag_180min=18.8,
-            power_lag_15min=1.0,
-            power_lag_30min=1.0,
-            power_lag_60min=0.5,
-            power_lag_90min=0.0,
-            power_lag_120min=0.0,
-            power_lag_180min=0.0,
-            slope_lag_15min=0.3,
-            slope_lag_30min=0.3,
-            slope_lag_60min=0.3,
-            slope_lag_90min=0.3,
-            slope_lag_120min=0.3,
-            slope_lag_180min=0.3,
-            temp_delta=2.0,
-        )
+        laggued = create_test_cycle_features()
 
         room = RoomFeatures(laggued)
         
         feature_dict = room.to_feature_dict()
         
-        assert len(feature_dict) == 22  # All room features
+        assert len(feature_dict) == 8  # All room features
         assert feature_dict["current_temp"] == 20.0
         assert feature_dict["temp_delta"] == 2.0
     
     def test_room_features_to_dict_with_prefix(self) -> None:
         """Test converting room features to dictionary with prefix."""
-        laggued = LaggedFeatures(
-            current_temp=20.0,
-            target_temp=22.0,
-            current_slope=0.3,
-            temp_lag_15min=19.8,
-            temp_lag_30min=19.6,
-            temp_lag_60min=19.4,
-            temp_lag_90min=19.2,
-            temp_lag_120min=19.0,
-            temp_lag_180min=18.8,
-            slope_lag_15min=0.3,
-            slope_lag_30min=0.3,
-            slope_lag_60min=0.3,
-            slope_lag_90min=0.3,
-            slope_lag_120min=0.3,
-            slope_lag_180min=0.3,
-            power_lag_15min=1.0,
-            power_lag_30min=1.0,
-            power_lag_60min=0.5,
-            power_lag_90min=0.0,
-            power_lag_120min=0.0,
-            power_lag_180min=0.0,
-            temp_delta=2.0,)
+        laggued = create_test_cycle_features()
         
         room = RoomFeatures(laggued)
         
         feature_dict = room.to_feature_dict(prefix="bedroom_")
         
-        assert len(feature_dict) == 22
+        assert len(feature_dict) == 8  # All room features with prefix
         assert feature_dict["bedroom_current_temp"] == 20.0
         assert feature_dict["bedroom_temp_delta"] == 2.0
 
@@ -217,58 +182,12 @@ class TestMultiRoomFeatures:
             hour_cos=0.866,
         )
 
-        laggued = LaggedFeatures(
-            current_temp=20.0,
-            target_temp=22.0,
-            current_slope=0.3,
-            temp_lag_15min=19.8,
-            temp_lag_30min=19.6,
-            temp_lag_60min=19.4,
-            temp_lag_90min=19.2,
-            temp_lag_120min=19.0,
-            temp_lag_180min=18.8,
-            power_lag_15min=1.0,
-            power_lag_30min=1.0,
-            power_lag_60min=0.5,
-            power_lag_90min=0.0,
-            power_lag_120min=0.0,
-            power_lag_180min=0.0,
-            slope_lag_15min=0.3,
-            slope_lag_30min=0.3,
-            slope_lag_60min=0.3,
-            slope_lag_90min=0.3,
-            slope_lag_120min=0.3,
-            slope_lag_180min=0.3,
-            temp_delta=2.0,
-        )
+        laggued = create_test_cycle_features(current_temp=20.0, target_temp=22.0)
 
         target = RoomFeatures(laggued
         )
         
-        laggued2 = LaggedFeatures(
-            current_temp=19.0,
-            target_temp=20.0,
-            current_slope=0.1,
-            temp_lag_15min=18.9,
-            temp_lag_30min=18.8,
-            temp_lag_60min=18.7,
-            temp_lag_90min=18.6,
-            temp_lag_120min=18.5,
-            temp_lag_180min=18.4,
-            power_lag_15min=0.0,
-            power_lag_30min=0.0,
-            power_lag_60min=0.0,
-            power_lag_90min=0.0,
-            power_lag_120min=0.0,
-            power_lag_180min=0.0,
-            slope_lag_15min=0.1,
-            slope_lag_30min=0.1,
-            slope_lag_60min=0.1,
-            slope_lag_90min=0.1,
-            slope_lag_120min=0.1,
-            slope_lag_180min=0.1,
-            temp_delta=1.0,
-        )
+        laggued2 = create_test_cycle_features(current_temp=19.0, target_temp=21.0)
 
         adjacent_room = RoomFeatures(laggued2)
         
@@ -279,7 +198,7 @@ class TestMultiRoomFeatures:
         )
         
         assert multi.common.outdoor_temp == 5.0
-        assert multi.target_room.lagged_features.current_temp == 20.0
+        assert multi.target_room.cycle_features.current_temp == 20.0
         assert "bedroom" in multi.adjacent_rooms
     
     def test_multi_room_to_dict(self) -> None:
@@ -310,58 +229,11 @@ class TestMultiRoomFeatures:
             hour_cos=0.866,
         )
         
-        laggued = LaggedFeatures(
-            current_temp=20.0,
-            target_temp=22.0,
-            current_slope=0.3,
-            temp_lag_15min=19.8,
-            temp_lag_30min=19.6,
-            temp_lag_60min=19.4,
-            temp_lag_90min=19.2,
-            temp_lag_120min=19.0,
-            temp_lag_180min=18.8,
-            power_lag_15min=1.0,
-            power_lag_30min=1.0,
-            power_lag_60min=0.5,
-            power_lag_90min=0.0,
-            power_lag_120min=0.0,
-            power_lag_180min=0.0,
-            slope_lag_15min=0.3,
-            slope_lag_30min=0.3,
-            slope_lag_60min=0.3,
-            slope_lag_90min=0.3,
-            slope_lag_120min=0.3,
-            slope_lag_180min=0.3,
-            temp_delta=2.0,
-        )
+        laggued = create_test_cycle_features(current_temp=20.0, target_temp=22.0)
 
-        target = RoomFeatures(laggued
-        )
+        target = RoomFeatures(laggued)
         
-        laggued2 = LaggedFeatures(
-            current_temp=19.0,
-            target_temp=20.0,
-            current_slope=0.1,
-            temp_lag_15min=18.9,
-            temp_lag_30min=18.8,
-            temp_lag_60min=18.7,
-            temp_lag_90min=18.6,
-            temp_lag_120min=18.5,
-            temp_lag_180min=18.4,
-            power_lag_15min=0.0,
-            power_lag_30min=0.0,
-            power_lag_60min=0.0,
-            power_lag_90min=0.0,
-            power_lag_120min=0.0,
-            power_lag_180min=0.0,
-            slope_lag_15min=0.1,
-            slope_lag_30min=0.1,
-            slope_lag_60min=0.1,
-            slope_lag_90min=0.1,
-            slope_lag_120min=0.1,
-            slope_lag_180min=0.1,
-            temp_delta=1.0,
-        )
+        laggued2 = create_test_cycle_features(current_temp=19.0, target_temp=21.0)
         
         adjacent_room = RoomFeatures(laggued2)
 
@@ -373,8 +245,9 @@ class TestMultiRoomFeatures:
         
         feature_dict = multi.to_feature_dict()
         
-        # Target room (16) + Common (23) + 1 adjacent room (16) = 55 features
-        assert len(feature_dict) == 67
+        # Target room (8) + Common (23) + 1 adjacent room (8) - 3 overlaps = 36 features
+        # (outdoor_temp, humidity, cloud_coverage are in both Common and Room)
+        assert len(feature_dict) == 36
         assert feature_dict["current_temp"] == 20.0  # Target room
         assert feature_dict["outdoor_temp"] == 5.0  # Common
         assert feature_dict["bedroom_current_temp"] == 19.0  # Adjacent room
@@ -407,62 +280,25 @@ class TestMultiRoomFeatures:
             hour_cos=0.866,
         )
         
-        laggued = LaggedFeatures(
-            current_temp=20.0,
-            target_temp=22.0,
-            current_slope=0.3,
-            temp_lag_15min=19.8,
-            temp_lag_30min=19.6,
-            temp_lag_60min=19.4,
-            temp_lag_90min=19.2,
-            temp_lag_120min=19.0,
-            temp_lag_180min=18.8,
-            power_lag_15min=1.0,
-            power_lag_30min=1.0,
-            power_lag_60min=0.5,
-            power_lag_90min=0.0,
-            power_lag_120min=0.0,
-            power_lag_180min=0.0,
-            temp_delta=2.0,
-            slope_lag_15min=0.3,
-            slope_lag_30min=0.3,
-            slope_lag_60min=0.3,
-            slope_lag_90min=0.3,
-            slope_lag_120min=0.3,
-            slope_lag_180min=0.3,
-        )
+        laggued = create_test_cycle_features()
 
         target = RoomFeatures(laggued)
         
-        # No adjacent rooms: 16 + 23 = 39
+        # No adjacent rooms: 8 + 23 = 31
         multi_0 = MultiRoomFeatures(common=common, target_room=target, adjacent_rooms={})
-        assert multi_0.get_num_features() == 39
+        assert multi_0.get_num_features() == 31  # 8 target + 23 common
         
-        # 1 adjacent room: 16 + 23 + 16 = 55
-        laggued1 = LaggedFeatures(
-            current_temp=19.0, target_temp=20.0, current_slope=0.1,
-            temp_lag_15min=19.0, temp_lag_30min=19.0, temp_lag_60min=19.0,
-            temp_lag_90min=19.0, temp_lag_120min=19.0, temp_lag_180min=19.0,
-            power_lag_15min=0.0, power_lag_30min=0.0, power_lag_60min=0.0,
-            power_lag_90min=0.0, power_lag_120min=0.0, power_lag_180min=0.0,
-            temp_delta=1.0,slope_lag_120min=0.0, slope_lag_15min=0.0, slope_lag_30min=0.0, slope_lag_60min=0.0, slope_lag_90min=0.0, slope_lag_180min=0.0,
-        )
+        # 1 adjacent room: 8 + 23 + 8 = 39
+        laggued1 = create_test_cycle_features()
         adjacent1 = RoomFeatures(laggued1)
 
         multi_1 = MultiRoomFeatures(
             common=common, target_room=target, adjacent_rooms={"bedroom": adjacent1}
         )
-        assert multi_1.get_num_features() == 55
+        assert multi_1.get_num_features() == 39  # 8 target + 23 common + 8 adj
         
-        # 2 adjacent rooms: 16 + 23 + 32 = 71
-        laggued2 = LaggedFeatures(
-            current_temp=18.0, target_temp=19.0, current_slope=0.05,
-            temp_lag_15min=18.0, temp_lag_30min=18.0, temp_lag_60min=18.0,
-            temp_lag_90min=18.0, temp_lag_120min=18.0, temp_lag_180min=18.0,
-            power_lag_15min=0.0, power_lag_30min=0.0, power_lag_60min=0.0,
-            power_lag_90min=0.0, power_lag_120min=0.0, power_lag_180min=0.0,
-            temp_delta=1.0,slope_lag_15min=0.0, slope_lag_30min=0.0, slope_lag_60min=0.0, slope_lag_90min=0.0, slope_lag_120min=0.0, slope_lag_180min=0.0,
-        )
+        # 2 adjacent rooms: 8 + 23 + 16 = 47
+        laggued2 = create_test_cycle_features()
 
         adjacent2 = RoomFeatures(laggued2)
         multi_2 = MultiRoomFeatures(
@@ -470,4 +306,4 @@ class TestMultiRoomFeatures:
             target_room=target,
             adjacent_rooms={"bedroom": adjacent1, "living_room": adjacent2},
         )
-        assert multi_2.get_num_features() == 71
+        assert multi_2.get_num_features() == 47  # 8 target + 23 common + 16 adj (2 rooms)

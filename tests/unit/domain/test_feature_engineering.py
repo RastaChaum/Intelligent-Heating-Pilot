@@ -137,3 +137,52 @@ class TestFeatureEngineeringService:
         
         # Check that median is calculated
         assert result[15] is not None
+    
+    def test_create_cycle_features(self) -> None:
+        """Test creating features from heating cycle."""
+        from custom_components.intelligent_heating_pilot.domain.value_objects import HeatingCycle
+        
+        # Create a test heating cycle with data available at start
+        cycle = HeatingCycle(
+            climate_entity_id="test_room",
+            cycle_start=datetime(2025, 1, 15, 6, 0),
+            cycle_end=datetime(2025, 1, 15, 7, 0),
+            duration_minutes=60.0,
+            initial_temp=18.0,
+            target_temp=21.0,
+            final_temp=21.0,
+            initial_slope=0.5,
+            final_slope=0.05,
+            initial_humidity=50.0,
+            final_humidity=45.0,
+            initial_outdoor_temp=5.0,
+            initial_outdoor_humidity=80.0,
+            initial_cloud_coverage=50.0,
+            final_outdoor_temp=7.0,
+            final_outdoor_humidity=75.0,
+            final_cloud_coverage=30.0,
+        )
+        
+        # Create features
+        features = self.service.create_cycle_features(cycle)
+        
+        # Verify all features are set correctly
+        assert features.current_temp == 18.0
+        assert features.target_temp == 21.0
+        assert features.temp_delta == 3.0
+        assert features.current_slope == 0.5
+        assert features.outdoor_temp == 5.0
+        assert features.outdoor_humidity == 80.0
+        assert features.humidity == 50.0
+        assert features.cloud_coverage == 50.0
+        
+        # Verify feature dict conversion
+        feature_dict = features.to_feature_dict()
+        assert feature_dict["current_temp"] == 18.0
+        assert feature_dict["temp_delta"] == 3.0
+        
+        # Verify feature names
+        feature_names = features.get_feature_names()
+        assert len(feature_names) == 8
+        assert "current_temp" in feature_names
+        assert "target_temp" in feature_names
