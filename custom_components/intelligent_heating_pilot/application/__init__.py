@@ -169,7 +169,7 @@ class HeatingApplicationService:
         """
         # Check if the currently tracked scheduler has been disabled
         if self._active_scheduler_entity:
-            if not self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
+            if not await self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
                 _LOGGER.warning(
                     "Active scheduler %s has been disabled. Clearing anticipation state.",
                     self._active_scheduler_entity
@@ -290,7 +290,7 @@ class HeatingApplicationService:
         now = dt_util.now()
         
         # Check if scheduler is enabled before proceeding
-        if not self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
+        if not await self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
             _LOGGER.warning(
                 "Scheduler %s is disabled. Skipping anticipation scheduling.",
                 scheduler_entity_id
@@ -313,7 +313,7 @@ class HeatingApplicationService:
                     lhs
                 )
                 # Check scheduler is still enabled before calling cancel_action
-                if self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
+                if await self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
                     await self._scheduler_commander.cancel_action(scheduler_entity_id)
                 else:
                     _LOGGER.warning(
@@ -355,7 +355,7 @@ class HeatingApplicationService:
                 anticipated_start.isoformat()
             )
             # Check scheduler is enabled before calling run_action
-            if self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
+            if await self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
                 # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
                 # Respects scheduler conditions (skip_conditions=False in the adapter)
                 await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
@@ -420,7 +420,7 @@ class HeatingApplicationService:
                 timeslot.target_temp
             )
             # Check scheduler is enabled before calling cancel_action
-            if self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
+            if await self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
                 # Revert to current scheduled state instead of directly turning off
                 # This respects scheduler conditions and returns to the proper setpoint
                 await self._scheduler_commander.cancel_action(scheduler_entity_id)

@@ -342,7 +342,7 @@ class TestHASchedulerReader(unittest.TestCase):
         mock_state.state = "on"
         self.mock_hass.states.get.return_value = mock_state
         
-        result = self.reader.is_scheduler_enabled("switch.heating_schedule")
+        result = asyncio.run(self.reader.is_scheduler_enabled("switch.heating_schedule"))
         
         self.assertTrue(result)
         self.mock_hass.states.get.assert_called_once_with("switch.heating_schedule")
@@ -353,7 +353,7 @@ class TestHASchedulerReader(unittest.TestCase):
         mock_state.state = "off"
         self.mock_hass.states.get.return_value = mock_state
         
-        result = self.reader.is_scheduler_enabled("switch.heating_schedule")
+        result = asyncio.run(self.reader.is_scheduler_enabled("switch.heating_schedule"))
         
         self.assertFalse(result)
         self.mock_hass.states.get.assert_called_once_with("switch.heating_schedule")
@@ -362,7 +362,7 @@ class TestHASchedulerReader(unittest.TestCase):
         """Test that is_scheduler_enabled returns False when entity not found."""
         self.mock_hass.states.get.return_value = None
         
-        result = self.reader.is_scheduler_enabled("switch.heating_schedule")
+        result = asyncio.run(self.reader.is_scheduler_enabled("switch.heating_schedule"))
         
         self.assertFalse(result)
         self.mock_hass.states.get.assert_called_once_with("switch.heating_schedule")

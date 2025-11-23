@@ -26,6 +26,7 @@ def mock_adapters():
     """Create mock adapters for testing."""
     scheduler_reader = Mock()
     scheduler_reader.get_next_timeslot = AsyncMock()
+    scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
     
     model_storage = Mock()
     model_storage.get_learned_heating_slope = AsyncMock(return_value=2.0)
