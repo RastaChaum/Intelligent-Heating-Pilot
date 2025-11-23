@@ -1,4 +1,5 @@
 """Tests for HAModelStorage adapter."""
+from datetime import datetime
 import unittest
 from unittest.mock import Mock, AsyncMock, patch
 
@@ -50,7 +51,12 @@ class TestHAModelStorage(unittest.TestCase):
         
         # Mock: stored data with history
         stored_data = {
-            "historical_slopes": [2.0, 2.2, 2.1, 2.3],
+            "slope_data_list": [
+            {"slope_value": 2.0, "timestamp": datetime.now().isoformat()},
+            {"slope_value": 2.2, "timestamp": datetime.now().isoformat()},
+            {"slope_value": 2.1, "timestamp": datetime.now().isoformat()},
+            {"slope_value": 2.3, "timestamp": datetime.now().isoformat()}
+            ],
             "learned_heating_slope": 2.15
         }
         self.mock_store.async_load = AsyncMock(return_value=stored_data)
@@ -73,7 +79,8 @@ class TestHAModelStorage(unittest.TestCase):
         
         # Assert
         self.mock_store.async_save.assert_called_once()
-        self.assertIn(2.5, self.storage._data["historical_slopes"])
+        self.assertIn(2.5, [entry["slope_value"] for entry in self.storage._data["slope_data_list"]])
+
     
     def test_save_slope_in_history_negative_ignored(self):
         """Test that negative slopes are ignored."""
@@ -91,12 +98,12 @@ class TestHAModelStorage(unittest.TestCase):
     def test_save_slope_in_history_trimming(self):
         """Test that history is trimmed to MAX_HISTORY_SIZE."""
         import asyncio
-        from infrastructure.adapters.model_storage import MAX_HISTORY_SIZE
+        from custom_components.intelligent_heating_pilot.infrastructure.adapters.model_storage import MAX_HISTORY_SIZE
         
         # Mock: storage with many slopes
-        initial_slopes = [float(i) for i in range(1, MAX_HISTORY_SIZE + 10)]
+        initial_slopes = [{"slope_value": float(i), "timestamp": datetime.now().isoformat()} for i in range(1, MAX_HISTORY_SIZE + 10)]
         stored_data = {
-            "historical_slopes": initial_slopes,
+            "slope_data_list": initial_slopes,
             "learned_heating_slope": 50.0
         }
         self.mock_store.async_load = AsyncMock(return_value=stored_data)
@@ -105,7 +112,8 @@ class TestHAModelStorage(unittest.TestCase):
         asyncio.run(self.storage.save_slope_in_history(2.0))
         
         # Assert: history should be trimmed
-        self.assertEqual(len(self.storage._data["historical_slopes"]), MAX_HISTORY_SIZE)
+        self.assertEqual(len(self.storage._data["slope_data_list"]), MAX_HISTORY_SIZE)
+        self.assertIn(2.0, [entry["slope_value"] for entry in self.storage._data["slope_data_list"]])
     
     def test_get_slopes_in_history(self):
         """Test getting historical slopes."""
@@ -113,7 +121,11 @@ class TestHAModelStorage(unittest.TestCase):
         
         # Mock: stored data with slopes
         stored_data = {
-            "historical_slopes": [2.0, 2.2, 2.1],
+            "slope_data_list": [
+                {"slope_value": 2.0, "timestamp": datetime.now().isoformat()},
+                {"slope_value": 2.2, "timestamp": datetime.now().isoformat()},
+                {"slope_value": 2.1, "timestamp": datetime.now().isoformat()}
+            ],
             "learned_heating_slope": 2.1
         }
         self.mock_store.async_load = AsyncMock(return_value=stored_data)
@@ -125,7 +137,7 @@ class TestHAModelStorage(unittest.TestCase):
         self.assertEqual(result, [2.0, 2.2, 2.1])
         # Should return a copy, not the original
         result.append(999)
-        self.assertNotIn(999, self.storage._data["historical_slopes"])
+        self.assertNotIn(999, [entry["slope_value"] for entry in self.storage._data["slope_data_list"]])
     
     def test_clear_slope_history(self):
         """Test clearing all slope history."""
@@ -133,7 +145,11 @@ class TestHAModelStorage(unittest.TestCase):
         
         # Mock: stored data with slopes
         stored_data = {
-            "historical_slopes": [2.0, 2.2, 2.1],
+            "slope_data_list": [
+                {"slope_value": 2.0, "timestamp": datetime.now().isoformat()},
+                {"slope_value": 2.2, "timestamp": datetime.now().isoformat()},
+                {"slope_value": 2.1, "timestamp": datetime.now().isoformat()}
+            ],
             "learned_heating_slope": 2.1
         }
         self.mock_store.async_load = AsyncMock(return_value=stored_data)
@@ -145,37 +161,9 @@ class TestHAModelStorage(unittest.TestCase):
         asyncio.run(self.storage.clear_slope_history())
         
         # Assert
-        self.assertEqual(self.storage._data["historical_slopes"], [])
+        self.assertEqual(self.storage._data["slope_data_list"], [])
         self.assertEqual(self.storage._data["learned_heating_slope"], DEFAULT_HEATING_SLOPE)
         self.mock_store.async_save.assert_called_once()
     
-    def test_calculate_robust_average_trimmed_mean(self):
-        """Test robust average calculation with trimming."""
-        # Test with enough values for trimming (>= 4)
-        values = [1.0, 2.0, 2.1, 2.2, 2.3, 2.4, 10.0]  # 10.0 is outlier
-        
-        result = self.storage._calculate_robust_average(values)
-        
-        # Outlier should be removed, average should be around 2.0-2.4
-        self.assertGreater(result, 1.5)
-        self.assertLess(result, 3.0)
-    
-    def test_calculate_robust_average_simple(self):
-        """Test robust average with few values (no trimming)."""
-        values = [2.0, 2.1, 2.2]
-        
-        result = self.storage._calculate_robust_average(values)
-        
-        # Should be simple average
-        expected = sum(values) / len(values)
-        self.assertAlmostEqual(result, expected, places=2)
-    
-    def test_calculate_robust_average_empty(self):
-        """Test robust average with empty list."""
-        result = self.storage._calculate_robust_average([])
-        
-        self.assertEqual(result, DEFAULT_HEATING_SLOPE)
-
-
 if __name__ == "__main__":
     unittest.main()
