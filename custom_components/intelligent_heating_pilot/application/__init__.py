@@ -187,11 +187,7 @@ class HeatingApplicationService:
             # and when _active_scheduler_entity is already None
             if self._is_preheating_active or self._active_scheduler_entity or self._preheating_target_time:
                 _LOGGER.info("Clearing anticipation state (no timeslot available)")
-                self._is_preheating_active = False
-                self._preheating_target_time = None
-                self._last_scheduled_time = None
-                self._last_scheduled_lhs = None
-                self._active_scheduler_entity = None
+                self._clear_anticipation_state()
             return None
         
         # Get current environment

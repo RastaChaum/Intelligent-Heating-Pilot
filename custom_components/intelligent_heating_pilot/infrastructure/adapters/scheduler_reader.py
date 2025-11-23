@@ -291,7 +291,7 @@ class HASchedulerReader(ISchedulerReader):
         
         return None
 
-    def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
+    async def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
         """Check if a specific scheduler is enabled.
         
         A scheduler is considered enabled if its state is NOT "off".
