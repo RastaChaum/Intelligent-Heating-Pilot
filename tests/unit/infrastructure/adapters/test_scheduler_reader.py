@@ -1,4 +1,5 @@
 """Tests for HASchedulerReader adapter."""
+import asyncio
 import unittest
 from datetime import datetime
 from unittest.mock import Mock, MagicMock
@@ -30,7 +31,6 @@ class TestHASchedulerReader(unittest.TestCase):
         reader = HASchedulerReader(self.mock_hass, [])
         
         # Execute
-        import asyncio
         result = asyncio.run(reader.get_next_timeslot())
         
         # Assert
@@ -42,7 +42,6 @@ class TestHASchedulerReader(unittest.TestCase):
         self.mock_hass.states.get.return_value = None
         
         # Execute
-        import asyncio
         result = asyncio.run(self.reader.get_next_timeslot())
         
         # Assert
@@ -53,6 +52,7 @@ class TestHASchedulerReader(unittest.TestCase):
         """Test getting timeslot with standard scheduler format."""
         # Mock: scheduler state with standard format
         mock_state = Mock()
+        mock_state.state = "on"  # Scheduler is enabled
         mock_state.attributes = {
             "next_trigger": "2024-01-15T07:00:00+01:00",
             "next_slot": 0,
@@ -66,7 +66,6 @@ class TestHASchedulerReader(unittest.TestCase):
         self.mock_hass.states.get.return_value = mock_state
         
         # Execute
-        import asyncio
         result = asyncio.run(self.reader.get_next_timeslot())
         
         # Assert
@@ -75,6 +74,29 @@ class TestHASchedulerReader(unittest.TestCase):
         self.assertEqual(result.target_temp, 21.0)
         self.assertIsNotNone(result.target_time)
         self.assertTrue(result.timeslot_id.startswith("switch.heating_schedule_"))
+    
+    def test_get_next_timeslot_scheduler_disabled(self):
+        """Test that disabled schedulers are skipped."""
+        # Mock: scheduler state with "off" state
+        mock_state = Mock()
+        mock_state.state = "off"  # Scheduler is disabled
+        mock_state.attributes = {
+            "next_trigger": "2024-01-15T07:00:00+01:00",
+            "next_slot": 0,
+            "actions": [
+                {
+                    "service": "climate.set_temperature",
+                    "data": {"temperature": 21.0}
+                }
+            ]
+        }
+        self.mock_hass.states.get.return_value = mock_state
+        
+        # Execute
+        result = asyncio.run(self.reader.get_next_timeslot())
+        
+        # Assert: should return None since scheduler is disabled
+        self.assertIsNone(result)
     
     def test_get_next_timeslot_multiple_entities(self):
         """Test getting earliest timeslot from multiple schedulers."""
@@ -86,6 +108,7 @@ class TestHASchedulerReader(unittest.TestCase):
         
         # Mock: two scheduler states
         mock_state_1 = Mock()
+        mock_state_1.state = "on"  # Enabled
         mock_state_1.attributes = {
             "next_trigger": "2024-01-15T08:00:00+01:00",
             "next_slot": 0,
@@ -93,6 +116,7 @@ class TestHASchedulerReader(unittest.TestCase):
         }
         
         mock_state_2 = Mock()
+        mock_state_2.state = "on"  # Enabled
         mock_state_2.attributes = {
             "next_trigger": "2024-01-15T07:00:00+01:00",  # Earlier time
             "next_slot": 0,
@@ -109,13 +133,94 @@ class TestHASchedulerReader(unittest.TestCase):
         self.mock_hass.states.get.side_effect = mock_get_state
         
         # Execute
-        import asyncio
         result = asyncio.run(reader.get_next_timeslot())
         
         # Assert: should return the earlier timeslot
         self.assertIsNotNone(result)
         self.assertEqual(result.target_temp, 22.0)
         self.assertTrue(result.timeslot_id.startswith("switch.schedule_2_"))
+    
+    def test_get_next_timeslot_multiple_entities_one_disabled(self):
+        """Test that only enabled schedulers are considered when multiple exist."""
+        # Setup multiple schedulers
+        reader = HASchedulerReader(
+            self.mock_hass,
+            ["switch.schedule_1", "switch.schedule_2"]
+        )
+        
+        # Mock: one enabled, one disabled
+        mock_state_1 = Mock()
+        mock_state_1.state = "off"  # Disabled
+        mock_state_1.attributes = {
+            "next_trigger": "2024-01-15T06:00:00+01:00",  # Earlier time but disabled
+            "next_slot": 0,
+            "actions": [{"service": "climate.set_temperature", "data": {"temperature": 21.0}}]
+        }
+        
+        mock_state_2 = Mock()
+        mock_state_2.state = "on"  # Enabled
+        mock_state_2.attributes = {
+            "next_trigger": "2024-01-15T08:00:00+01:00",  # Later time but enabled
+            "next_slot": 0,
+            "actions": [{"service": "climate.set_temperature", "data": {"temperature": 22.0}}]
+        }
+        
+        def mock_get_state(entity_id):
+            if entity_id == "switch.schedule_1":
+                return mock_state_1
+            elif entity_id == "switch.schedule_2":
+                return mock_state_2
+            return None
+        
+        self.mock_hass.states.get.side_effect = mock_get_state
+        
+        # Execute
+        result = asyncio.run(reader.get_next_timeslot())
+        
+        # Assert: should return the enabled scheduler's timeslot
+        self.assertIsNotNone(result)
+        self.assertEqual(result.target_temp, 22.0)
+        self.assertTrue(result.timeslot_id.startswith("switch.schedule_2_"))
+    
+    def test_get_next_timeslot_all_disabled(self):
+        """Test that no timeslot is returned when all schedulers are disabled."""
+        # Setup multiple schedulers
+        reader = HASchedulerReader(
+            self.mock_hass,
+            ["switch.schedule_1", "switch.schedule_2"]
+        )
+        
+        # Mock: both disabled
+        mock_state_1 = Mock()
+        mock_state_1.state = "off"  # Disabled
+        mock_state_1.attributes = {
+            "next_trigger": "2024-01-15T07:00:00+01:00",
+            "next_slot": 0,
+            "actions": [{"service": "climate.set_temperature", "data": {"temperature": 21.0}}]
+        }
+        
+        mock_state_2 = Mock()
+        mock_state_2.state = "off"  # Disabled
+        mock_state_2.attributes = {
+            "next_trigger": "2024-01-15T08:00:00+01:00",
+            "next_slot": 0,
+            "actions": [{"service": "climate.set_temperature", "data": {"temperature": 22.0}}]
+        }
+        
+        def mock_get_state(entity_id):
+            if entity_id == "switch.schedule_1":
+                return mock_state_1
+            elif entity_id == "switch.schedule_2":
+                return mock_state_2
+            return None
+        
+        self.mock_hass.states.get.side_effect = mock_get_state
+        
+        # Execute
+        result = asyncio.run(reader.get_next_timeslot())
+        
+        # Assert: should return None since all schedulers are disabled
+        self.assertIsNone(result)
     
     def test_extract_temp_from_action_direct(self):
         """Test extracting temperature from direct set_temperature action."""
@@ -230,6 +335,37 @@ class TestHASchedulerReader(unittest.TestCase):
         # Should return None for 0 values
         result = reader._resolve_preset_temperature("eco")
         self.assertIsNone(result)
+    
+    def test_is_scheduler_enabled_on(self):
+        """Test that is_scheduler_enabled returns True for enabled schedulers."""
+        mock_state = Mock()
+        mock_state.state = "on"
+        self.mock_hass.states.get.return_value = mock_state
+        
+        result = self.reader.is_scheduler_enabled("switch.heating_schedule")
+        
+        self.assertTrue(result)
+        self.mock_hass.states.get.assert_called_once_with("switch.heating_schedule")
+    
+    def test_is_scheduler_enabled_off(self):
+        """Test that is_scheduler_enabled returns False for disabled schedulers."""
+        mock_state = Mock()
+        mock_state.state = "off"
+        self.mock_hass.states.get.return_value = mock_state
+        
+        result = self.reader.is_scheduler_enabled("switch.heating_schedule")
+        
+        self.assertFalse(result)
+        self.mock_hass.states.get.assert_called_once_with("switch.heating_schedule")
+    
+    def test_is_scheduler_enabled_entity_not_found(self):
+        """Test that is_scheduler_enabled returns False when entity not found."""
+        self.mock_hass.states.get.return_value = None
+        
+        result = self.reader.is_scheduler_enabled("switch.heating_schedule")
+        
+        self.assertFalse(result)
+        self.mock_hass.states.get.assert_called_once_with("switch.heating_schedule")
 
 
 if __name__ == "__main__":

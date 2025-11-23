@@ -78,6 +78,11 @@ class HASchedulerReader(ISchedulerReader):
                     _LOGGER.debug("Scheduler entity not yet available (HA starting): %s", entity_id)
                 continue
             
+            # Skip disabled schedulers (state is "off")
+            if state.state == "off":
+                _LOGGER.debug("Scheduler %s is disabled (state: off), skipping", entity_id)
+                continue
+            
             # Extract next trigger time and target temperature
             next_time, target_temp = self._extract_timeslot_data(state)
             
@@ -286,6 +291,28 @@ class HASchedulerReader(ISchedulerReader):
         
         return None
 
+    def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
+        """Check if a specific scheduler is enabled.
+        
+        A scheduler is considered enabled if its state is NOT "off".
+        This includes states like "on", "idle", "waiting", etc.
+        Only the explicit "off" state means the scheduler is disabled.
+        
+        Args:
+            scheduler_entity_id: The scheduler entity ID to check
+            
+        Returns:
+            True if the scheduler is enabled (state != "off"), False otherwise
+        """
+        state = self._hass.states.get(scheduler_entity_id)
+        if not state:
+            _LOGGER.debug("Scheduler entity not found when checking state: %s", scheduler_entity_id)
+            return False
+        
+        is_enabled = state.state != "off"
+        _LOGGER.debug("Scheduler %s state: %s (enabled: %s)", scheduler_entity_id, state.state, is_enabled)
+        return is_enabled
+    
     def _resolve_preset_temperature(self, preset: str) -> float | None:
         """Resolve a preset name to a numeric temperature using VTherm attributes.
         

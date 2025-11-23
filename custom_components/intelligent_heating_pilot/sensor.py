@@ -122,6 +122,13 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
 
     def _handle_anticipation_result(self, data: dict) -> None:
         """Handle new anticipation result."""
+        # Check if this is a clear event
+        if data.get("clear_values"):
+            self._anticipated_start = None
+            self._attributes = {}
+            _LOGGER.info("Anticipated start time cleared (scheduler disabled or no timeslot)")
+            return
+            
         anticipated_start = data.get(ATTR_ANTICIPATED_START_TIME)
         if anticipated_start:
             # Event carries ISO string; accept datetime too
@@ -183,6 +190,12 @@ class IntelligentHeatingPilotAnticipationTimeHmsSensor(IntelligentHeatingPilotSe
         return self._attributes
 
     def _handle_anticipation_result(self, data: dict) -> None:
+        # Check if this is a clear event
+        if data.get("clear_values"):
+            self._time_str = None
+            self._attributes = {}
+            return
+            
         value = data.get(ATTR_ANTICIPATED_START_TIME)
         dt_val: datetime | None = None
         if isinstance(value, str):
@@ -292,6 +305,13 @@ class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBas
 
     def _handle_anticipation_result(self, data: dict) -> None:
         """Handle new anticipation result."""
+        # Check if this is a clear event
+        if data.get("clear_values"):
+            self._next_schedule = None
+            self._attributes = {}
+            _LOGGER.info("Next schedule time cleared (scheduler disabled or no timeslot)")
+            return
+            
         next_schedule = data.get(ATTR_NEXT_SCHEDULE_TIME)
         if next_schedule:
             # Event carries ISO string; accept datetime too
@@ -338,6 +358,12 @@ class IntelligentHeatingPilotNextScheduleHmsSensor(IntelligentHeatingPilotSensor
         return self._attributes
 
     def _handle_anticipation_result(self, data: dict) -> None:
+        # Check if this is a clear event
+        if data.get("clear_values"):
+            self._time_str = None
+            self._attributes = {}
+            return
+            
         value = data.get(ATTR_NEXT_SCHEDULE_TIME)
         dt_val: datetime | None = None
         if isinstance(value, str):
@@ -396,6 +422,13 @@ class IntelligentHeatingPilotPredictionConfidenceSensor(IntelligentHeatingPilotS
 
     def _handle_anticipation_result(self, data: dict) -> None:
         """Handle new anticipation result."""
+        # Check if this is a clear event
+        if data.get("clear_values"):
+            self._confidence = None
+            self._attributes = {}
+            _LOGGER.info("Prediction confidence cleared (scheduler disabled or no timeslot)")
+            return
+            
         confidence = data.get("confidence_level")
         if confidence is not None:
             self._confidence = float(confidence)
