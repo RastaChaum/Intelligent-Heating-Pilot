@@ -182,9 +182,15 @@ class HeatingApplicationService:
         timeslot = await self._scheduler_reader.get_next_timeslot()
         if not timeslot:
             _LOGGER.debug("No scheduled timeslot found")
-            # Clear active scheduler tracking if no timeslot is available
-            if self._active_scheduler_entity:
-                _LOGGER.debug("Clearing active scheduler tracking (no timeslot available)")
+            # Clear all tracking state when no timeslot is available
+            # This handles both the case where the scheduler was just disabled
+            # and when _active_scheduler_entity is already None
+            if self._is_preheating_active or self._active_scheduler_entity or self._preheating_target_time:
+                _LOGGER.info("Clearing anticipation state (no timeslot available)")
+                self._is_preheating_active = False
+                self._preheating_target_time = None
+                self._last_scheduled_time = None
+                self._last_scheduled_lhs = None
                 self._active_scheduler_entity = None
             return None
         
@@ -236,6 +242,13 @@ class HeatingApplicationService:
             prediction.learned_heating_slope,
             prediction.confidence_level,
         )
+        
+        # Track the active scheduler entity (for later disable detection)
+        # This must be set BEFORE calling _schedule_anticipation so that
+        # subsequent disable events can be properly detected
+        if self._active_scheduler_entity != timeslot.scheduler_entity:
+            _LOGGER.debug("Tracking scheduler entity: %s", timeslot.scheduler_entity)
+            self._active_scheduler_entity = timeslot.scheduler_entity
         
         # Schedule if needed
         await self._schedule_anticipation(

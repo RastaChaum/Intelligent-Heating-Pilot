@@ -154,7 +154,7 @@ class HAEventBridge:
         anticipation_data = await self._app_service.calculate_and_schedule_anticipation()
         
         if anticipation_data:
-            # Publish event for sensors
+            # Publish event for sensors with data
             self._hass.bus.async_fire(
                 "intelligent_heating_pilot_anticipation_calculated",
                 {
@@ -170,6 +170,16 @@ class HAEventBridge:
                 },
             )
             _LOGGER.debug("Published anticipation event for sensors")
+        else:
+            # Publish event to clear sensor values (set to unknown)
+            self._hass.bus.async_fire(
+                "intelligent_heating_pilot_anticipation_calculated",
+                {
+                    "entry_id": self._entry_id,
+                    "clear_values": True,  # Signal to sensors to clear their values
+                },
+            )
+            _LOGGER.debug("Published clear event for sensors")
     
     def ignore_vtherm_changes_for(self, seconds: int = 10) -> None:
         """Temporarily ignore VTherm changes (used after self-induced changes).
