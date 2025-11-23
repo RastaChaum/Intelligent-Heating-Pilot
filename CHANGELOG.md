@@ -13,6 +13,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.3.1] - 2025-11-23
+
+### Fixed
+- **Pre-heating State Reset** ([f938cdd](https://github.com/RastaChaum/Intelligent-Heating-Pilot/commit/f938cdd))
+  - Disabled pre-heating if schedulers are disabled
+  - Fixed pre-heating status not resetting when scheduler updates anticipated start time
+  - Ensures `_is_preheating_active` flag is properly cleared on schedule changes
+  - Prevents incorrect pre-heating state persistence across scheduling updates
+
+### Changed
+- **Documentation Restructuring** ([#41](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/41))
+  - Applied DRY (Don't Repeat Yourself) principle to all documentation
+  - Removed ~1,400 lines of redundant and obsolete documentation
+  - Achieved 100% English consistency across all documents
+  - Merged Git branching strategy into `CONTRIBUTING.md` (single source of truth)
+  - Consolidated documentation index (removed `DOCUMENTATION_MAP.md` duplicate)
+  - Optimized agent documentation to focus on quick start vs detailed guides
+  - Improved cross-referencing between documents
+
+### Removed
+- `.github/GIT_REALIGNMENT_GUIDE.md` - Obsolete contextual guide
+- `.github/BRANCHING_STRATEGY.md` - Merged into `CONTRIBUTING.md`
+- `.github/pull_request_template_feature.md` - Unused French template
+- `.github/pull_request_template_release.md` - Unused French template
+- `DOCUMENTATION_MAP.md` - Duplicate of `DOCS_INDEX.md`
+
 ## [0.3.0] - 2025-11-19
 
 ### Added
@@ -122,7 +148,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Release Links
 
-[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.1.0...v0.2.0
