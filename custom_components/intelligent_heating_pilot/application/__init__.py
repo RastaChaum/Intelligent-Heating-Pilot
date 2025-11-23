@@ -321,9 +321,6 @@ class HeatingApplicationService:
                         scheduler_entity_id
                     )
                 self._clear_anticipation_state()
-                # Update tracking for new anticipated time
-                self._last_scheduled_time = anticipated_start
-                self._last_scheduled_lhs = lhs
                 return
             
             # If we've reached the target time, mark pre-heating as complete
