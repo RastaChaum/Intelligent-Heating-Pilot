@@ -4,17 +4,13 @@
 
 This directory contains specialized GitHub Copilot agents that orchestrate development workflow following **Test-Driven Development (TDD)** and **Domain-Driven Design (DDD)** principles.
 
-## ⚡ Quick Start: Just Use Project Manager!
+## ⚡ Quick Start
 
-**You only need one command**:
+**New to agent workflow?** → See [../AGENT_QUICKSTART.md](../AGENT_QUICKSTART.md) for a 5-minute introduction!
 
-```markdown
-@project-manager
+**Need complete workflow details?** → See [../AGENT_WORKFLOW.md](../AGENT_WORKFLOW.md) for comprehensive guide!
 
-Fix Issue #45: [describe problem]
-```
-
-The Project Manager automatically coordinates all other agents! See [project_manager.agent.md](project_manager.agent.md) for details.
+**This document** provides an overview of each specialized agent and how they work together.
 
 ---
 
@@ -137,17 +133,88 @@ The agents work in a **structured sequence** to ensure quality:
     RED Phase              GREEN + Refactor      Ready to Merge
 ```
 
-**Full workflow details**: See [AGENT_WORKFLOW.md](../AGENT_WORKFLOW.md)
+**Orchestration**: The **Project Manager** agent automatically coordinates this workflow.
 
-### Quick Start
+**Complete workflow guide**: See [../AGENT_WORKFLOW.md](../AGENT_WORKFLOW.md)  
+**Quick start guide**: See [../AGENT_QUICKSTART.md](../AGENT_QUICKSTART.md)
 
-1. **User requests feature/bug fix**
-   ```markdown
-   Issue #XX opened: New feature needed
-   ```
+---
 
-2. **Invoke Testing Specialist**
-   ```markdown
+## 📚 Agent Responsibilities Summary
+
+### Testing Specialist (TDD Red Phase)
+**Input**: Issue requirements  
+**Process**: Design and write failing tests  
+**Output**: Comprehensive test suite (RED)  
+**Deliverables**:
+- Unit tests for domain logic
+- Integration tests if needed
+- Architectural compliance tests
+- Centralized fixtures in `fixtures.py`
+
+### Tech Lead (TDD Green + Refactor)
+**Input**: Failing test suite from Testing Specialist  
+**Process**: Implement code to pass tests, then refactor  
+**Output**: Clean, DDD-compliant implementation (GREEN)  
+**Deliverables**:
+- Domain layer implementation (pure business logic)
+- Infrastructure adapters (HA integration)
+- Application layer wiring
+- All tests passing, high coverage
+
+### Documentation Specialist (Documentation)
+**Input**: Approved implementation from Tech Lead  
+**Process**: Update all relevant documentation  
+**Output**: Complete, up-to-date documentation  
+**Deliverables**:
+- CHANGELOG.md update
+- README.md updates (if user-facing changes)
+- ARCHITECTURE.md updates (if architectural changes)
+- Release notes preparation
+
+---
+
+## 🎯 When to Use Each Agent Directly
+
+### Use Project Manager (Recommended)
+- ✅ Complete feature implementation
+- ✅ Bug fixes
+- ✅ Any multi-step work
+- ✅ When you want full automation
+
+### Use Testing Specialist Directly
+- Complex test scenarios requiring specialized expertise
+- Refactoring existing test suite
+- Adding coverage to untested code
+- Test architecture improvements
+
+### Use Tech Lead Directly
+- Implementation after tests are already written
+- Code review and refactoring
+- Performance optimization
+- Architecture compliance fixes
+
+### Use Documentation Specialist Directly
+- Documentation-only updates
+- Release notes preparation
+- README improvements
+- CHANGELOG maintenance
+
+---
+
+## 🛠️ Agent Configuration
+
+Each agent has specific configuration in its `.agent.md` file:
+
+### Common Configuration
+- **Tools**: Enabled tools for each agent
+- **Instructions**: Behavioral guidelines
+- **Quality Gates**: Acceptance criteria
+
+### Agent-Specific Settings
+
+**Testing Specialist**:
+```markdown
    @testing-specialist
    Write tests for Issue #XX covering [scenarios]...
    ```
@@ -281,135 +348,40 @@ Agents are automatically available in GitHub Copilot when:
 
 ---
 
-## 📊 Workflow Metrics
+---
 
-Track these metrics for quality:
+## 🔗 Related Documentation
 
-### Testing Phase
-- Test coverage: >80% for domain layer
-- Tests written before code: 100%
-- Architectural compliance: 100%
-- Test execution time: <30s for unit tests
-
-### Implementation Phase
-- All tests passing: 100%
-- Linting errors: 0
-- Type hint coverage: 100%
-- Average function size: <20 lines
-
-### Documentation Phase
-- CHANGELOG updated: 100%
-- Documentation completeness: 100%
-- Broken links: 0
-- Documentation lag: <24h after merge
+- **[../AGENT_QUICKSTART.md](../AGENT_QUICKSTART.md)** - 5-minute quick start guide
+- **[../AGENT_WORKFLOW.md](../AGENT_WORKFLOW.md)** - Complete workflow with examples
+- **[../copilot-instructions.md](../copilot-instructions.md)** - DDD/TDD principles for AI
+- **[../../CONTRIBUTING.md](../../CONTRIBUTING.md)** - Development setup and standards
+- **[../../ARCHITECTURE.md](../../ARCHITECTURE.md)** - Technical architecture details
 
 ---
 
-## 🚀 Advanced Usage
+## 📊 Quality Metrics
 
-### Parallel Work with Agents
+Track these metrics for quality assurance:
 
-For complex features, invoke agents in sequence with context:
-
-```markdown
-@testing-specialist
-
-Write tests for Issue #40 - Multi-zone coordination.
-
-This is a multi-part feature:
-- Part 1: Zone priority system (write tests for this first)
-- Part 2: Cross-zone optimization (defer)
-- Part 3: Conflict resolution (defer)
-
-Focus on Part 1 only for now.
-```
-
-### Agent Context Switching
-
-If code review requests changes:
-
-```markdown
-@testing-specialist
-
-Code review feedback for Issue #40:
-- Add test for equal priority zones (tie-breaking)
-- Test should verify deterministic ordering
-
-Update tests, then hand to @tech-lead for re-implementation.
-```
-
-### Custom Agent Workflows
-
-For special cases (e.g., refactoring without new features):
-
-```markdown
-@tech-lead
-
-Refactor LHSCalculationService to extract trimmed mean logic.
-
-Context:
-- No new tests needed (behavior unchanged)
-- Existing tests must stay green
-- Goal: Reuse trimmed mean in other services
-
-Focus on:
-1. Extract to utility function
-2. Update all usages
-3. Keep tests passing
-```
+- **Test coverage**: >80% for domain layer
+- **Tests before code**: 100% (TDD compliance)
+- **Linting errors**: 0
+- **Type hint coverage**: 100%
+- **Documentation lag**: <24h after merge
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Agent Not Responding as Expected
+**Agent not responding as expected?**  
+→ Be more specific in your request with concrete examples
 
-**Problem**: Agent ignores instructions or gives generic response
+**Need detailed workflow examples?**  
+→ See [../AGENT_WORKFLOW.md](../AGENT_WORKFLOW.md)
 
-**Solution**: Be more specific
-```markdown
-# Too vague
-@testing-specialist write some tests
-
-# Better
-@testing-specialist write tests for Issue #30 covering:
-1. Happy path: feature works normally
-2. Edge case: boundary condition X
-3. Error case: invalid input Y
-```
-
-### Tests Fail After Implementation
-
-**Problem**: Tech Lead's code doesn't pass tests
-
-**Solution**: Review with Testing Specialist
-```markdown
-@testing-specialist
-
-Tech Lead's implementation fails test_scenario_x.
-Error: AssertionError: Expected Y, got Z
-
-Please review if test expectations are correct or if
-implementation is wrong. Update tests if needed.
-```
-
-### Documentation Out of Sync
-
-**Problem**: Docs don't reflect recent changes
-
-**Solution**: Always invoke Documentation Specialist
-```markdown
-@documentation-specialist
-
-Features merged without doc updates:
-- Issue #30 (humidity compensation)
-- Issue #31 (storage optimization)
-
-Please:
-1. Update CHANGELOG.md for both
-2. Update README.md if user-facing
-3. Update ARCHITECTURE.md if needed
-```
+**Want to understand the theory?**  
+→ See [../../ARCHITECTURE.md](../../ARCHITECTURE.md) for DDD principles
 
 ---
 

@@ -111,274 +111,83 @@ Write tests to verify:
 - Ready for @tech-lead
 ```
 
-### 3. Invoke Tech Lead
+### 3. Tech Lead Implements → Review → Documentation Updates
 
-```markdown
-@tech-lead
-
-Tests ready for Issue #45. Please implement humidity compensation.
-
-Test location: tests/unit/domain/test_lhs_humidity_fix.py
-Status: 4 tests failing (RED phase)
-
-Requirements:
-- Add humidity parameter to LHSCalculationService.calculate()
-- Apply compensation: adjusted_lhs = base_lhs * (1 + humidity_factor)
-- Update HAEnvironmentReader to read humidity sensor
-- Wire humidity data through application layer
-- Keep domain layer pure (no HA imports)
-```
-
-**Agent Response**:
-```
-✅ Implementation complete for Issue #45
-- All 4 tests passing (GREEN phase)
-- Domain: LHSCalculationService applies humidity compensation
-- Infrastructure: HAEnvironmentReader reads humidity sensor
-- Coverage: 87% domain, 72% overall
-- No linting errors
-- Ready for code review!
-```
-
-### 4. Review Code
-
-Check:
-- [ ] Tests make sense
-- [ ] Code is clean and readable
-- [ ] Architecture respected (DDD)
-- [ ] No regression
-
-**Approve** or **Request Changes**
-
-### 5. Invoke Documentation Specialist
-
-```markdown
-@documentation-specialist
-
-Issue #45 approved and ready for documentation.
-
-Changes:
-- Fixed: Pre-heating timing in humid weather
-- Added: Humidity compensation in LHS calculation
-- Modified: Environment reader includes humidity sensor
-
-Please update all relevant documentation.
-```
-
-**Agent Response**:
-```
-✅ Documentation updated for Issue #45
-- CHANGELOG.md: Added fix under [Unreleased]
-- README.md: Updated optional sensors section
-- ARCHITECTURE.md: Documented humidity compensation
-- PR ready for merge!
-```
-
-### 6. Merge
-
-```bash
-git checkout integration
-git merge feature/issue-45 --no-ff
-git push origin integration
-```
+The Project Manager handles steps 3-6 automatically! Just review when asked.
 
 **Done!** 🎉
 
 ---
 
-## 📚 Detailed Documentation
+## 📚 Next Steps
 
-### Must-Read Documents
+### For Complete Workflow Details
 
-1. **[AGENT_WORKFLOW.md](.github/AGENT_WORKFLOW.md)** ⭐ **START HERE**
-   - Complete workflow explanation
-   - Detailed examples
-   - Troubleshooting guide
+See **[AGENT_WORKFLOW.md](AGENT_WORKFLOW.md)** for:
+- Detailed agent coordination
+- Complete examples with all phases
+- Troubleshooting guide
+- Advanced patterns
 
-2. **[agents/README.md](.github/agents/README.md)**
-   - Agent system overview
-   - Quick reference
-   - Configuration details
+### For Agent System Overview
 
-3. **[CONTRIBUTING.md](CONTRIBUTING.md)**
-   - Development environment setup
-   - Coding standards
-   - Testing requirements
+See **[agents/README.md](agents/README.md)** for:
+- How each agent works internally
+- Configuration and customization
+- Best practices per agent
 
-4. **[ARCHITECTURE.md](ARCHITECTURE.md)**
-   - Domain-Driven Design principles
-   - Layer structure
-   - Best practices and anti-patterns
+### For Development Setup
 
-### Agent Instructions
+See **[../CONTRIBUTING.md](../CONTRIBUTING.md)** for:
+- Environment setup
+- Git workflow
+- Testing requirements
+- Code standards
 
-- **[testing_specialist.agent.md](.github/agents/testing_specialist.agent.md)** - How Testing Specialist works
-- **[tech_lead.agent.md](.github/agents/tech_lead.agent.md)** - How Tech Lead works
-- **[documentation_specialist.agent.md](.github/agents/documentation_specialist.agent.md)** - How Documentation Specialist works
+### For Architecture Understanding
+
+See **[../ARCHITECTURE.md](../ARCHITECTURE.md)** for:
+- Domain-Driven Design principles
+- Layer structure details
+- Best practices and anti-patterns
 
 ---
 
-## 🎓 Key Principles
+## 🎓 Key Principles (Quick Reference)
 
-### Test-Driven Development (TDD)
-
+### TDD: Red → Green → Refactor
 ```
-🔴 RED   →  Write failing tests
-🟢 GREEN →  Make tests pass
-🔵 BLUE  →  Refactor code
+🔴 Write failing tests  →  🟢 Make them pass  →  🔵 Clean up code
 ```
 
-**Why?**
-- Tests define requirements
-- Code is inherently testable
-- Safe refactoring
-- Living documentation
-
-### Domain-Driven Design (DDD)
-
+### DDD: Keep Domain Pure
 ```
-domain/          ← Pure business logic (NO Home Assistant)
+domain/          ← Pure business logic (NO Home Assistant imports!)
 infrastructure/  ← HA integration (thin adapters)
 application/     ← Orchestration
 ```
 
-**Why?**
-- Business logic isolated and testable
-- Clear boundaries
-- Easy to understand and maintain
-- Resilient to framework changes
-
-### Clean Code
-
-✅ Type hints everywhere
-✅ Google-style docstrings
-✅ Small functions (<20 lines)
-✅ Descriptive naming
-✅ No magic values
-✅ Proper error handling
+See [ARCHITECTURE.md](../ARCHITECTURE.md) for complete details.
 
 ---
 
-## 🚨 Common Mistakes (Avoid!)
+## 🚨 Common Pitfalls
 
-### ❌ Skipping Tests
+❌ **Don't skip the Project Manager** - Let it orchestrate everything  
+❌ **Don't import HA in domain layer** - Use interfaces only  
+❌ **Don't skip documentation** - Project Manager handles this automatically
 
-**Wrong**:
-```markdown
-@tech-lead
-Implement Issue #45 - humidity compensation
-```
-
-**Right**:
-```markdown
-@testing-specialist
-Write tests for Issue #45 first
-
-Then @tech-lead can implement
-```
-
-### ❌ Breaking DDD Architecture
-
-**Wrong** (in `domain/` layer):
-```python
-from homeassistant.core import HomeAssistant  # ❌ NO!
-```
-
-**Right**:
-```python
-from domain.interfaces.reader import IReader  # ✅ Use interfaces
-```
-
-### ❌ Skipping Documentation
-
-**Wrong**: Merge without updating docs
-
-**Right**: Always invoke `@documentation-specialist` before merge
-
----
-
-## 💡 Pro Tips
-
-### Tip 1: Be Specific with Agents
-
-```markdown
-# Too vague
-@testing-specialist write some tests
-
-# Better
-@testing-specialist write tests for Issue #45 covering:
-1. Happy path: humidity compensation works
-2. Edge case: missing humidity sensor
-3. Error case: invalid humidity value (>100%)
-```
-
-### Tip 2: Run Tests Frequently
-
-```bash
-# After each small change
-pytest tests/unit/domain/test_feature.py -v
-
-# Check coverage
-pytest --cov=custom_components.intelligent_heating_pilot
-```
-
-### Tip 3: Keep Tests Green During Refactoring
-
-```bash
-# Before refactoring
-pytest tests/ -v  # All green
-
-# Refactor code
-# ...
-
-# After refactoring
-pytest tests/ -v  # Still all green!
-```
-
----
-
-## 🎯 Success Checklist
-
-Before merging any PR:
-
-- [ ] Tests written first (TDD Red phase)
-- [ ] All tests passing (TDD Green phase)
-- [ ] Code refactored and clean (TDD Refactor phase)
-- [ ] Domain layer has NO HA imports (DDD compliance)
-- [ ] Type hints and docstrings complete
-- [ ] No linting errors
-- [ ] CHANGELOG.md updated
-- [ ] Documentation updated
-- [ ] Code reviewed and approved
-
----
-
-## 🆘 Need Help?
-
-### Quick Links
-
-- **[AGENT_WORKFLOW.md](.github/AGENT_WORKFLOW.md)** - Complete workflow guide
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Development setup
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - DDD architecture
-- **[GitHub Discussions](https://github.com/RastaChaum/Intelligent-Heating-Pilot/discussions)** - Ask questions
-
-### Troubleshooting
-
-**Agent not responding?** → Be more specific in your request
-
-**Tests failing?** → Review test expectations with Testing Specialist
-
-**Architecture violation?** → Check domain layer has no HA imports
-
-**Docs out of sync?** → Always invoke Documentation Specialist
+✅ **Do trust the workflow** - It ensures quality  
+✅ **Do be specific** - Clear requirements = better results  
+✅ **Do review carefully** - You approve before docs update
 
 ---
 
 ## 🎉 You're Ready!
 
-Follow the 3-agent workflow for all features and bug fixes to maintain high quality and consistency.
+Just remember: **@project-manager** + clear description = complete workflow!
 
-**First contribution?** Try a "good first issue" to practice the workflow!
+For deeper understanding, see [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md).
 
 ---
 

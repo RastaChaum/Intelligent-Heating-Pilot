@@ -2,6 +2,70 @@
 
 Welcome to Intelligent Heating Pilot's documentation! This index helps you find the right documentation for your needs.
 
+## 🗺️ Documentation Map
+
+```
+🏠 INTELLIGENT HEATING PILOT
+│
+├─── 👥 FOR USERS (Installation & Usage)
+│    │
+│    ├─── 📄 README.md ⭐ START HERE!
+│    │    ├─ What is IHP?
+│    │    ├─ Features
+│    │    ├─ Installation (HACS/Manual)
+│    │    ├─ Configuration
+│    │    ├─ Usage & Sensors
+│    │    ├─ How IHP Works (simplified)
+│    │    └─ Troubleshooting
+│    │
+│    ├─── 📄 CHANGELOG.md
+│    │    └─ Version history & changes
+│    │
+│    └─── 🌐 GitHub Releases
+│         └─ Download & release notes
+│
+├─── 💻 FOR CONTRIBUTORS (Development)
+│    │
+│    ├─── 📄 CONTRIBUTING.md ⭐ START HERE!
+│    │    ├─ How to contribute
+│    │    ├─ Git branching strategy
+│    │    ├─ Dev environment setup
+│    │    ├─ Testing guide
+│    │    ├─ Code standards
+│    │    ├─ PR process
+│    │    └─ Commit conventions
+│    │
+│    ├─── 📄 ARCHITECTURE.md
+│    │    ├─ DDD principles
+│    │    ├─ Layer structure
+│    │    ├─ Value objects
+│    │    ├─ Interfaces & services
+│    │    ├─ Data flow
+│    │    ├─ Testing strategies
+│    │    └─ Best practices
+│    │
+│    ├─── 📁 .github/
+│    │    ├─ copilot-instructions.md (AI guidelines)
+│    │    ├─ AGENT_QUICKSTART.md (TDD quick start)
+│    │    ├─ AGENT_WORKFLOW.md (Complete workflow)
+│    │    ├─ PULL_REQUEST_TEMPLATE.md
+│    │    ├─ RELEASE_TEMPLATE.md
+│    │    └─ ISSUE_TEMPLATE/
+│    │         ├─ bug_report.md
+│    │         ├─ feature_request.md
+│    │         └─ config.yml
+│    │
+│    └─── 🧪 tests/
+│         └─ Unit & integration tests
+│
+└─── 🗺️ NAVIGATION
+     │
+     └─── 📄 DOCS_INDEX.md (You are here!)
+          └─ Complete documentation index
+```
+
+---
+
 ## 👥 For End Users
 
 If you want to **install and use** IHP:
@@ -116,8 +180,8 @@ intelligent-heating-pilot/
 → [Feature Request Template](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/new?template=feature_request.md)
 
 #### ...contribute code
-→ [.github/AGENT_WORKFLOW.md](.github/AGENT_WORKFLOW.md) - ⭐ **Start here!** TDD workflow with agents
-→ [CONTRIBUTING.md](CONTRIBUTING.md) - Development setup and standards
+→ [CONTRIBUTING.md](CONTRIBUTING.md) - ⭐ **Start here!** Complete contributor guide (setup, Git workflow, standards)
+→ [.github/AGENT_QUICKSTART.md](.github/AGENT_QUICKSTART.md) - Quick start with TDD agents (5 minutes)
 → [ARCHITECTURE.md](ARCHITECTURE.md) - Understand the DDD design
 
 #### ...create a release
@@ -176,6 +240,20 @@ Please open an issue or submit a pull request. See [CONTRIBUTING.md](CONTRIBUTIN
 - [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - [Conventional Commits](https://www.conventionalcommits.org/)
+
+---
+
+## 📊 Documentation Quality Standards
+
+All documentation follows these principles:
+
+✅ **DRY Principle**: Single source of truth - no duplicate information  
+✅ **Clear Audience**: Each document targets specific readers (users vs contributors)  
+✅ **Consistent Format**: Standard templates and formatting throughout  
+✅ **Keep Current**: Updated with each release  
+✅ **Examples**: Practical examples where helpful  
+✅ **Searchable**: Well-structured with clear headings  
+✅ **Cross-referenced**: Links to related documentation
 
 ---
 

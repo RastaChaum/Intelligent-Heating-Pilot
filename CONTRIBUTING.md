@@ -48,25 +48,180 @@ To propose a new feature:
 
 ### Submitting Pull Requests
 
-Before submitting code, please read our **[Branching Strategy](.github/BRANCHING_STRATEGY.md)** to understand our Git workflow.
+## 🌳 Git Branching Strategy
 
-**Quick Summary**:
-1. **Always create branches from `main`**: `git checkout main && git pull && git checkout -b feature/issue-XX-description`
-2. **Target `integration` branch** for all feature/bug PRs
-3. **Use squash merge** when merging features into `integration` (one commit per feature)
+The project uses a **3-level branching strategy** to ensure code quality and stability:
+
+```
+main (production) ← integration (pre-release) ← feature/* (development)
+```
+
+### Branch Overview
+
+#### 1. `main` - Production (Stable Releases)
+
+**Role**: Contains only **tested and validated** production-ready code.
+
+**Characteristics**:
+- ✅ RELEASE versions only (v0.3.0, v0.4.0, etc.)
+- ✅ Stable, tested, and documented code
+- ✅ Protected: **no direct development**
+- ✅ Fed only by PRs from `integration`
+- ✅ Full history preserved (merge commits)
+
+**Rules**:
+- 🚫 **Forbidden**: Direct pushes, direct commits
+- ✅ **Allowed**: Merge from `integration` via PR (after admin approval)
+- ✅ **Merge strategy**: **Merge commit** (preserves full history)
+
+#### 2. `integration` - Pre-Release (Aggregation)
+
+**Role**: **Integration and pre-release** branch where all new features and fixes converge.
+
+**Characteristics**:
+- ✅ Receives PRs from `feature/*` branches
+- ✅ Allows testing multiple features together
+- ✅ Used to create **pre-releases** (v0.4.0-beta.1, etc.)
+- ✅ Condensed history (squash merge of features)
+- ✅ Protected: requires PRs for features
+
+**Rules**:
+- 🚫 **Forbidden**: Direct feature development
+- ✅ **Allowed**: 
+  - Merge from `feature/*` via PR with **squash merge**
+  - Direct push by admin/contributors (minor fixes only)
+- ✅ **Merge strategy**: **Squash merge** (one commit per feature)
+
+#### 3. `feature/*` - Development (Individual Features)
+
+**Role**: **Temporary** branches for developing new features or bug fixes.
+
+**Characteristics**:
+- ✅ One branch per feature/bug (e.g., `feature/issue-23-power-correlation`)
+- ✅ Always created **from `main`**
+- ✅ No protection (development freedom)
+- ✅ Automatically deleted after merge
+- ✅ Multiple commits OK during development
+
+**Rules**:
+- ✅ **Naming convention**: `feature/issue-XX-description` or `fix/issue-XX-description`
+- ✅ **Base**: Always create from up-to-date `main`
+- ✅ **Target**: Open PR to `integration` only
+- ✅ **Merge strategy**: **Squash merge** (condenses all commits into one)
+
+### Complete Workflow
+
+#### Step 1: Create a Feature Branch
+
+```bash
+# 1. Update main
+git checkout main
+git pull origin main
+
+# 2. Create feature branch from main
+git checkout -b feature/issue-23-description
+
+# 3. Push branch to GitHub
+git push -u origin feature/issue-23-description
+```
+
+**Naming conventions**:
+- `feature/issue-XX-short-description` - New feature
+- `fix/issue-XX-short-description` - Bug fix
+- `docs/update-readme` - Documentation change
+- `refactor/domain-services` - Technical refactoring
+
+#### Step 2: Develop with Regular Commits
+
+```bash
+# Make atomic commits during development
+git add custom_components/intelligent_heating_pilot/domain/services/new_service.py
+git commit -m "feat(domain): add NewService"
+
+git add tests/unit/domain/test_new_service.py
+git commit -m "test(domain): add unit tests for NewService"
+
+# Push regularly
+git push origin feature/issue-23-description
+```
+
+**Best practices**:
+- Atomic commits (one logical change = one commit)
+- Clear, descriptive messages
+- Follow [Conventional Commits](https://www.conventionalcommits.org/) format
+- Push regularly to avoid losing work
+
+#### Step 3: Open Pull Request to `integration`
+
+1. Go to GitHub repository
+2. Click **Pull requests** → **New pull request**
+3. **Base**: `integration` ← **Compare**: `feature/issue-23-description`
+4. Fill out the PR template with:
+   - Clear description of changes
+   - Reference to related issues (`Fixes #23`)
+   - Testing performed
+   - Architecture compliance checklist
+5. Wait for review and address feedback
+
+#### Step 4: Squash Merge to `integration`
+
+When the PR is approved:
+
+1. Click **Squash and merge** 🎯
+2. **Edit the squashed commit message** to summarize all changes:
+
+```
+feat: implement power correlation for slope filtering (#23)
+
+- Add PowerHistoryTracker domain service
+- Enrich SlopeData with power metadata
+- Implement retrospective correlation algorithm
+- Add comprehensive unit tests (>80% coverage)
+- Update documentation
+
+Closes #23
+```
+
+3. Confirm merge
+4. Feature branch is **automatically deleted**
+
+**Result**: In `integration`, you'll have **one clean commit** summarizing the entire feature.
+
+#### Step 5: Create Pre-Release (Optional)
+
+Before merging to `main`, test `integration` with a pre-release:
+
+```bash
+# 1. Switch to integration
+git checkout integration
+git pull origin integration
+
+# 2. Tag pre-release
+git tag v0.4.0-beta.1 -m "Pre-release v0.4.0-beta.1"
+
+# 3. Push tag
+git push origin v0.4.0-beta.1
+```
+
+GitHub Actions will automatically create the pre-release.
+
+#### Step 6: Release to `main`
+
+When `integration` is stable and tested:
+
+1. Open PR from `integration` to `main`
+2. Fill out release PR template
+3. Admin reviews and approves
+4. **Merge commit** to preserve full history
+5. Tag release: `git tag v0.4.0 -m "Release v0.4.0"`
+6. Push tag: `git push origin v0.4.0`
+
+### Quick Summary for Contributors
+
+1. **Always branch from `main`**: `git checkout main && git pull && git checkout -b feature/issue-XX-description`
+2. **Target `integration`** for all feature/bug PRs
+3. **Squash merge** into `integration` (one commit per feature)
 4. **Only admins merge** `integration` → `main` (for releases)
-
-**Detailed Steps**:
-1. Fork the repository (external contributors) or clone directly (internal)
-2. Create a branch from `main` for your feature (`git checkout -b feature/my-new-feature`)
-3. Develop with regular commits (`git commit -m 'feat: add my new feature'`)
-4. Push to your branch (`git push origin feature/my-new-feature`)
-5. Open a Pull Request **targeting `integration`** branch
-6. Use the appropriate PR template (feature/fix or release)
-7. Wait for review and address feedback
-8. PR will be **squash merged** into `integration` (one commit)
-
-See [.github/BRANCHING_STRATEGY.md](.github/BRANCHING_STRATEGY.md) for complete workflow documentation.
 
 ## 🏗️ Project Architecture
 
