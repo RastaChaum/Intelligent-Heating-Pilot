@@ -34,6 +34,17 @@ class MLPredictionService:
     Uses XGBoost when available, otherwise falls back to sklearn's HistGradientBoostingRegressor.
     """
     
+    # Valid parameters for sklearn's HistGradientBoostingRegressor
+    _SKLEARN_VALID_PARAMS = {
+        "max_depth",
+        "learning_rate",
+        "max_iter",
+        "min_samples_leaf",
+        "random_state",
+        "max_leaf_nodes",
+        "l2_regularization",
+    }
+    
     def __init__(self) -> None:
         """Initialize the ML prediction service."""
         self._model: Any = None
@@ -114,11 +125,7 @@ class MLPredictionService:
                 "random_state": 42,
             }
             # Filter kwargs to only include valid sklearn parameters
-            valid_sklearn_params = {
-                "max_depth", "learning_rate", "max_iter", "min_samples_leaf", 
-                "random_state", "max_leaf_nodes", "l2_regularization"
-            }
-            sklearn_kwargs = {k: v for k, v in kwargs.items() if k in valid_sklearn_params}
+            sklearn_kwargs = {k: v for k, v in kwargs.items() if k in self._SKLEARN_VALID_PARAMS}
             params = {**default_params, **sklearn_kwargs}
             
             _LOGGER.info(
@@ -250,7 +257,7 @@ class MLPredictionService:
             
             self._is_trained = True
             
-        except Exception as e:
+        except (pickle.PickleError, TypeError, AttributeError, RuntimeError) as e:
             _LOGGER.error("Failed to deserialize model: %s", str(e))
             raise
     

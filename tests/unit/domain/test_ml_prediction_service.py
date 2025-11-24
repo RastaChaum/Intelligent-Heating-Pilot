@@ -1,6 +1,8 @@
 """Tests for ML prediction service."""
 from __future__ import annotations
 
+import pickle
+
 import pytest
 
 from custom_components.intelligent_heating_pilot.domain.services.ml_prediction_service import (
@@ -140,8 +142,6 @@ class TestMLPredictionService:
     
     def test_serialization_includes_model_type(self) -> None:
         """Test that serialized models include type information."""
-        import pickle
-        
         service = MLPredictionService()
         
         # Train a model
