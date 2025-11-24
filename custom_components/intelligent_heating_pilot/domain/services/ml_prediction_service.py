@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from ..value_objects import LaggedFeatures
+from ..value_objects import CycleFeatures
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class MLPredictionService:
     
     def __init__(self) -> None:
         """Initialize the ML prediction service."""
-        self._model: Any | None = None
+        self._model: Any = None
         self._is_trained = False
     
     def is_trained(self) -> bool:
@@ -119,11 +119,11 @@ class MLPredictionService:
         
         return metrics
     
-    def predict_duration(self, features: CycleFeatures | LaggedFeatures) -> float | None:
+    def predict_duration(self, features: CycleFeatures) -> float | None:
         """Predict optimal heating duration given features.
         
         Args:
-            features: CycleFeatures or LaggedFeatures for prediction
+            features: CycleFeatures for prediction
             
         Returns:
             Predicted duration in minutes, or None if model not trained.

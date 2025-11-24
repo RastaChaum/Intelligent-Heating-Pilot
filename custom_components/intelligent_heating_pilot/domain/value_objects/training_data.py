@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from typing import Union
 
 from .cycle_features import CycleFeatures
-from .lagged_features import LaggedFeatures
-from .multi_room_features import MultiRoomFeatures
 
 
 @dataclass(frozen=True)
@@ -17,7 +15,7 @@ class TrainingExample:
     Supports single-room (CycleFeatures or LaggedFeatures) and multi-room (MultiRoomFeatures) models.
     """
     
-    features: Union[CycleFeatures, LaggedFeatures, MultiRoomFeatures]  # Input features (X)
+    features: CycleFeatures  # Input features (X)
     target_duration_minutes: float  # Target label (Y) - optimal preheat duration
     cycle_id: str  # Reference to the source heating cycle
     
