@@ -1,4 +1,4 @@
-"""ML-based prediction service using XGBoost."""
+"""ML-based prediction service using XGBoost with sklearn fallback."""
 from __future__ import annotations
 
 import logging
@@ -6,6 +6,7 @@ import pickle
 from typing import Any
 
 import numpy as np
+from sklearn.ensemble import HistGradientBoostingRegressor
 
 from ..value_objects import CycleFeatures
 
@@ -15,22 +16,29 @@ _LOGGER = logging.getLogger(__name__)
 try:
     import xgboost as xgb
     XGBOOST_AVAILABLE = True
+    _LOGGER.info("XGBoost is available and will be used for ML predictions")
 except ImportError:
-    _LOGGER.warning("XGBoost not available. ML predictions will not work.")
     XGBOOST_AVAILABLE = False
+    _LOGGER.warning(
+        "XGBoost not available. Falling back to sklearn's HistGradientBoostingRegressor. "
+        "This is expected on Alpine-based systems."
+    )
 
 
 class MLPredictionService:
-    """Service for ML-based heating duration prediction using XGBoost.
+    """Service for ML-based heating duration prediction using XGBoost or sklearn fallback.
     
     This service contains pure domain logic for ML model training and prediction.
     It operates on preprocessed features and does not access infrastructure.
+    
+    Uses XGBoost when available, otherwise falls back to sklearn's HistGradientBoostingRegressor.
     """
     
     def __init__(self) -> None:
         """Initialize the ML prediction service."""
         self._model: Any = None
         self._is_trained = False
+        self._model_type: str = "xgboost" if XGBOOST_AVAILABLE else "sklearn"
     
     def is_trained(self) -> bool:
         """Check if model is trained and ready for predictions.
@@ -46,25 +54,24 @@ class MLPredictionService:
         y_train: list[float],
         **kwargs: Any
     ) -> dict[str, float]:
-        """Train an XGBoost model for heating duration prediction.
+        """Train a gradient boosting model for heating duration prediction.
+        
+        Uses XGBoost when available, otherwise falls back to sklearn's 
+        HistGradientBoostingRegressor.
         
         Args:
             X_train: Training features (list of feature vectors)
             y_train: Training targets (optimal duration in minutes)
-            **kwargs: Additional XGBoost parameters
+            **kwargs: Additional model parameters (XGBoost or sklearn specific)
             
         Returns:
             Dictionary with training metrics (e.g., RMSE).
             
         Raises:
             ValueError: If training data is insufficient or invalid.
-            RuntimeError: If XGBoost is not available.
         """
-        if not XGBOOST_AVAILABLE:
-            raise RuntimeError("XGBoost is not installed. Cannot train model.")
-        
         if len(X_train) < 3:
-            raise ValueError("At least 3 training examples required for XGBoost training")
+            raise ValueError("At least 3 training examples required for model training")
         
         if len(X_train) != len(y_train):
             raise ValueError("X_train and y_train must have same length")
@@ -73,30 +80,57 @@ class MLPredictionService:
         X = np.array(X_train, dtype=np.float32)
         y = np.array(y_train, dtype=np.float32)
         
-        # Default XGBoost parameters optimized for small datasets
-        default_params = {
-            "objective": "reg:squarederror",
-            "max_depth": 4,
-            "learning_rate": 0.1,
-            "n_estimators": 100,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-            "min_child_weight": 2,
-            "random_state": 42,
-        }
+        if XGBOOST_AVAILABLE:
+            # Use XGBoost when available
+            default_params = {
+                "objective": "reg:squarederror",
+                "max_depth": 4,
+                "learning_rate": 0.1,
+                "n_estimators": 100,
+                "subsample": 0.8,
+                "colsample_bytree": 0.8,
+                "min_child_weight": 2,
+                "random_state": 42,
+            }
+            params = {**default_params, **kwargs}
+            
+            _LOGGER.info(
+                "Training XGBoost model with %d samples and %d features",
+                len(X_train),
+                X.shape[1] if len(X.shape) > 1 else 1,
+            )
+            
+            self._model = xgb.XGBRegressor(**params)
+            self._model.fit(X, y, verbose=False)
+            self._model_type = "xgboost"
+        else:
+            # Fallback to sklearn's HistGradientBoostingRegressor
+            # Map similar parameters to sklearn equivalents
+            default_params = {
+                "max_depth": 4,
+                "learning_rate": 0.1,
+                "max_iter": 100,  # Equivalent to n_estimators
+                "min_samples_leaf": 2,  # Similar to min_child_weight
+                "random_state": 42,
+            }
+            # Filter kwargs to only include valid sklearn parameters
+            valid_sklearn_params = {
+                "max_depth", "learning_rate", "max_iter", "min_samples_leaf", 
+                "random_state", "max_leaf_nodes", "l2_regularization"
+            }
+            sklearn_kwargs = {k: v for k, v in kwargs.items() if k in valid_sklearn_params}
+            params = {**default_params, **sklearn_kwargs}
+            
+            _LOGGER.info(
+                "Training sklearn HistGradientBoostingRegressor model with %d samples and %d features",
+                len(X_train),
+                X.shape[1] if len(X.shape) > 1 else 1,
+            )
+            
+            self._model = HistGradientBoostingRegressor(**params)
+            self._model.fit(X, y)
+            self._model_type = "sklearn"
         
-        # Override with user params
-        params = {**default_params, **kwargs}
-        
-        _LOGGER.info(
-            "Training XGBoost model with %d samples and %d features",
-            len(X_train),
-            X.shape[1] if len(X.shape) > 1 else 1,
-        )
-        
-        # Train the model
-        self._model = xgb.XGBRegressor(**params)
-        self._model.fit(X, y, verbose=False)
         self._is_trained = True
         
         # Calculate training metrics
@@ -109,10 +143,12 @@ class MLPredictionService:
             "mae": float(mae),
             "n_samples": len(X_train),
             "n_features": X.shape[1] if len(X.shape) > 1 else 1,
+            "model_type": self._model_type,
         }
         
         _LOGGER.info(
-            "Model trained successfully. RMSE: %.2f min, MAE: %.2f min",
+            "Model (%s) trained successfully. RMSE: %.2f min, MAE: %.2f min",
+            self._model_type,
             rmse,
             mae,
         )
@@ -155,6 +191,8 @@ class MLPredictionService:
     def serialize_model(self) -> bytes | None:
         """Serialize the trained model to bytes using pickle.
         
+        Stores both the model and its type to enable correct deserialization.
+        
         Returns:
             Serialized model bytes, or None if model not trained.
         """
@@ -162,26 +200,59 @@ class MLPredictionService:
             _LOGGER.warning("Cannot serialize: model not trained")
             return None
         
-        # Use pickle for serialization
-        return pickle.dumps(self._model)
+        # Serialize model with type information for proper deserialization
+        model_data = {
+            "model": self._model,
+            "model_type": self._model_type,
+        }
+        return pickle.dumps(model_data)
     
     def deserialize_model(self, model_bytes: bytes) -> None:
         """Deserialize and load a trained model from bytes.
+        
+        Handles both XGBoost and sklearn models. If a model was trained with XGBoost
+        but XGBoost is not available, the deserialization will fail with an appropriate error.
         
         Args:
             model_bytes: Serialized model bytes
             
         Raises:
-            RuntimeError: If XGBoost is not available.
+            RuntimeError: If the model type requires XGBoost but it's not available.
+            pickle.UnpicklingError: If deserialization fails.
         """
-        if not XGBOOST_AVAILABLE:
-            raise RuntimeError("XGBoost is not installed. Cannot load model.")
-        
-        # Use pickle for deserialization
-        self._model = pickle.loads(model_bytes)
-        self._is_trained = True
-        
-        _LOGGER.info("Model deserialized successfully")
+        try:
+            # Try to load as new format (with model_type)
+            model_data = pickle.loads(model_bytes)
+            
+            if isinstance(model_data, dict) and "model_type" in model_data:
+                # New format with type information
+                self._model = model_data["model"]
+                self._model_type = model_data["model_type"]
+                
+                # Check if we can use this model
+                if self._model_type == "xgboost" and not XGBOOST_AVAILABLE:
+                    raise RuntimeError(
+                        "Cannot load XGBoost model: XGBoost is not installed. "
+                        "Please retrain the model with sklearn fallback."
+                    )
+                
+                _LOGGER.info("Model deserialized successfully (type: %s)", self._model_type)
+            else:
+                # Legacy format - assume it's an XGBoost model
+                if not XGBOOST_AVAILABLE:
+                    raise RuntimeError(
+                        "Cannot load legacy model: XGBoost is not installed. "
+                        "Please retrain the model."
+                    )
+                self._model = model_data
+                self._model_type = "xgboost"
+                _LOGGER.info("Legacy model deserialized successfully (assumed XGBoost)")
+            
+            self._is_trained = True
+            
+        except Exception as e:
+            _LOGGER.error("Failed to deserialize model: %s", str(e))
+            raise
     
     def get_feature_importance(self, feature_names: list[str] | None = None) -> dict[str, float] | None:
         """Get feature importance scores from the trained model.

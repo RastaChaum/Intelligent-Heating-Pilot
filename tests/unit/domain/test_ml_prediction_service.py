@@ -10,38 +10,24 @@ from custom_components.intelligent_heating_pilot.domain.services.ml_prediction_s
     MLPredictionService,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
-    LaggedFeatures,
+    CycleFeatures,
 )
 
 
 def create_test_features(
     current_temp: float = 20.0,
     target_temp: float = 22.0,
-) -> LaggedFeatures:
-    """Helper to create test LaggedFeatures with all required fields."""
-    return LaggedFeatures(
+) -> CycleFeatures:
+    """Helper to create test CycleFeatures with all required fields."""
+    return CycleFeatures(
         current_temp=current_temp,
         target_temp=target_temp,
         temp_delta=target_temp - current_temp,
         current_slope=0.5,
-        temp_lag_15min=19.5,
-        temp_lag_30min=19.0,
-        temp_lag_60min=18.5,
-        temp_lag_90min=18.0,
-        temp_lag_120min=17.5,
-        temp_lag_180min=17.0,
-        slope_lag_15min=0.4,
-        slope_lag_30min=0.3,
-        slope_lag_60min=0.2,
-        slope_lag_90min=0.1,
-        slope_lag_120min=0.0,
-        slope_lag_180min=-0.1,
-        power_lag_15min=0.0,
-        power_lag_30min=0.0,
-        power_lag_60min=0.0,
-        power_lag_90min=0.0,
-        power_lag_120min=0.0,
-        power_lag_180min=0.0,
+        outdoor_temp=10.0,
+        outdoor_humidity=75.0,
+        humidity=50.0,
+        cloud_coverage=60.0,
     )
 
 
@@ -132,3 +118,52 @@ class TestMLPredictionService:
         
         duration = new_service.predict_duration(features)
         assert duration is not None
+    
+    def test_model_type_tracking(self) -> None:
+        """Test that model type is tracked correctly."""
+        service = MLPredictionService()
+        
+        # Create training data
+        X_train = [
+            list(create_test_features(20.0, 22.0).to_feature_dict().values()),
+            list(create_test_features(18.0, 22.0).to_feature_dict().values()),
+            list(create_test_features(19.0, 22.0).to_feature_dict().values()),
+        ]
+        y_train = [30.0, 60.0, 45.0]
+        
+        # Train the model
+        metrics = service.train_model(X_train, y_train)
+        
+        # Check that model type is reported in metrics
+        assert "model_type" in metrics
+        assert metrics["model_type"] in ["xgboost", "sklearn"]
+        
+        # Verify model type attribute is set
+        assert service._model_type in ["xgboost", "sklearn"]
+    
+    def test_serialization_includes_model_type(self) -> None:
+        """Test that serialized models include type information."""
+        import pickle
+        
+        service = MLPredictionService()
+        
+        # Train a model
+        X_train = [
+            list(create_test_features(20.0, 22.0).to_feature_dict().values()),
+            list(create_test_features(18.0, 22.0).to_feature_dict().values()),
+            list(create_test_features(19.0, 22.0).to_feature_dict().values()),
+        ]
+        y_train = [30.0, 60.0, 45.0]
+        
+        service.train_model(X_train, y_train)
+        
+        # Serialize and check structure
+        model_bytes = service.serialize_model()
+        assert model_bytes is not None
+        
+        # Verify the serialized data contains model_type
+        model_data = pickle.loads(model_bytes)
+        assert isinstance(model_data, dict)
+        assert "model" in model_data
+        assert "model_type" in model_data
+        assert model_data["model_type"] in ["xgboost", "sklearn"]
