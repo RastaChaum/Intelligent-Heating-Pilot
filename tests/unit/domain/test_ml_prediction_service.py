@@ -1,9 +1,6 @@
 """Tests for ML prediction service."""
 from __future__ import annotations
 
-from datetime import datetime
-from unittest.mock import Mock
-
 import pytest
 
 from custom_components.intelligent_heating_pilot.domain.services.ml_prediction_service import (

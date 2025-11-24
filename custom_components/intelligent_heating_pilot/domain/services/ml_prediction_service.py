@@ -274,5 +274,5 @@ class MLPredictionService:
         
         return {
             name: float(importance)
-            for name, importance in zip(feature_names, importance_values)
+            for name, importance in zip(feature_names, importance_values, strict=True)
         }
