@@ -16,12 +16,6 @@ class SlopeData:
     Attributes:
         slope_value: Heating slope in °C/hour
         timestamp: UTC timestamp when the slope was recorded
-    
-    Future attributes for ML:
-        - outdoor_temp: Outdoor temperature at time of recording
-        - humidity: Indoor humidity at time of recording
-        - time_of_day: Hour of day for pattern recognition
-        - day_of_week: Day of week for pattern recognition
     """
     
     slope_value: float
