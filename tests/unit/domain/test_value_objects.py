@@ -16,7 +16,7 @@ sys.path.insert(
 
 from domain.value_objects import (
     EnvironmentState,
-    ScheduleTimeslot,
+    ScheduledTimeslot,
     PredictionResult,
     HeatingDecision,
     HeatingAction,
@@ -108,7 +108,7 @@ class TestScheduleTimeslot(unittest.TestCase):
     def test_create_valid_schedule_event(self):
         """Test creating a valid schedule event."""
         target_time = datetime.now()
-        event = ScheduleTimeslot(
+        event = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="test_event_1",
@@ -123,7 +123,7 @@ class TestScheduleTimeslot(unittest.TestCase):
         target_time = datetime.now()
         
         with self.assertRaises(ValueError):
-            ScheduleTimeslot(
+            ScheduledTimeslot(
                 target_time=target_time,
                 target_temp=21.0,
                 timeslot_id="",  # Invalid
@@ -132,7 +132,7 @@ class TestScheduleTimeslot(unittest.TestCase):
     def test_schedule_event_is_immutable(self):
         """Test that ScheduleTimeslot is immutable."""
         target_time = datetime.now()
-        event = ScheduleTimeslot(
+        event = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="test_event_1",

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from ..value_objects import ScheduleTimeslot
+from ..value_objects import ScheduledTimeslot
 
 
 class ISchedulerReader(ABC):
@@ -16,7 +16,7 @@ class ISchedulerReader(ABC):
     """
     
     @abstractmethod
-    async def get_next_timeslot(self) -> ScheduleTimeslot | None:
+    async def get_next_timeslot(self) -> ScheduledTimeslot | None:
         """Retrieve the next scheduled heating timeslot.
         
         Returns:

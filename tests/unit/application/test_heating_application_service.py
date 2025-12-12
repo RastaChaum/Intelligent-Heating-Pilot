@@ -11,7 +11,7 @@ import pytest
 
 from custom_components.intelligent_heating_pilot.application import HeatingApplicationService
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
-    ScheduleTimeslot,
+    ScheduledTimeslot,
     EnvironmentState,
 )
 
@@ -85,7 +85,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))  # 04:00
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))  # 06:30
         
-        timeslot = ScheduleTimeslot(
+        timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="morning",
@@ -150,7 +150,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
-        timeslot = ScheduleTimeslot(
+        timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="morning",
@@ -204,7 +204,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
-        timeslot = ScheduleTimeslot(
+        timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="morning",
@@ -262,7 +262,7 @@ class TestOvershootPrevention:
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         current_time = make_aware(datetime(2025, 1, 15, 6, 0, 0))
         
-        timeslot = ScheduleTimeslot(
+        timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="morning",
@@ -313,7 +313,7 @@ class TestNoDirectVThermControl:
         base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
-        timeslot = ScheduleTimeslot(
+        timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="morning",

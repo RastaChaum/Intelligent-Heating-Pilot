@@ -8,7 +8,7 @@ from custom_components.intelligent_heating_pilot.infrastructure.adapters.schedul
     HASchedulerReader,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
-    ScheduleTimeslot,
+    ScheduledTimeslot,
 )
 
 
@@ -70,7 +70,7 @@ class TestHASchedulerReader(unittest.TestCase):
         
         # Assert
         self.assertIsNotNone(result)
-        self.assertIsInstance(result, ScheduleTimeslot)
+        self.assertIsInstance(result, ScheduledTimeslot)
         self.assertEqual(result.target_temp, 21.0)
         self.assertIsNotNone(result.target_time)
         self.assertTrue(result.timeslot_id.startswith("switch.heating_schedule_"))
