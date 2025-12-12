@@ -142,10 +142,17 @@ class HAModelStorage(IModelStorage):
         original_count = len(slope_data_list)
         
         # Filter out old entries
-        slope_data_list = [
-            entry for entry in slope_data_list
-            if datetime.fromisoformat(entry["timestamp"]) > cutoff_time
-        ]
+        filtered_list = []
+        for entry in slope_data_list:
+            try:
+                timestamp = datetime.fromisoformat(entry["timestamp"])
+                if timestamp > cutoff_time:
+                    filtered_list.append(entry)
+            except (KeyError, ValueError) as e:
+                _LOGGER.warning("Skipping invalid slope entry during cleanup: %s", e)
+                continue
+        
+        slope_data_list = filtered_list
         
         if len(slope_data_list) < original_count:
             removed = original_count - len(slope_data_list)
@@ -321,17 +328,16 @@ class HAModelStorage(IModelStorage):
         # Try new format first
         slope_data_list = self._data.get("slope_data_list", [])
         
-        if slope_data_list:
-            # Use all positive slopes from new format
-            positive_slopes = [
-                entry["slope_value"] for entry in slope_data_list
-                if entry["slope_value"] > 0
-            ]
-        else:
-            # Fallback to old format
-            slopes = self._data.get("historical_slopes", [])
-            positive_slopes = [s for s in slopes if s > 0]
-        
+        if not slope_data_list:
+            await self._migrate_to_v2()  # Fallback to old format
+
+        # Use all positive slopes from new format
+        positive_slopes = [
+            entry["slope_value"] for entry in slope_data_list
+            if entry["slope_value"] > 0
+        ]
+
+
         if not positive_slopes:
             _LOGGER.debug(
                 "No positive learned slopes in history, using default: %.2f°C/h",
