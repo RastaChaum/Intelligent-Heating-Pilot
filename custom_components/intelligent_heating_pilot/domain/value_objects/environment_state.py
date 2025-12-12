@@ -13,25 +13,26 @@ class EnvironmentState:
     heating decisions at a specific point in time.
     
     Attributes:
-        current_temp: Current room temperature in Celsius
-        outdoor_temp: Outdoor temperature in Celsius
-        humidity: Indoor humidity percentage (0-100)
+        indoor_temperature: Current room temperature in Celsius
         timestamp: When these measurements were taken
+        indoor_humidity: Indoor humidity percentage (0-100)
+        outdoor_temp: Outdoor temperature in Celsius
         outdoor_humidity: Optional outdoor humidity percentage (0-100)
         cloud_coverage: Optional cloud coverage percentage (0-100, 0=clear sky)
     """
     
-    current_temp: float
-    outdoor_temp: float
-    humidity: float
+    indoor_temperature: float
     timestamp: datetime
+    indoor_humidity: float | None = None
+    outdoor_temp: float | None = None
     outdoor_humidity: float | None = None
     cloud_coverage: float | None = None
+
     
     def __post_init__(self) -> None:
         """Validate the environmental state data."""
-        if self.humidity < 0 or self.humidity > 100:
-            raise ValueError(f"Humidity must be between 0 and 100, got {self.humidity}")
+        if self.indoor_humidity is not None and (self.indoor_humidity < 0 or self.indoor_humidity > 100):
+            raise ValueError(f"Humidity must be between 0 and 100, got {self.indoor_humidity}")
         
         if self.outdoor_humidity is not None and (
             self.outdoor_humidity < 0 or self.outdoor_humidity > 100

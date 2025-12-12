@@ -200,10 +200,10 @@ class HeatingApplicationService:
         lhs = await self._get_contextual_lhs(timeslot.target_time)
         
         # Check if already at target
-        if environment.current_temp >= timeslot.target_temp:
+        if environment.indoor_temperature >= timeslot.target_temp:
             _LOGGER.debug(
                 "Already at target (%.1f°C >= %.1f°C)",
-                environment.current_temp,
+                environment.indoor_temperature,
                 timeslot.target_temp
             )
             return {
@@ -211,7 +211,7 @@ class HeatingApplicationService:
                 "next_schedule_time": timeslot.target_time,
                 "next_target_temperature": timeslot.target_temp,
                 "anticipation_minutes": 0,
-                "current_temp": environment.current_temp,
+                "current_temp": environment.indoor_temperature,
                 "learned_heating_slope": lhs,
                 "confidence_level": 100,
                 "timeslot_id": timeslot.timeslot_id,
@@ -220,10 +220,10 @@ class HeatingApplicationService:
 
         # Calculate prediction
         prediction = self._prediction_service.predict_heating_time(
-            current_temp=environment.current_temp,
+            current_temp=environment.indoor_temperature,
             target_temp=timeslot.target_temp,
             outdoor_temp=environment.outdoor_temp,
-            humidity=environment.humidity,
+            humidity=environment.indoor_humidity,
             learned_slope=lhs,
             target_time=timeslot.target_time,
             cloud_coverage=environment.cloud_coverage,
@@ -261,7 +261,7 @@ class HeatingApplicationService:
             "next_schedule_time": timeslot.target_time,
             "next_target_temperature": timeslot.target_temp,
             "anticipation_minutes": prediction.estimated_duration_minutes,
-            "current_temp": environment.current_temp,
+            "current_temp": environment.indoor_temperature,
             "learned_heating_slope": prediction.learned_heating_slope,
             "confidence_level": prediction.confidence_level,
             "timeslot_id": timeslot.timeslot_id,
@@ -385,7 +385,7 @@ class HeatingApplicationService:
             return
         
         time_to_target = (timeslot.target_time - now).total_seconds() / 3600.0
-        estimated_temp = environment.current_temp + (current_slope * time_to_target)
+        estimated_temp = environment.indoor_temperature + (current_slope * time_to_target)
         
         # Check overshoot threshold
         overshoot_threshold = timeslot.target_temp + 0.5
@@ -393,7 +393,7 @@ class HeatingApplicationService:
         if estimated_temp > overshoot_threshold:
             _LOGGER.warning(
                 "Overshoot risk! Current: %.1f°C, estimated: %.1f°C, target: %.1f°C - reverting to current schedule",
-                environment.current_temp,
+                environment.indoor_temperature,
                 estimated_temp,
                 timeslot.target_temp
             )

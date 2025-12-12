@@ -42,24 +42,24 @@ class TestEnvironmentState(unittest.TestCase):
         """Test creating a valid environment state."""
         now = get_test_datetime()
         state = EnvironmentState(
-            current_temp=TEST_CURRENT_TEMP,
+            indoor_temperature=TEST_CURRENT_TEMP,
             outdoor_temp=TEST_OUTDOOR_TEMP,
-            humidity=TEST_HUMIDITY,
+            indoor_humidity=TEST_HUMIDITY,
             timestamp=now,
         )
         
-        self.assertEqual(state.current_temp, TEST_CURRENT_TEMP)
+        self.assertEqual(state.indoor_temperature, TEST_CURRENT_TEMP)
         self.assertEqual(state.outdoor_temp, TEST_OUTDOOR_TEMP)
-        self.assertEqual(state.humidity, TEST_HUMIDITY)
+        self.assertEqual(state.indoor_humidity, TEST_HUMIDITY)
         self.assertEqual(state.timestamp, now)
 
     def test_environment_state_with_optional_fields(self):
         """Test environment state with optional fields."""
         now = datetime.now()
         state = EnvironmentState(
-            current_temp=20.0,
+            indoor_temperature=20.0,
             outdoor_temp=10.0,
-            humidity=50.0,
+            indoor_humidity=50.0,
             timestamp=now,
             outdoor_humidity=60.0,
             cloud_coverage=75.0,
@@ -74,17 +74,17 @@ class TestEnvironmentState(unittest.TestCase):
         
         with self.assertRaises(ValueError):
             EnvironmentState(
-                current_temp=20.0,
+                indoor_temperature=20.0,
                 outdoor_temp=10.0,
-                humidity=150.0,  # Invalid
+                indoor_humidity=150.0,  # Invalid
                 timestamp=now,
             )
         
         with self.assertRaises(ValueError):
             EnvironmentState(
-                current_temp=20.0,
+                indoor_temperature=20.0,
                 outdoor_temp=10.0,
-                humidity=-10.0,  # Invalid
+                indoor_humidity=-10.0,  # Invalid
                 timestamp=now,
             )
 
@@ -92,14 +92,14 @@ class TestEnvironmentState(unittest.TestCase):
         """Test that EnvironmentState is immutable."""
         now = datetime.now()
         state = EnvironmentState(
-            current_temp=20.0,
+            indoor_temperature=20.0,
             outdoor_temp=10.0,
-            humidity=50.0,
+            indoor_humidity=50.0,
             timestamp=now,
         )
         
         with self.assertRaises(AttributeError):
-            state.current_temp = 25.0  # Should fail
+            state.indoor_temperature = 25.0  # Should fail
 
 
 class TestScheduleTimeslot(unittest.TestCase):

@@ -97,9 +97,9 @@ class HAEnvironmentReader:
         cloud_coverage = self._get_float_state(self._cloud_cover_entity_id)
         
         return EnvironmentState(
-            current_temp=current_temp,
+            indoor_temperature=current_temp,
             outdoor_temp=outdoor_temp,
-            humidity=humidity,
+            indoor_humidity=humidity,
             timestamp=dt_util.now(),
             outdoor_humidity=outdoor_humidity,
             cloud_coverage=cloud_coverage,

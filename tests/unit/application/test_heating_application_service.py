@@ -93,9 +93,9 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         )
         
         environment = EnvironmentState(
-            current_temp=19.0,
+            indoor_temperature=19.0,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=base_time,
         )
@@ -118,9 +118,9 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         # Step 2: Time advances to 04:45, LHS improves to 4°C/h
         later_time = make_aware(datetime(2025, 1, 15, 4, 45, 0))  # 04:45
         environment_later = EnvironmentState(
-            current_temp=20.0,  # Heated up
+            indoor_temperature=20.0,  # Heated up
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=later_time,
         )
@@ -158,9 +158,9 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         )
         
         environment = EnvironmentState(
-            current_temp=19.0,
+            indoor_temperature=19.0,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=base_time,
         )
@@ -178,9 +178,9 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         # Time advances but LHS stays low - still need heating
         later_time = make_aware(datetime(2025, 1, 15, 4, 30, 0))
         environment_later = EnvironmentState(
-            current_temp=19.5,
+            indoor_temperature=19.5,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=later_time,
         )
@@ -212,9 +212,9 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         )
         
         environment = EnvironmentState(
-            current_temp=19.0,
+            indoor_temperature=19.0,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=base_time,
         )
@@ -230,9 +230,9 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         
         # Time reaches target
         environment_at_target = EnvironmentState(
-            current_temp=21.0,
+            indoor_temperature=21.0,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=target_time,  # Reached target time
         )
@@ -270,9 +270,9 @@ class TestOvershootPrevention:
         )
         
         environment = EnvironmentState(
-            current_temp=20.0,  # Already close to target
+            indoor_temperature=20.0,  # Already close to target
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=current_time,
         )
@@ -321,9 +321,9 @@ class TestNoDirectVThermControl:
         )
         
         environment = EnvironmentState(
-            current_temp=19.0,
+            indoor_temperature=19.0,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=base_time,
         )
