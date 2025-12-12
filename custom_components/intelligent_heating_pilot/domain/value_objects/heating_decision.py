@@ -10,8 +10,8 @@ class HeatingAction(Enum):
     
     START_HEATING = "start_heating"
     STOP_HEATING = "stop_heating"
+    SET_TEMPERATURE = "set_temperature"
     NO_ACTION = "no_action"
-    MONITOR = "monitor"
 
 
 @dataclass(frozen=True)
@@ -34,3 +34,6 @@ class HeatingDecision:
         """Validate the heating decision data."""
         if self.action == HeatingAction.START_HEATING and self.target_temp is None:
             raise ValueError("START_HEATING action requires a target temperature")
+
+        if self.action == HeatingAction.SET_TEMPERATURE and self.target_temp is None:
+            raise ValueError("SET_TEMPERATURE action requires a target temperature")
