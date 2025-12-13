@@ -14,6 +14,8 @@ from homeassistant.util import dt as dt_util
 from ..domain.entities import HeatingPilot
 from ..domain.services import PredictionService, LHSCalculationService
 from ..domain.value_objects import HeatingAction, HeatingDecision, SlopeData
+from ..infrastructure.decision_strategy_factory import DecisionStrategyFactory
+from ..const import DEFAULT_DECISION_MODE
 
 if TYPE_CHECKING:
     from ..infrastructure.adapters import (
@@ -46,6 +48,7 @@ class HeatingApplicationService:
         climate_commander: "HAClimateCommander",
         environment_reader: "HAEnvironmentReader",
         lhs_window_hours: float = 6.0,
+        decision_mode: str = DEFAULT_DECISION_MODE,
     ) -> None:
         """Initialize the application service.
         
@@ -56,6 +59,7 @@ class HeatingApplicationService:
             climate_commander: Controls climate entity
             environment_reader: Reads environmental conditions
             lhs_window_hours: Time window in hours for contextual LHS (default: 6)
+            decision_mode: Decision mode ('simple' or 'ml')
         """
         self._scheduler_reader = scheduler_reader
         self._model_storage = model_storage
@@ -65,6 +69,21 @@ class HeatingApplicationService:
         self._prediction_service = PredictionService()
         self._lhs_calculation_service = LHSCalculationService()
         self._lhs_window_hours = lhs_window_hours
+        
+        # Create decision strategy based on mode
+        decision_strategy = DecisionStrategyFactory.create_strategy(
+            mode=decision_mode,
+            scheduler_reader=scheduler_reader,
+            model_storage=model_storage,
+        )
+        
+        # Create HeatingPilot with strategy
+        self._heating_pilot = HeatingPilot(
+            decision_strategy=decision_strategy,
+            scheduler_commander=scheduler_commander,
+        )
+        
+        _LOGGER.info(f"HeatingApplicationService initialized with decision mode: {decision_mode}")
         
         # Runtime state for anticipation scheduling
         self._last_scheduled_time: datetime | None = None
@@ -206,6 +225,8 @@ class HeatingApplicationService:
                 environment.indoor_temperature,
                 timeslot.target_temp
             )
+            self._is_preheating_active = False
+            self._preheating_target_time = None
             return {
                 "anticipated_start_time": timeslot.target_time,
                 "next_schedule_time": timeslot.target_time,
@@ -334,7 +355,7 @@ class HeatingApplicationService:
         self._last_scheduled_lhs = lhs
         
         # If anticipated start is in past but target is future, trigger now
-        if anticipated_start <= now < target_time:
+        if anticipated_start <= now < target_time and not self._is_preheating_active:
             _LOGGER.info(
                 "Anticipated start %s is past, triggering pre-heating immediately",
                 anticipated_start.isoformat()
@@ -376,7 +397,7 @@ class HeatingApplicationService:
             return
         
         current_slope = self._environment_reader.get_vtherm_slope()
-        if current_slope is None or current_slope <= 0:
+        if current_slope is None or current_slope <= 0.0:
             return
         
         # Calculate estimated temperature at target time
@@ -390,7 +411,7 @@ class HeatingApplicationService:
         # Check overshoot threshold
         overshoot_threshold = timeslot.target_temp + 0.5
         
-        if estimated_temp > overshoot_threshold:
+        if estimated_temp >= overshoot_threshold and self._is_preheating_active:
             _LOGGER.warning(
                 "Overshoot risk! Current: %.1f°C, estimated: %.1f°C, target: %.1f°C - reverting to current schedule",
                 environment.indoor_temperature,
