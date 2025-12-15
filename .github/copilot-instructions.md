@@ -61,6 +61,18 @@ All new features must be developed using TDD:
 2. **Parameter/Return Value Logging** - Input parameters and return values should be logged at `DEBUG` level.
 3. **Structured Logging** - Prefer structured logging (e.g., JSON) where possible for easier parsing and analysis.
 
+### Python Environment Standards
+
+1. **ALWAYS use Poetry** - Never run `python`, `pytest`, `pip` commands directly. Always use `poetry run python`, `poetry run pytest`, `poetry install`, etc.
+2. **No direct interpreter execution** - Commands like `python -m pytest` or `python script.py` are forbidden. Use `poetry run pytest` or `poetry run python script.py`.
+3. **Package management via Poetry only** - Use `poetry add package` for dependencies, never `pip install`.
+
+### Documentation Standards
+
+1. **No unsolicited documentation** - Do NOT create markdown files to document changes, summarize work, or write reports UNLESS explicitly requested by the user.
+2. **Code-level documentation required** - Docstrings and inline comments are mandatory and should be maintained.
+3. **PR descriptions only** - Summaries of work belong in pull request descriptions or conversation responses, not in repository markdown files.
+
 ### Testing Structure
 
 ```python
