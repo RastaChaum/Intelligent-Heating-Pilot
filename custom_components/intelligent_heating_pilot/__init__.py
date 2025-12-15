@@ -41,6 +41,7 @@ from .infrastructure.adapters import (
     HASchedulerReader,
 )
 from .infrastructure.event_bridge import HAEventBridge
+from .view import async_register_http_views
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -282,6 +283,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Create and load coordinator
     coordinator = IntelligentHeatingPilotCoordinator(hass, entry)
     await coordinator.async_load()
+    
+    # Register HTTP views
+    async_register_http_views(hass, coordinator._app_service)
     
     # Store coordinator
     hass.data[DOMAIN][entry.entry_id] = coordinator

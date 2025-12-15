@@ -43,8 +43,7 @@ class HeatingDecision:
 @dataclass(frozen=True)
 class TariffPeriodDetail:
     """Represents energy consumption and cost details for a specific tariff period."""
-    
-    tariff_name: str
+    tariff_price_eur_per_kwh: float
     energy_kwh: float
     heating_duration_minutes: float
     cost_euro: float
@@ -72,7 +71,7 @@ class HeatingCycle:
     target_temp: float
     end_temp: float
     start_temp: float
-    tariff_details: list[TariffPeriodDetail]
+    tariff_details: list[TariffPeriodDetail] | None = None
 
     @property
     def duration_minutes(self) -> float:
@@ -107,17 +106,17 @@ class HeatingCycle:
     @property
     def total_energy_kwh(self) -> float:
         """Calculates the total energy consumed during the cycle in kWh from tariff details."""
-        return sum(detail.energy_kwh for detail in self.tariff_details)
+        return sum(detail.energy_kwh for detail in (self.tariff_details or []))
 
     @property
     def total_heating_duration_minutes(self) -> float:
         """Calculates the total heating duration in minutes from tariff details."""
-        return sum(detail.heating_duration_minutes for detail in self.tariff_details)
+        return sum(detail.heating_duration_minutes for detail in (self.tariff_details or []))
 
     @property
     def total_cost_euro(self) -> float:
         """Calculates the total cost in euros from tariff details."""
-        return sum(detail.cost_euro for detail in self.tariff_details)
+        return sum(detail.cost_euro for detail in (self.tariff_details or []))
 
     def __post_init__(self) -> None:
         """Validate the heating cycle data."""

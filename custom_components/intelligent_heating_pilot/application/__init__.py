@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from homeassistant.util import dt as dt_util
 
 from ..domain.entities import HeatingPilot
-from ..domain.services import PredictionService, LHSCalculationService
+from ..domain.services import PredictionService, LHSCalculationService, HeatingCycleService
 from ..domain.value_objects import HeatingAction, HeatingDecision, SlopeData
 from ..infrastructure.decision_strategy_factory import DecisionStrategyFactory
 from ..const import DEFAULT_DECISION_MODE
@@ -68,6 +68,7 @@ class HeatingApplicationService:
         self._environment_reader = environment_reader
         self._prediction_service = PredictionService()
         self._lhs_calculation_service = LHSCalculationService()
+        self._heating_cycle_service = HeatingCycleService()
         self._lhs_window_hours = lhs_window_hours
         
         # Create decision strategy based on mode
