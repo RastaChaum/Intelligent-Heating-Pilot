@@ -11,14 +11,18 @@ class HistoricalDataKey(Enum):
     """Keys to identify different types of historical data within a dataset."""
     
     INDOOR_TEMP = "indoor_temp"
+    INDOOR_HUMIDITY = "indoor_humidity"
     OUTDOOR_TEMP = "outdoor_temp"
+    OUTDOOR_HUMIDITY = "outdoor_humidity"
+    CLOUD_COVERAGE = "cloud_coverage"
     TARGET_TEMP = "target_temp"
-    HEATING_STATE = "heating_state"
-    HUMIDITY = "humidity"
+        
     # Optional instrumentation for energy & tariff calculations
+    HEATING_STATE = "heating_state"
     HEATING_ENERGY_KWH = "heating_energy_kwh"  # Cumulative energy meter in kWh
     HEATING_RUNTIME_SECONDS = "heating_runtime_seconds"  # Cumulative runtime in seconds
     TARIFF_PRICE_EUR_PER_KWH = "tariff_price_eur_per_kwh"  # Tariff price time series
+    
     # Ajoutez d'autres clés au besoin
 
 
