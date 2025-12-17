@@ -34,11 +34,13 @@ class HistoricalMeasurement:
         timestamp: The datetime when the measurement was recorded.
         value: The main state value of the entity (e.g., temperature, 'on'/'off').
         attributes: A dictionary of additional attributes (e.g., for climate entities like 'hvac_action').
+        entity_id: The entity_id from Home Assistant (e.g., 'climate.living_room', 'sensor.outdoor_temp').
     """
     
     timestamp: datetime
     value: float | str | bool
     attributes: dict[str, Any]
+    entity_id: str
 
 
 @dataclass(frozen=True)

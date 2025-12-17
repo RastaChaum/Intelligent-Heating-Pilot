@@ -11,6 +11,15 @@ from .model_storage import HAModelStorage
 from .scheduler_commander import HASchedulerCommander
 from .scheduler_reader import HASchedulerReader
 
+# Import data adapters with try/except to handle test environments
+try:
+    from .climate_data_adapter import ClimateDataAdapter
+    from .sensor_data_adapter import SensorDataAdapter
+    from .weather_data_adapter import WeatherDataAdapter
+    _DATA_ADAPTERS_AVAILABLE = True
+except ImportError:
+    _DATA_ADAPTERS_AVAILABLE = False
+
 __all__ = [
     "HAClimateCommander",
     "HAEnvironmentReader",
@@ -18,3 +27,10 @@ __all__ = [
     "HASchedulerCommander",
     "HASchedulerReader",
 ]
+
+if _DATA_ADAPTERS_AVAILABLE:
+    __all__.extend([
+        "ClimateDataAdapter",
+        "SensorDataAdapter",
+        "WeatherDataAdapter",
+    ])

@@ -41,7 +41,9 @@ from .infrastructure.adapters import (
     HASchedulerReader,
 )
 from .infrastructure.event_bridge import HAEventBridge
-from .view import async_register_http_views
+
+# TODO: Implement HTTP views for debugging/monitoring
+# from .view import async_register_http_views
 
 _LOGGER = logging.getLogger(__name__)
 
