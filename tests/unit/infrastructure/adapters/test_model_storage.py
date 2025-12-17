@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 from unittest.mock import Mock, AsyncMock, patch
 from zoneinfo import ZoneInfo
+from typing import Generator
 
 import pytest
 
@@ -35,7 +36,7 @@ def mock_store() -> Mock:
 
 
 @pytest.fixture
-def storage(mock_hass: Mock, entry_id: str, mock_store: Mock) -> HAModelStorage:
+def storage(mock_hass: Mock, entry_id: str, mock_store: Mock) -> Generator[HAModelStorage, None, None]:
     """Create a HAModelStorage instance with mocked Store."""
     with patch('custom_components.intelligent_heating_pilot.infrastructure.adapters.model_storage.Store') as mock_store_class:
         mock_store_class.return_value = mock_store

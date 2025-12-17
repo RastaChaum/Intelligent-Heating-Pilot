@@ -277,7 +277,7 @@ def test_extract_temp_from_action_invalid(reader: HASchedulerReader) -> None:
     assert result is None
     
     # Test with non-dict action
-    result = reader._extract_temp_from_action("invalid")
+    result = reader._extract_temp_from_action({"invalid": "iji"})
     assert result is None
 
 
