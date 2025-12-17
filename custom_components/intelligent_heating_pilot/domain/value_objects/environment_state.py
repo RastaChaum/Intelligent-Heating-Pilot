@@ -21,8 +21,9 @@ class EnvironmentState:
         cloud_coverage: Optional cloud coverage percentage (0-100, 0=clear sky)
     """
     
-    indoor_temperature: float
+    
     timestamp: datetime
+    indoor_temperature: float
     indoor_humidity: float | None = None
     outdoor_temp: float | None = None
     outdoor_humidity: float | None = None
