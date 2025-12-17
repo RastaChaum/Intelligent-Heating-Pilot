@@ -17,14 +17,14 @@ from domain.value_objects.historical_data import (
 )
 
 
-def m(timestamp: datetime, value: float | str | bool, hvac_action: str | None = None, hvac_mode: str | None = None) -> HistoricalMeasurement:
+def m(timestamp: datetime, value: float | str | bool, hvac_action: str | None = None, hvac_mode: str | None = None, device_id: str = "test.device") -> HistoricalMeasurement:
     """Helper to create HistoricalMeasurement with optional climate attributes."""
     attrs = {}
     if hvac_action:
         attrs["hvac_action"] = hvac_action
     if hvac_mode:
         attrs["hvac_mode"] = hvac_mode
-    return HistoricalMeasurement(timestamp, value, attrs)
+    return HistoricalMeasurement(timestamp, value, attrs, device_id)
 
 
 @pytest.fixture
@@ -95,7 +95,7 @@ class TestExtractSingleHeatingCycle:
             }
         )
 
-        cycles = await service.extract_heating_cycles(dataset, t0, t4 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t4 + timedelta(minutes=5))
 
         assert len(cycles) == 1
         cycle = cycles[0]
@@ -131,7 +131,7 @@ class TestExtractSingleHeatingCycle:
             }
         )
 
-        cycles = await service.extract_heating_cycles(dataset, t0, t3 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t3 + timedelta(minutes=5))
 
         assert len(cycles) == 1
         assert cycles[0].end_time == t3
@@ -179,7 +179,7 @@ class TestExtractMultipleCycles:
             }
         )
 
-        cycles = await service.extract_heating_cycles(dataset, t0, t6 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t6 + timedelta(minutes=5))
 
         assert len(cycles) == 2
         assert cycles[0].start_time == t1
@@ -221,7 +221,7 @@ class TestExtractMultipleCycles:
             }
         )
 
-        cycles = await service.extract_heating_cycles(dataset, t0, t5 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t5 + timedelta(minutes=5))
 
         assert len(cycles) == 2
         assert cycles[0].start_time == t1
@@ -267,7 +267,7 @@ class TestExtractWithCycleSplitting:
             }
         )
 
-        cycles = await service_with_splitting.extract_heating_cycles(dataset, t0, t3 + timedelta(minutes=5))
+        cycles = await service_with_splitting.extract_heating_cycles("my_device_id", dataset, t0, t3 + timedelta(minutes=5))
 
         # With 30-min split duration and ~90 min cycle: should get 3 sub-cycles + 1 remaining
         # or 3 complete + 1 remainder (90 = 3*30 + 10)
@@ -305,7 +305,7 @@ class TestExtractWithCycleSplitting:
             }
         )
 
-        cycles = await service_with_splitting.extract_heating_cycles(dataset, t0, t3 + timedelta(minutes=5))
+        cycles = await service_with_splitting.extract_heating_cycles("my_device_id", dataset, t0, t3 + timedelta(minutes=5))
 
         # Should not split (25 min < 30 min threshold)
         assert len(cycles) == 1
@@ -338,7 +338,7 @@ class TestExtractEdgeCases:
         )
 
         end_time = t2 + timedelta(minutes=5)
-        cycles = await service.extract_heating_cycles(dataset, t0, end_time)
+        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, end_time)
 
         assert len(cycles) == 1
         assert cycles[0].start_time == t1
@@ -370,7 +370,7 @@ class TestExtractEdgeCases:
             }
         )
 
-        cycles = await service.extract_heating_cycles(dataset, t0, t3 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t3 + timedelta(minutes=5))
 
         # Should reject the short cycle (2 min < 5 min minimum)
         assert len(cycles) == 0
@@ -410,7 +410,7 @@ class TestExtractEdgeCases:
             }
         )
 
-        cycles = await service.extract_heating_cycles(dataset, t0, t4 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t4 + timedelta(minutes=5))
 
         # Cycle detection uses closest prior temp when exact timestamp is unavailable.
         # At t1: mode=True, temp=18.0 (from t0 fallback), delta=2.0 > 0.5 → START
@@ -428,4 +428,4 @@ class TestExtractEdgeCases:
         dataset = HistoricalDataSet(data={})
 
         with pytest.raises(ValueError, match="Missing critical historical data"):
-            await service.extract_heating_cycles(dataset, base_time, base_time + timedelta(hours=1))
+            await service.extract_heating_cycles("my_device_id", dataset, base_time, base_time + timedelta(hours=1))

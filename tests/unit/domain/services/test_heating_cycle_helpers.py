@@ -19,9 +19,9 @@ from domain.value_objects.historical_data import (
 from domain.value_objects.heating import TariffPeriodDetail
 
 
-def m(timestamp: datetime, value: float | str | bool) -> HistoricalMeasurement:
+def m(timestamp: datetime, value: float | str | bool, device_id: str = "test.device") -> HistoricalMeasurement:
     """Helper to create HistoricalMeasurement with empty attributes."""
-    return HistoricalMeasurement(timestamp, value, {})
+    return HistoricalMeasurement(timestamp, value, {}, device_id)
 
 
 @pytest.fixture
