@@ -66,6 +66,7 @@ class HeatingCycle:
                         and cost by specific TariffPeriodDetail periods within the cycle.
     """
     
+    device_id: str
     start_time: datetime
     end_time: datetime
     target_temp: float

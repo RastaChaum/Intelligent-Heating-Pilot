@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -62,6 +61,7 @@ class HeatingCycleService(IHeatingCycleService):
     
     async def extract_heating_cycles(
         self,
+        device_id: str,
         history_data_set: HistoricalDataSet,
         start_time: datetime,
         end_time: datetime,
@@ -135,12 +135,13 @@ class HeatingCycleService(IHeatingCycleService):
                 if cycle_ended:
                     _LOGGER.debug("Heating cycle ended at %s (Reason: %s)", timestamp, end_reason)
                     created = self._create_cycles(
-                        heating_start,
-                        timestamp,
-                        cycle_start_indoor_temp if cycle_start_indoor_temp is not None else current_indoor_temp,
-                        current_indoor_temp,
-                        cycle_start_target_temp if cycle_start_target_temp is not None else current_target_temp,
-                        history_data_set,
+                        device_id=device_id,
+                        start_time=heating_start,
+                        end_time=timestamp,
+                        start_indoor_temp=cycle_start_indoor_temp if cycle_start_indoor_temp is not None else current_indoor_temp,
+                        end_indoor_temp=current_indoor_temp,
+                        target_temp=cycle_start_target_temp if cycle_start_target_temp is not None else current_target_temp,
+                        history_data_set=history_data_set,
                     )
                     if created:
                         cycles.extend(created)
@@ -153,12 +154,13 @@ class HeatingCycleService(IHeatingCycleService):
         if heating_start is not None:
             _LOGGER.debug("Unfinished heating cycle found, ending at data_set end time %s", end_time)
             created = self._create_cycles(
-                heating_start,
-                end_time,
-                cycle_start_indoor_temp or 20.0,
-                self._get_value_at_time(history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, []), end_time, float) or 20.0,
-                cycle_start_target_temp or 20.0,
-                history_data_set,
+                device_id=device_id,
+                start_time=heating_start,
+                end_time=end_time,
+                start_indoor_temp=cycle_start_indoor_temp or 20.0,
+                end_indoor_temp=self._get_value_at_time(history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, []), end_time, float) or 20.0,
+                target_temp=cycle_start_target_temp or 20.0,
+                history_data_set=history_data_set,
             )
             if created:
                 cycles.extend(created)
@@ -261,6 +263,7 @@ class HeatingCycleService(IHeatingCycleService):
 
     def _create_cycles(
         self,
+        device_id: str,
         start_time: datetime,
         end_time: datetime,
         start_indoor_temp: float,
@@ -304,6 +307,7 @@ class HeatingCycleService(IHeatingCycleService):
 
         # Build HeatingCycle with computed tariff details (may be empty)
         cycle = HeatingCycle(
+            device_id=device_id,
             start_time=start_time,
             end_time=end_time,
             target_temp=target_temp,
@@ -321,12 +325,13 @@ class HeatingCycleService(IHeatingCycleService):
 
         # If splitting is enabled, return sub-cycles (used for ML augmentation).
         if self._cycle_split_duration_minutes is not None and duration_minutes > self._cycle_split_duration_minutes:
-            return self._split_into_cycles(start_time, end_time, start_indoor_temp, end_indoor_temp, target_temp, history_data_set)
+            return self._split_into_cycles(device_id, start_time, end_time, start_indoor_temp, end_indoor_temp, target_temp, history_data_set)
 
         return [cycle]
 
     def _split_into_cycles(
         self,
+        device_id: str,
         start_time: datetime,
         end_time: datetime,
         start_indoor_temp: float,
@@ -370,6 +375,7 @@ class HeatingCycleService(IHeatingCycleService):
             sub_cycle_end_temp = current_sub_cycle_start_temp + (temp_per_minute * self._cycle_split_duration_minutes)
 
             sub_cycle = HeatingCycle(
+                device_id=device_id,
                 start_time=current_sub_cycle_start_time,
                 end_time=sub_cycle_end_time,
                 target_temp=target_temp,  # Target remains constant for sub-cycles
@@ -387,6 +393,7 @@ class HeatingCycleService(IHeatingCycleService):
         if remaining_minutes > 0:
             remaining_end_time = current_sub_cycle_start_time + timedelta(minutes=remaining_minutes)
             remaining_cycle = HeatingCycle(
+                device_id=device_id,
                 start_time=current_sub_cycle_start_time,
                 end_time=remaining_end_time,
                 target_temp=target_temp,
