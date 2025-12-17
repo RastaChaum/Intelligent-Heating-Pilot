@@ -14,15 +14,17 @@ python = ">=3.13.2,<3.14"
 
 # Runtime dependencies for standalone domain experimentation (keep minimal)
 # Domain code is pure standard library; no extra runtime deps required here.
+pycares = "<5"
 
 [tool.poetry.group.dev.dependencies]
-# Home Assistant for type checking & local import resolution (dev only!)
-homeassistant = ">=2025.9"
 pytest = "^8.2"
-pytest-asyncio = "^0.23"
+# pytest-asyncio 1.2 is required by HA test plugin
+pytest-asyncio = "^1.2.0"
+pytest-homeassistant-custom-component = "^0.13.0"
 ruff = "^0.6.0"
 mypy = "^1.10"
 types-setuptools = "^68.0.0"
+pysqlite3-binary = "^0.5.4.post2"
 
 [tool.poetry.group.test.dependencies]
 coverage = "^7.6"
