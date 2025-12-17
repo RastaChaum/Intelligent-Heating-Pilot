@@ -41,9 +41,7 @@ from .infrastructure.adapters import (
     HASchedulerReader,
 )
 from .infrastructure.event_bridge import HAEventBridge
-
-# TODO: Implement HTTP views for debugging/monitoring
-# from .view import async_register_http_views
+from .view import async_register_http_views
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -275,6 +273,13 @@ class IntelligentHeatingPilotCoordinator:
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Intelligent Heating Pilot component."""
     hass.data.setdefault(DOMAIN, {})
+    
+    # Store hass in http app context for REST API views to access it
+    hass.http.app["hass"] = hass
+    
+    # Register HTTP views once at the integration level (not per device)
+    await async_register_http_views(hass)
+    
     return True
 
 
@@ -285,9 +290,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Create and load coordinator
     coordinator = IntelligentHeatingPilotCoordinator(hass, entry)
     await coordinator.async_load()
-    
-    # Register HTTP views
-    async_register_http_views(hass, coordinator._app_service)
     
     # Store coordinator
     hass.data[DOMAIN][entry.entry_id] = coordinator

@@ -429,3 +429,45 @@ class TestExtractEdgeCases:
 
         with pytest.raises(ValueError, match="Missing critical historical data"):
             await service.extract_heating_cycles("my_device_id", dataset, base_time, base_time + timedelta(hours=1))
+
+    @pytest.mark.asyncio
+    async def test_cycle_split_duration_parameter_override(self, service, base_time):
+        """Given cycle_split_duration_minutes parameter, overrides instance setting."""
+        t0 = base_time
+        t1 = t0 + timedelta(minutes=5)
+        t2 = t0 + timedelta(minutes=50)  # 45-min cycle
+        t3 = t0 + timedelta(minutes=55)
+        
+        dataset = HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(t0, 18.0),
+                    m(t1, 18.5),
+                    m(t2, 20.4),
+                    m(t3, 20.4),
+                ],
+                HistoricalDataKey.TARGET_TEMP: [
+                    m(t0, 20.0),
+                    m(t1, 20.0),
+                    m(t2, 20.0),
+                    m(t3, 20.0),
+                ],
+                HistoricalDataKey.HEATING_STATE: [
+                    m(t0, True, hvac_action="heating", hvac_mode="heat"),
+                    m(t1, True, hvac_action="heating", hvac_mode="heat"),
+                    m(t2, False, hvac_action="off", hvac_mode="heat"),
+                    m(t3, False, hvac_action="off", hvac_mode="heat"),
+                ],
+            }
+        )
+
+        # Service without splitting should return 1 cycle
+        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t3 + timedelta(minutes=5))
+        assert len(cycles) == 1
+
+        # Same service with cycle_split_duration_minutes parameter should split the cycle
+        cycles_split = await service.extract_heating_cycles(
+            "my_device_id", dataset, t0, t3 + timedelta(minutes=5), cycle_split_duration_minutes=15
+        )
+        # 45-minute cycle split at 15-minute intervals = 3 sub-cycles
+        assert len(cycles_split) == 3

@@ -65,15 +65,19 @@ class HeatingCycleService(IHeatingCycleService):
         history_data_set: HistoricalDataSet,
         start_time: datetime,
         end_time: datetime,
+        cycle_split_duration_minutes: int | None = None,
     ) -> list[HeatingCycle]:
         """Extract heating cycles from a HistoricalDataSet within a given time range.
         
         This method applies the core business logic to identify and process heating cycles.
         
         Args:
+            device_id: The device identifier for the cycles.
             history_data_set: A HistoricalDataSet containing all necessary raw sensor data.
             start_time: The start of the time range for cycle extraction.
             end_time: The end of the time range for cycle extraction.
+            cycle_split_duration_minutes: Optional duration in minutes to split long cycles
+                into smaller sub-cycles for granular analysis.
             
         Returns:
             A list of HeatingCycle value objects.
@@ -85,6 +89,9 @@ class HeatingCycleService(IHeatingCycleService):
         
         # Validate critical data availability
         self._validate_critical_data(history_data_set)
+        
+        # Use provided cycle_split_duration_minutes if specified, otherwise use instance default
+        split_duration = cycle_split_duration_minutes if cycle_split_duration_minutes is not None else self._cycle_split_duration_minutes
         
         # Récupérer les données d'historique triées par timestamp
         heating_state_history = sorted(
@@ -142,6 +149,7 @@ class HeatingCycleService(IHeatingCycleService):
                         end_indoor_temp=current_indoor_temp,
                         target_temp=cycle_start_target_temp if cycle_start_target_temp is not None else current_target_temp,
                         history_data_set=history_data_set,
+                        split_duration_minutes=split_duration,
                     )
                     if created:
                         cycles.extend(created)
@@ -161,6 +169,7 @@ class HeatingCycleService(IHeatingCycleService):
                 end_indoor_temp=self._get_value_at_time(history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, []), end_time, float) or 20.0,
                 target_temp=cycle_start_target_temp or 20.0,
                 history_data_set=history_data_set,
+                split_duration_minutes=split_duration,
             )
             if created:
                 cycles.extend(created)
@@ -270,6 +279,7 @@ class HeatingCycleService(IHeatingCycleService):
         end_indoor_temp: float,
         target_temp: float,
         history_data_set: HistoricalDataSet,
+        split_duration_minutes: int | None = None,
     ) -> list[HeatingCycle]:
         """Build and return one or more HeatingCycle objects for the provided time range.
 
@@ -324,8 +334,8 @@ class HeatingCycleService(IHeatingCycleService):
         )
 
         # If splitting is enabled, return sub-cycles (used for ML augmentation).
-        if self._cycle_split_duration_minutes is not None and duration_minutes > self._cycle_split_duration_minutes:
-            return self._split_into_cycles(device_id, start_time, end_time, start_indoor_temp, end_indoor_temp, target_temp, history_data_set)
+        if split_duration_minutes is not None and duration_minutes > split_duration_minutes:
+            return self._split_into_cycles(device_id, start_time, end_time, start_indoor_temp, end_indoor_temp, target_temp, history_data_set, split_duration_minutes)
 
         return [cycle]
 
@@ -338,9 +348,10 @@ class HeatingCycleService(IHeatingCycleService):
         end_indoor_temp: float,
         target_temp: float,
         history_data_set: HistoricalDataSet,
+        split_duration_minutes: int | None = None,
     ) -> list[HeatingCycle]:
         """Splits a long heating cycle into smaller sub-cycles and returns them."""
-        if self._cycle_split_duration_minutes is None:  # Should not happen if called correctly
+        if split_duration_minutes is None:  # Should not happen if called correctly
             return []
 
         # Ensure temperatures are available before attempting numeric operations
@@ -349,8 +360,8 @@ class HeatingCycleService(IHeatingCycleService):
             return []
 
         duration_minutes = (end_time - start_time).total_seconds() / 60.0
-        num_sub_cycles = int(duration_minutes / self._cycle_split_duration_minutes)
-        remaining_minutes = duration_minutes - (num_sub_cycles * self._cycle_split_duration_minutes)
+        num_sub_cycles = int(duration_minutes / split_duration_minutes)
+        remaining_minutes = duration_minutes - (num_sub_cycles * split_duration_minutes)
 
         if duration_minutes == 0:
             return []
@@ -371,8 +382,8 @@ class HeatingCycleService(IHeatingCycleService):
         )
 
         for i in range(num_sub_cycles):
-            sub_cycle_end_time = current_sub_cycle_start_time + timedelta(minutes=self._cycle_split_duration_minutes)
-            sub_cycle_end_temp = current_sub_cycle_start_temp + (temp_per_minute * self._cycle_split_duration_minutes)
+            sub_cycle_end_time = current_sub_cycle_start_time + timedelta(minutes=split_duration_minutes)
+            sub_cycle_end_temp = current_sub_cycle_start_temp + (temp_per_minute * split_duration_minutes)
 
             sub_cycle = HeatingCycle(
                 device_id=device_id,

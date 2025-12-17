@@ -14,16 +14,21 @@ class IHeatingCycleService(ABC):
     @abstractmethod
     async def extract_heating_cycles(
         self,
+        device_id: str,
         history_data_set: HistoricalDataSet,
         start_time: datetime,
         end_time: datetime,
+        cycle_split_duration_minutes: int | None = None,
     ) -> list[HeatingCycle]:
         """Extract heating cycles from a HistoricalDataSet within a given time range.
         
         Args:
+            device_id: The device identifier for the cycles
             history_data_set: A HistoricalDataSet containing all necessary raw sensor data.
             start_time: The start of the time range for cycle extraction.
             end_time: The end of the time range for cycle extraction.
+            cycle_split_duration_minutes: Optional duration in minutes to split long cycles
+                into smaller sub-cycles for granular analysis.
             
         Returns:
             A list of HeatingCycle value objects.

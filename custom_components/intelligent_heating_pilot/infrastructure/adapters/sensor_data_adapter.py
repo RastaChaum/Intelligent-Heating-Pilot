@@ -188,14 +188,19 @@ class SensorDataAdapter(IHistoricalDataAdapter):
             List of historical records from Home Assistant
         """
         from homeassistant.components.recorder import history
+        from functools import partial
         
         # Use Home Assistant's get_significant_states function from recorder
-        history_dict = history.get_significant_states(
+        # Must run in executor to avoid blocking the event loop
+        # Use partial to properly pass keyword arguments
+        get_states_func = partial(
+            history.get_significant_states,
             self._hass,
             start_time,
             end_time,
             entity_ids=[entity_id],
         )
+        history_dict = await self._hass.async_add_executor_job(get_states_func)
         
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])
