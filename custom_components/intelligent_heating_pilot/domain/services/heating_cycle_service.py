@@ -118,7 +118,6 @@ class HeatingCycleService(IHeatingCycleService):
 
             if current_indoor_temp is None or current_target_temp is None:
                 _LOGGER.debug("Skipping measurement at %s due to missing temp data", timestamp)
-                prev_action_active = action_active
                 continue
 
             if heating_start is None:
