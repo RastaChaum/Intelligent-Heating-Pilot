@@ -138,18 +138,16 @@ class HeatingApplicationService:
         _LOGGER.info(
             "Computing contextual LHS for hour %02d using HeatingCycles",
             target_hour,
-        )
-
-        # Try to build a HistoricalDataSet from HA adapters (climate/sensors/weather)
+        # Try to build a HistoricalDataSet from HA adapters (climate/sensors)
         # so we can extract HeatingCycles in a recent lookback period.
         try:
             from ..infrastructure.adapters import (
                 ClimateDataAdapter,
-                WeatherDataAdapter,
+                SensorDataAdapter,
             )
         except ImportError:
             ClimateDataAdapter = None  # type: ignore[assignment]
-            WeatherDataAdapter = None  # type: ignore[assignment]
+            SensorDataAdapter = None  # type: ignore[assignment]
 
         heating_cycles: list[HeatingCycle] = []
 
