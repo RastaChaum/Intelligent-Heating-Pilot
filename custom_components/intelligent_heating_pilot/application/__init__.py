@@ -13,9 +13,16 @@ from homeassistant.util import dt as dt_util
 
 from ..domain.entities import HeatingPilot
 from ..domain.services import PredictionService, LHSCalculationService, HeatingCycleService
-from ..domain.value_objects import HeatingAction, HeatingDecision, SlopeData
+from ..domain.value_objects import (
+    HeatingAction,
+    HeatingDecision,
+    SlopeData,
+    HistoricalDataKey,
+    HistoricalDataSet,
+    HeatingCycle,
+)
 from ..infrastructure.decision_strategy_factory import DecisionStrategyFactory
-from ..const import DEFAULT_DECISION_MODE
+from ..const import DEFAULT_DECISION_MODE, DEFAULT_LHS_RETENTION_DAYS
 
 if TYPE_CHECKING:
     from ..infrastructure.adapters import (
@@ -48,6 +55,7 @@ class HeatingApplicationService:
         climate_commander: "HAClimateCommander",
         environment_reader: "HAEnvironmentReader",
         lhs_window_hours: float = 6.0,
+        history_lookback_days: int | None = None,
         decision_mode: str = DEFAULT_DECISION_MODE,
     ) -> None:
         """Initialize the application service.
@@ -59,6 +67,8 @@ class HeatingApplicationService:
             climate_commander: Controls climate entity
             environment_reader: Reads environmental conditions
             lhs_window_hours: Time window in hours for contextual LHS (default: 6)
+            history_lookback_days: Number of days of HA history to query
+                to extract heating cycles (default: DEFAULT_LHS_RETENTION_DAYS)
             decision_mode: Decision mode ('simple' or 'ml')
         """
         self._scheduler_reader = scheduler_reader
@@ -70,6 +80,11 @@ class HeatingApplicationService:
         self._lhs_calculation_service = LHSCalculationService()
         self._heating_cycle_service = HeatingCycleService()
         self._lhs_window_hours = lhs_window_hours
+        self._history_lookback_days = (
+            int(history_lookback_days)
+            if history_lookback_days is not None
+            else int(DEFAULT_LHS_RETENTION_DAYS)
+        )
         
         # Create decision strategy based on mode
         decision_strategy = DecisionStrategyFactory.create_strategy(
@@ -102,84 +117,166 @@ class HeatingApplicationService:
         self._active_scheduler_entity = None
         _LOGGER.debug("Anticipation state cleared")
     
-    async def process_slope_update(self, new_slope: float) -> None:
-        """Process a new slope value from VTherm.
-        
-        Only learns positive slopes when heating is active.
-        
-        Args:
-            new_slope: New slope value in °C/h
-        """
-        # Only learn if heating is active and slope is positive
-        if not self._environment_reader.is_heating_active():
-            _LOGGER.debug("Heating not active, skipping slope learning")
-            return
-        
-        if new_slope <= 0:
-            _LOGGER.debug("Negative slope %.2f°C/h, skipping (cooling phase)", new_slope)
-            return
-        
-        # Create timestamped slope data
-        slope_data = SlopeData(
-            slope_value=new_slope,
-            timestamp=dt_util.now()
-        )
-        
-        # Learn the slope via adapter
-        old_lhs = await self._model_storage.get_learned_heating_slope()
-        await self._model_storage.save_slope_data(slope_data)
-        new_lhs = await self._model_storage.get_learned_heating_slope()
-        
-        # Log significant changes
-        if old_lhs is not None and abs(new_lhs - old_lhs) > 0.1:
-            _LOGGER.info(
-                "LHS changed significantly from %.2f to %.2f°C/h",
-                old_lhs,
-                new_lhs
-            )
+    # NOTE: process_slope_update() removed - we now extract slopes directly from
+    # Home Assistant recorder via HeatingCycleService, so no disk-based persistence needed
     
     async def _get_contextual_lhs(self, target_time: datetime) -> float:
-        """Get LHS from time window preceding target time.
+        """Get contextual LHS using detected HeatingCycles.
+        
+        This computes the LHS as the average of `avg_heating_slope` for
+        heating cycles active at the target hour (cycles that started before
+        or at the hour and ended after it). Falls back to global learned LHS
+        when historical data or cycles are unavailable.
         
         Args:
             target_time: Target schedule time
             
         Returns:
-            LHS calculated from time-windowed slopes, or global LHS as fallback
+            Contextual LHS in °C/h or global LHS as fallback
         """
-        # Get all slope data from storage
-        all_slope_data = await self._model_storage.get_all_slope_data()
-        
-        if not all_slope_data:
-            # Fallback to global LHS if no data available
-            global_lhs = await self._model_storage.get_learned_heating_slope()
-            _LOGGER.warning(
-                "No slope data available, using global LHS: %.2f°C/h",
-                global_lhs
-            )
-            return global_lhs
-        
-        # Use domain service to calculate contextual LHS based on time window
-        # Domain service handles the filtering and calculation logic
-        contextual_lhs = self._lhs_calculation_service.calculate_contextual_lhs(
-            all_slope_data=all_slope_data,
-            target_time=target_time,
-            window_hours=self._lhs_window_hours
+        target_hour = target_time.hour
+        _LOGGER.info(
+            "Computing contextual LHS for hour %02d using HeatingCycles",
+            target_hour,
         )
-        
-        # If domain service returns default (no slopes in window), try global LHS
-        if contextual_lhs == 2.0:  # DEFAULT_HEATING_SLOPE
-            global_lhs = await self._model_storage.get_learned_heating_slope()
-            if global_lhs != 2.0:  # If we have learned data, use it
-                _LOGGER.warning(
-                    "No slopes in time window (%.1f hours before %s), using global LHS: %.2f°C/h",
-                    self._lhs_window_hours,
-                    target_time.isoformat(),
-                    global_lhs
+
+        # Try to build a HistoricalDataSet from HA adapters (climate/sensors/weather)
+        # so we can extract HeatingCycles in a recent lookback period.
+        try:
+            from ..infrastructure.adapters import (
+                ClimateDataAdapter,
+                SensorDataAdapter,
+                WeatherDataAdapter,
+            )
+        except ImportError:
+            ClimateDataAdapter = None  # type: ignore[assignment]
+            SensorDataAdapter = None  # type: ignore[assignment]
+            WeatherDataAdapter = None  # type: ignore[assignment]
+
+        heating_cycles: list[HeatingCycle] = []
+
+        if ClimateDataAdapter is not None:
+            # Build historical data from the last few days up to target_time
+            # Lookback duration is driven by configuration.
+            from datetime import timedelta
+            start_time = target_time - timedelta(days=self._history_lookback_days)
+            end_time = target_time
+
+            hass = self._environment_reader.get_hass()
+            vtherm_id = self._environment_reader.get_vtherm_entity_id()
+            indoor_humidity_id = self._environment_reader.get_humidity_in_entity_id()
+            outdoor_humidity_id = self._environment_reader.get_humidity_out_entity_id()
+            outdoor_temp_id = self._environment_reader.get_outdoor_temp_entity_id()
+            cloud_cover_id = self._environment_reader.get_cloud_cover_entity_id()
+
+            combined_data: dict[HistoricalDataKey, list] = {}
+
+            # Fetch climate data (indoor temp, target temp, heating state)
+            try:
+                climate_adapter = ClimateDataAdapter(hass)
+                indoor_data = await climate_adapter.fetch_historical_data(
+                    vtherm_id,
+                    HistoricalDataKey.INDOOR_TEMP,
+                    start_time,
+                    end_time,
                 )
-                return global_lhs
-        
-        return contextual_lhs
+                combined_data.update(indoor_data.data)
+
+                target_data = await climate_adapter.fetch_historical_data(
+                    vtherm_id,
+                    HistoricalDataKey.TARGET_TEMP,
+                    start_time,
+                    end_time,
+                )
+                combined_data.update(target_data.data)
+
+                heating_state = await climate_adapter.fetch_historical_data(
+                    vtherm_id,
+                    HistoricalDataKey.HEATING_STATE,
+                    start_time,
+                    end_time,
+                )
+                combined_data.update(heating_state.data)
+            except Exception as exc:
+                _LOGGER.warning("Failed to fetch climate historical data: %s", exc)
+
+            # Optional sensors
+            if SensorDataAdapter is not None:
+                sensor_adapter = SensorDataAdapter(hass)
+                if indoor_humidity_id:
+                    try:
+                        humidity_in = await sensor_adapter.fetch_historical_data(
+                            indoor_humidity_id,
+                            HistoricalDataKey.INDOOR_HUMIDITY,
+                            start_time,
+                            end_time,
+                        )
+                        combined_data.update(humidity_in.data)
+                    except Exception as exc:
+                        _LOGGER.debug("Failed to fetch indoor humidity history: %s", exc)
+                if outdoor_humidity_id:
+                    try:
+                        humidity_out = await sensor_adapter.fetch_historical_data(
+                            outdoor_humidity_id,
+                            HistoricalDataKey.OUTDOOR_HUMIDITY,
+                            start_time,
+                            end_time,
+                        )
+                        combined_data.update(humidity_out.data)
+                    except Exception as exc:
+                        _LOGGER.debug("Failed to fetch outdoor humidity history: %s", exc)
+
+            if WeatherDataAdapter is not None and cloud_cover_id:
+                try:
+                    weather_adapter = WeatherDataAdapter(hass)
+                    cloud_data = await weather_adapter.fetch_historical_data(
+                        cloud_cover_id,
+                        HistoricalDataKey.CLOUD_COVERAGE,
+                        start_time,
+                        end_time,
+                    )
+                    combined_data.update(cloud_data.data)
+                except Exception as exc:
+                    _LOGGER.debug("Failed to fetch cloud coverage history: %s", exc)
+
+            # Construct dataset and extract cycles
+            historical_data_set = HistoricalDataSet(data=combined_data)
+            try:
+                heating_cycles = await self._heating_cycle_service.extract_heating_cycles(
+                    device_id=vtherm_id,
+                    history_data_set=historical_data_set,
+                    start_time=start_time,
+                    end_time=end_time,
+                    cycle_split_duration_minutes=None,
+                )
+            except ValueError as exc:
+                _LOGGER.debug(
+                    "Cannot extract heating cycles: %s. Falling back to global LHS.",
+                    exc,
+                )
+                heating_cycles = []
+
+        # If we have extracted cycles, compute contextual LHS (by hour)
+        if heating_cycles:
+            contextual_lhs = self._lhs_calculation_service.calculate_contextual_lhs(
+                heating_cycles=heating_cycles,
+                target_hour=target_hour,
+            )
+            _LOGGER.info(
+                "Contextual LHS for hour %02d from %d cycles: %.2f°C/h",
+                target_hour,
+                len(heating_cycles),
+                contextual_lhs,
+            )
+            return contextual_lhs
+
+        # Fallbacks: if adapters unavailable or cycles empty, use global learned LHS
+        global_lhs = await self._model_storage.get_learned_heating_slope()
+        _LOGGER.warning(
+            "No HeatingCycles available, using global LHS: %.2f°C/h",
+            global_lhs,
+        )
+        return global_lhs
     
     async def calculate_and_schedule_anticipation(self) -> dict | None:
         """Calculate anticipation and schedule heating start.
