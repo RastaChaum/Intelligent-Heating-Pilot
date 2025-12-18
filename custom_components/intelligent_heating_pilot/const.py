@@ -8,7 +8,6 @@ CONF_SCHEDULER_ENTITIES = "scheduler_entities"
 CONF_HUMIDITY_IN_ENTITY = "humidity_in_entity_id"
 CONF_HUMIDITY_OUT_ENTITY = "humidity_out_entity_id"
 CONF_CLOUD_COVER_ENTITY = "cloud_cover_entity_id"
-CONF_LHS_WINDOW_HOURS = "lhs_window_hours"
 CONF_LHS_RETENTION_DAYS = "lhs_retention_days"
 CONF_DECISION_MODE = "decision_mode"  # NEW: Choose between 'simple' and 'ml'
 
@@ -28,7 +27,6 @@ DECISION_MODE_ML = "ml"  # AI-powered decisions (requires IHP-ML-Models)
 
 # Default values
 DEFAULT_NAME = "Intelligent Heating Pilot"
-DEFAULT_LHS_WINDOW_HOURS = 6.0  # 6-hour time window for contextual LHS
 DEFAULT_LHS_RETENTION_DAYS = 30  # Keep slope data for 30 days
 DEFAULT_DECISION_MODE = DECISION_MODE_SIMPLE  # Simple mode by default
 

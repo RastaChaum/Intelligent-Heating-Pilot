@@ -10,11 +10,9 @@ from ...const import (
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
-    CONF_LHS_WINDOW_HOURS,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
     DEFAULT_LHS_RETENTION_DAYS,
-    DEFAULT_LHS_WINDOW_HOURS,
 )
 
 if TYPE_CHECKING:
@@ -79,10 +77,6 @@ class HADeviceConfigReader(IDeviceConfigReader):
         humidity_out = self._get_config_value(config, options, CONF_HUMIDITY_OUT_ENTITY)
         cloud_cover = self._get_config_value(config, options, CONF_CLOUD_COVER_ENTITY)
 
-        lhs_window_hours = float(
-            self._get_config_value(config, options, CONF_LHS_WINDOW_HOURS)
-            or DEFAULT_LHS_WINDOW_HOURS
-        )
         lhs_retention_days = int(
             self._get_config_value(config, options, CONF_LHS_RETENTION_DAYS)
             or DEFAULT_LHS_RETENTION_DAYS
@@ -95,7 +89,6 @@ class HADeviceConfigReader(IDeviceConfigReader):
             humidity_in_entity_id=humidity_in,
             humidity_out_entity_id=humidity_out,
             cloud_cover_entity_id=cloud_cover,
-            lhs_window_hours=lhs_window_hours,
             lhs_retention_days=lhs_retention_days,
         )
 

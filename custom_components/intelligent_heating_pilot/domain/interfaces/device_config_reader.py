@@ -16,7 +16,6 @@ class DeviceConfig:
         humidity_in_entity_id: Entity ID for indoor humidity (optional)
         humidity_out_entity_id: Entity ID for outdoor humidity (optional)
         cloud_cover_entity_id: Entity ID for cloud coverage (optional)
-        lhs_window_hours: Time window in hours for Local Heating Slope (LHS) calculation
         lhs_retention_days: Number of days to retain slope data
     """
     device_id: str
@@ -25,7 +24,6 @@ class DeviceConfig:
     humidity_in_entity_id: str | None = None
     humidity_out_entity_id: str | None = None
     cloud_cover_entity_id: str | None = None
-    lhs_window_hours: float = 6.0
     lhs_retention_days: int = 30
 
 
