@@ -170,7 +170,7 @@ intelligent-heating-pilot/
 → [README.md](README.md) - Installation and usage
 
 #### ...understand how IHP works
-→ [README.md - How IHP Works](README.md#how-ihp-works) - Overview
+→ [README.md - Understanding IHP](README.md#understanding-ihp) - Overview
 → [ARCHITECTURE.md](ARCHITECTURE.md) - Deep technical dive
 
 #### ...report a bug
