@@ -435,8 +435,8 @@ class TestExtractEdgeCases:
         """Given cycle_split_duration_minutes parameter, overrides instance setting."""
         t0 = base_time
         t1 = t0 + timedelta(minutes=5)
-        t2 = t0 + timedelta(minutes=50)  # 45-min cycle
-        t3 = t0 + timedelta(minutes=55)
+        t2 = t0 + timedelta(minutes=45)  # 45-min cycle
+        t3 = t0 + timedelta(minutes=48)
         
         dataset = HistoricalDataSet(
             data={
@@ -462,12 +462,12 @@ class TestExtractEdgeCases:
         )
 
         # Service without splitting should return 1 cycle
-        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t3 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t3)
         assert len(cycles) == 1
 
         # Same service with cycle_split_duration_minutes parameter should split the cycle
         cycles_split = await service.extract_heating_cycles(
-            "my_device_id", dataset, t0, t3 + timedelta(minutes=5), cycle_split_duration_minutes=15
+            "my_device_id", dataset, t0, t3, cycle_split_duration_minutes=15
         )
-        # 45-minute cycle split at 15-minute intervals = 3 sub-cycles
+        # 45-minute cycle split at 15-minute intervals = 3 sub-cycles + 1 remainder of 3 minutes
         assert len(cycles_split) == 3
