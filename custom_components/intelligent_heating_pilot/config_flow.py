@@ -14,19 +14,13 @@ from typing import cast
 
 from .const import (
     CONF_CLOUD_COVER_ENTITY,
-    CONF_DECISION_MODE,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
-    CONF_LHS_WINDOW_HOURS,
     CONF_NAME,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
-    DECISION_MODE_ML,
-    DECISION_MODE_SIMPLE,
-    DEFAULT_DECISION_MODE,
     DEFAULT_LHS_RETENTION_DAYS,
-    DEFAULT_LHS_WINDOW_HOURS,
     DEFAULT_NAME,
     DOMAIN,
 )
@@ -120,18 +114,6 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                     )
                 ),
                 vol.Optional(
-                    CONF_LHS_WINDOW_HOURS,
-                    default=DEFAULT_LHS_WINDOW_HOURS
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1.0,
-                        max=24.0,
-                        step=0.5,
-                        unit_of_measurement="hours",
-                        mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional(
                     CONF_LHS_RETENTION_DAYS,
                     default=DEFAULT_LHS_RETENTION_DAYS
                 ): selector.NumberSelector(
@@ -142,24 +124,6 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         unit_of_measurement="days",
                         mode=selector.NumberSelectorMode.BOX
                     )
-                ),
-                vol.Optional(
-                    CONF_DECISION_MODE,
-                    default=DEFAULT_DECISION_MODE
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(
-                                value=DECISION_MODE_SIMPLE,
-                                label="Simple (Rule-Based)",
-                            ),
-                            selector.SelectOptionDict(
-                                value=DECISION_MODE_ML,
-                                label="ML (AI-Powered - Requires IHP-ML-Models)",
-                            ),
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    ),
                 ),
             }
         )
@@ -266,18 +230,6 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                     )
                 ),
                 vol.Optional(
-                    CONF_LHS_WINDOW_HOURS,
-                    default=current_data.get(CONF_LHS_WINDOW_HOURS, DEFAULT_LHS_WINDOW_HOURS)
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1.0,
-                        max=24.0,
-                        step=0.5,
-                        unit_of_measurement="hours",
-                        mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional(
                     CONF_LHS_RETENTION_DAYS,
                     default=current_data.get(CONF_LHS_RETENTION_DAYS, DEFAULT_LHS_RETENTION_DAYS)
                 ): selector.NumberSelector(
@@ -288,24 +240,6 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="days",
                         mode=selector.NumberSelectorMode.BOX
                     )
-                ),
-                vol.Optional(
-                    CONF_DECISION_MODE,
-                    default=current_data.get(CONF_DECISION_MODE, DEFAULT_DECISION_MODE)
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(
-                                value=DECISION_MODE_SIMPLE,
-                                label="Simple (Rule-Based)",
-                            ),
-                            selector.SelectOptionDict(
-                                value=DECISION_MODE_ML,
-                                label="ML (AI-Powered - Requires IHP-ML-Models)",
-                            ),
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    ),
                 ),
             }
         )

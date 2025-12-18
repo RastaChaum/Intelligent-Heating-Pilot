@@ -11,9 +11,7 @@
           "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
           "humidity_out_entity_id": "Outdoor Humidity Sensor (optional)",
           "cloud_cover_entity_id": "Cloud Coverage Sensor (optional)",
-          "lhs_window_hours": "Time Window for Contextual LHS (hours)",
-          "lhs_retention_days": "Slope Data Retention (days)",
-          "decision_mode": "Decision Mode"
+          "lhs_retention_days": "Slope Data Retention (days)"
         },
         "data_description": {
           "vtherm_entity_id": "The Versatile Thermostat to control (source of learned slope)",
@@ -21,9 +19,7 @@
           "humidity_in_entity_id": "Room humidity sensor to refine calculations",
           "humidity_out_entity_id": "Outdoor humidity sensor to refine calculations",
           "cloud_cover_entity_id": "Cloud coverage sensor to account for solar impact",
-          "lhs_window_hours": "Time window before target to search for relevant heating slopes",
-          "lhs_retention_days": "Number of days to keep historical slope data",
-          "decision_mode": "Choose how heating decisions are made: Simple (rule-based) or ML (AI-powered, requires IHP-ML-Models add-on)"
+          "lhs_retention_days": "Number of days to keep historical slope data"
         }
       }
     },

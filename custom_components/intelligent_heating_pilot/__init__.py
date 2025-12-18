@@ -21,16 +21,13 @@ from homeassistant.util import dt as dt_util
 from .application import HeatingApplicationService
 from .const import (
     CONF_CLOUD_COVER_ENTITY,
-    CONF_DECISION_MODE,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
-    CONF_LHS_WINDOW_HOURS,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
-    DEFAULT_DECISION_MODE,
+    DECISION_MODE_SIMPLE,
     DEFAULT_LHS_RETENTION_DAYS,
-    DEFAULT_LHS_WINDOW_HOURS,
     DOMAIN,
 )
 from .infrastructure.adapters import (
@@ -75,9 +72,8 @@ class IntelligentHeatingPilotCoordinator:
         self._humidity_in = self._get_config_value(CONF_HUMIDITY_IN_ENTITY)
         self._humidity_out = self._get_config_value(CONF_HUMIDITY_OUT_ENTITY)
         self._cloud_cover = self._get_config_value(CONF_CLOUD_COVER_ENTITY)
-        self._lhs_window_hours = float(self._get_config_value(CONF_LHS_WINDOW_HOURS) or DEFAULT_LHS_WINDOW_HOURS)
         self._lhs_retention_days = int(self._get_config_value(CONF_LHS_RETENTION_DAYS) or DEFAULT_LHS_RETENTION_DAYS)
-        self._decision_mode = self._get_config_value(CONF_DECISION_MODE) or DEFAULT_DECISION_MODE
+        self._decision_mode = DECISION_MODE_SIMPLE
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
@@ -129,7 +125,6 @@ class IntelligentHeatingPilotCoordinator:
             scheduler_commander=self._scheduler_commander,
             climate_commander=self._climate_commander,
             environment_reader=self._environment_reader,
-            lhs_window_hours=self._lhs_window_hours,
             history_lookback_days=self._lhs_retention_days,
             decision_mode=self._decision_mode,
         )
