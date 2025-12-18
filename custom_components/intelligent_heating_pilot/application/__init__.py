@@ -138,6 +138,7 @@ class HeatingApplicationService:
         _LOGGER.info(
             "Computing contextual LHS for hour %02d using HeatingCycles",
             target_hour,
+        )
         # Try to build a HistoricalDataSet from HA adapters (climate/sensors)
         # so we can extract HeatingCycles in a recent lookback period.
         try:
@@ -221,18 +222,6 @@ class HeatingApplicationService:
                     except Exception as exc:
                         _LOGGER.debug("Failed to fetch outdoor humidity history: %s", exc)
 
-            if WeatherDataAdapter is not None and cloud_cover_id:
-                try:
-                    weather_adapter = WeatherDataAdapter(hass)
-                    cloud_data = await weather_adapter.fetch_historical_data(
-                        cloud_cover_id,
-                        HistoricalDataKey.CLOUD_COVERAGE,
-                        start_time,
-                        end_time,
-                    )
-                    combined_data.update(cloud_data.data)
-                except Exception as exc:
-                    _LOGGER.debug("Failed to fetch cloud coverage history: %s", exc)
 
             # Construct dataset and extract cycles
             historical_data_set = HistoricalDataSet(data=combined_data)
