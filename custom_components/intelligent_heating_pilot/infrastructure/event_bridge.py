@@ -115,32 +115,15 @@ class HAEventBridge:
             _LOGGER.debug("Ignoring self-induced VTherm change")
             return
         
-        # Extract slope changes (v8.0.0+ compatible)
-        old_slope = get_vtherm_attribute(old_state, "temperature_slope")
-        new_slope = get_vtherm_attribute(new_state, "temperature_slope")
-        
         # Extract temperature changes (v8.0.0+ compatible)
         old_temp = get_vtherm_attribute(old_state, "current_temperature")
         new_temp = get_vtherm_attribute(new_state, "current_temperature")
         
-        slope_changed = old_slope != new_slope
         temp_changed = old_temp != new_temp
         
-        if not (slope_changed or temp_changed):
-            return
-        
-        if slope_changed:
-            _LOGGER.debug("VTherm slope changed: %s -> %s", old_slope, new_slope)
-            # Process slope learning
-            if new_slope is not None:
-                try:
-                    slope_val = float(new_slope)
-                    self._hass.async_create_task(
-                        self._app_service.process_slope_update(slope_val)
-                    )
-                except (ValueError, TypeError):
-                    _LOGGER.debug("Invalid slope value: %s", new_slope)
-        
+        if not (temp_changed):
+            return       
+
         if temp_changed:
             _LOGGER.debug("VTherm temperature changed: %s -> %s", old_temp, new_temp)
         
