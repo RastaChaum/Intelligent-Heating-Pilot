@@ -2,8 +2,6 @@
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock
-
 import pytest
 
 # Add domain to path WITHOUT loading infrastructure layer
@@ -16,7 +14,6 @@ from domain.value_objects.historical_data import (
     HistoricalDataSet,
     HistoricalMeasurement,
 )
-from domain.value_objects.heating import TariffPeriodDetail
 
 
 def m(timestamp: datetime, value: float | str | bool, device_id: str = "test.device") -> HistoricalMeasurement:
