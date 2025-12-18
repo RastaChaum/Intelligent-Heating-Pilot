@@ -4,32 +4,22 @@
 ![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 
+**The Adaptive Brain for Versatile Thermostat**
+
+IHP is a smart Home Assistant integration that learns how your heating system works and automatically starts heating at exactly the right time—no manual tuning required.
+
 > [!NOTE]
-> **🚀 BETA VERSION (v0.3.0) 🚀**
-> 
-> Intelligent Heating Pilot is now in **beta**. Core features are stable and tested, with comprehensive documentation for users and contributors.
->
-> **What's New in 0.3.0:**
-> - 📚 Complete documentation restructuring
-> - 🌍 All documentation in English
+> **🚀 VERSION 0.3.0 🚀** - Stable beta with comprehensive documentation
+> - ✅ Core heating prediction features stable and tested
+> - 📚 Complete user documentation (Installation, Configuration, How It Works)
 > - 🤝 Clear contributor guidelines
-> - 🏗️ Detailed architecture documentation
->
-> **Known Limitations:**
-> - ⚠️ Multi-scheduler per VTherm configuration needs more testing
-> - 📊 Statistical learning requires 3-5 heating cycles for optimal accuracy
->
-> **Feedback Welcome!** Please report any issues on [GitHub Issues](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues).
+> - 📊 3-5 heating cycles for good accuracy, 20+ for excellence
+> 
+> **[👉 START HERE: User Guide →](docs/USER_GUIDE.md)**
 
----
+The ultimate vision of IHP is to act as the complete "Flight Controller" for your heating system, making autonomous decisions regarding when to heat, how long to heat, and what the optimal temporary setpoint should be, based on Adaptive Learning and real-time inputs.
 
-**Intelligent Heating Pilot (IHP): The Adaptive Brain for Versatile Thermostat**
-
-IHP is an ambitious Home Assistant integration designed to elevate your climate control from simple scheduling to strategic, energy-aware piloting.
-
-The ultimate vision of IHP is to act as the complete "Flight Controller" for your heating system, making autonomous decisions regarding when to heat, how long to heat, and what the optimal temporary setpoint should be, based on Adaptive Learning and real-time inputs (occupancy, weather, inertia).
-
-The first release (Proof of Concept / Alpha) focuses on delivering the foundational feature: **Smart Predictive Pre-heating (Adaptive Start)**. This initial capability uses statistical learning to continuously improve its predictions, laying the groundwork for future machine learning-based advanced functions.
+The first release (V0.3.0) delivers the foundational feature: **Smart Predictive Pre-heating**. It continuously learns from your heating system to predict the exact moment to start heating, improving with each cycle.
 
 ## 🌟 Current Features (V1: Adaptive Start)
 
@@ -51,189 +41,151 @@ The long-term ambition of IHP includes, but is not limited to:
 - **Multi-Room Coordination**: Intelligent coordination across multiple zones for optimal comfort and efficiency.
 - **Energy Cost Optimization**: Dynamic adjustment based on real-time energy pricing and weather forecasts.
 
-## 📋 Prerequisites
+## 🧠 Understanding IHP
 
-- Home Assistant 2023.1.0 or higher
-- Versatile Thermostat (VTherm) integration installed
-- HACS Scheduler Component (for automated scheduling)
-- Temperature sensors (indoor and outdoor recommended)
+### What Happens Automatically
 
-## 🚀 Installation
+Once configured, IHP runs in the background:
 
-### Via HACS (recommended)
+1. ✅ Monitors your scheduler for heating events
+2. ✅ Learns how fast your room heats (Learned Heating Slope)
+3. ✅ Calculates optimal start time for next event
+4. ✅ Triggers heating at exactly the right moment
+5. ✅ Improves predictions with each heating cycle
 
-1. Open HACS in your Home Assistant.
-2. Go to "Integrations".
-3. Click on the three dots in the top right and select "Custom repositories".
-4. Add the URL: `https://github.com/RastaChaum/Intelligent-Heating-Pilot`
-5. Select the "Integration" category.
-6. Click "Download".
-7. Restart Home Assistant.
+**Result:** Your room reaches target temperature exactly on time, automatically, no manual intervention.
 
-### Manual Installation
+### First 5 Heating Cycles
 
-1. Copy the `custom_components/intelligent_heating_pilot` folder into your Home Assistant `custom_components` folder.
-2. Restart Home Assistant.
+Expect heating to start **earlier than necessary** during this learning phase:
+- This is intentional (conservative approach)
+- Room will reach target before scheduled time
+- This is **normal and expected**
+- Accuracy improves as IHP learns
 
-## ⚙️ Configuration
+**After 20+ cycles:** Predictions become very accurate.
 
-### Initial Setup
+### Key Concept: Learned Heating Slope
 
-1. Go to **Configuration** → **Integrations**.
-2. Click **+ Add Integration**.
-3. Search for "Intelligent Heating Pilot" or "IHP".
-4. Fill in the required information:
-   - **Name**: Name of your instance.
-   - **VTherm Entity**: Your Versatile Thermostat climate entity (source of learned thermal slope).
-   - **Scheduler Entities**: The HACS Scheduler Component switches that control this VTherm.
-   - **Indoor Humidity Sensor** (optional): Room humidity sensor for refined calculations.
-   - **Outdoor Humidity Sensor** (optional): External humidity sensor for refined calculations.
-   - **Cloud Coverage Entity** (optional): Cloud coverage sensor to account for solar impact.
+IHP learns **how fast your room heats** (°C per hour):
+- 1.0 = slow heating (poor insulation)
+- 2.0 = normal heating (typical)
+- 4.0+ = fast heating (well-insulated)
 
-### Modifying Configuration
+It computes this from each detected heating cycle: slope = (end temperature − start temperature) / hours of the cycle, then averages across recent cycles.
 
-To change the entities after initial setup:
+Using this, IHP calculates: "To heat 3°C at 2°C/hour, I need 90 minutes" ✅
 
-1. Go to **Configuration** → **Integrations**.
-2. Find your **Intelligent Heating Pilot** integration.
-3. Click on the **three dots** (⋮) menu.
-4. Select **"Configure"** or **"Options"**.
-5. Update the entities you want to change.
-6. Click **"Submit"**.
+**[Learn more in How IHP Works →](docs/HOW_IT_WORKS.md)**
 
-The integration will automatically reload and start monitoring the new entities.
+### Sensors Created
 
-## 📊 Usage
+| Sensor | Shows |
+|--------|-------|
+| **Learned Heating Slope** | How fast your room heats (°C/h) |
+| **Anticipation Time** | When heating will start next |
+| **Next Schedule** | Details of next heating event |
 
-### Automatic Operation
+---
 
-IHP works automatically in the background once configured:
+## 🎛️ Services
 
-1. **Monitors Your Scheduler**: Watches your configured scheduler entities for upcoming heating schedules.
-2. **Learns Continuously**: Observes your VTherm's thermal slope and aggregates observations using robust statistics.
-3. **Anticipates Start Time**: Calculates when to trigger the scheduler action to reach the target temperature exactly on time.
-4. **Triggers Heating**: Automatically triggers the scheduler action at the optimal anticipated start time.
-5. **Monitors Progress**: Tracks heating progress and prevents overshooting the target temperature.
+### `intelligent_heating_pilot.reset_learning`
 
-### Sensors
-
-The integration automatically creates several sensors for monitoring:
-
-1. **Anticipation Time**: Shows the anticipated start time for the next heating schedule.
-2. **Learned Heating Slope**: Displays the current learned heating slope (in °C/h) based on historical data.
-3. **Next Schedule**: Shows details about the next scheduled heating event.
-
-### Services
-
-IHP provides a service for manual control if needed:
-
-#### `intelligent_heating_pilot.reset_learning`
-
-Resets the learned heating slope history. Use this if you've made significant changes to your heating system (new radiators, insulation, etc.) and want IHP to start learning from scratch.
-
-**Example:**
-```yaml
-service: intelligent_heating_pilot.reset_learning
-```
-
-**Note**: The service uses the internal domain name `intelligent_heating_pilot` for backward compatibility with existing installations.
-
-## 🧠 How IHP Works
-
-IHP uses **statistical learning** to adapt to your specific heating system. Instead of using a fixed formula, it learns from your actual heating patterns.
-
-### Simple Overview
-
-1. **Learns from your system**: IHP monitors how fast your room heats up (from your VTherm's `temperature_slope` attribute)
-2. **Builds history**: Collects and stores heating observations over time
-3. **Calculates anticipation**: Determines when to start heating based on:
-   - Temperature difference needed
-   - Learned heating speed
-   - Current conditions (humidity, cloud cover)
-4. **Triggers heating**: Automatically starts your scheduler at the optimal time
-
-### Key Features
-
-- **Adaptive**: Continuously improves as it learns your system
-- **Robust**: Uses statistical methods to filter out anomalies
-- **Smart**: Adjusts for environmental factors
-- **Automatic**: No manual tuning required
-
-### Quick Calculation
-
-For a typical scenario:
-- Need to heat 3°C (18°C → 21°C)
-- System heats at 2°C/hour
-- Result: Start heating ~90 minutes before target time
-
-**First time setup?** IHP starts with a conservative default and improves after 3-5 heating cycles.
-
-### Reset Learning Data
-
-If you make major changes to your heating system (new radiators, insulation, etc.):
+Resets learned data. Use this if you changed your heating system (new radiators, better insulation, etc.):
 
 ```yaml
 service: intelligent_heating_pilot.reset_learning
 ```
 
-## 🐛 Troubleshooting
+IHP will start learning from scratch with the next heating cycle.
 
-### Anticipation seems inaccurate
+---
 
-- **Initial learning phase**: IHP needs a few heating cycles to build accurate slope history. Give it 3-5 heating events to stabilize.
-- **Extreme conditions**: Very cold outdoor temperatures or unusual weather can affect VTherm's slope calculations. IHP adapts over time.
-- **Check logs**: Enable debug logging to see LHS values and calculation details:
-  ```yaml
-  logger:
-    default: info
-    logs:
-      custom_components.intelligent_heating_pilot: debug
-  ```
+## 🐛 Something Wrong?
 
-### Sensors show no data
+**[Check Troubleshooting Guide →](docs/TROUBLESHOOTING.md)**
 
-- **Check VTherm configuration**: Ensure your VTherm entity has the `temperature_slope` attribute exposed.
-- **Verify scheduler setup**: Make sure your scheduler entities have upcoming events configured.
-- **Review logs**: Check Home Assistant logs for error messages or warnings from IHP.
-
-### Need More Help?
-
-- 📖 [Full Documentation](https://github.com/RastaChaum/Intelligent-Heating-Pilot)
-- 🐛 [Report a Bug](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/new?template=bug_report.md)
-- 💬 [Discussions](https://github.com/RastaChaum/Intelligent-Heating-Pilot/discussions)
+Common issues and solutions:
+- ❌ Predictions inaccurate
+- ❌ Sensors show no data
+- ❌ Heating never triggers
+- ❌ IHP won't load
 
 ## 🤝 Contributing
 
 We welcome contributions! Whether you want to:
 - 🐛 Report bugs
-- ✨ Suggest new features
+- ✨ Suggest features
 - 💻 Submit code improvements
 - 📝 Improve documentation
 
-**Please read our [Contributing Guide](CONTRIBUTING.md)** to get started.
+**[Check out Contributing Guide →](CONTRIBUTING.md)**
 
-For technical documentation, see:
-- 🏗️ [Architecture Documentation](ARCHITECTURE.md) - DDD principles and system design
-- 🧪 [Testing Guide](CONTRIBUTING.md#testing) - How to write and run tests
+For technical deep dive: [Architecture Documentation](ARCHITECTURE.md)
 
 ## 📚 Documentation
 
-### For Users
+Choose your path below based on who you are:
 
-- **[Main README](README.md)** - You are here! Installation and usage guide
-- **[Changelog](CHANGELOG.md)** - Version history and release notes
-- **[Releases](https://github.com/RastaChaum/Intelligent-Heating-Pilot/releases)** - Download specific versions
+### 👤 For Users
 
-### For Contributors
+**New to IHP?** Start here:
 
-- **[Contributing Guide](CONTRIBUTING.md)** - How to contribute to the project
-- **[Architecture Documentation](ARCHITECTURE.md)** - Technical design and DDD principles
-- **[Copilot Instructions](.github/copilot-instructions.md)** - AI-assisted development guidelines
+1. **[User Guide](docs/USER_GUIDE.md)** - Overview and quick navigation
+2. **[Installation Guide](docs/INSTALLATION.md)** - Step-by-step installation via HACS or manually
+3. **[Configuration Guide](docs/CONFIGURATION.md)** - Set up IHP with your system
+4. **[How IHP Works](docs/HOW_IT_WORKS.md)** - Understand heating cycle detection and prediction logic
+5. **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
-### Community
+**Quick Links:**
+- 📋 [Changelog](CHANGELOG.md) - Version history and changes
+- 🐛 [Report a Bug](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/new?template=bug_report.md)
+- 💬 [Ask Questions](https://github.com/RastaChaum/Intelligent-Heating-Pilot/discussions)
+- 📦 [Releases](https://github.com/RastaChaum/Intelligent-Heating-Pilot/releases)
 
-- **[Discussions](https://github.com/RastaChaum/Intelligent-Heating-Pilot/discussions)** - Ask questions, share ideas
-- **[Issues](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues)** - Report bugs or request features
+### 👨‍💻 For Contributors
+
+**Want to improve IHP?** Read these:
+
+1. **[Contributing Guide](CONTRIBUTING.md)** - How to contribute (bugs, features, code)
+2. **[Architecture Documentation](ARCHITECTURE.md)** - Technical design (DDD principles)
+3. **[Copilot Instructions](.github/copilot-instructions.md)** - Development guidelines and standards
+
+---
+
+## 🚀 Installation (Quick)
+
+### Via HACS (Recommended)
+
+1. Open **HACS** → **Integrations**
+2. Click **⋮** → **Custom repositories**
+3. Add: `https://github.com/RastaChaum/Intelligent-Heating-Pilot` (Category: Integration)
+4. Search for **"Intelligent Heating Pilot"** → **Download**
+5. **Restart Home Assistant**
+
+### Manual Installation
+
+1. Download from [Releases](https://github.com/RastaChaum/Intelligent-Heating-Pilot/releases)
+2. Extract to: `config/custom_components/intelligent_heating_pilot/`
+3. **Restart Home Assistant**
+
+**[Full installation guide →](docs/INSTALLATION.md)**
+
+---
+
+## ⚙️ Configuration (Quick)
+
+1. Settings → Devices & Services → **+ Create Integration**
+2. Search for **"Intelligent Heating Pilot"**
+3. Fill in:
+   - **Name** - Any name (e.g., "Living Room")
+   - **VTherm Entity** - Your thermostat (e.g., `climate.living_room`)
+   - **Scheduler Entity** - Your scheduler (e.g., `switch.schedule_heating`)
+4. (Optional) Add humidity/outdoor temp sensors for better accuracy
+5. **Submit**
+
+**[Full configuration guide →](docs/CONFIGURATION.md)**
 
 ## 📝 License
 
