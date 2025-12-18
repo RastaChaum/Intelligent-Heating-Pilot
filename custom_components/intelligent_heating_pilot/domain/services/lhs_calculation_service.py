@@ -1,14 +1,14 @@
 """LHS (Learning Heating Slope) calculation service.
 
 This service contains the domain logic for calculating heating slopes
-from historical data using robust statistical methods.
+from heating cycles using simple averaging methods.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, time
 
-from ..value_objects import SlopeData
+from ..value_objects import HeatingCycle
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -16,29 +16,31 @@ DEFAULT_HEATING_SLOPE = 2.0  # °C/h - Conservative default
 
 
 class LHSCalculationService:
-    """Service for calculating Learning Heating Slope from historical data.
+    """Service for calculating Learning Heating Slope from heating cycles.
     
     This service provides domain logic for:
-    - Filtering slopes based on time windows (contextual LHS)
-    - Calculating robust averages (trimmed mean) from slope values
+    - Calculating global LHS from all heating cycles
+    - Calculating contextual LHS for cycles active at a specific hour
     - Handling edge cases (insufficient data, empty lists)
     - Providing sensible defaults
     
     All calculations are pure domain logic with no infrastructure dependencies.
     """
     
-    def calculate_robust_average(self, slope_values: list[float]) -> float:
-        """Calculate robust average by removing extreme values (trimmed mean).
+    def calculate_simple_average(self, slope_values: list[float]) -> float:
+        """Calculate simple average from raw slope values.
         
-        This method provides a more stable estimate by removing outliers.
-        Uses a trimmed mean algorithm: removes top and bottom 10% of values.
+        This method is provided for backward compatibility with legacy code
+        that still uses raw slope values instead of HeatingCycle objects.
         
         Args:
             slope_values: List of slope values in °C/hour
             
         Returns:
-            Robust average of the values in °C/hour
+            Simple average in °C/hour, or default if no data
         """
+        _LOGGER.debug("Calculating simple average from %d slope values", len(slope_values))
+        
         if not slope_values:
             _LOGGER.debug(
                 "No slope values provided, using default: %.2f°C/h",
@@ -46,135 +48,126 @@ class LHSCalculationService:
             )
             return DEFAULT_HEATING_SLOPE
         
-        # Sort values
-        sorted_values = sorted(slope_values)
-        n = len(sorted_values)
+        avg_slope = sum(slope_values) / len(slope_values)
         
-        if n < 4:
-            # Not enough data for trimming, use simple average
-            avg = sum(sorted_values) / n
-            _LOGGER.debug(
-                "Insufficient data for trimming (%d values), using simple average: %.2f°C/h",
-                n,
-                avg
-            )
-            return avg
-        
-        # Remove top and bottom 10% (trimmed mean)
-        trim_count = max(1, int(n * 0.1))
-        trimmed = sorted_values[trim_count:-trim_count]
-        
-        if not trimmed:
-            # Fallback to median if trimming removed everything
-            median = sorted_values[n // 2]
-            _LOGGER.debug(
-                "Trimming removed all values, using median: %.2f°C/h",
-                median
-            )
-            return median
-        
-        avg = sum(trimmed) / len(trimmed)
         _LOGGER.debug(
-            "Calculated trimmed mean from %d values (trimmed %d): %.2f°C/h",
-            n,
-            n - len(trimmed),
-            avg
+            "Calculated simple average from %d values: %.2f°C/h",
+            len(slope_values),
+            avg_slope
         )
-        return avg
-    
-    def calculate_from_slope_data(self, slope_data_list: list[SlopeData]) -> float:
-        """Calculate robust average from SlopeData objects.
         
-        Convenience method that extracts slope values from SlopeData objects
-        and calculates the robust average.
+        return avg_slope
+    
+    def calculate_global_lhs(self, heating_cycles: list[HeatingCycle]) -> float:
+        """Calculate global LHS as simple average of all heating cycle slopes.
         
         Args:
-            slope_data_list: List of SlopeData objects
+            heating_cycles: List of heating cycles to analyze
             
         Returns:
-            Robust average of slope values in °C/hour
+            Average heating slope in °C/hour, or default if no data
         """
-        if not slope_data_list:
+        _LOGGER.info("Calculating global LHS from %d heating cycles", len(heating_cycles))
+        
+        if not heating_cycles:
             _LOGGER.debug(
-                "No SlopeData provided, using default: %.2f°C/h",
+                "No heating cycles provided, using default: %.2f°C/h",
                 DEFAULT_HEATING_SLOPE
             )
             return DEFAULT_HEATING_SLOPE
         
-        slope_values = [sd.slope_value for sd in slope_data_list]
-        return self.calculate_robust_average(slope_values)
+        # Calculate simple average
+        total_slope = sum(cycle.avg_heating_slope for cycle in heating_cycles)
+        avg_slope = total_slope / len(heating_cycles)
+        
+        _LOGGER.info(
+            "Calculated global LHS from %d cycles: %.2f°C/h",
+            len(heating_cycles),
+            avg_slope
+        )
+        
+        return avg_slope
     
     def calculate_contextual_lhs(
         self,
-        all_slope_data: list[SlopeData],
-        target_time: datetime,
-        window_hours: float
+        heating_cycles: list[HeatingCycle],
+        target_hour: int
     ) -> float:
-        """Calculate LHS from slopes within a time-of-day window, ignoring the date.
+        """Calculate contextual LHS for cycles active at a specific hour.
         
-        This method implements the core domain logic for contextual LHS:
-        - Filters slopes to only those whose timestamp time-of-day falls within
-          the [start_time, end_time) window derived from target_time and window_hours
-        - Ignores the date component (e.g., select between 16:00 and 22:00 for any day)
-        - Correctly handles windows that cross midnight (e.g., 22:00 -> 02:00)
-        - Calculates robust average from the filtered slopes
+        A cycle is considered "active at target_hour" if it started before or at
+        target_hour and ended after target_hour. This captures cycles that were
+        heating during the specified hour.
         
         Args:
-            all_slope_data: All available slope data (will be filtered)
-            target_time: End of the time window (only time-of-day is used)
-            window_hours: Size of time window in hours before target_time
+            heating_cycles: List of all heating cycles to filter
+            target_hour: Hour of day (0-23) to filter cycles by
             
         Returns:
-            Contextual LHS in °C/hour based on time-windowed slopes
+            Average heating slope for cycles active at target_hour, or default if no data
         """
-        if not all_slope_data:
-            _LOGGER.debug(
-                "No slope data available for contextual LHS, using default: %.2f°C/h",
-                DEFAULT_HEATING_SLOPE
-            )
-            return DEFAULT_HEATING_SLOPE
-        
-        # Derive the time-of-day window [start_tod, end_tod), ignoring the date.
-        if window_hours >= 24:
-            # Full-day window: include all slopes.
-            window_slopes = list(all_slope_data)
-            start_tod_str = "00:00"
-            end_tod_str = "00:00"
-        else:
-            start_tod = (target_time - timedelta(hours=window_hours)).time()
-            end_tod = target_time.time()
-            start_tod_str = start_tod.strftime("%H:%M")
-            end_tod_str = end_tod.strftime("%H:%M")
-            
-            def in_window(ts: datetime) -> bool:
-                t = ts.time()
-                if start_tod <= end_tod:
-                    # Normal window (same day)
-                    return start_tod <= t < end_tod
-                # Window crosses midnight (e.g., 22:00 -> 02:00)
-                return t >= start_tod or t < end_tod
-            
-            # Filter slopes within the time-of-day window
-            window_slopes = [sd for sd in all_slope_data if in_window(sd.timestamp)]
-        
-        if not window_slopes:
-            _LOGGER.debug(
-                "No slopes found in time-of-day window [%s, %s), using default: %.2f°C/h",
-                start_tod_str,
-                end_tod_str,
-                DEFAULT_HEATING_SLOPE
-            )
-            return DEFAULT_HEATING_SLOPE
-        
-        # Calculate LHS from window slopes
-        lhs = self.calculate_from_slope_data(window_slopes)
-        
         _LOGGER.info(
-            "Calculated contextual LHS from %d slopes in time-of-day window [%s, %s): %.2f°C/h",
-            len(window_slopes),
-            start_tod_str,
-            end_tod_str,
-            lhs
+            "Calculating contextual LHS for hour %d from %d heating cycles",
+            target_hour,
+            len(heating_cycles)
         )
         
-        return lhs
+        if not 0 <= target_hour <= 23:
+            raise ValueError(f"target_hour must be 0-23, got {target_hour}")
+        
+        if not heating_cycles:
+            _LOGGER.debug(
+                "No heating cycles provided, using default: %.2f°C/h",
+                DEFAULT_HEATING_SLOPE
+            )
+            return DEFAULT_HEATING_SLOPE
+        
+        # Filter cycles active at target hour
+        def is_active_at_hour(cycle: HeatingCycle) -> bool:
+            """Check if cycle was active during target hour."""
+            # Create time objects for comparison (date-agnostic)
+            start_time = cycle.start_time.time()
+            end_time = cycle.end_time.time()
+            target_time = time(hour=target_hour, minute=0, second=0)
+            
+            # Handle same-day cycles
+            if cycle.start_time.date() == cycle.end_time.date():
+                return start_time <= target_time < end_time
+            
+            # Handle multi-day cycles (crosses midnight)
+            # Cycle is active if target_hour is after start OR before end
+            return target_time >= start_time or target_time < end_time
+        
+        active_cycles = [c for c in heating_cycles if is_active_at_hour(c)]
+        
+        if not active_cycles:
+            lhs = self.calculate_global_lhs(heating_cycles)
+            _LOGGER.debug(
+                "No cycles active at hour %d, using global: %.2f°C/h",
+                target_hour,
+                lhs
+            )
+            return lhs
+        
+        # Calculate simple average
+        total_slope = sum(cycle.avg_heating_slope for cycle in active_cycles)
+        avg_slope = total_slope / len(active_cycles)
+        
+        if avg_slope <= 0:
+            lhs = self.calculate_global_lhs(heating_cycles)
+            _LOGGER.debug(
+                "Calculated invalid average slope %.2f°C/h for hour %d, using default: %.2f°C/h",
+                avg_slope,
+                target_hour,
+                lhs
+            )
+            return lhs
+
+        _LOGGER.info(
+            "Calculated contextual LHS for hour %d from %d active cycles: %.2f°C/h",
+            target_hour,
+            len(active_cycles),
+            avg_slope
+        )
+        
+        return avg_slope
