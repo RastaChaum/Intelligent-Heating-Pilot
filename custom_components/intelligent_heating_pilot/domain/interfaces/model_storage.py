@@ -2,9 +2,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import datetime
-
-from ..value_objects import SlopeData
 
 
 class IModelStorage(ABC):
@@ -12,67 +9,12 @@ class IModelStorage(ABC):
     
     Implementations of this interface handle storage and retrieval
     of learned heating slopes and other model parameters.
+    
+    NOTE: Direct slope data persistence (save_slope_*) has been removed.
+    Slopes are now extracted directly from Home Assistant recorder via
+    HeatingCycleService. This interface now only provides access to the
+    global learned heating slope (LHS) and cleanup operations.
     """
-    
-    @abstractmethod
-    async def save_slope_in_history(self, slope: float) -> None:
-        """Persist a newly learned heating slope in history.
-        
-        DEPRECATED: Use save_slope_data() instead. This method is kept
-        for backward compatibility and creates a SlopeData internally.
-        
-        Args:
-            slope: Heating slope value in °C/hour
-        """
-        pass
-    
-    @abstractmethod
-    async def save_slope_data(self, slope_data: SlopeData) -> None:
-        """Persist a timestamped slope measurement.
-        
-        Args:
-            slope_data: Slope data with timestamp and value
-        """
-        pass
-    
-    @abstractmethod
-    async def get_slopes_in_history(self) -> list[float]:
-        """Retrieve historical learned heating slopes (values only).
-        
-        DEPRECATED: Use get_all_slope_data() for timestamped data.
-        This method is kept for backward compatibility.
-        
-        Returns:
-            List of learned slope values in °C/hour, ordered from oldest to newest.
-        """
-        pass
-    
-    @abstractmethod
-    async def get_all_slope_data(self) -> list[SlopeData]:
-        """Retrieve all historical slope data with timestamps.
-        
-        Returns:
-            List of SlopeData objects, ordered from oldest to newest.
-        """
-        pass
-    
-    @abstractmethod
-    async def get_slopes_in_time_window(
-        self,
-        before_time: datetime,
-        window_hours: float
-    ) -> list[SlopeData]:
-        """Retrieve slopes within a time window before a given time.
-        
-        Args:
-            before_time: End of the time window (exclusive)
-            window_hours: Size of the time window in hours
-            
-        Returns:
-            List of SlopeData within the window, ordered from oldest to newest.
-            Empty list if no data available in the window.
-        """
-        pass
     
     @abstractmethod
     async def get_learned_heating_slope(self) -> float:

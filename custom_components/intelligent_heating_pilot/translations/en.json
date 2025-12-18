@@ -11,7 +11,6 @@
           "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
           "humidity_out_entity_id": "Outdoor Humidity Sensor (optional)",
           "cloud_cover_entity_id": "Cloud Coverage Sensor (optional)",
-          "lhs_window_hours": "LHS Time Window (hours)",
           "lhs_retention_days": "Slope Data Retention (days)"
         },
         "data_description": {
@@ -20,7 +19,6 @@
           "humidity_in_entity_id": "Room humidity sensor to refine calculations",
           "humidity_out_entity_id": "Outdoor humidity sensor to refine calculations",
           "cloud_cover_entity_id": "Cloud coverage sensor to account for solar impact",
-          "lhs_window_hours": "Time window (in hours) for contextual LHS calculation. Only slopes within this window before the target time are used to account for environmental conditions like solar gain (default: 6 hours)",
           "lhs_retention_days": "Number of days to retain slope data in storage (default: 30 days)"
         }
       }
@@ -45,11 +43,9 @@
           "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
           "humidity_out_entity_id": "Outdoor Humidity Sensor (optional)",
           "cloud_cover_entity_id": "Cloud Coverage Sensor (optional)",
-          "lhs_window_hours": "LHS Time Window (hours)",
           "lhs_retention_days": "Slope Data Retention (days)"
         },
         "data_description": {
-          "lhs_window_hours": "Time window (in hours) for contextual LHS calculation. Only slopes within this window before the target time are used to account for environmental conditions like solar gain",
           "lhs_retention_days": "Number of days to retain slope data in storage"
         }
       }

@@ -10,17 +10,17 @@ from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
+from typing import cast
+
 from .const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
-    CONF_LHS_WINDOW_HOURS,
     CONF_NAME,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
     DEFAULT_LHS_RETENTION_DAYS,
-    DEFAULT_LHS_WINDOW_HOURS,
     DEFAULT_NAME,
     DOMAIN,
 )
@@ -36,7 +36,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
     @staticmethod
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
         """Get the options flow for this handler."""
-        return IntelligentHeatingPilotOptionsFlow(config_entry)
+        return IntelligentHeatingPilotOptionsFlow()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -52,9 +52,12 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             await self.async_set_unique_id(user_input[CONF_NAME])
             self._abort_if_unique_id_configured()
 
-            return self.async_create_entry(
-                title=user_input[CONF_NAME],
-                data=user_input,
+            return cast(
+                FlowResult,
+                self.async_create_entry(
+                    title=user_input[CONF_NAME],
+                    data=user_input,
+                ),
             )
 
         # Get all scheduler entities with their friendly names
@@ -111,18 +114,6 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                     )
                 ),
                 vol.Optional(
-                    CONF_LHS_WINDOW_HOURS,
-                    default=DEFAULT_LHS_WINDOW_HOURS
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1.0,
-                        max=24.0,
-                        step=0.5,
-                        unit_of_measurement="hours",
-                        mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional(
                     CONF_LHS_RETENTION_DAYS,
                     default=DEFAULT_LHS_RETENTION_DAYS
                 ): selector.NumberSelector(
@@ -137,19 +128,18 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             }
         )
 
-        return self.async_show_form(
-            step_id="user",
-            data_schema=data_schema,
-            errors=errors,
+        return cast(
+            FlowResult,
+            self.async_show_form(
+                step_id="user",
+                data_schema=data_schema,
+                errors=errors,
+            ),
         )
 
 
 class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Intelligent Heating Pilot."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -159,7 +149,10 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
 
         if user_input is not None:
             # Return new OPTIONS; Home Assistant will persist them in entry.options
-            return self.async_create_entry(title="", data=user_input)
+            return cast(
+                FlowResult,
+                self.async_create_entry(title="", data=user_input),
+            )
 
         # Get current values from config entry (options override data)
         current_data = {**self.config_entry.data, **self.config_entry.options}
@@ -237,18 +230,6 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                     )
                 ),
                 vol.Optional(
-                    CONF_LHS_WINDOW_HOURS,
-                    default=current_data.get(CONF_LHS_WINDOW_HOURS, DEFAULT_LHS_WINDOW_HOURS)
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1.0,
-                        max=24.0,
-                        step=0.5,
-                        unit_of_measurement="hours",
-                        mode=selector.NumberSelectorMode.BOX
-                    )
-                ),
-                vol.Optional(
                     CONF_LHS_RETENTION_DAYS,
                     default=current_data.get(CONF_LHS_RETENTION_DAYS, DEFAULT_LHS_RETENTION_DAYS)
                 ): selector.NumberSelector(
@@ -263,8 +244,11 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             }
         )
 
-        return self.async_show_form(
-            step_id="init",
-            data_schema=data_schema,
-            errors=errors,
+        return cast(
+            FlowResult,
+            self.async_show_form(
+                step_id="init",
+                data_schema=data_schema,
+                errors=errors,
+            ),
         )

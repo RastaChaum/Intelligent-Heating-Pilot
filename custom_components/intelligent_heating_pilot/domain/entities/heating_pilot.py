@@ -1,49 +1,53 @@
 """Heating pilot - the aggregate root for heating decisions."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
-from ..interfaces import ISchedulerReader, IModelStorage, ISchedulerCommander
+from ..interfaces import ISchedulerCommander
+from ..interfaces.decision_strategy import IDecisionStrategy
 from ..value_objects import (
     EnvironmentState,
     HeatingDecision,
-    HeatingAction,
-    PredictionResult,
 )
-from ..services.prediction_service import PredictionService
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class HeatingPilot:
     """Coordinates heating decisions for a single VTherm.
     
     This is the aggregate root that orchestrates all domain logic
-    for intelligent heating control. It uses external services through
-    interfaces without knowing their implementation details.
+    for intelligent heating control. It delegates decision-making to
+    a configurable strategy, allowing users to choose between:
+    
+    - Simple rule-based decisions (no ML required)
+    - ML-powered decisions (requires IHP-ML-Models add-on)
+    
+    This design follows the Strategy pattern, making the pilot
+    independent of the decision algorithm complexity.
     
     Attributes:
-        _scheduler_reader: Interface to read scheduled timeslots
-        _storage: Interface to persist learned data
+        _decision_strategy: Strategy for making heating decisions
         _scheduler_commander: Interface to control scheduler actions
-        _prediction_service: Service for prediction calculations
     """
     
     def __init__(
         self,
-        scheduler_reader: ISchedulerReader,
-        model_storage: IModelStorage,
+        decision_strategy: IDecisionStrategy,
         scheduler_commander: ISchedulerCommander,
     ) -> None:
         """Initialize the heating pilot.
         
         Args:
-            scheduler_reader: Implementation of scheduler reading interface
-            model_storage: Implementation of model storage interface
+            decision_strategy: Strategy for making heating decisions
+                              (simple rules or ML-based)
             scheduler_commander: Implementation of scheduler control interface
         """
-        self._scheduler_reader = scheduler_reader
-        self._storage = model_storage
+        _LOGGER.info("Initializing HeatingPilot")
+        self._decision_strategy = decision_strategy
         self._scheduler_commander = scheduler_commander
-        self._prediction_service = PredictionService()
+        _LOGGER.debug(f"HeatingPilot initialized with strategy: {type(decision_strategy).__name__}")
     
     async def decide_heating_action(
         self,
@@ -51,8 +55,8 @@ class HeatingPilot:
     ) -> HeatingDecision:
         """Decide what heating action to take based on current conditions.
         
-        This is the main decision-making method that coordinates all
-        domain logic to determine the appropriate heating action.
+        This method delegates the decision to the configured strategy,
+        which can be either simple rule-based or ML-powered.
         
         Args:
             environment: Current environmental conditions
@@ -60,56 +64,13 @@ class HeatingPilot:
         Returns:
             A heating decision with the action to take
         """
-        # Get next scheduled timeslot
-        next_timeslot = await self._scheduler_reader.get_next_timeslot()
+        _LOGGER.info("HeatingPilot.decide_heating_action called")
+        _LOGGER.debug(f"Delegating decision to {type(self._decision_strategy).__name__}")
         
-        if next_timeslot is None:
-            return HeatingDecision(
-                action=HeatingAction.NO_ACTION,
-                reason="No scheduled timeslots found"
-            )
+        decision = await self._decision_strategy.decide_heating_action(environment)
         
-        # Check if target temperature is already reached
-        current_temp = environment.current_temp
-        if current_temp >= next_timeslot.target_temp:
-            return HeatingDecision(
-                action=HeatingAction.NO_ACTION,
-                reason=f"Already at target temperature ({current_temp:.1f}°C >= {next_timeslot.target_temp:.1f}°C)"
-            )
-        
-        # Get learned heating slope
-        lhs = await self._storage.get_learned_heating_slope()
-        
-        # Calculate prediction
-        prediction = self._prediction_service.predict_heating_time(
-            current_temp=environment.current_temp,
-            target_temp=next_timeslot.target_temp,
-            outdoor_temp=environment.outdoor_temp,
-            humidity=environment.humidity,
-            learned_slope=lhs,
-            target_time=next_timeslot.target_time,
-            cloud_coverage=environment.cloud_coverage,
-        )
-        
-        # Decide based on anticipated start time
-        now = environment.timestamp
-        
-        if prediction.anticipated_start_time <= now < next_timeslot.target_time:
-            return HeatingDecision(
-                action=HeatingAction.START_HEATING,
-                target_temp=next_timeslot.target_temp,
-                reason=f"Time to start heating (anticipated start: {prediction.anticipated_start_time.isoformat()})"
-            )
-        elif now >= next_timeslot.target_time:
-            return HeatingDecision(
-                action=HeatingAction.NO_ACTION,
-                reason="Schedule time has passed"
-            )
-        else:
-            return HeatingDecision(
-                action=HeatingAction.MONITOR,
-                reason=f"Wait until {prediction.anticipated_start_time.isoformat()}"
-            )
+        _LOGGER.info(f"HeatingPilot decision: {decision.action.value}")
+        return decision
     
     async def check_overshoot_risk(
         self,
@@ -118,6 +79,8 @@ class HeatingPilot:
     ) -> HeatingDecision:
         """Check if heating should stop to prevent overshooting target.
         
+        This method delegates the overshoot check to the configured strategy.
+        
         Args:
             environment: Current environmental conditions
             current_slope: Current heating rate in °C/hour
@@ -125,35 +88,13 @@ class HeatingPilot:
         Returns:
             Decision to stop heating if overshoot is detected
         """
-        next_timeslot = await self._scheduler_reader.get_next_timeslot()
+        _LOGGER.info("HeatingPilot.check_overshoot_risk called")
+        _LOGGER.debug(f"Delegating overshoot check to {type(self._decision_strategy).__name__}")
         
-        if next_timeslot is None:
-            return HeatingDecision(
-                action=HeatingAction.NO_ACTION,
-                reason="No scheduled timeslot to check against"
-            )
-        
-        # Calculate estimated temperature at target time
-        time_to_target = (next_timeslot.target_time - environment.timestamp).total_seconds() / 3600.0
-        
-        if time_to_target <= 0:
-            return HeatingDecision(
-                action=HeatingAction.NO_ACTION,
-                reason="Target time reached"
-            )
-        
-        estimated_temp = environment.current_temp + (current_slope * time_to_target)
-        
-        # Stop if we'll overshoot by more than 0.5°C
-        overshoot_threshold = next_timeslot.target_temp + 0.5
-        
-        if estimated_temp > overshoot_threshold:
-            return HeatingDecision(
-                action=HeatingAction.STOP_HEATING,
-                reason=f"Overshoot risk detected (estimated: {estimated_temp:.1f}°C > threshold: {overshoot_threshold:.1f}°C)"
-            )
-        
-        return HeatingDecision(
-            action=HeatingAction.MONITOR,
-            reason=f"No overshoot risk (estimated: {estimated_temp:.1f}°C)"
+        decision = await self._decision_strategy.check_overshoot_risk(
+            environment, 
+            current_slope
         )
+        
+        _LOGGER.info(f"HeatingPilot overshoot check: {decision.action.value}")
+        return decision

@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from ...domain.interfaces import ISchedulerReader
-from ...domain.value_objects import ScheduleTimeslot
+from ...domain.value_objects import ScheduledTimeslot
 from ..vtherm_compat import get_vtherm_attribute
 
 if TYPE_CHECKING:
@@ -51,7 +51,7 @@ class HASchedulerReader(ISchedulerReader):
         self._scheduler_entity_ids = scheduler_entity_ids
         self._vtherm_entity_id = vtherm_entity_id
     
-    async def get_next_timeslot(self) -> ScheduleTimeslot | None:
+    async def get_next_timeslot(self) -> ScheduledTimeslot | None:
         """Retrieve the next scheduled heating timeslot.
         
         Scans all configured scheduler entities and returns the earliest
@@ -107,7 +107,7 @@ class HASchedulerReader(ISchedulerReader):
                 chosen_time.strftime("%H:%M"),
                 chosen_temp
             )
-            return ScheduleTimeslot(
+            return ScheduledTimeslot(
                 target_time=chosen_time,
                 target_temp=chosen_temp,
                 timeslot_id=f"{chosen_entity}_{chosen_time.isoformat()}",

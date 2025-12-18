@@ -11,7 +11,6 @@
           "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
           "humidity_out_entity_id": "Capteur d'humidité extérieure (optionnel)",
           "cloud_cover_entity_id": "Capteur de couverture nuageuse (optionnel)",
-          "lhs_window_hours": "Fenêtre de temps LHS (heures)",
           "lhs_retention_days": "Rétention des données de pente (jours)"
         },
         "data_description": {
@@ -20,7 +19,6 @@
           "humidity_in_entity_id": "Capteur d'humidité de la pièce pour affiner les calculs",
           "humidity_out_entity_id": "Capteur d'humidité extérieure pour affiner les calculs",
           "cloud_cover_entity_id": "Capteur de couverture nuageuse pour prendre en compte l'impact solaire",
-          "lhs_window_hours": "Fenêtre de temps (en heures) pour le calcul du LHS contextuel. Seules les pentes dans cette fenêtre avant l'heure cible sont utilisées pour tenir compte des conditions environnementales comme l'apport solaire (par défaut : 6 heures)",
           "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage (par défaut : 30 jours)"
         }
       }
@@ -45,11 +43,9 @@
           "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
           "humidity_out_entity_id": "Capteur d'humidité extérieure (optionnel)",
           "cloud_cover_entity_id": "Capteur de couverture nuageuse (optionnel)",
-          "lhs_window_hours": "Fenêtre de temps LHS (heures)",
           "lhs_retention_days": "Rétention des données de pente (jours)"
         },
         "data_description": {
-          "lhs_window_hours": "Fenêtre de temps (en heures) pour le calcul du LHS contextuel. Seules les pentes dans cette fenêtre avant l'heure cible sont utilisées pour tenir compte des conditions environnementales comme l'apport solaire",
           "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage"
         }
       }

@@ -55,6 +55,24 @@ All new features must be developed using TDD:
 5. **High coverage** - Aim for >80% coverage of domain logic
 6. **Fast tests** - Domain tests should run in milliseconds (no HA, no I/O)
 
+### Logging Standards
+
+1. **Method Entry/Exit Logging** - All public methods in the domain and application layers must log at `INFO` level on entry and exit.
+2. **Parameter/Return Value Logging** - Input parameters and return values should be logged at `DEBUG` level.
+3. **Structured Logging** - Prefer structured logging (e.g., JSON) where possible for easier parsing and analysis.
+
+### Python Environment Standards
+
+1. **ALWAYS use Poetry** - Never run `python`, `pytest`, `pip` commands directly. Always use `poetry run python`, `poetry run pytest`, `poetry install`, etc.
+2. **No direct interpreter execution** - Commands like `python -m pytest` or `python script.py` are forbidden. Use `poetry run pytest` or `poetry run python script.py`.
+3. **Package management via Poetry only** - Use `poetry add package` for dependencies, never `pip install`.
+
+### Documentation Standards
+
+1. **No unsolicited documentation** - Do NOT create markdown files to document changes, summarize work, or write reports UNLESS explicitly requested by the user.
+2. **Code-level documentation required** - Docstrings and inline comments are mandatory and should be maintained.
+3. **PR descriptions only** - Summaries of work belong in pull request descriptions or conversation responses, not in repository markdown files.
+
 ### Testing Structure
 
 ```python
@@ -225,7 +243,9 @@ class IClimateCommander(ABC):
 
 ### Documentation
 
-- **Docstrings required** for all public classes and methods
+- **Docstrings required** - For all public classes and methods
+- **User-centric and Developer-centric Docs** - Maintain separate, clear documentation streams: one focused on the user experience (how to use IHP), and another detailed guide for developers (API, architecture, contribution guidelines).
+- **No Markdown Reports in Repository** - Avoid generating new Markdown files for reports (e.g., test reports, analysis summaries) directly within the repository. Such reports should be communicated in the pull request comments or directly in the conversation.
 - Use Google-style docstrings
 - Include type information in docstrings only when it adds clarity
 - Document business rules and assumptions
@@ -233,9 +253,11 @@ class IClimateCommander(ABC):
 ### Code Organization
 
 - **Single Responsibility** - Each class/function does one thing
+- **Prefer Refactoring** - Prioritize refactoring existing classes and methods over creating new ones to avoid code bloat and ensure consistency.
 - **Small functions** - Prefer functions under 20 lines
 - **Clear naming** - Use descriptive names (e.g., `calculate_preheat_duration` not `calc`)
 - **No magic numbers** - Use named constants
+- **DRY Principle** - Actively seek and eliminate code duplication, not just in test fixtures but across the entire codebase.
 
 ### Python Standards
 

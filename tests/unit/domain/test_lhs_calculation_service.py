@@ -1,6 +1,6 @@
 """Tests for LHSCalculationService."""
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import sys
 import os
@@ -15,7 +15,7 @@ sys.path.insert(
 )
 
 from domain.services import LHSCalculationService
-from domain.value_objects import SlopeData
+from domain.value_objects import HeatingCycle
 
 
 class TestLHSCalculationService(unittest.TestCase):
@@ -25,169 +25,213 @@ class TestLHSCalculationService(unittest.TestCase):
         """Set up test fixtures."""
         self.service = LHSCalculationService()
     
-    def test_calculate_robust_average_empty_list(self):
-        """Test calculating average with empty list."""
-        result = self.service.calculate_robust_average([])
+    def _create_cycle(
+        self,
+        start_time: datetime,
+        duration_hours: float,
+        temp_increase: float,
+        device_id: str = "test_device"
+    ) -> HeatingCycle:
+        """Helper to create a heating cycle with specific slope."""
+        end_time = start_time + timedelta(hours=duration_hours)
+        start_temp = 18.0
+        end_temp = start_temp + temp_increase
+        target_temp = end_temp + 0.5  # Slightly above end temp
+        
+        return HeatingCycle(
+            device_id=device_id,
+            start_time=start_time,
+            end_time=end_time,
+            target_temp=target_temp,
+            end_temp=end_temp,
+            start_temp=start_temp,
+            tariff_details=None
+        )
+    
+    def test_calculate_global_lhs_empty_list(self):
+        """Test calculating global LHS with empty list."""
+        result = self.service.calculate_global_lhs([])
         
         # Should return default
         self.assertEqual(result, 2.0)
     
-    def test_calculate_robust_average_few_values(self):
-        """Test calculating average with less than 4 values (no trimming)."""
-        values = [2.0, 2.1, 2.2]
-        result = self.service.calculate_robust_average(values)
+    def test_calculate_global_lhs_single_cycle(self):
+        """Test calculating global LHS with a single cycle."""
+        # Create a cycle with 2°C increase in 1 hour = 2°C/h slope
+        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
+        cycle = self._create_cycle(
+            start_time=base_time,
+            duration_hours=1.0,
+            temp_increase=2.0
+        )
         
-        # Should return simple average
-        expected = sum(values) / len(values)
-        self.assertAlmostEqual(result, expected, places=2)
-    
-    def test_calculate_robust_average_with_trimming(self):
-        """Test calculating average with trimming (>= 4 values)."""
-        # 7 values: outliers at both ends
-        values = [1.0, 2.0, 2.1, 2.2, 2.3, 2.4, 10.0]
-        result = self.service.calculate_robust_average(values)
+        result = self.service.calculate_global_lhs([cycle])
         
-        # Outlier 1.0 and 10.0 should be removed
-        # Result should be average of middle values
-        self.assertGreater(result, 1.5)
-        self.assertLess(result, 3.0)
+        # Should return the cycle's slope
+        self.assertAlmostEqual(result, 2.0, places=2)
     
-    def test_calculate_robust_average_trimmed_mean(self):
-        """Test trimmed mean calculation removes outliers."""
-        # 10 values with clear outliers
-        values = [0.5, 1.8, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 3.0, 15.0]
-        result = self.service.calculate_robust_average(values)
+    def test_calculate_global_lhs_multiple_cycles(self):
+        """Test calculating global LHS with multiple cycles."""
+        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
         
-        # Top and bottom 10% (1 value each) should be removed
-        # 0.5 and 15.0 should be excluded
-        # Average should be around 2.2-2.3
-        self.assertGreater(result, 1.8)
-        self.assertLess(result, 2.8)
+        # Create cycles with different slopes: 2.0, 2.2, 2.4 °C/h
+        cycles = [
+            self._create_cycle(base_time, duration_hours=1.0, temp_increase=2.0),
+            self._create_cycle(base_time + timedelta(hours=2), duration_hours=1.0, temp_increase=2.2),
+            self._create_cycle(base_time + timedelta(hours=4), duration_hours=1.0, temp_increase=2.4),
+        ]
+        
+        result = self.service.calculate_global_lhs(cycles)
+        
+        # Average should be (2.0 + 2.2 + 2.4) / 3 = 2.2
+        self.assertAlmostEqual(result, 2.2, places=2)
     
-    def test_calculate_from_slope_data_empty(self):
-        """Test calculating from empty SlopeData list."""
-        result = self.service.calculate_from_slope_data([])
+    def test_calculate_global_lhs_with_varying_durations(self):
+        """Test that global LHS handles cycles of different durations correctly."""
+        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
+        
+        # Different durations but similar heating rates
+        cycles = [
+            self._create_cycle(base_time, duration_hours=0.5, temp_increase=1.0),  # 2.0°C/h
+            self._create_cycle(base_time + timedelta(hours=1), duration_hours=2.0, temp_increase=4.0),  # 2.0°C/h
+            self._create_cycle(base_time + timedelta(hours=4), duration_hours=1.0, temp_increase=2.0),  # 2.0°C/h
+        ]
+        
+        result = self.service.calculate_global_lhs(cycles)
+        
+        # All have 2.0°C/h slope, average should be 2.0
+        self.assertAlmostEqual(result, 2.0, places=2)
+    
+    def test_calculate_contextual_lhs_empty_list(self):
+        """Test calculating contextual LHS with empty list."""
+        result = self.service.calculate_contextual_lhs([], target_hour=15)
         
         # Should return default
         self.assertEqual(result, 2.0)
     
-    def test_calculate_from_slope_data(self):
-        """Test calculating from SlopeData objects."""
-        timestamp = datetime.now(timezone.utc)
-        slope_data_list = [
-            SlopeData(slope_value=2.0, timestamp=timestamp),
-            SlopeData(slope_value=2.2, timestamp=timestamp),
-            SlopeData(slope_value=2.1, timestamp=timestamp),
-        ]
+    def test_calculate_contextual_lhs_invalid_hour(self):
+        """Test calculating contextual LHS with invalid hour."""
+        with self.assertRaises(ValueError):
+            self.service.calculate_contextual_lhs([], target_hour=25)
         
-        result = self.service.calculate_from_slope_data(slope_data_list)
-        
-        # Should calculate average
-        expected = (2.0 + 2.2 + 2.1) / 3
-        self.assertAlmostEqual(result, expected, places=2)
+        with self.assertRaises(ValueError):
+            self.service.calculate_contextual_lhs([], target_hour=-1)
     
-    def test_calculate_from_slope_data_with_outliers(self):
-        """Test calculating from SlopeData with outliers."""
-        timestamp = datetime.now(timezone.utc)
-        slope_data_list = [
-            SlopeData(slope_value=1.0, timestamp=timestamp),  # Outlier
-            SlopeData(slope_value=2.0, timestamp=timestamp),
-            SlopeData(slope_value=2.1, timestamp=timestamp),
-            SlopeData(slope_value=2.2, timestamp=timestamp),
-            SlopeData(slope_value=2.3, timestamp=timestamp),
-            SlopeData(slope_value=10.0, timestamp=timestamp), # Outlier
-        ]
+    def test_calculate_contextual_lhs_active_cycle(self):
+        """Test contextual LHS includes cycles active at target hour."""
+        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
         
-        result = self.service.calculate_from_slope_data(slope_data_list)
-        
-        # Outliers should be removed
-        self.assertGreater(result, 1.5)
-        self.assertLess(result, 3.0)
-    
-    def test_calculate_contextual_lhs_with_time_window(self):
-        """Test calculating contextual LHS based on time window."""
-        from datetime import timedelta
-        
-        # Create slopes over 10 hours
-        target_time = datetime(2025, 11, 17, 18, 0, 0, tzinfo=timezone.utc)
-        slope_data_list = [
-            SlopeData(slope_value=1.8, timestamp=target_time - timedelta(hours=10)),
-            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=8)),
-            SlopeData(slope_value=2.2, timestamp=target_time - timedelta(hours=5)),  # In 6h window
-            SlopeData(slope_value=2.3, timestamp=target_time - timedelta(hours=3)),  # In 6h window
-            SlopeData(slope_value=2.1, timestamp=target_time - timedelta(hours=1)),  # In 6h window
-        ]
-        
-        # Calculate with 6-hour window
-        result = self.service.calculate_contextual_lhs(
-            all_slope_data=slope_data_list,
-            target_time=target_time,
-            window_hours=6.0
+        # Cycle from 14:00 to 16:00 (active at 15:00)
+        cycle = self._create_cycle(
+            start_time=base_time,
+            duration_hours=2.0,
+            temp_increase=4.0  # 2.0°C/h
         )
         
-        # Should only use slopes from last 6 hours (2.2, 2.3, 2.1)
-        # Average should be around 2.2
-        self.assertGreater(result, 2.0)
-        self.assertLess(result, 2.4)
+        result = self.service.calculate_contextual_lhs([cycle], target_hour=15)
+        
+        # Should include this cycle
+        self.assertAlmostEqual(result, 2.0, places=2)
     
-    def test_calculate_contextual_lhs_empty_window(self):
-        """Test contextual LHS when no slopes in window."""
-        from datetime import timedelta
+    def test_calculate_contextual_lhs_excludes_inactive_cycle(self):
+        """Test contextual LHS excludes cycles not active at target hour."""
+        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
         
-        # Create slopes but all outside the window
-        target_time = datetime(2025, 11, 17, 18, 0, 0, tzinfo=timezone.utc)
-        slope_data_list = [
-            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=20)),
-            SlopeData(slope_value=2.2, timestamp=target_time - timedelta(hours=15)),
-        ]
-        
-        # Calculate with 6-hour window
-        result = self.service.calculate_contextual_lhs(
-            all_slope_data=slope_data_list,
-            target_time=target_time,
-            window_hours=6.0
+        # Cycle from 14:00 to 15:00 (NOT active at 16:00)
+        cycle1 = self._create_cycle(
+            start_time=base_time,
+            duration_hours=1.0,
+            temp_increase=1.0
         )
+
+        # Cycle from 16:30 to 17:30 (NOT active at 16:00)
+        cycle2 = self._create_cycle(
+            start_time=base_time,
+            duration_hours=1.0,
+            temp_increase=2.0
+        )        
         
-        # Should return default when no slopes in window
-        self.assertEqual(result, 2.0)
-    
-    def test_calculate_contextual_lhs_empty_data(self):
-        """Test contextual LHS with no data."""
-        target_time = datetime(2025, 11, 17, 18, 0, 0, tzinfo=timezone.utc)
+        result = self.service.calculate_contextual_lhs([cycle1, cycle2], target_hour=16)
         
-        result = self.service.calculate_contextual_lhs(
-            all_slope_data=[],
-            target_time=target_time,
-            window_hours=6.0
-        )
-        
-        # Should return default
-        self.assertEqual(result, 2.0)
+        # Should not include this cycle, return default
+        self.assertEqual(result, 1.5)
     
     def test_calculate_contextual_lhs_filters_correctly(self):
-        """Test that contextual LHS correctly filters by time window."""
-        from datetime import timedelta
+        """Test contextual LHS filters cycles by activity at target hour."""
+        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
         
-        target_time = datetime(2025, 11, 17, 18, 0, 0, tzinfo=timezone.utc)
-        
-        # Create slopes: some in window, some outside
-        slope_data_list = [
-            SlopeData(slope_value=1.0, timestamp=target_time - timedelta(hours=7)),  # Outside
-            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=5)),  # Inside
-            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=4)),  # Inside
-            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=3)),  # Inside
-            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=2)),  # Inside
-            SlopeData(slope_value=2.0, timestamp=target_time - timedelta(hours=1)),  # Inside
+        cycles = [
+            # Cycle 1: 12:00-13:00 (NOT active at 15:00)
+            self._create_cycle(base_time - timedelta(hours=2), duration_hours=1.0, temp_increase=1.0),  # 1.0°C/h
+            
+            # Cycle 2: 14:00-16:00 (ACTIVE at 15:00)
+            self._create_cycle(base_time, duration_hours=2.0, temp_increase=4.0),  # 2.0°C/h
+            
+            # Cycle 3: 15:30-17:00 (ACTIVE at 15:00 - starts before 16:00)
+            self._create_cycle(base_time + timedelta(hours=1.5), duration_hours=1.5, temp_increase=3.0),  # 2.0°C/h
+            
+            # Cycle 4: 17:00-18:00 (NOT active at 15:00)
+            self._create_cycle(base_time + timedelta(hours=3), duration_hours=1.0, temp_increase=3.0),  # 3.0°C/h
         ]
         
-        result = self.service.calculate_contextual_lhs(
-            all_slope_data=slope_data_list,
-            target_time=target_time,
-            window_hours=6.0
+        result = self.service.calculate_contextual_lhs(cycles, target_hour=15)
+        
+        # Should only average cycles 2 and 3 (both 2.0°C/h)
+        # Average = (2.0 + 2.0) / 2 = 2.0
+        self.assertAlmostEqual(result, 2.0, places=2)
+    
+    def test_calculate_contextual_lhs_exact_hour_boundary(self):
+        """Test contextual LHS at exact cycle boundaries."""
+        base_time = datetime(2025, 12, 18, 15, 0, 0, tzinfo=timezone.utc)
+        
+        # Cycle starts exactly at target hour (15:00-16:00)
+        cycle_at_hour = self._create_cycle(base_time, duration_hours=1.0, temp_increase=2.0)
+        
+        # Cycle ends exactly at target hour (14:00-15:00)
+        cycle_before_hour = self._create_cycle(
+            base_time - timedelta(hours=1),
+            duration_hours=1.0,
+            temp_increase=3.0
         )
         
-        # Should only average the 5 slopes in window (all 2.0)
-        # Should not include the 1.0 slope from 7 hours ago
+        cycles = [cycle_at_hour, cycle_before_hour]
+        result = self.service.calculate_contextual_lhs(cycles, target_hour=15)
+        
+        # Cycle ending at 15:00 is NOT active at 15:00 (exclusive end)
+        # Only cycle starting at 15:00 should be included
+        self.assertAlmostEqual(result, 2.0, places=2)
+    
+    def test_calculate_contextual_lhs_crosses_midnight(self):
+        """Test contextual LHS with cycles crossing midnight."""
+        # Cycle from 23:00 to 01:00 (crosses midnight)
+        night_cycle = self._create_cycle(
+            start_time=datetime(2025, 12, 18, 23, 0, 0, tzinfo=timezone.utc),
+            duration_hours=2.0,
+            temp_increase=4.0  # 2.0°C/h
+        )
+        
+        # Should be active at 00:00 (midnight)
+        result = self.service.calculate_contextual_lhs([night_cycle], target_hour=0)
+        self.assertAlmostEqual(result, 2.0, places=2)
+        
+        # Should also be active at 23:00
+        result = self.service.calculate_contextual_lhs([night_cycle], target_hour=23)
+        self.assertAlmostEqual(result, 2.0, places=2)
+    
+    def test_calculate_contextual_lhs_multiple_active_different_slopes(self):
+        """Test contextual LHS averages multiple cycles with different slopes."""
+        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
+        
+        cycles = [
+            # All active at 15:00 but with different slopes
+            self._create_cycle(base_time, duration_hours=2.0, temp_increase=2.0),     # 1.0°C/h
+            self._create_cycle(base_time, duration_hours=2.0, temp_increase=4.0),     # 2.0°C/h
+            self._create_cycle(base_time, duration_hours=2.0, temp_increase=6.0),     # 3.0°C/h
+        ]
+        
+        result = self.service.calculate_contextual_lhs(cycles, target_hour=15)
+        
+        # Average = (1.0 + 2.0 + 3.0) / 3 = 2.0
         self.assertAlmostEqual(result, 2.0, places=2)
 
 

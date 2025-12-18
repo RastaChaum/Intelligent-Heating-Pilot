@@ -8,14 +8,14 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../custom_components/intelligent_heating_pilot'))
 
 
-class TestIntegrationStructure(unittest.TestCase):
+class TestComponentStructure(unittest.TestCase):
     """Test the integration structure and configuration files."""
 
     def setUp(self):
         """Set up test fixtures."""
         self.base_path = os.path.join(
             os.path.dirname(__file__),
-            '../custom_components/intelligent_heating_pilot'
+            '../../custom_components/intelligent_heating_pilot'
         )
 
     def test_manifest_exists_and_valid(self):
@@ -71,7 +71,7 @@ class TestIntegrationStructure(unittest.TestCase):
 
     def test_hacs_json_exists(self):
         """Test that hacs.json exists in the root."""
-        hacs_path = os.path.join(os.path.dirname(__file__), '../hacs.json')
+        hacs_path = os.path.join(os.path.dirname(__file__), '../../hacs.json')
         self.assertTrue(os.path.exists(hacs_path))
         
         with open(hacs_path, 'r') as f:

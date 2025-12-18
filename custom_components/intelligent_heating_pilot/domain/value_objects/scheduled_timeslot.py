@@ -6,7 +6,7 @@ from datetime import datetime
 
 
 @dataclass(frozen=True)
-class ScheduleTimeslot:
+class ScheduledTimeslot:
     """Represents a scheduled heating timeslot.
     
     A schedule timeslot defines when the room should reach a specific

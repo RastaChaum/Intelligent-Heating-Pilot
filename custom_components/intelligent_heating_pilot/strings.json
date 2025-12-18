@@ -10,14 +10,16 @@
           "scheduler_entities": "Scheduler Entities (switches)",
           "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
           "humidity_out_entity_id": "Outdoor Humidity Sensor (optional)",
-          "cloud_cover_entity_id": "Cloud Coverage Sensor (optional)"
+          "cloud_cover_entity_id": "Cloud Coverage Sensor (optional)",
+          "lhs_retention_days": "Slope Data Retention (days)"
         },
         "data_description": {
           "vtherm_entity_id": "The Versatile Thermostat to control (source of learned slope)",
           "scheduler_entities": "The HACS Scheduler Component switches that control this VTherm",
           "humidity_in_entity_id": "Room humidity sensor to refine calculations",
           "humidity_out_entity_id": "Outdoor humidity sensor to refine calculations",
-          "cloud_cover_entity_id": "Cloud coverage sensor to account for solar impact"
+          "cloud_cover_entity_id": "Cloud coverage sensor to account for solar impact",
+          "lhs_retention_days": "Number of days to keep historical slope data"
         }
       }
     },

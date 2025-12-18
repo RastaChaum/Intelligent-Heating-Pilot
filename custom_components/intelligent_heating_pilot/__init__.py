@@ -24,11 +24,10 @@ from .const import (
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
-    CONF_LHS_WINDOW_HOURS,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
+    DECISION_MODE_SIMPLE,
     DEFAULT_LHS_RETENTION_DAYS,
-    DEFAULT_LHS_WINDOW_HOURS,
     DOMAIN,
 )
 from .infrastructure.adapters import (
@@ -39,6 +38,7 @@ from .infrastructure.adapters import (
     HASchedulerReader,
 )
 from .infrastructure.event_bridge import HAEventBridge
+from .view import async_register_http_views
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,8 +72,8 @@ class IntelligentHeatingPilotCoordinator:
         self._humidity_in = self._get_config_value(CONF_HUMIDITY_IN_ENTITY)
         self._humidity_out = self._get_config_value(CONF_HUMIDITY_OUT_ENTITY)
         self._cloud_cover = self._get_config_value(CONF_CLOUD_COVER_ENTITY)
-        self._lhs_window_hours = float(self._get_config_value(CONF_LHS_WINDOW_HOURS) or DEFAULT_LHS_WINDOW_HOURS)
         self._lhs_retention_days = int(self._get_config_value(CONF_LHS_RETENTION_DAYS) or DEFAULT_LHS_RETENTION_DAYS)
+        self._decision_mode = DECISION_MODE_SIMPLE
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
@@ -91,7 +91,6 @@ class IntelligentHeatingPilotCoordinator:
         # Cached data for sensors (refreshed by application service)
         self._last_anticipation_data: dict[str, Any] | None = None
         self._lhs_cache: float = 2.0  # Default
-        self._slopes_cache: list[float] = []
     
     async def async_load(self) -> None:
         """Load and initialize all components."""
@@ -126,7 +125,8 @@ class IntelligentHeatingPilotCoordinator:
             scheduler_commander=self._scheduler_commander,
             climate_commander=self._climate_commander,
             environment_reader=self._environment_reader,
-            lhs_window_hours=self._lhs_window_hours,
+            history_lookback_days=self._lhs_retention_days,
+            decision_mode=self._decision_mode,
         )
         
         # Create event bridge
@@ -149,7 +149,6 @@ class IntelligentHeatingPilotCoordinator:
         
         # Load initial data
         self._lhs_cache = await self._model_storage.get_learned_heating_slope()
-        self._slopes_cache = await self._model_storage.get_slopes_in_history()
         
         _LOGGER.info(
             "[%s] Coordinator initialized (VTherm: %s, Schedulers: %d)",
@@ -180,7 +179,6 @@ class IntelligentHeatingPilotCoordinator:
         # Refresh LHS cache
         if self._model_storage:
             self._lhs_cache = await self._model_storage.get_learned_heating_slope()
-            self._slopes_cache = await self._model_storage.get_slopes_in_history()
         
         # Fire event for sensors
         if anticipation_data:
@@ -205,18 +203,17 @@ class IntelligentHeatingPilotCoordinator:
             self._event_bridge.cleanup()
 
     async def refresh_caches(self) -> None:
-        """Refresh cached values used by sensors (LHS and history).
+        """Refresh cached LHS value used by sensors.
         
-        Called by sensors after an anticipation event to keep attributes in sync
+        Called by sensors after an anticipation event to keep LHS in sync
         when the event publication bypasses the coordinator's async_update path.
         """
         if self._model_storage is None:
             return
         try:
             self._lhs_cache = await self._model_storage.get_learned_heating_slope()
-            self._slopes_cache = await self._model_storage.get_slopes_in_history()
         except Exception:  # noqa: BLE001
-            _LOGGER.debug("Failed to refresh caches", exc_info=True)
+            _LOGGER.debug("Failed to refresh LHS cache", exc_info=True)
     
     # Sensor accessors (synchronous for sensor entities)
     
@@ -224,9 +221,7 @@ class IntelligentHeatingPilotCoordinator:
         """Get cached LHS for sensors."""
         return self._lhs_cache
     
-    def get_historical_slopes(self) -> list[float]:
-        """Get cached slope history for sensors."""
-        return self._slopes_cache[:]
+
     
     def get_vtherm_entity(self) -> str:
         """Get VTherm entity ID."""
@@ -268,6 +263,13 @@ class IntelligentHeatingPilotCoordinator:
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Intelligent Heating Pilot component."""
     hass.data.setdefault(DOMAIN, {})
+    
+    # Store hass in http app context for REST API views to access it
+    hass.http.app["hass"] = hass
+    
+    # Register HTTP views once at the integration level (not per device)
+    await async_register_http_views(hass)
+    
     return True
 
 
@@ -320,10 +322,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Handle reset_learning service."""
         if coordinator._app_service:
             await coordinator._app_service.reset_learned_slopes()
-            # Refresh caches
+            # Refresh LHS cache
             if coordinator._model_storage:
                 coordinator._lhs_cache = await coordinator._model_storage.get_learned_heating_slope()
-                coordinator._slopes_cache = await coordinator._model_storage.get_slopes_in_history()
     
     hass.services.async_register(DOMAIN, "reset_learning", handle_reset_learning)
     

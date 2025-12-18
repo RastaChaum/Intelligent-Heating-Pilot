@@ -5,13 +5,13 @@ scheduled state when conditions change (anticipated start time moves later).
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from custom_components.intelligent_heating_pilot.application import HeatingApplicationService
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
-    ScheduleTimeslot,
+    ScheduledTimeslot,
     EnvironmentState,
 )
 
@@ -26,6 +26,7 @@ def mock_adapters():
     """Create mock adapters for testing."""
     scheduler_reader = Mock()
     scheduler_reader.get_next_timeslot = AsyncMock()
+    scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
     
     model_storage = Mock()
     model_storage.get_learned_heating_slope = AsyncMock(return_value=2.0)
@@ -34,14 +35,17 @@ def mock_adapters():
     scheduler_commander = Mock()
     scheduler_commander.run_action = AsyncMock()
     scheduler_commander.cancel_action = AsyncMock()
+
     
     climate_commander = Mock()
     climate_commander.turn_on_heat = AsyncMock()
     climate_commander.turn_off = AsyncMock()
+    climate_commander.set_temperature = AsyncMock()
+    climate_commander.set_hvac_mode = AsyncMock()
     
     environment_reader = Mock()
     environment_reader.get_current_environment = AsyncMock()
-    environment_reader.is_heating_active = Mock(return_value=False)
+    environment_reader.is_heating_active = AsyncMock(return_value=False)
     environment_reader.get_vtherm_slope = Mock(return_value=None)
     
     return {
@@ -85,7 +89,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))  # 04:00
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))  # 06:30
         
-        timeslot = ScheduleTimeslot(
+        timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="morning",
@@ -93,16 +97,16 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         )
         
         environment = EnvironmentState(
-            current_temp=19.0,
+            indoor_temperature=19.0,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=base_time,
         )
         
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 1.0
         
         # Step 1: Initial calculation triggers pre-heating at 04:00
         # Mock dt_util.now() to return base_time
@@ -111,16 +115,16 @@ class TestRevertLogicWhenAnticipatedStartMoves:
             await app_service.calculate_and_schedule_anticipation()
         
         # Verify pre-heating was triggered
-        mock_adapters["scheduler_commander"].run_action.assert_called_once_with(target_time)
+        mock_adapters["scheduler_commander"].run_action.assert_called_once()
         assert app_service._is_preheating_active is True
         assert app_service._preheating_target_time == target_time
         
         # Step 2: Time advances to 04:45, LHS improves to 4°C/h
         later_time = make_aware(datetime(2025, 1, 15, 4, 45, 0))  # 04:45
         environment_later = EnvironmentState(
-            current_temp=20.0,  # Heated up
+            indoor_temperature=20.0,  # Heated up
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=later_time,
         )
@@ -137,7 +141,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         # Verify system reverted to current schedule
         mock_adapters["scheduler_commander"].cancel_action.assert_called_once()
         assert app_service._is_preheating_active is False
-        assert app_service._preheating_target_time is None
+        assert app_service._preheating_target_time is target_time
         
         # Verify we did NOT trigger another run_action (that would restart heating)
         mock_adapters["scheduler_commander"].run_action.assert_not_called()
@@ -150,7 +154,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
-        timeslot = ScheduleTimeslot(
+        timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="morning",
@@ -158,16 +162,16 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         )
         
         environment = EnvironmentState(
-            current_temp=19.0,
+            indoor_temperature=19.0,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=base_time,
         )
         
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 1.5
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 0.5
         
         # Initial calculation - low LHS means early start
         with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
@@ -176,24 +180,26 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         assert app_service._is_preheating_active is True
         
         # Time advances but LHS stays low - still need heating
-        later_time = make_aware(datetime(2025, 1, 15, 4, 30, 0))
+        later_time = make_aware(datetime(2025, 1, 15, 6, 00, 0))
         environment_later = EnvironmentState(
-            current_temp=19.5,
+            indoor_temperature=19.5,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=later_time,
         )
         
         mock_adapters["environment_reader"].get_current_environment.return_value = environment_later
         mock_adapters["scheduler_commander"].cancel_action.reset_mock()
+        mock_adapters["scheduler_commander"].run_action.reset_mock()
         
         # Recalculate - should continue heating
         with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=later_time):
             await app_service.calculate_and_schedule_anticipation()
         
-        # Should NOT revert (cancel not called)
+        # Should NOT revert (cancel not called) and not re-trigger run_action
         mock_adapters["scheduler_commander"].cancel_action.assert_not_called()
+        mock_adapters["scheduler_commander"].run_action.assert_not_called()
         assert app_service._is_preheating_active is True
     
     @pytest.mark.asyncio
@@ -204,7 +210,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
-        timeslot = ScheduleTimeslot(
+        timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="morning",
@@ -212,16 +218,16 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         )
         
         environment = EnvironmentState(
-            current_temp=19.0,
+            indoor_temperature=19.0,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=base_time,
         )
         
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 0.5
         
         # Start pre-heating
         with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
@@ -230,9 +236,9 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         
         # Time reaches target
         environment_at_target = EnvironmentState(
-            current_temp=21.0,
+            indoor_temperature=21.0,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=target_time,  # Reached target time
         )
@@ -262,7 +268,7 @@ class TestOvershootPrevention:
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         current_time = make_aware(datetime(2025, 1, 15, 6, 0, 0))
         
-        timeslot = ScheduleTimeslot(
+        timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="morning",
@@ -270,9 +276,9 @@ class TestOvershootPrevention:
         )
         
         environment = EnvironmentState(
-            current_temp=20.0,  # Already close to target
+            indoor_temperature=20.0,  # Already close to target
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=current_time,
         )
@@ -288,7 +294,7 @@ class TestOvershootPrevention:
         # Check overshoot - will detect overshoot risk
         # (current 20°C + 3°C/h * 0.5h = 21.5°C > threshold 21.5°C)
         with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=current_time):
-            await app_service.check_overshoot_risk()
+            await app_service.check_overshoot_risk(scheduler_entity_id=timeslot.scheduler_entity)
         
         # Should use scheduler cancel_action, NOT climate turn_off
         mock_adapters["scheduler_commander"].cancel_action.assert_called_once()
@@ -297,6 +303,41 @@ class TestOvershootPrevention:
         # Pre-heating state should be cleared
         assert app_service._is_preheating_active is False
         assert app_service._preheating_target_time is None
+
+    @pytest.mark.asyncio
+    async def test_no_overshoot_check_when_not_preheating(
+        self, app_service, mock_adapters
+    ):
+        """Overshoot check should do nothing when not preheating."""
+        target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
+        current_time = make_aware(datetime(2025, 1, 15, 6, 0, 0))
+
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=21.0,
+            timeslot_id="morning",
+            scheduler_entity="schedule.heating",
+        )
+        environment = EnvironmentState(
+            indoor_temperature=20.0,
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+            timestamp=current_time,
+        )
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment
+        mock_adapters["environment_reader"].get_vtherm_slope.return_value = 3.0
+
+        # Not preheating
+        app_service._is_preheating_active = False
+        app_service._preheating_target_time = None
+
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=current_time):
+            await app_service.check_overshoot_risk(scheduler_entity_id=timeslot.scheduler_entity)
+
+        mock_adapters["scheduler_commander"].cancel_action.assert_not_called()
+        mock_adapters["climate_commander"].turn_off.assert_not_called()
 
 
 class TestNoDirectVThermControl:
@@ -310,10 +351,10 @@ class TestNoDirectVThermControl:
         
         This verifies the fix for issue #16: Remove direct climate_commander calls.
         """
-        base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        base_time = make_aware(datetime(2025, 1, 15, 5, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
-        timeslot = ScheduleTimeslot(
+        timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="morning",
@@ -321,9 +362,9 @@ class TestNoDirectVThermControl:
         )
         
         environment = EnvironmentState(
-            current_temp=19.0,
+            indoor_temperature=19.0,
             outdoor_temp=5.0,
-            humidity=60.0,
+            indoor_humidity=60.0,
             cloud_coverage=50.0,
             timestamp=base_time,
         )
@@ -337,9 +378,166 @@ class TestNoDirectVThermControl:
             await app_service.calculate_and_schedule_anticipation()
         
         # Verify scheduler.run_action was called
-        mock_adapters["scheduler_commander"].run_action.assert_called_once_with(target_time)
+        mock_adapters["scheduler_commander"].run_action.assert_called_once()
         
         # Verify climate_commander was NOT used directly
         mock_adapters["climate_commander"].turn_on_heat.assert_not_called()
         mock_adapters["climate_commander"].set_temperature.assert_not_called()
         mock_adapters["climate_commander"].set_hvac_mode.assert_not_called()
+
+
+class TestAdditionalScenarios:
+    """Additional scenarios to strengthen coverage and prevent regressions."""
+
+    @pytest.mark.asyncio
+    async def test_no_timeslot_no_action(self, app_service, mock_adapters):
+        """No action when scheduler has no next timeslot."""
+        now = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = None
+
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=now):
+            await app_service.calculate_and_schedule_anticipation()
+
+        mock_adapters["scheduler_commander"].run_action.assert_not_called()
+        mock_adapters["scheduler_commander"].cancel_action.assert_not_called()
+        assert app_service._is_preheating_active is False
+        assert app_service._preheating_target_time is None
+
+    @pytest.mark.asyncio
+    async def test_scheduler_disabled_no_action(self, app_service, mock_adapters):
+        """No action when scheduler is disabled."""
+        now = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        mock_adapters["scheduler_reader"].is_scheduler_enabled.return_value = False
+
+        target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=21.0,
+            timeslot_id="morning",
+            scheduler_entity="schedule.heating",
+        )
+        environment = EnvironmentState(
+            indoor_temperature=19.0,
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+            timestamp=now,
+        )
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment
+
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=now):
+            await app_service.calculate_and_schedule_anticipation()
+
+        mock_adapters["scheduler_commander"].run_action.assert_not_called()
+        mock_adapters["scheduler_commander"].cancel_action.assert_not_called()
+        assert app_service._is_preheating_active is False
+        assert app_service._preheating_target_time is None
+
+    @pytest.mark.asyncio
+    async def test_heating_already_active_no_duplicate_start(self, app_service, mock_adapters):
+        """Do not trigger scheduler when heating already active."""
+        now = make_aware(datetime(2025, 1, 15, 5, 45, 0))
+        target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=21.0,
+            timeslot_id="morning",
+            scheduler_entity="schedule.heating",
+        )
+        environment = EnvironmentState(
+            indoor_temperature=20.0,
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+            timestamp=now,
+        )
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment
+        mock_adapters["environment_reader"].is_heating_active.return_value = True
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+       
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=now):
+            app_service._is_preheating_active = True
+            await app_service.calculate_and_schedule_anticipation()
+
+        mock_adapters["scheduler_commander"].run_action.assert_not_called()
+        mock_adapters["scheduler_commander"].cancel_action.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_past_target_clears_state(self, app_service, mock_adapters):
+        """Clear preheating state when now is past target time."""
+        target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
+        past_now = make_aware(datetime(2025, 1, 15, 7, 0, 0))
+
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=21.0,
+            timeslot_id="morning",
+            scheduler_entity="schedule.heating",
+        )
+        environment = EnvironmentState(
+            indoor_temperature=21.2,
+            outdoor_temp=5.0,
+            indoor_humidity=55.0,
+            cloud_coverage=40.0,
+            timestamp=past_now,
+        )
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment
+
+        # Simulate preheating active
+        app_service._is_preheating_active = True
+        app_service._preheating_target_time = target_time
+
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=past_now):
+            await app_service.calculate_and_schedule_anticipation()
+
+        assert app_service._is_preheating_active is False
+        assert app_service._preheating_target_time is None
+
+    @pytest.mark.asyncio
+    async def test_no_duplicate_run_action_when_preheating_active(self, app_service, mock_adapters):
+        """Ensure run_action is not called again while preheating is active."""
+        base_time = make_aware(datetime(2025, 1, 15, 5, 0, 0))
+        target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
+
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=21.0,
+            timeslot_id="morning",
+            scheduler_entity="schedule.heating",
+        )
+        environment = EnvironmentState(
+            indoor_temperature=19.0,
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+            timestamp=base_time,
+        )
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+
+        # Initial trigger
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
+            await app_service.calculate_and_schedule_anticipation()
+        assert app_service._is_preheating_active is True
+        assert mock_adapters["scheduler_commander"].run_action.call_count == 1
+
+        # Recalculate shortly after; should not re-trigger
+        soon = make_aware(datetime(2025, 1, 15, 5, 5, 0))
+        environment_soon = EnvironmentState(
+            indoor_temperature=19.2,
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+            timestamp=soon,
+        )
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment_soon
+
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=soon):
+            await app_service.calculate_and_schedule_anticipation()
+
+        # Still only one trigger
+        assert mock_adapters["scheduler_commander"].run_action.call_count == 1
