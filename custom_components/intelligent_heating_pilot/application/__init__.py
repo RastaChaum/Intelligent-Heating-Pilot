@@ -162,7 +162,6 @@ class HeatingApplicationService:
             vtherm_id = self._environment_reader.get_vtherm_entity_id()
             indoor_humidity_id = self._environment_reader.get_humidity_in_entity_id()
             outdoor_humidity_id = self._environment_reader.get_humidity_out_entity_id()
-            outdoor_temp_id = self._environment_reader.get_outdoor_temp_entity_id()
             cloud_cover_id = self._environment_reader.get_cloud_cover_entity_id()
 
             combined_data: dict[HistoricalDataKey, list] = {}
