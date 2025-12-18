@@ -177,3 +177,33 @@ class HAEnvironmentReader:
             return float(state.state)
         except (ValueError, TypeError):
             return None
+
+    # --- Accessors for application orchestration (historical data fetching) ---
+    def get_hass(self):
+        """Return the Home Assistant instance for adapters.
+        
+        Exposed for application layer orchestration that needs to construct
+        historical data adapters. This keeps infrastructure concerns out of
+        the domain while enabling coordinated use cases.
+        """
+        return self._hass
+
+    def get_vtherm_entity_id(self) -> str:
+        """Return the VTherm climate entity id."""
+        return self._vtherm_entity_id
+
+    def get_outdoor_temp_entity_id(self) -> str | None:
+        """Return the outdoor temperature sensor entity id (optional)."""
+        return self._outdoor_temp_entity_id
+
+    def get_humidity_in_entity_id(self) -> str | None:
+        """Return the indoor humidity sensor entity id (optional)."""
+        return self._humidity_in_entity_id
+
+    def get_humidity_out_entity_id(self) -> str | None:
+        """Return the outdoor humidity sensor entity id (optional)."""
+        return self._humidity_out_entity_id
+
+    def get_cloud_cover_entity_id(self) -> str | None:
+        """Return the cloud coverage sensor entity id (optional)."""
+        return self._cloud_cover_entity_id
