@@ -46,6 +46,23 @@ Knowing your LHS, IHP can answer: **"If I need to heat 3°C and my slope is 2°C
 Answer: 1.5 hours (3 ÷ 2 = 1.5)
 
 ---
+### LHS Cache (24h TTL)
+
+To keep sensors responsive and avoid unnecessary recomputation, IHP maintains two caches with a 24-hour TTL:
+
+- **Global LHS cache**: A single value representing the overall learned heating slope.
+- **Contextual LHS cache (per hour)**: One value per hour of day, computed from heating cycles active around that hour.
+
+How it works:
+- The cache is considered “fresh” if its timestamp is within the last 24 hours.
+- When calculating anticipation, IHP first checks the **contextual LHS** cache for the target hour. If stale or missing, it **rebuilds heating cycles** for the lookback window ending at the target time, then computes both contextual and global LHS and **updates both caches** with the current timestamp.
+- If no cycles are available, IHP reuses a fresh cached global LHS; otherwise, it falls back to the persisted global LHS and updates both caches with that fallback.
+
+Important notes:
+- **TTL is on-demand**: there is no periodic daily job. The 24h TTL simply defines when a cached value is treated as stale; refresh happens during the next anticipation calculation.
+- **Yesterday’s cycles are included**: the contextual/global recomputation uses a history lookback window (configurable retention days), so the previous day’s cycles are naturally considered when the cache refreshes.
+- Retention settings (e.g., how many days of history are considered) are separate from TTL and influence which cycles feed the recomputation, not the cache freshness.
+- Resetting learning clears historical slopes; until new cycles are observed, a conservative default slope is used and will be reflected in caches after the next refresh.
 
 ## 🔍 Heating Cycle Detection
 

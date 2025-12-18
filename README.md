@@ -1,7 +1,7 @@
 # Intelligent Heating Pilot (IHP)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-![Version](https://img.shields.io/badge/version-0.4.0-blue)
+![Version](https://img.shields.io/badge/version-0.4.1-blue)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 
 **The Adaptive Brain for Versatile Thermostat**
@@ -77,6 +77,8 @@ It computes this from each detected heating cycle: slope = (end temperature − 
 Using this, IHP calculates: "To heat 3°C at 2°C/hour, I need 90 minutes" ✅
 
 **[Learn more in How IHP Works →](docs/HOW_IT_WORKS.md)**
+
+Note: IHP maintains a 24-hour TTL cache for both **global LHS** and **contextual LHS (per hour)**. During anticipation, if the contextual cache for the target hour is stale/missing, IHP rebuilds heating cycles for the lookback window and updates both caches. If no cycles are available, it reuses a fresh cached global LHS or falls back to the persisted value until new data is learned.
 
 ### Sensors Created
 
