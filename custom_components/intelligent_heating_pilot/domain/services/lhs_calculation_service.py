@@ -6,7 +6,7 @@ from heating cycles using simple averaging methods.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, time
+from datetime import time
 
 from ..value_objects import HeatingCycle
 

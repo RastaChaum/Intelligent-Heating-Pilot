@@ -10,9 +10,6 @@ from ..domain.services.simple_decision_strategy import SimpleDecisionStrategy
 from ..domain.services.ml_decision_strategy import MLDecisionStrategy
 from ..const import DECISION_MODE_SIMPLE, DECISION_MODE_ML
 
-if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant
-
 _LOGGER = logging.getLogger(__name__)
 
 
