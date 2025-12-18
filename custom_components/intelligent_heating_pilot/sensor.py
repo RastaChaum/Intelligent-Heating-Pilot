@@ -246,20 +246,11 @@ class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBas
     @property
     def extra_state_attributes(self) -> dict:
         """Return additional attributes."""
-        slopes = self.coordinator.get_historical_slopes()
-        if slopes:
-            min_slope = min(slopes)
-            max_slope = max(slopes)
-            avg_slope = sum(slopes) / len(slopes)
-        else:
-            min_slope = max_slope = avg_slope = None
-        
+        # Historical slopes persistence has been removed. We only expose
+        # the current learned heating slope (LHS) as an attribute.
+        current_lhs = self.native_value
         return {
-            "sample_count": len(slopes),
-            "min_slope": min_slope,
-            "max_slope": max_slope,
-            "average_slope": avg_slope,
-            "recent_slopes": slopes[-10:] if len(slopes) > 10 else slopes,
+            ATTR_LEARNED_HEATING_SLOPE: current_lhs,
         }
 
     def _handle_anticipation_result(self, data: dict) -> None:
