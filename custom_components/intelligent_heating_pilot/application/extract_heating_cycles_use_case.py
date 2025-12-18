@@ -12,11 +12,6 @@ from ..domain.value_objects.heating import HeatingCycle
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
-    from ..infrastructure.adapters import (
-        ClimateDataAdapter,
-        SensorDataAdapter,
-        WeatherDataAdapter,
-    )
 
 _LOGGER = logging.getLogger(__name__)
 
