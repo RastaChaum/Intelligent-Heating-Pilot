@@ -5,7 +5,7 @@ scheduled state when conditions change (anticipated start time moves later).
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
@@ -13,6 +13,8 @@ from custom_components.intelligent_heating_pilot.application import HeatingAppli
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ScheduledTimeslot,
     EnvironmentState,
+    HeatingCycle,
+    LHSCacheEntry,
 )
 
 
@@ -31,6 +33,10 @@ def mock_adapters():
     model_storage = Mock()
     model_storage.get_learned_heating_slope = AsyncMock(return_value=2.0)
     model_storage.get_all_slope_data = AsyncMock(return_value=[])
+    model_storage.get_cached_global_lhs = AsyncMock(return_value=None)
+    model_storage.set_cached_global_lhs = AsyncMock()
+    model_storage.get_cached_contextual_lhs = AsyncMock(return_value=None)
+    model_storage.set_cached_contextual_lhs = AsyncMock()
     
     scheduler_commander = Mock()
     scheduler_commander.run_action = AsyncMock()
@@ -541,3 +547,67 @@ class TestAdditionalScenarios:
 
         # Still only one trigger
         assert mock_adapters["scheduler_commander"].run_action.call_count == 1
+
+
+class TestContextualLHSCaching:
+    """Tests for contextual LHS caching to avoid repeated HA history scans."""
+
+    @pytest.mark.asyncio
+    async def test_uses_cached_contextual_lhs_when_fresh(self, app_service, mock_adapters):
+        """Should return fresh cached contextual LHS without rebuilding cycles."""
+
+        now = make_aware(datetime(2025, 1, 15, 17, 0, 0))
+        cached_entry = LHSCacheEntry(value=3.5, updated_at=now - timedelta(hours=1), hour=17)
+        mock_adapters["model_storage"].get_cached_contextual_lhs.return_value = cached_entry
+        mock_adapters["model_storage"].set_cached_contextual_lhs.reset_mock()
+
+        target_time = make_aware(datetime(2025, 1, 15, 17, 30, 0))
+
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.utcnow", return_value=now):
+            with patch.object(app_service, "_build_heating_cycles", AsyncMock()) as build_cycles:
+                result = await app_service._get_contextual_lhs(target_time)
+
+        assert result == pytest.approx(3.5)
+        build_cycles.assert_not_awaited()
+        mock_adapters["model_storage"].set_cached_contextual_lhs.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_recomputes_when_cache_stale_and_updates_all_caches(self, app_service, mock_adapters):
+        """Stale cache triggers recomputation and persists contextual/global values."""
+
+        now = make_aware(datetime(2025, 1, 16, 17, 0, 0))
+        stale_entry = LHSCacheEntry(value=2.5, updated_at=now - timedelta(hours=25), hour=17)
+        mock_adapters["model_storage"].get_cached_contextual_lhs.return_value = stale_entry
+        mock_adapters["model_storage"].get_cached_global_lhs.return_value = None
+        mock_adapters["model_storage"].set_cached_global_lhs.reset_mock()
+        mock_adapters["model_storage"].set_cached_contextual_lhs.reset_mock()
+
+        target_time = make_aware(datetime(2025, 1, 16, 17, 30, 0))
+
+        cycles = [
+            HeatingCycle(
+                device_id="climate.living_room",
+                start_time=make_aware(datetime(2025, 1, 15, 16, 0, 0)),
+                end_time=make_aware(datetime(2025, 1, 15, 18, 0, 0)),
+                target_temp=21.0,
+                end_temp=22.0,
+                start_temp=18.0,
+            ),
+            HeatingCycle(
+                device_id="climate.living_room",
+                start_time=make_aware(datetime(2025, 1, 15, 17, 0, 0)),
+                end_time=make_aware(datetime(2025, 1, 15, 19, 0, 0)),
+                target_temp=21.0,
+                end_temp=22.0,
+                start_temp=18.0,
+            ),
+        ]
+
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.utcnow", return_value=now):
+            with patch.object(app_service, "_build_heating_cycles", AsyncMock(return_value=cycles)) as build_cycles:
+                result = await app_service._get_contextual_lhs(target_time)
+
+        assert result == pytest.approx(2.0)
+        build_cycles.assert_awaited_once()
+        mock_adapters["model_storage"].set_cached_contextual_lhs.assert_awaited_once_with(17, pytest.approx(2.0), now)
+        mock_adapters["model_storage"].set_cached_global_lhs.assert_awaited_once_with(pytest.approx(2.0), now)

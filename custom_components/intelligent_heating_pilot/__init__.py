@@ -43,6 +43,7 @@ from .view import async_register_http_views
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[str] = [Platform.SENSOR]
+LHS_CACHE_TTL_HOURS = 24
 
 class IntelligentHeatingPilotCoordinator:
     """Lightweight coordinator for DDD architecture.
@@ -148,7 +149,7 @@ class IntelligentHeatingPilotCoordinator:
         )
         
         # Load initial data
-        self._lhs_cache = await self._model_storage.get_learned_heating_slope()
+        self._lhs_cache = await self._get_global_lhs_cached_or_fallback()
         
         _LOGGER.info(
             "[%s] Coordinator initialized (VTherm: %s, Schedulers: %d)",
@@ -178,7 +179,7 @@ class IntelligentHeatingPilotCoordinator:
         
         # Refresh LHS cache
         if self._model_storage:
-            self._lhs_cache = await self._model_storage.get_learned_heating_slope()
+            self._lhs_cache = await self._get_global_lhs_cached_or_fallback()
         
         # Fire event for sensors
         if anticipation_data:
@@ -211,7 +212,7 @@ class IntelligentHeatingPilotCoordinator:
         if self._model_storage is None:
             return
         try:
-            self._lhs_cache = await self._model_storage.get_learned_heating_slope()
+            self._lhs_cache = await self._get_global_lhs_cached_or_fallback()
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to refresh LHS cache", exc_info=True)
     
@@ -258,6 +259,34 @@ class IntelligentHeatingPilotCoordinator:
         if isinstance(raw, str):
             return [raw]
         return []
+
+    async def _get_global_lhs_cached_or_fallback(self) -> float:
+        """Return global LHS from cache if fresh, otherwise fallback to stored value.
+
+        Prefers the cached global LHS updated within the last 24 hours; if not
+        available or stale, falls back to the persisted learned LHS.
+        """
+        if not self._model_storage:
+            return self._lhs_cache
+
+        try:
+            cached = await self._model_storage.get_cached_global_lhs()
+            if cached:
+                age = dt_util.utcnow() - cached.updated_at
+                if age <= dt_util.dt.timedelta(hours=LHS_CACHE_TTL_HOURS):
+                    _LOGGER.info(
+                        "[%s] Using cached global LHS (age %.1f h): %.2f°C/h",
+                        self.config.entry_id,
+                        age.total_seconds() / 3600,
+                        cached.value,
+                    )
+                    return cached.value
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to read cached global LHS", exc_info=True)
+
+        fallback = await self._model_storage.get_learned_heating_slope()
+        _LOGGER.debug("[%s] Using fallback learned LHS: %.2f°C/h", self.config.entry_id, fallback)
+        return fallback
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:

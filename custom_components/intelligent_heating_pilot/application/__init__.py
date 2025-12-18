@@ -20,6 +20,7 @@ from ..domain.value_objects import (
     HistoricalDataKey,
     HistoricalDataSet,
     HeatingCycle,
+    LHSCacheEntry,
 )
 from ..infrastructure.decision_strategy_factory import DecisionStrategyFactory
 from ..const import DEFAULT_DECISION_MODE, DEFAULT_LHS_RETENTION_DAYS
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     )
 
 _LOGGER = logging.getLogger(__name__)
+LHS_CACHE_TTL_HOURS = 24
 
 
 class HeatingApplicationService:
@@ -85,6 +87,7 @@ class HeatingApplicationService:
             if history_lookback_days is not None
             else int(DEFAULT_LHS_RETENTION_DAYS)
         )
+        self._lhs_cache_ttl = timedelta(hours=LHS_CACHE_TTL_HOURS)
         
         # Create decision strategy based on mode
         decision_strategy = DecisionStrategyFactory.create_strategy(
@@ -116,6 +119,107 @@ class HeatingApplicationService:
         self._last_scheduled_lhs = None
         self._active_scheduler_entity = None
         _LOGGER.debug("Anticipation state cleared")
+
+    def _is_cache_fresh(self, cache_entry: LHSCacheEntry | None) -> bool:
+        """Return True when cache entry exists and is within TTL."""
+
+        if cache_entry is None:
+            return False
+
+        age = dt_util.utcnow() - cache_entry.updated_at
+        return age <= self._lhs_cache_ttl
+
+    async def _build_heating_cycles(self, target_time: datetime) -> list[HeatingCycle]:
+        """Build heating cycles from Home Assistant history within lookback window."""
+
+        try:
+            from ..infrastructure.adapters import (
+                ClimateDataAdapter,
+                SensorDataAdapter,
+            )
+        except ImportError:
+            return []
+
+        start_time = target_time - timedelta(days=self._history_lookback_days)
+        end_time = target_time
+
+        hass = self._environment_reader.get_hass()
+        vtherm_id = self._environment_reader.get_vtherm_entity_id()
+        indoor_humidity_id = self._environment_reader.get_humidity_in_entity_id()
+        outdoor_humidity_id = self._environment_reader.get_humidity_out_entity_id()
+
+        combined_data: dict[HistoricalDataKey, list] = {}
+
+        # Fetch climate data (indoor temp, target temp, heating state)
+        try:
+            climate_adapter = ClimateDataAdapter(hass)
+            indoor_data = await climate_adapter.fetch_historical_data(
+                vtherm_id,
+                HistoricalDataKey.INDOOR_TEMP,
+                start_time,
+                end_time,
+            )
+            combined_data.update(indoor_data.data)
+
+            target_data = await climate_adapter.fetch_historical_data(
+                vtherm_id,
+                HistoricalDataKey.TARGET_TEMP,
+                start_time,
+                end_time,
+            )
+            combined_data.update(target_data.data)
+
+            heating_state = await climate_adapter.fetch_historical_data(
+                vtherm_id,
+                HistoricalDataKey.HEATING_STATE,
+                start_time,
+                end_time,
+            )
+            combined_data.update(heating_state.data)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("Failed to fetch climate historical data: %s", exc)
+
+        # Optional sensors
+        if SensorDataAdapter is not None:
+            sensor_adapter = SensorDataAdapter(hass)
+            if indoor_humidity_id:
+                try:
+                    humidity_in = await sensor_adapter.fetch_historical_data(
+                        indoor_humidity_id,
+                        HistoricalDataKey.INDOOR_HUMIDITY,
+                        start_time,
+                        end_time,
+                    )
+                    combined_data.update(humidity_in.data)
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.debug("Failed to fetch indoor humidity history: %s", exc)
+            if outdoor_humidity_id:
+                try:
+                    humidity_out = await sensor_adapter.fetch_historical_data(
+                        outdoor_humidity_id,
+                        HistoricalDataKey.OUTDOOR_HUMIDITY,
+                        start_time,
+                        end_time,
+                    )
+                    combined_data.update(humidity_out.data)
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.debug("Failed to fetch outdoor humidity history: %s", exc)
+
+        historical_data_set = HistoricalDataSet(data=combined_data)
+        try:
+            return await self._heating_cycle_service.extract_heating_cycles(
+                device_id=vtherm_id,
+                history_data_set=historical_data_set,
+                start_time=start_time,
+                end_time=end_time,
+                cycle_split_duration_minutes=None,
+            )
+        except ValueError as exc:
+            _LOGGER.debug(
+                "Cannot extract heating cycles: %s. Falling back to global LHS.",
+                exc,
+            )
+            return []
     
     # NOTE: process_slope_update() removed - we now extract slopes directly from
     # Home Assistant recorder via HeatingCycleService, so no disk-based persistence needed
@@ -135,116 +239,38 @@ class HeatingApplicationService:
             Contextual LHS in °C/h or global LHS as fallback
         """
         target_hour = target_time.hour
+        now = dt_util.utcnow()
         _LOGGER.info(
             "Computing contextual LHS for hour %02d using HeatingCycles",
             target_hour,
         )
-        # Try to build a HistoricalDataSet from HA adapters (climate/sensors)
-        # so we can extract HeatingCycles in a recent lookback period.
-        try:
-            from ..infrastructure.adapters import (
-                ClimateDataAdapter,
-                SensorDataAdapter,
+
+        cached_contextual = await self._model_storage.get_cached_contextual_lhs(target_hour)
+        if self._is_cache_fresh(cached_contextual):
+            _LOGGER.info(
+                "Using cached contextual LHS for hour %02d (age %.1f h)",
+                target_hour,
+                (now - cached_contextual.updated_at).total_seconds() / 3600,
             )
-        except ImportError:
-            ClimateDataAdapter = None  # type: ignore[assignment]
-            SensorDataAdapter = None  # type: ignore[assignment]
+            return cached_contextual.value
 
-        heating_cycles: list[HeatingCycle] = []
+        cached_global = await self._model_storage.get_cached_global_lhs()
+        heating_cycles = await self._build_heating_cycles(target_time)
 
-        if ClimateDataAdapter is not None:
-            # Build historical data from the last few days up to target_time
-            # Lookback duration is driven by configuration.
-            from datetime import timedelta
-            start_time = target_time - timedelta(days=self._history_lookback_days)
-            end_time = target_time
-
-            hass = self._environment_reader.get_hass()
-            vtherm_id = self._environment_reader.get_vtherm_entity_id()
-            indoor_humidity_id = self._environment_reader.get_humidity_in_entity_id()
-            outdoor_humidity_id = self._environment_reader.get_humidity_out_entity_id()
-
-            combined_data: dict[HistoricalDataKey, list] = {}
-
-            # Fetch climate data (indoor temp, target temp, heating state)
-            try:
-                climate_adapter = ClimateDataAdapter(hass)
-                indoor_data = await climate_adapter.fetch_historical_data(
-                    vtherm_id,
-                    HistoricalDataKey.INDOOR_TEMP,
-                    start_time,
-                    end_time,
-                )
-                combined_data.update(indoor_data.data)
-
-                target_data = await climate_adapter.fetch_historical_data(
-                    vtherm_id,
-                    HistoricalDataKey.TARGET_TEMP,
-                    start_time,
-                    end_time,
-                )
-                combined_data.update(target_data.data)
-
-                heating_state = await climate_adapter.fetch_historical_data(
-                    vtherm_id,
-                    HistoricalDataKey.HEATING_STATE,
-                    start_time,
-                    end_time,
-                )
-                combined_data.update(heating_state.data)
-            except Exception as exc:
-                _LOGGER.warning("Failed to fetch climate historical data: %s", exc)
-
-            # Optional sensors
-            if SensorDataAdapter is not None:
-                sensor_adapter = SensorDataAdapter(hass)
-                if indoor_humidity_id:
-                    try:
-                        humidity_in = await sensor_adapter.fetch_historical_data(
-                            indoor_humidity_id,
-                            HistoricalDataKey.INDOOR_HUMIDITY,
-                            start_time,
-                            end_time,
-                        )
-                        combined_data.update(humidity_in.data)
-                    except Exception as exc:
-                        _LOGGER.debug("Failed to fetch indoor humidity history: %s", exc)
-                if outdoor_humidity_id:
-                    try:
-                        humidity_out = await sensor_adapter.fetch_historical_data(
-                            outdoor_humidity_id,
-                            HistoricalDataKey.OUTDOOR_HUMIDITY,
-                            start_time,
-                            end_time,
-                        )
-                        combined_data.update(humidity_out.data)
-                    except Exception as exc:
-                        _LOGGER.debug("Failed to fetch outdoor humidity history: %s", exc)
-
-
-            # Construct dataset and extract cycles
-            historical_data_set = HistoricalDataSet(data=combined_data)
-            try:
-                heating_cycles = await self._heating_cycle_service.extract_heating_cycles(
-                    device_id=vtherm_id,
-                    history_data_set=historical_data_set,
-                    start_time=start_time,
-                    end_time=end_time,
-                    cycle_split_duration_minutes=None,
-                )
-            except ValueError as exc:
-                _LOGGER.debug(
-                    "Cannot extract heating cycles: %s. Falling back to global LHS.",
-                    exc,
-                )
-                heating_cycles = []
-
-        # If we have extracted cycles, compute contextual LHS (by hour)
         if heating_cycles:
             contextual_lhs = self._lhs_calculation_service.calculate_contextual_lhs(
                 heating_cycles=heating_cycles,
                 target_hour=target_hour,
             )
+            global_lhs = self._lhs_calculation_service.calculate_global_lhs(heating_cycles)
+
+            await self._model_storage.set_cached_contextual_lhs(
+                target_hour,
+                contextual_lhs,
+                now,
+            )
+            await self._model_storage.set_cached_global_lhs(global_lhs, now)
+
             _LOGGER.info(
                 "Contextual LHS for hour %02d from %d cycles: %.2f°C/h",
                 target_hour,
@@ -253,13 +279,23 @@ class HeatingApplicationService:
             )
             return contextual_lhs
 
-        # Fallbacks: if adapters unavailable or cycles empty, use global learned LHS
-        global_lhs = await self._model_storage.get_learned_heating_slope()
+        if self._is_cache_fresh(cached_global):
+            fallback_lhs = cached_global.value
+            _LOGGER.warning(
+                "No HeatingCycles available, reusing cached global LHS: %.2f°C/h",
+                fallback_lhs,
+            )
+            await self._model_storage.set_cached_contextual_lhs(target_hour, fallback_lhs, now)
+            return fallback_lhs
+
+        fallback_lhs = await self._model_storage.get_learned_heating_slope()
+        await self._model_storage.set_cached_global_lhs(fallback_lhs, now)
+        await self._model_storage.set_cached_contextual_lhs(target_hour, fallback_lhs, now)
         _LOGGER.warning(
             "No HeatingCycles available, using global LHS: %.2f°C/h",
-            global_lhs,
+            fallback_lhs,
         )
-        return global_lhs
+        return fallback_lhs
     
     async def calculate_and_schedule_anticipation(self) -> dict | None:
         """Calculate anticipation and schedule heating start.

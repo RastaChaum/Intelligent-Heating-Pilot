@@ -10,6 +10,7 @@ from .prediction_result import PredictionResult
 from .heating import HeatingDecision, HeatingAction, HeatingCycle, TariffPeriodDetail
 from .slope_data import SlopeData
 from .historical_data import HistoricalDataKey, HistoricalDataSet, HistoricalMeasurement
+from .lhs_cache_entry import LHSCacheEntry
 
 __all__ = [
     "EnvironmentState",
@@ -23,4 +24,5 @@ __all__ = [
     "HistoricalDataKey",
     "HistoricalDataSet",
     "HistoricalMeasurement",
+    "LHSCacheEntry",
 ]
