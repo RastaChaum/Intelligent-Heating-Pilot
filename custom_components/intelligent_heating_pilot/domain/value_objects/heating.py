@@ -75,6 +75,15 @@ class HeatingCycle:
     tariff_details: list[TariffPeriodDetail] | None = None
 
     @property
+    def avg_heating_slope(self) -> float:
+        """Calculates the average heating slope in °C/hour for the heating cycle."""
+        duration_hours = (self.end_time - self.start_time).total_seconds() / 3600
+        if duration_hours == 0:
+            return 0.0
+        temp_increase = self.end_temp - self.start_temp
+        return temp_increase / duration_hours
+    
+    @property
     def duration_minutes(self) -> float:
         """Calculates the total duration of the heating cycle in minutes."""
         return (self.end_time - self.start_time).total_seconds() / 60
