@@ -145,12 +145,10 @@ class HeatingApplicationService:
         try:
             from ..infrastructure.adapters import (
                 ClimateDataAdapter,
-                SensorDataAdapter,
                 WeatherDataAdapter,
             )
         except ImportError:
             ClimateDataAdapter = None  # type: ignore[assignment]
-            SensorDataAdapter = None  # type: ignore[assignment]
             WeatherDataAdapter = None  # type: ignore[assignment]
 
         heating_cycles: list[HeatingCycle] = []
