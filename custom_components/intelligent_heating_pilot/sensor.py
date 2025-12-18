@@ -236,7 +236,9 @@ class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBas
     def native_value(self) -> float | None:
         """Return the state of the sensor."""
         # Prefer last event-driven value, fallback to coordinator cache
-        return self._slope if self._slope is not None else self.coordinator.get_learned_heating_slope()
+        value = self._slope if self._slope is not None else self.coordinator.get_learned_heating_slope()
+        # Round to 2 decimal places for cleaner display
+        return round(value, 2) if value is not None else None
 
     @property
     def available(self) -> bool:
