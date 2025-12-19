@@ -36,6 +36,7 @@ from .infrastructure.adapters import (
     HAModelStorage,
     HASchedulerCommander,
     HASchedulerReader,
+    HACycleCache,
 )
 from .infrastructure.event_bridge import HAEventBridge
 from .view import async_register_http_views
@@ -77,6 +78,7 @@ class IntelligentHeatingPilotCoordinator:
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
+        self._cycle_cache: HACycleCache | None = None
         self._scheduler_reader: HASchedulerReader | None = None
         self._scheduler_commander: HASchedulerCommander | None = None
         self._climate_commander: HAClimateCommander | None = None
@@ -100,6 +102,14 @@ class IntelligentHeatingPilotCoordinator:
             self.config.entry_id,
             retention_days=self._lhs_retention_days
         )
+        
+        # Create cycle cache for incremental cycle extraction
+        self._cycle_cache = HACycleCache(
+            self.hass,
+            self.config.entry_id,
+            retention_days=self._lhs_retention_days
+        )
+        
         self._scheduler_reader = HASchedulerReader(
             self.hass,
             self._scheduler_entities,
@@ -125,6 +135,7 @@ class IntelligentHeatingPilotCoordinator:
             scheduler_commander=self._scheduler_commander,
             climate_commander=self._climate_commander,
             environment_reader=self._environment_reader,
+            cycle_cache=self._cycle_cache,
             history_lookback_days=self._lhs_retention_days,
             decision_mode=self._decision_mode,
         )
