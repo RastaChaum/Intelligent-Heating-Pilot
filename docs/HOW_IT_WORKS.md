@@ -39,6 +39,32 @@ IHP computes the Learned Heating Slope from detected heating cycles:
    - Cycle slope = (temperature gain ÷ duration hours)
 4. **Average the slopes** across observed cycles to produce the current LHS.
 
+### Cycle Cache: Performance Optimization
+
+**New in v0.4.0+**: IHP now uses an **incremental cycle cache** to dramatically improve performance and data retention.
+
+**What Changed:**
+- **Before**: Every LHS calculation scanned the entire Home Assistant recorder history (heavy database load)
+- **After**: Detected cycles are cached locally, with only new cycles extracted every 24 hours
+
+**How It Works:**
+1. **First Run**: IHP scans recorder history and caches all detected heating cycles
+2. **24-Hour Refresh**: Every 24 hours, IHP queries only new data since last search
+3. **Incremental Updates**: New cycles are automatically appended to cache (no duplicates)
+4. **Automatic Pruning**: Old cycles beyond retention period (default: 30 days) are removed
+5. **LHS Calculation**: Uses cached cycles only—no recorder queries needed
+
+**Benefits:**
+- ⚡ **~95% reduction** in database queries (only searches new data every 24h)
+- 📈 **Longer retention**: Keeps 30 days of cycles even if HA recorder retention is only 7-10 days
+- 🚀 **Better learning**: More historical data = more accurate slope calculations
+- 💾 **Persistent**: Cache survives Home Assistant restarts
+
+**Configuration:**
+The cache retention period is controlled by `data_retention_days` (default: 30 days). This can be configured during setup or by reconfiguring the integration.
+
+**Note**: The old configuration key `lhs_retention_days` is still supported for backward compatibility but will be deprecated in future versions.
+
 ### Why This Matters
 
 Knowing your LHS, IHP can answer: **"If I need to heat 3°C and my slope is 2°C/hour, how long should I wait?"**

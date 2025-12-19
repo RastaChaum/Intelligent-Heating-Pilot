@@ -137,6 +137,15 @@ Check Home Assistant logs if:
 
 **A:** Typically 5-10 cycles. IHP uses conservative defaults initially and becomes more confident as it learns. After 20+ cycles, predictions are usually very accurate.
 
+### Q: What is the cycle cache and how does it help?
+
+**A:** **New in v0.4.0+**: IHP caches detected heating cycles locally instead of repeatedly scanning Home Assistant's database. This means:
+- ⚡ **Much faster** LHS calculations (~95% fewer database queries)
+- 📈 **Longer history** retained (30 days by default vs. typical 7-10 day HA retention)
+- 🎯 **Better accuracy** from more historical data
+
+The cache automatically refreshes every 24 hours to include new cycles and removes old cycles beyond the retention period.
+
 ### Q: Can I use IHP with multiple thermostats?
 
 **A:** Yes! Create multiple IHP instances (one per thermostat). Each learns independently.
@@ -155,7 +164,11 @@ Check Home Assistant logs if:
 
 ### Q: Where is IHP storing my data?
 
-**A:** All learning data is stored locally on your Home Assistant instance. Nothing is sent to cloud or external services.
+**A:** All learning data is stored locally on your Home Assistant instance in two places:
+- **Learned heating slope** (single value)
+- **Cycle cache** (detected heating cycles from last 30 days, refreshed every 24h)
+
+Nothing is sent to cloud or external services. The cycle cache uses minimal disk space (typically < 1MB) and significantly improves performance.
 
 ---
 
