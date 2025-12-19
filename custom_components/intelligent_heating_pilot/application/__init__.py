@@ -208,7 +208,7 @@ class HeatingApplicationService:
         Returns:
             List of heating cycles within retention period
         """
-        _LOGGER.info("Entering _get_cycles_with_cache")
+        _LOGGER.debug("Entering _get_cycles_with_cache")
         _LOGGER.debug(
             "Getting cycles with cache for device=%s, target_time=%s",
             device_id,
@@ -240,7 +240,7 @@ class HeatingApplicationService:
                 if updated_cache:
                     cycles = updated_cache.get_cycles_within_retention(target_time)
                     _LOGGER.debug("Returning %d cached cycles within retention", len(cycles))
-                    _LOGGER.info("Exiting _get_cycles_with_cache")
+                    _LOGGER.debug("Exiting _get_cycles_with_cache")
                     return cycles
                 return []
             
@@ -283,7 +283,7 @@ class HeatingApplicationService:
             if updated_cache:
                 cycles = updated_cache.get_cycles_within_retention(target_time)
                 _LOGGER.debug("Returning %d cycles within retention", len(cycles))
-                _LOGGER.info("Exiting _get_cycles_with_cache")
+                _LOGGER.debug("Exiting _get_cycles_with_cache")
                 return cycles
         else:
             _LOGGER.debug("No cache found, performing full extraction")
@@ -307,7 +307,7 @@ class HeatingApplicationService:
                 search_end,
             )
             
-            _LOGGER.info("Exiting _get_cycles_with_cache")
+            _LOGGER.debug("Exiting _get_cycles_with_cache")
             return cycles
     
     async def _extract_cycles_from_recorder(
@@ -326,7 +326,7 @@ class HeatingApplicationService:
         Returns:
             List of extracted heating cycles
         """
-        _LOGGER.info("Entering _extract_cycles_from_recorder")
+        _LOGGER.debug("Entering _extract_cycles_from_recorder")
         _LOGGER.debug(
             "Extracting cycles for device=%s from %s to %s",
             device_id,
@@ -343,7 +343,7 @@ class HeatingApplicationService:
             )
         except ImportError:
             _LOGGER.warning("Data adapters not available")
-            _LOGGER.info("Exiting _extract_cycles_from_recorder")
+            _LOGGER.debug("Exiting _extract_cycles_from_recorder")
             return []
 
         heating_cycles: list[HeatingCycle] = []
@@ -382,7 +382,7 @@ class HeatingApplicationService:
             combined_data.update(heating_state.data)
         except Exception as exc:
             _LOGGER.warning("Failed to fetch climate historical data: %s", exc)
-            _LOGGER.info("Exiting _extract_cycles_from_recorder")
+            _LOGGER.debug("Exiting _extract_cycles_from_recorder")
             return []
 
         # Optional sensors
@@ -428,7 +428,7 @@ class HeatingApplicationService:
             heating_cycles = []
         
         _LOGGER.debug("Extracted %d cycles from recorder", len(heating_cycles))
-        _LOGGER.info("Exiting _extract_cycles_from_recorder")
+        _LOGGER.debug("Exiting _extract_cycles_from_recorder")
         return heating_cycles
     
     async def calculate_and_schedule_anticipation(self) -> dict | None:

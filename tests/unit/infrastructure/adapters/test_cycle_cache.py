@@ -3,15 +3,28 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+import sys
+import os
 
-from custom_components.intelligent_heating_pilot.domain.value_objects import (
-    CycleCacheData,
-    HeatingCycle,
+# Add custom_components to path
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(__file__),
+        "../../../../custom_components/intelligent_heating_pilot",
+    ),
 )
-from custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache import (
-    HACycleCache,
-    DEFAULT_RETENTION_DAYS,
+
+# Add domain fixtures path
+sys.path.insert(
+    0,
+    os.path.join(os.path.dirname(__file__), "../../domain"),
 )
+
+from domain.value_objects.heating import HeatingCycle
+# Import directly from module to avoid HA dependencies
+from infrastructure.adapters.cycle_cache import HACycleCache
+from fixtures import create_test_heating_cycle
 
 
 @pytest.fixture
@@ -51,7 +64,7 @@ def mock_store() -> Mock:
 async def cache(mock_hass: Mock, entry_id: str, mock_store: Mock) -> HACycleCache:
     """Create cache adapter with mocked dependencies."""
     with patch(
-        "custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache.Store",
+        "infrastructure.adapters.cycle_cache.Store",
         return_value=mock_store,
     ):
         cache_obj = HACycleCache(mock_hass, entry_id)
@@ -59,7 +72,7 @@ async def cache(mock_hass: Mock, entry_id: str, mock_store: Mock) -> HACycleCach
         return cache_obj
 
 
-def create_cycle(
+def create_test_heating_cycle(
     device_id: str,
     start_time: datetime,
     duration_hours: float = 1.0,
@@ -85,7 +98,7 @@ def create_cycle(
 def test_init(mock_hass: Mock, entry_id: str) -> None:
     """Test cache adapter initialization."""
     with patch(
-        "custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache.Store"
+        "infrastructure.adapters.cycle_cache.Store"
     ) as mock_store_class:
         cache = HACycleCache(mock_hass, entry_id, retention_days=45)
         
@@ -132,7 +145,7 @@ async def test_get_cache_data_with_stored_data(
     mock_store.async_load = AsyncMock(return_value=stored_data)
     
     with patch(
-        "custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache.Store",
+        "infrastructure.adapters.cycle_cache.Store",
         return_value=mock_store,
     ):
         cache = HACycleCache(mock_hass, entry_id)
@@ -153,8 +166,8 @@ async def test_append_cycles_to_empty_cache(
 ) -> None:
     """Test appending cycles to empty cache."""
     cycles = [
-        create_cycle(device_id, base_time),
-        create_cycle(device_id, base_time + timedelta(hours=2)),
+        create_test_heating_cycle(device_id, base_time),
+        create_test_heating_cycle(device_id, base_time + timedelta(hours=2)),
     ]
     search_end = base_time + timedelta(hours=4)
     
@@ -178,7 +191,7 @@ async def test_append_cycles_to_existing_cache(
 ) -> None:
     """Test appending cycles to existing cache."""
     # First append
-    initial_cycles = [create_cycle(device_id, base_time)]
+    initial_cycles = [create_test_heating_cycle(device_id, base_time)]
     await cache.append_cycles(device_id, initial_cycles, base_time + timedelta(hours=1))
     
     # Reset mock to track second append
@@ -186,8 +199,8 @@ async def test_append_cycles_to_existing_cache(
     
     # Second append with new cycles
     new_cycles = [
-        create_cycle(device_id, base_time + timedelta(hours=2)),
-        create_cycle(device_id, base_time + timedelta(hours=4)),
+        create_test_heating_cycle(device_id, base_time + timedelta(hours=2)),
+        create_test_heating_cycle(device_id, base_time + timedelta(hours=4)),
     ]
     search_end = base_time + timedelta(hours=6)
     
@@ -210,11 +223,11 @@ async def test_append_cycles_deduplication(
 ) -> None:
     """Test that duplicate cycles are not added."""
     # First append
-    cycle1 = create_cycle(device_id, base_time)
+    cycle1 = create_test_heating_cycle(device_id, base_time)
     await cache.append_cycles(device_id, [cycle1], base_time + timedelta(hours=1))
     
     # Second append with same cycle (duplicate)
-    cycle1_dup = create_cycle(device_id, base_time)
+    cycle1_dup = create_test_heating_cycle(device_id, base_time)
     await cache.append_cycles(device_id, [cycle1_dup], base_time + timedelta(hours=2))
     
     # Should still have only 1 cycle
@@ -249,10 +262,10 @@ async def test_prune_old_cycles(
     """Test pruning cycles older than retention period."""
     # Create cycles at different times
     cycles = [
-        create_cycle(device_id, base_time - timedelta(days=35)),  # Too old
-        create_cycle(device_id, base_time - timedelta(days=20)),  # Within retention
-        create_cycle(device_id, base_time - timedelta(days=10)),  # Within retention
-        create_cycle(device_id, base_time),  # Recent
+        create_test_heating_cycle(device_id, base_time - timedelta(days=35)),  # Too old
+        create_test_heating_cycle(device_id, base_time - timedelta(days=20)),  # Within retention
+        create_test_heating_cycle(device_id, base_time - timedelta(days=10)),  # Within retention
+        create_test_heating_cycle(device_id, base_time),  # Recent
     ]
     
     await cache.append_cycles(device_id, cycles, base_time)
@@ -291,8 +304,8 @@ async def test_prune_old_cycles_nothing_to_prune(
 ) -> None:
     """Test pruning when all cycles are recent."""
     cycles = [
-        create_cycle(device_id, base_time - timedelta(days=5)),
-        create_cycle(device_id, base_time),
+        create_test_heating_cycle(device_id, base_time - timedelta(days=5)),
+        create_test_heating_cycle(device_id, base_time),
     ]
     
     await cache.append_cycles(device_id, cycles, base_time)
@@ -315,7 +328,7 @@ async def test_clear_cache(
 ) -> None:
     """Test clearing cache for a device."""
     # Add some data
-    cycles = [create_cycle(device_id, base_time)]
+    cycles = [create_test_heating_cycle(device_id, base_time)]
     await cache.append_cycles(device_id, cycles, base_time)
     
     # Reset mock to track clear operation
@@ -377,8 +390,8 @@ async def test_serialization_roundtrip(
 ) -> None:
     """Test that cycles can be serialized and deserialized correctly."""
     original_cycles = [
-        create_cycle(device_id, base_time),
-        create_cycle(device_id, base_time + timedelta(hours=2)),
+        create_test_heating_cycle(device_id, base_time),
+        create_test_heating_cycle(device_id, base_time + timedelta(hours=2)),
     ]
     
     await cache.append_cycles(device_id, original_cycles, base_time + timedelta(hours=3))

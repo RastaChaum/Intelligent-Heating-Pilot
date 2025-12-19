@@ -50,9 +50,8 @@ class HACycleCache(ICycleCache):
             entry_id: Config entry ID for scoped storage
             retention_days: Number of days to retain cycles (default: 30)
         """
-        _LOGGER.info("Entering HACycleCache.__init__")
         _LOGGER.debug(
-            "Initializing with entry_id=%s, retention_days=%s",
+            "Initializing HACycleCache with entry_id=%s, retention_days=%s",
             entry_id,
             retention_days,
         )
@@ -67,15 +66,13 @@ class HACycleCache(ICycleCache):
         )
         self._data: dict[str, Any] = {}
         self._loaded = False
-        
-        _LOGGER.info("Exiting HACycleCache.__init__")
     
     async def _ensure_loaded(self) -> None:
         """Ensure storage data is loaded."""
         if self._loaded:
             return
         
-        _LOGGER.info("Entering HACycleCache._ensure_loaded")
+        _LOGGER.debug("Loading cycle cache data from storage")
         
         stored_data = await self._store.async_load()
         if stored_data:
@@ -91,8 +88,6 @@ class HACycleCache(ICycleCache):
             _LOGGER.debug("Initialized new cycle cache storage")
         
         self._loaded = True
-        
-        _LOGGER.info("Exiting HACycleCache._ensure_loaded")
     
     async def get_cache_data(self, device_id: str) -> CycleCacheData | None:
         """Get cached cycle data for a device.
@@ -103,7 +98,7 @@ class HACycleCache(ICycleCache):
         Returns:
             CycleCacheData if cache exists, None otherwise
         """
-        _LOGGER.info("Entering HACycleCache.get_cache_data")
+        _LOGGER.debug("Entering HACycleCache.get_cache_data")
         _LOGGER.debug("Getting cache data for device_id=%s", device_id)
         
         await self._ensure_loaded()
@@ -153,7 +148,7 @@ class HACycleCache(ICycleCache):
             new_cycles: List of new cycles to append
             search_end_time: Timestamp marking the end of this search period
         """
-        _LOGGER.info("Entering HACycleCache.append_cycles")
+        _LOGGER.debug("Entering HACycleCache.append_cycles")
         _LOGGER.debug(
             "Appending %d cycles for device_id=%s, search_end_time=%s",
             len(new_cycles),
@@ -215,7 +210,7 @@ class HACycleCache(ICycleCache):
             device_id: The device identifier
             reference_time: Time to calculate retention from
         """
-        _LOGGER.info("Entering HACycleCache.prune_old_cycles")
+        _LOGGER.debug("Entering HACycleCache.prune_old_cycles")
         _LOGGER.debug(
             "Pruning cycles for device_id=%s, reference_time=%s",
             device_id,
@@ -267,7 +262,7 @@ class HACycleCache(ICycleCache):
         Args:
             device_id: The device identifier
         """
-        _LOGGER.info("Entering HACycleCache.clear_cache")
+        _LOGGER.debug("Entering HACycleCache.clear_cache")
         _LOGGER.debug("Clearing cache for device_id=%s", device_id)
         
         await self._ensure_loaded()
@@ -290,7 +285,7 @@ class HACycleCache(ICycleCache):
         Returns:
             UTC timestamp of last search, or None if no cache exists
         """
-        _LOGGER.info("Entering HACycleCache.get_last_search_time")
+        _LOGGER.debug("Entering HACycleCache.get_last_search_time")
         _LOGGER.debug("Getting last search time for device_id=%s", device_id)
         
         cache_data = await self.get_cache_data(device_id)
