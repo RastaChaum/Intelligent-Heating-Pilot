@@ -10,6 +10,7 @@ from .environment_reader import HAEnvironmentReader
 from .model_storage import HAModelStorage
 from .scheduler_commander import HASchedulerCommander
 from .scheduler_reader import HASchedulerReader
+from .cycle_cache import HACycleCache
 
 # Import data adapters with try/except to handle test environments
 try:
@@ -26,6 +27,7 @@ __all__ = [
     "HAModelStorage",
     "HASchedulerCommander",
     "HASchedulerReader",
+    "HACycleCache",
 ]
 
 if _DATA_ADAPTERS_AVAILABLE:
