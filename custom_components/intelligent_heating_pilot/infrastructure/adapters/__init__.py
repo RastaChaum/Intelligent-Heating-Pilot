@@ -21,6 +21,15 @@ try:
 except ImportError:
     _DATA_ADAPTERS_AVAILABLE = False
 
+# Import data adapters with try/except to handle test environments
+try:
+    from .climate_data_adapter import ClimateDataAdapter
+    from .sensor_data_adapter import SensorDataAdapter
+    from .weather_data_adapter import WeatherDataAdapter
+    _DATA_ADAPTERS_AVAILABLE = True
+except ImportError:
+    _DATA_ADAPTERS_AVAILABLE = False
+
 __all__ = [
     "HAClimateCommander",
     "HAEnvironmentReader",

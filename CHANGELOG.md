@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+
+## [0.4.1] - 2025-12-18
+
+### Changed
+- Introduced/clarified a 24-hour TTL cache for both **global LHS** and **contextual LHS (per hour)**. During anticipation, stale or missing contextual entries trigger a recomputation from recent heating cycles (lookback window), updating both caches. If no cycles are available, IHP reuses a fresh cached global LHS or falls back to the persisted value.
+
+### Added
+
+### Changed
+
+### Fixed
+
 ## [0.4.0] - 2025-12-18
 
 ### Added
@@ -168,7 +180,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Release Links
 
-[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.2.1...v0.3.0

@@ -112,3 +112,32 @@ class HAModelStorage(IModelStorage):
         self._data["learned_heating_slope"] = DEFAULT_HEATING_SLOPE
         
         await self._store.async_save(self._data)
+
+    async def get_cached_global_lhs(self) -> LHSCacheEntry | None:
+        """Return cached global LHS if available."""
+
+        await self._ensure_loaded()
+        return self._deserialize_cached_entry(self._data.get("cached_global_lhs"))
+
+    async def set_cached_global_lhs(self, lhs: float, updated_at: datetime) -> None:
+        """Persist global LHS cache with timestamp."""
+
+        await self._ensure_loaded()
+        self._data["cached_global_lhs"] = self._serialize_cached_entry(lhs, updated_at)
+        await self._store.async_save(self._data)
+
+    async def get_cached_contextual_lhs(self, hour: int) -> LHSCacheEntry | None:
+        """Return cached contextual LHS for the given hour if available."""
+
+        await self._ensure_loaded()
+        contextual_cache = self._data.get("cached_contextual_lhs") or {}
+        entry = contextual_cache.get(str(hour))
+        return self._deserialize_cached_entry(entry, hour=hour)
+
+    async def set_cached_contextual_lhs(self, hour: int, lhs: float, updated_at: datetime) -> None:
+        """Persist contextual LHS cache for the given hour with timestamp."""
+
+        await self._ensure_loaded()
+        contextual_cache = self._data.setdefault("cached_contextual_lhs", {})
+        contextual_cache[str(hour)] = self._serialize_cached_entry(lhs, updated_at)
+        await self._store.async_save(self._data)

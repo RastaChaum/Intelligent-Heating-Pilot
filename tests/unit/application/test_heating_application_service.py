@@ -13,6 +13,8 @@ from custom_components.intelligent_heating_pilot.application import HeatingAppli
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ScheduledTimeslot,
     EnvironmentState,
+    HeatingCycle,
+    LHSCacheEntry,
 )
 
 
@@ -31,6 +33,10 @@ def mock_adapters():
     model_storage = Mock()
     model_storage.get_learned_heating_slope = AsyncMock(return_value=2.0)
     model_storage.get_all_slope_data = AsyncMock(return_value=[])
+    model_storage.get_cached_global_lhs = AsyncMock(return_value=None)
+    model_storage.set_cached_global_lhs = AsyncMock()
+    model_storage.get_cached_contextual_lhs = AsyncMock(return_value=None)
+    model_storage.set_cached_contextual_lhs = AsyncMock()
     
     scheduler_commander = Mock()
     scheduler_commander.run_action = AsyncMock()

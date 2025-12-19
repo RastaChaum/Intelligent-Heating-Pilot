@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     )
 
 _LOGGER = logging.getLogger(__name__)
+LHS_CACHE_TTL_HOURS = 24
 
 
 class HeatingApplicationService:
