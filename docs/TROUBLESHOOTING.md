@@ -151,20 +151,28 @@
 1. **IHP just installed** - Wait 1-2 minutes for initialization
 2. **No heating cycles yet** - Sensors need data to show values
 3. **VTherm not heating** - Make sure your thermostat is actually controlling heat
+4. **Scheduler disabled** - If scheduler state is "off", sensors show `unknown` (this is normal)
+5. **Vacation mode active** - If scheduler conditions aren't met, anticipation sensors may show `unknown`
 
 **Solution:**
 
-1. **Wait for first heating cycle:**
+1. **Check if scheduler is enabled:**
+   - Developer Tools → States
+   - Find your scheduler entity (e.g., `switch.schedule_heating`)
+   - State should NOT be "off"
+   - If "off", this is expected behavior (IHP is inactive)
+
+2. **Wait for first heating cycle:**
    - Manually trigger scheduler (or wait for scheduled time)
    - Watch temperature rise
    - Sensors should populate after heating stops
 
-2. **Verify VTherm is working:**
+3. **Verify VTherm is working:**
    - Check VTherm entity in Developer Tools → States
    - Look for `temperature_slope` attribute
    - If empty/zero, VTherm may not be heating
 
-3. **Check IHP is running:**
+4. **Check IHP is running:**
    - Settings → Devices & Services
    - Click Intelligent Heating Pilot
    - Should show "1 device" with status
@@ -281,6 +289,89 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
 4. **Increase environmental adjustments:**
    - Add humidity/outdoor temp sensors if not already present
    - These help IHP account for real-world factors
+
+---
+
+## 🏖️ Vacation Mode & Scheduler Conditions
+
+### IHP still triggers heating when on vacation
+
+**Symptoms:**
+- You disabled scheduler or set vacation mode
+- But heating still triggers
+
+**Diagnosis:**
+
+1. **Check scheduler state:**
+   - Developer Tools → States
+   - Find your scheduler entity
+   - State should be "off" if disabled
+
+2. **Check scheduler conditions:**
+   - If using conditions (e.g., `input_boolean.vacation`)
+   - Verify the condition entity state
+   - Scheduler should skip actions when conditions fail
+
+**Solution:**
+
+1. **Disable scheduler properly:**
+   - Turn OFF the scheduler switch entity
+   - State should change to "off"
+   - IHP should show `unknown` for anticipation sensors
+
+2. **Verify vacation mode automation:**
+   ```yaml
+   # Example automation to disable scheduler
+   automation:
+     - alias: "Vacation Mode - Disable Heating Scheduler"
+       trigger:
+         - platform: state
+           entity_id: input_boolean.vacation_mode
+           to: 'on'
+       action:
+         - service: switch.turn_off
+           target:
+             entity_id: switch.schedule_heating
+   ```
+
+3. **Check logs for trigger attempts:**
+   ```yaml
+   logger:
+     logs:
+       custom_components.intelligent_heating_pilot: debug
+   ```
+   Look for "run_action" calls
+
+### Sensors show "unknown" but I'm not on vacation
+
+**Symptoms:**
+- Anticipation sensors show `unknown`
+- Scheduler is enabled (state is NOT "off")
+- You expect heating to occur
+
+**Cause:**
+- No valid upcoming timeslots detected
+- Scheduler might have no schedules configured
+- Or all schedules are in the past
+
+**Solution:**
+
+1. **Verify scheduler has active schedules:**
+   - Open Scheduler UI
+   - Check if any schedules exist
+   - Check if schedules are for future times
+
+2. **Check scheduler entity attributes:**
+   - Developer Tools → States
+   - Find your scheduler entity
+   - Look for `next_trigger` attribute
+   - Should show next scheduled time
+
+3. **Reconfigure IHP with correct scheduler:**
+   - Settings → Devices & Services
+   - Find Intelligent Heating Pilot
+   - Click ⋮ → Reconfigure
+   - Verify scheduler entity is correct
 
 ---
 

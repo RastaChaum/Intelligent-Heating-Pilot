@@ -50,10 +50,26 @@ Once configured, IHP runs in the background:
 1. ✅ Monitors your scheduler for heating events
 2. ✅ Learns how fast your room heats (Learned Heating Slope)
 3. ✅ Calculates optimal start time for next event
-4. ✅ Triggers heating at exactly the right moment
+4. ✅ Triggers heating at exactly the right moment (via scheduler's run_action)
 5. ✅ Improves predictions with each heating cycle
 
 **Result:** Your room reaches target temperature exactly on time, automatically, no manual intervention.
+
+**Important:** IHP does NOT directly control your thermostat. It triggers your scheduler, which then controls VTherm based on its conditions. This means your vacation mode, input booleans, and other scheduler conditions work automatically!
+
+### Vacation Mode? No Problem! 🏖️
+
+**IHP stops automatically when:**
+- Your scheduler is disabled (state = "off")
+- Scheduler conditions aren't met (e.g., `input_boolean.vacation`)
+
+**What to do for vacation:**
+1. Disable your scheduler (or use your vacation mode automation)
+2. IHP becomes inactive automatically
+3. No additional configuration needed
+4. Re-enable scheduler when you return
+
+[Learn more about vacation mode →](docs/USER_GUIDE.md#q-what-happens-when-i-go-on-vacation-does-ihp-stop-automatically)
 
 ### First 5 Heating Cycles
 

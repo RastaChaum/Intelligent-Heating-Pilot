@@ -186,8 +186,11 @@ When IHP has no learning history:
 Here's the full journey from a scheduled event to IHP triggering heating:
 
 ```
-1. SCHEDULER ACTIVATION
-   └─ "Heat to 21°C at 06:00" → IHP detects this event
+1. SCHEDULER DETECTION
+   └─ IHP monitors scheduler entities for upcoming timeslots
+      ├─ Skips schedulers with state "off" (disabled)
+      ├─ "Heat to 21°C at 06:00" → IHP detects this event
+      └─ If no valid timeslots found, sensors show "unknown"
 
 2. PREDICTION CALCULATION
    └─ Calculate when to start heating to reach 21°C by 06:00
@@ -198,18 +201,25 @@ Here's the full journey from a scheduled event to IHP triggering heating:
       ├─ Apply safety bounds (5 min to 4 hours)
       └─ Result: "Start heating at 04:30"
 
-3. HEATING CYCLE STARTS
-   └─ At 04:30 → IHP triggers the scheduler
+3. HEATING TRIGGER (via Scheduler)
+   └─ At 04:30 → IHP calls scheduler's run_action service
+      ├─ Uses skip_conditions: false (respects all conditions)
+      ├─ Scheduler checks its own conditions (vacation mode, etc.)
+      ├─ If conditions pass, scheduler controls VTherm
+      └─ If conditions fail, heating is skipped (no action)
+
+4. HEATING CYCLE STARTS
+   └─ Scheduler activates VTherm
       └─ VTherm detects heating activity
       └─ Temperature rises toward 21°C
 
-4. HEATING CYCLE MONITORING
+5. HEATING CYCLE MONITORING
    └─ IHP watches temperature rise
       ├─ Collects VTherm's slope observations
       ├─ Prevents overshooting (stops early if approaching target)
       └─ Waits for cycle completion
 
-5. CYCLE COMPLETION & LEARNING
+6. CYCLE COMPLETION & LEARNING
    └─ Temperature reaches 21°C (or schedule ends)
       ├─ Heating stops
       ├─ IHP captures final slope reading
@@ -217,9 +227,33 @@ Here's the full journey from a scheduled event to IHP triggering heating:
       ├─ Recalculates learned slope average
       └─ Confidence increases
 
-6. NEXT CYCLE
+7. NEXT CYCLE
    └─ Next scheduled heating event
       └─ IHP uses updated slope for even better predictions
+```
+
+### Important: IHP Does Not Directly Control VTherm
+
+**Key architectural principle:**
+- IHP never directly controls your thermostat (VTherm)
+- IHP triggers the **scheduler's run_action service**
+- The scheduler then controls VTherm based on its configuration
+- This ensures all your scheduler conditions and automations work as expected
+
+**Benefits:**
+- ✅ Vacation mode works automatically (scheduler conditions)
+- ✅ Input boolean conditions are respected
+- ✅ Time-based conditions continue to work
+- ✅ You maintain full control through your scheduler
+- ✅ IHP is only an intelligent trigger mechanism
+
+**What happens when scheduler is disabled:**
+```
+Scheduler State = "off"
+   ├─ IHP detects no upcoming timeslots
+   ├─ Anticipation sensors show "unknown"
+   ├─ No heating will be triggered
+   └─ IHP waits for scheduler to be re-enabled
 ```
 
 ---
@@ -269,6 +303,61 @@ Here's the full journey from a scheduled event to IHP triggering heating:
 - Solar gain helps heating
 
 **Why:** Environmental adjustment for solar gain
+
+### Scenario 6: Vacation Mode / Scheduler Disabled
+
+**Expected:**
+- Anticipation sensors show `unknown`
+- No heating triggers occur
+- IHP remains installed but inactive
+- Learning data is preserved
+
+**Why:** When scheduler state is "off", IHP detects no upcoming timeslots
+
+**How to trigger vacation mode:**
+1. Turn off your scheduler switch (state becomes "off")
+2. OR: Use scheduler conditions (e.g., `input_boolean.vacation`)
+3. IHP automatically stops monitoring
+4. When you return, re-enable scheduler
+5. IHP resumes normal operation with preserved learning
+
+**What's preserved:**
+- ✅ Learned heating slope
+- ✅ Historical data
+- ✅ Confidence level
+- ✅ All configuration
+
+**What happens:**
+- ❌ No heating triggers
+- ❌ Sensors show "unknown" (no upcoming timeslots)
+- ❌ No predictions calculated
+
+### Scenario 7: Scheduler Conditions Not Met
+
+**Expected:**
+- IHP calculates anticipation time normally
+- At trigger time, IHP calls `run_action`
+- Scheduler evaluates its conditions
+- If conditions fail, heating is skipped
+- IHP continues monitoring for next timeslot
+
+**Why:** IHP uses `skip_conditions: false` to respect scheduler logic
+
+**Example:**
+```yaml
+# Your scheduler has a condition:
+condition:
+  - condition: state
+    entity_id: input_boolean.vacation
+    state: 'off'
+
+# When input_boolean.vacation is 'on':
+- IHP still calculates trigger time
+- IHP calls run_action at 04:30
+- Scheduler checks condition → fails
+- Heating is NOT triggered
+- IHP tries again next scheduled time
+```
 
 ---
 
