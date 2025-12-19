@@ -206,11 +206,11 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
         Returns:
             List of historical records from Home Assistant
         """
-        from homeassistant.components.recorder import history
+        from homeassistant.components.recorder import get_instance, history
         from functools import partial
         
         # Use Home Assistant's get_significant_states function from recorder
-        # Must run in executor to avoid blocking the event loop
+        # Must run in recorder executor to avoid blocking and comply with HA best practices
         # Use partial to properly pass keyword arguments
         get_states_func = partial(
             history.get_significant_states,
@@ -219,7 +219,7 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
             end_time,
             entity_ids=[entity_id],
         )
-        history_dict = await self._hass.async_add_executor_job(get_states_func)
+        history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
         
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])
