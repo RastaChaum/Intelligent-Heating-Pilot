@@ -23,11 +23,12 @@ from .const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
+    CONF_DATA_RETENTION_DAYS,
     CONF_LHS_RETENTION_DAYS,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
     DECISION_MODE_SIMPLE,
-    DEFAULT_LHS_RETENTION_DAYS,
+    DEFAULT_DATA_RETENTION_DAYS,
     DOMAIN,
 )
 from .infrastructure.adapters import (
@@ -36,6 +37,7 @@ from .infrastructure.adapters import (
     HAModelStorage,
     HASchedulerCommander,
     HASchedulerReader,
+    HACycleCache,
 )
 from .infrastructure.event_bridge import HAEventBridge
 from .view import async_register_http_views
@@ -43,6 +45,7 @@ from .view import async_register_http_views
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[str] = [Platform.SENSOR]
+LHS_CACHE_TTL_HOURS = 24
 
 class IntelligentHeatingPilotCoordinator:
     """Lightweight coordinator for DDD architecture.
@@ -72,11 +75,17 @@ class IntelligentHeatingPilotCoordinator:
         self._humidity_in = self._get_config_value(CONF_HUMIDITY_IN_ENTITY)
         self._humidity_out = self._get_config_value(CONF_HUMIDITY_OUT_ENTITY)
         self._cloud_cover = self._get_config_value(CONF_CLOUD_COVER_ENTITY)
-        self._lhs_retention_days = int(self._get_config_value(CONF_LHS_RETENTION_DAYS) or DEFAULT_LHS_RETENTION_DAYS)
+        # Support both old and new config keys for backward compatibility
+        self._data_retention_days = int(
+            self._get_config_value(CONF_DATA_RETENTION_DAYS) 
+            or self._get_config_value(CONF_LHS_RETENTION_DAYS) 
+            or DEFAULT_DATA_RETENTION_DAYS
+        )
         self._decision_mode = DECISION_MODE_SIMPLE
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
+        self._cycle_cache: HACycleCache | None = None
         self._scheduler_reader: HASchedulerReader | None = None
         self._scheduler_commander: HASchedulerCommander | None = None
         self._climate_commander: HAClimateCommander | None = None
@@ -98,8 +107,16 @@ class IntelligentHeatingPilotCoordinator:
         self._model_storage = HAModelStorage(
             self.hass,
             self.config.entry_id,
-            retention_days=self._lhs_retention_days
+            retention_days=self._data_retention_days
         )
+        
+        # Create cycle cache for incremental cycle extraction
+        self._cycle_cache = HACycleCache(
+            self.hass,
+            self.config.entry_id,
+            retention_days=self._data_retention_days
+        )
+        
         self._scheduler_reader = HASchedulerReader(
             self.hass,
             self._scheduler_entities,
@@ -125,7 +142,8 @@ class IntelligentHeatingPilotCoordinator:
             scheduler_commander=self._scheduler_commander,
             climate_commander=self._climate_commander,
             environment_reader=self._environment_reader,
-            history_lookback_days=self._lhs_retention_days,
+            cycle_cache=self._cycle_cache,
+            history_lookback_days=self._data_retention_days,
             decision_mode=self._decision_mode,
         )
         
@@ -258,6 +276,34 @@ class IntelligentHeatingPilotCoordinator:
         if isinstance(raw, str):
             return [raw]
         return []
+
+    async def _get_global_lhs_cached_or_fallback(self) -> float:
+        """Return global LHS from cache if fresh, otherwise fallback to stored value.
+
+        Prefers the cached global LHS updated within the last 24 hours; if not
+        available or stale, falls back to the persisted learned LHS.
+        """
+        if not self._model_storage:
+            return self._lhs_cache
+
+        try:
+            cached = await self._model_storage.get_cached_global_lhs()
+            if cached:
+                age = dt_util.utcnow() - cached.updated_at
+                if age <= dt_util.dt.timedelta(hours=LHS_CACHE_TTL_HOURS):
+                    _LOGGER.info(
+                        "[%s] Using cached global LHS (age %.1f h): %.2f°C/h",
+                        self.config.entry_id,
+                        age.total_seconds() / 3600,
+                        cached.value,
+                    )
+                    return cached.value
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to read cached global LHS", exc_info=True)
+
+        fallback = await self._model_storage.get_learned_heating_slope()
+        _LOGGER.debug("[%s] Using fallback learned LHS: %.2f°C/h", self.config.entry_id, fallback)
+        return fallback
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:

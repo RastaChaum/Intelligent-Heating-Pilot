@@ -10,6 +10,7 @@ from .model_storage import IModelStorage
 from .scheduler_commander import ISchedulerCommander
 from .decision_strategy import IDecisionStrategy
 from .heating_cycle_service import IHeatingCycleService
+from .cycle_cache import ICycleCache
 
 __all__ = [
     "ISchedulerReader",
@@ -17,4 +18,5 @@ __all__ = [
     "ISchedulerCommander",
     "IDecisionStrategy",
     "IHeatingCycleService",
+    "ICycleCache",
 ]

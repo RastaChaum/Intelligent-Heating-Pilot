@@ -13,6 +13,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.4.2] - 2025-12-19
+
+### Added
+- **Incremental Cycle Cache for LHS Calculation** - New cache system to store heating cycles incrementally, drastically reducing Home Assistant recorder queries and enabling longer retention periods than HA's native history
+  - New `CycleCacheData` value object to store cycles with metadata
+  - New `ICycleCache` interface for cache operations  
+  - New `HACycleCache` adapter using HA Store for JSON persistence
+  - Automatic deduplication and retention-based pruning
+  - Graceful degradation to direct recorder queries if cache unavailable
+  - Comprehensive unit and integration tests (28 tests total)
+
+### Changed
+- **README Overhaul** - Complete redesign for better clarity and user experience
+  - Reduced from ~300 to ~120 lines (60% reduction)
+  - Eliminated redundancies with dedicated documentation
+  - Improved visual flow and natural chapter progression
+  - Updated version references to 0.4.1 (removed outdated 0.3.0 mentions)
+  - Clearer Quick Start with concrete example
+  - Simplified navigation with documentation table
+
+## [0.4.1] - 2025-12-18
+
+### Changed
+- Introduced/clarified a 24-hour TTL cache for both **global LHS** and **contextual LHS (per hour)**. During anticipation, stale or missing contextual entries trigger a recomputation from recent heating cycles (lookback window), updating both caches. If no cycles are available, IHP reuses a fresh cached global LHS or falls back to the persisted value.
+
+### Added
+
+### Changed
+
+### Fixed
+
 ## [0.4.0] - 2025-12-18
 
 ### Added
@@ -161,7 +192,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Release Links
 
-[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.2.1...v0.3.0

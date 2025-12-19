@@ -85,6 +85,30 @@ The integration will reload automatically.
 
 ## Advanced Configuration (Optional)
 
+### Data Retention Settings
+
+**New in v0.4.0+**: IHP now caches heating cycles for improved performance and longer learning history.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Data Retention Days** | 30 days | How long to keep cached heating cycles |
+
+**What This Affects:**
+- 📊 **Cycle Cache**: Heating cycles older than this are automatically pruned
+- 🧠 **Learning History**: More retention = better slope calculations
+- 💾 **Storage**: Longer retention uses slightly more disk space (minimal)
+
+**Recommended Values:**
+- **Minimum**: 7 days (matches typical HA recorder retention)
+- **Default**: 30 days (optimal balance of learning quality and storage)
+- **Maximum**: 90 days (for very detailed historical analysis)
+
+**When to Change:**
+- ✅ **Increase** if you want longer learning history for seasonal patterns
+- ⚠️ **Decrease** if disk space is very limited (not recommended)
+
+**Note**: This setting replaces the old `lhs_retention_days` configuration. Both keys are supported for backward compatibility.
+
 ### Disabling Optional Sensors
 
 If you don't have certain sensors and don't want to see warnings:

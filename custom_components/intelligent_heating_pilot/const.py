@@ -1,6 +1,6 @@
 """Constants for the Intelligent Heating Pilot integration."""
 
-VERSION = "0.4.0"
+VERSION = "0.4.2"
 DOMAIN = "intelligent_heating_pilot"
 # Configuration keys
 CONF_NAME = "name"
@@ -9,7 +9,8 @@ CONF_SCHEDULER_ENTITIES = "scheduler_entities"
 CONF_HUMIDITY_IN_ENTITY = "humidity_in_entity_id"
 CONF_HUMIDITY_OUT_ENTITY = "humidity_out_entity_id"
 CONF_CLOUD_COVER_ENTITY = "cloud_cover_entity_id"
-CONF_LHS_RETENTION_DAYS = "lhs_retention_days"
+CONF_DATA_RETENTION_DAYS = "data_retention_days"  # Retention period for all IHP data (cycles, slopes, etc.)
+CONF_LHS_RETENTION_DAYS = "lhs_retention_days"  # Deprecated: Use CONF_DATA_RETENTION_DAYS
 CONF_DECISION_MODE = "decision_mode"  # NEW: Choose between 'simple' and 'ml'
 
 # Legacy keys (kept for backward compatibility if needed)
@@ -28,7 +29,8 @@ DECISION_MODE_ML = "ml"  # AI-powered decisions (requires IHP-ML-Models)
 
 # Default values
 DEFAULT_NAME = "Intelligent Heating Pilot"
-DEFAULT_LHS_RETENTION_DAYS = 30  # Keep slope data for 30 days
+DEFAULT_DATA_RETENTION_DAYS = 30  # Keep IHP data (cycles, slopes, etc.) for 30 days
+DEFAULT_LHS_RETENTION_DAYS = 30  # Deprecated: Use DEFAULT_DATA_RETENTION_DAYS
 DEFAULT_DECISION_MODE = DECISION_MODE_SIMPLE  # Simple mode by default
 
 # Service names

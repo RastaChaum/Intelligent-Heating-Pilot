@@ -1,5 +1,18 @@
 """Centralized test fixtures for domain layer tests (DRY principle)."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import sys
+import os
+
+# Add custom_components to path for domain imports
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(__file__),
+        "../../../custom_components/intelligent_heating_pilot",
+    ),
+)
+
+from domain.value_objects.heating import HeatingCycle
 
 
 def get_test_datetime() -> datetime:
@@ -23,6 +36,39 @@ def get_future_datetime(hours: int = 2) -> datetime:
     return get_test_datetime() + timedelta(hours=hours)
 
 
+def create_test_heating_cycle(
+    device_id: str,
+    start_time: datetime,
+    duration_hours: float = 1.0,
+    temp_increase: float = 2.0,
+) -> HeatingCycle:
+    """Create a test heating cycle with default values.
+    
+    Args:
+        device_id: Device identifier for the cycle
+        start_time: Cycle start time
+        duration_hours: Duration in hours (default: 1.0)
+        temp_increase: Temperature increase in °C (default: 2.0)
+        
+    Returns:
+        HeatingCycle object for testing
+    """
+    end_time = start_time + timedelta(hours=duration_hours)
+    start_temp = 18.0
+    end_temp = start_temp + temp_increase
+    target_temp = end_temp + 0.5
+    
+    return HeatingCycle(
+        device_id=device_id,
+        start_time=start_time,
+        end_time=end_time,
+        target_temp=target_temp,
+        end_temp=end_temp,
+        start_temp=start_temp,
+        tariff_details=None
+    )
+
+
 # Standard test values
 TEST_CURRENT_TEMP = 18.0
 TEST_TARGET_TEMP = 21.0
@@ -34,7 +80,8 @@ TEST_CLOUD_COVERAGE = 50.0
 # Test timeslot ID
 TEST_TIMESLOT_ID = "test_timeslot_1"
 
-# Historical data adapter test values
+# Test device IDs
+TEST_DEVICE_ID = "climate.test_vtherm"
 TEST_ENTITY_ID = "climate.living_room"
 TEST_SENSOR_ENTITY_ID = "sensor.indoor_temperature"
 TEST_WEATHER_ENTITY_ID = "weather.home"
