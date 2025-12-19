@@ -23,11 +23,12 @@ from .const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
+    CONF_DATA_RETENTION_DAYS,
     CONF_LHS_RETENTION_DAYS,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
     DECISION_MODE_SIMPLE,
-    DEFAULT_LHS_RETENTION_DAYS,
+    DEFAULT_DATA_RETENTION_DAYS,
     DOMAIN,
 )
 from .infrastructure.adapters import (
@@ -73,7 +74,12 @@ class IntelligentHeatingPilotCoordinator:
         self._humidity_in = self._get_config_value(CONF_HUMIDITY_IN_ENTITY)
         self._humidity_out = self._get_config_value(CONF_HUMIDITY_OUT_ENTITY)
         self._cloud_cover = self._get_config_value(CONF_CLOUD_COVER_ENTITY)
-        self._lhs_retention_days = int(self._get_config_value(CONF_LHS_RETENTION_DAYS) or DEFAULT_LHS_RETENTION_DAYS)
+        # Support both old and new config keys for backward compatibility
+        self._data_retention_days = int(
+            self._get_config_value(CONF_DATA_RETENTION_DAYS) 
+            or self._get_config_value(CONF_LHS_RETENTION_DAYS) 
+            or DEFAULT_DATA_RETENTION_DAYS
+        )
         self._decision_mode = DECISION_MODE_SIMPLE
         
         # Infrastructure adapters
@@ -100,14 +106,14 @@ class IntelligentHeatingPilotCoordinator:
         self._model_storage = HAModelStorage(
             self.hass,
             self.config.entry_id,
-            retention_days=self._lhs_retention_days
+            retention_days=self._data_retention_days
         )
         
         # Create cycle cache for incremental cycle extraction
         self._cycle_cache = HACycleCache(
             self.hass,
             self.config.entry_id,
-            retention_days=self._lhs_retention_days
+            retention_days=self._data_retention_days
         )
         
         self._scheduler_reader = HASchedulerReader(
@@ -136,7 +142,7 @@ class IntelligentHeatingPilotCoordinator:
             climate_commander=self._climate_commander,
             environment_reader=self._environment_reader,
             cycle_cache=self._cycle_cache,
-            history_lookback_days=self._lhs_retention_days,
+            history_lookback_days=self._data_retention_days,
             decision_mode=self._decision_mode,
         )
         

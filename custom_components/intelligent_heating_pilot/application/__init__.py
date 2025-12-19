@@ -14,15 +14,12 @@ from homeassistant.util import dt as dt_util
 from ..domain.entities import HeatingPilot
 from ..domain.services import PredictionService, LHSCalculationService, HeatingCycleService
 from ..domain.value_objects import (
-    HeatingAction,
-    HeatingDecision,
-    SlopeData,
     HistoricalDataKey,
     HistoricalDataSet,
     HeatingCycle,
 )
 from ..infrastructure.decision_strategy_factory import DecisionStrategyFactory
-from ..const import DEFAULT_DECISION_MODE, DEFAULT_LHS_RETENTION_DAYS
+from ..const import DEFAULT_DECISION_MODE, DEFAULT_DATA_RETENTION_DAYS
 
 if TYPE_CHECKING:
     from ..infrastructure.adapters import (
@@ -71,7 +68,7 @@ class HeatingApplicationService:
             cycle_cache: Optional cache for heating cycles (enables incremental updates)
             lhs_window_hours: Time window in hours for contextual LHS (default: 6)
             history_lookback_days: Number of days of HA history to query
-                to extract heating cycles (default: DEFAULT_LHS_RETENTION_DAYS)
+                to extract heating cycles (default: DEFAULT_DATA_RETENTION_DAYS)
             decision_mode: Decision mode ('simple' or 'ml')
         """
         self._scheduler_reader = scheduler_reader
@@ -87,7 +84,7 @@ class HeatingApplicationService:
         self._history_lookback_days = (
             int(history_lookback_days)
             if history_lookback_days is not None
-            else int(DEFAULT_LHS_RETENTION_DAYS)
+            else int(DEFAULT_DATA_RETENTION_DAYS)
         )
         
         # Create decision strategy based on mode
@@ -228,35 +225,55 @@ class HeatingApplicationService:
                 cache_data.last_search_time,
             )
             
-            # Determine incremental search period
+            # Only search for new cycles if last search was more than 24 hours ago
+            time_since_last_search = target_time - cache_data.last_search_time
+            hours_since_last_search = time_since_last_search.total_seconds() / 3600
+            
+            if hours_since_last_search < 24:
+                _LOGGER.debug(
+                    "Last search was %.1f hours ago (< 24h), using cached cycles without new search",
+                    hours_since_last_search,
+                )
+                # Prune old cycles and return cached data
+                await self._cycle_cache.prune_old_cycles(device_id, target_time)  # type: ignore[union-attr]
+                updated_cache = await self._cycle_cache.get_cache_data(device_id)  # type: ignore[union-attr]
+                if updated_cache:
+                    cycles = updated_cache.get_cycles_within_retention(target_time)
+                    _LOGGER.debug("Returning %d cached cycles within retention", len(cycles))
+                    _LOGGER.info("Exiting _get_cycles_with_cache")
+                    return cycles
+                return []
+            
+            _LOGGER.debug(
+                "Last search was %.1f hours ago (>= 24h), searching for new cycles",
+                hours_since_last_search,
+            )
+            
+            # Determine incremental search period from last_search_time to now
             search_start = cache_data.last_search_time
             search_end = target_time
             
-            # Only search if there's a time gap
-            if search_end > search_start:
-                _LOGGER.debug(
-                    "Extracting new cycles from %s to %s",
-                    search_start,
-                    search_end,
-                )
-                
-                # Extract new cycles from recorder
-                new_cycles = await self._extract_cycles_from_recorder(
-                    device_id,
-                    search_start,
-                    search_end,
-                )
-                
-                # Append new cycles to cache
-                if new_cycles:
-                    _LOGGER.debug("Appending %d new cycles to cache", len(new_cycles))
-                await self._cycle_cache.append_cycles(  # type: ignore[union-attr]
-                    device_id,
-                    new_cycles,
-                    search_end,
-                )
-            else:
-                _LOGGER.debug("No time gap since last search, using cached cycles")
+            _LOGGER.debug(
+                "Extracting new cycles from %s to %s",
+                search_start,
+                search_end,
+            )
+            
+            # Extract new cycles from recorder
+            new_cycles = await self._extract_cycles_from_recorder(
+                device_id,
+                search_start,
+                search_end,
+            )
+            
+            # Append new cycles to cache
+            if new_cycles:
+                _LOGGER.debug("Appending %d new cycles to cache", len(new_cycles))
+            await self._cycle_cache.append_cycles(  # type: ignore[union-attr]
+                device_id,
+                new_cycles,
+                search_end,
+            )
             
             # Prune old cycles
             await self._cycle_cache.prune_old_cycles(device_id, target_time)  # type: ignore[union-attr]
