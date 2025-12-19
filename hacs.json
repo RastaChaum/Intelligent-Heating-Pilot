@@ -1,6 +1,6 @@
 {
   "name": "Intelligent Heating Pilot",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "render_readme": true,
   "domains": [
     "intelligent_heating_pilot"
