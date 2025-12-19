@@ -35,3 +35,19 @@ class IModelStorage(ABC):
         This resets the learning system to its initial state.
         """
         pass
+
+    @abstractmethod
+    async def get_cached_global_lhs(self) -> LHSCacheEntry | None:
+        """Return cached global LHS if available."""
+
+    @abstractmethod
+    async def set_cached_global_lhs(self, lhs: float, updated_at: datetime) -> None:
+        """Persist global LHS cache with timestamp."""
+
+    @abstractmethod
+    async def get_cached_contextual_lhs(self, hour: int) -> LHSCacheEntry | None:
+        """Return cached contextual LHS for the given hour if available."""
+
+    @abstractmethod
+    async def set_cached_contextual_lhs(self, hour: int, lhs: float, updated_at: datetime) -> None:
+        """Persist contextual LHS cache for the given hour with timestamp."""
