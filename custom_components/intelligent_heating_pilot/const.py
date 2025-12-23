@@ -41,7 +41,7 @@ DEFAULT_DECISION_MODE = DECISION_MODE_SIMPLE  # Simple mode by default
 
 # Default values for Heating Cycle Detection
 DEFAULT_TEMP_DELTA_THRESHOLD = 0.2  # °C threshold for cycle start/end detection
-DEFAULT_CYCLE_SPLIT_DURATION_MINUTES = None  # No splitting by default
+DEFAULT_CYCLE_SPLIT_DURATION_MINUTES = 0  # 0 = No splitting (disabled)
 DEFAULT_MIN_CYCLE_DURATION_MINUTES = 5  # Minimum 5 minutes
 DEFAULT_MAX_CYCLE_DURATION_MINUTES = 300  # Maximum 5 hours
 

@@ -25,7 +25,7 @@
           "cloud_cover_entity_id": "Cloud coverage sensor to account for solar impact",
           "lhs_retention_days": "Number of days to keep historical slope data",
           "temp_delta_threshold": "Temperature difference threshold to detect heating cycle start/end (default: 0.2°C). Lower values = more sensitive detection.",
-          "cycle_split_duration_minutes": "Split long heating cycles into sub-cycles of this duration for ML training augmentation (leave empty to disable splitting).",
+          "cycle_split_duration_minutes": "Split long heating cycles into sub-cycles of this duration for ML training augmentation (0 = disabled).",
           "min_cycle_duration_minutes": "Minimum duration to consider a valid heating cycle. Filters out short micro-cycles (noise).",
           "max_cycle_duration_minutes": "Maximum duration for a single heating cycle. Filters out abnormally long cycles (malfunctions)."
         }

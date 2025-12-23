@@ -96,10 +96,10 @@ IHP now exposes 4 new configuration parameters in the UI to fine-tune cycle dete
 - **After**: Configurable thresholds accommodate diverse heating behaviors
 
 ### Optional Cycle Split Duration
-- **Fixed**: Cycle Split Duration parameter is now truly optional
-- **Impact**: Field can be left empty in UI to disable cycle splitting (no longer requires a numeric value)
-- **Before**: UI required entering a number even when feature should be disabled
-- **After**: Empty field correctly disables cycle splitting feature
+- **Fixed**: Cycle Split Duration parameter now uses 0 to indicate "disabled"
+- **Impact**: Set to 0 (default) to disable cycle splitting, or any value >0 to enable
+- **Before**: UI validation error when trying to leave field empty
+- **After**: 0 = disabled, values 15-120 = enabled with split duration in minutes
 
 ---
 

@@ -147,10 +147,10 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                 ),
                 vol.Optional(
                     CONF_CYCLE_SPLIT_DURATION_MINUTES,
-                    default=current_data.get(CONF_CYCLE_SPLIT_DURATION_MINUTES)
+                    default=DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=15,
+                        min=0,
                         max=120,
                         step=5,
                         unit_of_measurement="minutes",
@@ -311,10 +311,10 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_CYCLE_SPLIT_DURATION_MINUTES,
-                    default=current_data.get(CONF_CYCLE_SPLIT_DURATION_MINUTES)
+                    default=current_data.get(CONF_CYCLE_SPLIT_DURATION_MINUTES, DEFAULT_CYCLE_SPLIT_DURATION_MINUTES)
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=15,
+                        min=0,
                         max=120,
                         step=5,
                         unit_of_measurement="minutes",
