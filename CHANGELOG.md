@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Heating cycle detection now adaptable to different heating system characteristics (intermittent heating, micro-cutoffs, etc.)
+- **Cycle Split Duration** parameter now truly optional - field can be left empty to disable cycle splitting (no longer requires a numeric value)
 
 ## [0.4.2] - 2025-12-19
 
