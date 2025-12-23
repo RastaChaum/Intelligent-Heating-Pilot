@@ -38,7 +38,7 @@ class SensorDataAdapter(IHistoricalDataAdapter):
             hass: Home Assistant instance
         """
         self._hass = hass
-        _LOGGER.info("Initialized SensorDataAdapter")
+        _LOGGER.debug("Initialized SensorDataAdapter")
 
     async def fetch_historical_data(
         self,
@@ -61,7 +61,7 @@ class SensorDataAdapter(IHistoricalDataAdapter):
         Raises:
             ValueError: If entity_id is invalid or history cannot be retrieved
         """
-        _LOGGER.info(
+        _LOGGER.debug(
             "Fetching sensor history for %s from %s to %s",
             entity_id,
             start_time,

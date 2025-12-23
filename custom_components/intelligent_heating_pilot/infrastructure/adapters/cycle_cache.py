@@ -197,7 +197,7 @@ class HACycleCache(ICycleCache):
             len(all_cycles),
             device_id,
         )
-        _LOGGER.info("Exiting HACycleCache.append_cycles")
+        _LOGGER.debug("Exiting HACycleCache.append_cycles")
     
     async def prune_old_cycles(
         self,
