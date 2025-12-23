@@ -98,7 +98,7 @@ class HeatingApplicationService:
         )
         self._heating_cycle_service = HeatingCycleService(
             temp_delta_threshold=temp_delta_threshold or DEFAULT_TEMP_DELTA_THRESHOLD,
-            cycle_split_duration_minutes=cycle_split_duration_minutes,
+            cycle_split_duration_minutes=cycle_split_duration_minutes or DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
             min_cycle_duration_minutes=min_cycle_duration_minutes or DEFAULT_MIN_CYCLE_DURATION_MINUTES,
             max_cycle_duration_minutes=max_cycle_duration_minutes or DEFAULT_MAX_CYCLE_DURATION_MINUTES,
         )
