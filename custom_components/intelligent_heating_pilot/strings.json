@@ -11,7 +11,11 @@
           "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
           "humidity_out_entity_id": "Outdoor Humidity Sensor (optional)",
           "cloud_cover_entity_id": "Cloud Coverage Sensor (optional)",
-          "lhs_retention_days": "Slope Data Retention (days)"
+          "lhs_retention_days": "Slope Data Retention (days)",
+          "temp_delta_threshold": "Temperature Detection Threshold (°C)",
+          "cycle_split_duration_minutes": "Cycle Split Duration (minutes)",
+          "min_cycle_duration_minutes": "Minimum Cycle Duration (minutes)",
+          "max_cycle_duration_minutes": "Maximum Cycle Duration (minutes)"
         },
         "data_description": {
           "vtherm_entity_id": "The Versatile Thermostat to control (source of learned slope)",
@@ -19,7 +23,11 @@
           "humidity_in_entity_id": "Room humidity sensor to refine calculations",
           "humidity_out_entity_id": "Outdoor humidity sensor to refine calculations",
           "cloud_cover_entity_id": "Cloud coverage sensor to account for solar impact",
-          "lhs_retention_days": "Number of days to keep historical slope data"
+          "lhs_retention_days": "Number of days to keep historical slope data",
+          "temp_delta_threshold": "Temperature difference threshold to detect heating cycle start/end (default: 0.2°C). Lower values = more sensitive detection.",
+          "cycle_split_duration_minutes": "Split long heating cycles into sub-cycles of this duration for ML training augmentation (leave empty to disable splitting).",
+          "min_cycle_duration_minutes": "Minimum duration to consider a valid heating cycle. Filters out short micro-cycles (noise).",
+          "max_cycle_duration_minutes": "Maximum duration for a single heating cycle. Filters out abnormally long cycles (malfunctions)."
         }
       }
     },
@@ -42,7 +50,18 @@
           "scheduler_entities": "Scheduler Entities (switches)",
           "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
           "humidity_out_entity_id": "Outdoor Humidity Sensor (optional)",
-          "cloud_cover_entity_id": "Cloud Coverage Sensor (optional)"
+          "cloud_cover_entity_id": "Cloud Coverage Sensor (optional)",
+          "lhs_retention_days": "Slope Data Retention (days)",
+          "temp_delta_threshold": "Temperature Detection Threshold (°C)",
+          "cycle_split_duration_minutes": "Cycle Split Duration (minutes)",
+          "min_cycle_duration_minutes": "Minimum Cycle Duration (minutes)",
+          "max_cycle_duration_minutes": "Maximum Cycle Duration (minutes)"
+        },
+        "data_description": {
+          "temp_delta_threshold": "Temperature difference threshold to detect heating cycle start/end (default: 0.2°C).",
+          "cycle_split_duration_minutes": "Split long cycles into sub-cycles for ML training (leave empty to disable).",
+          "min_cycle_duration_minutes": "Minimum duration to consider a valid heating cycle.",
+          "max_cycle_duration_minutes": "Maximum duration for a single heating cycle."
         }
       }
     }

@@ -57,6 +57,10 @@ class HeatingApplicationService:
         lhs_window_hours: float = 6.0,
         history_lookback_days: int | None = None,
         decision_mode: str = DEFAULT_DECISION_MODE,
+        temp_delta_threshold: float | None = None,
+        cycle_split_duration_minutes: int | None = None,
+        min_cycle_duration_minutes: int | None = None,
+        max_cycle_duration_minutes: int | None = None,
     ) -> None:
         """Initialize the application service.
         
@@ -71,6 +75,10 @@ class HeatingApplicationService:
             history_lookback_days: Number of days of HA history to query
                 to extract heating cycles (default: DEFAULT_DATA_RETENTION_DAYS)
             decision_mode: Decision mode ('simple' or 'ml')
+            temp_delta_threshold: Temperature threshold for cycle detection (°C)
+            cycle_split_duration_minutes: Duration for splitting long cycles (minutes)
+            min_cycle_duration_minutes: Minimum cycle duration (minutes)
+            max_cycle_duration_minutes: Maximum cycle duration (minutes)
         """
         self._scheduler_reader = scheduler_reader
         self._model_storage = model_storage
@@ -80,7 +88,21 @@ class HeatingApplicationService:
         self._cycle_cache = cycle_cache
         self._prediction_service = PredictionService()
         self._lhs_calculation_service = LHSCalculationService()
-        self._heating_cycle_service = HeatingCycleService()
+        
+        # Create HeatingCycleService with configured parameters
+        from ..const import (
+            DEFAULT_TEMP_DELTA_THRESHOLD,
+            DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
+            DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+            DEFAULT_MAX_CYCLE_DURATION_MINUTES,
+        )
+        self._heating_cycle_service = HeatingCycleService(
+            temp_delta_threshold=temp_delta_threshold or DEFAULT_TEMP_DELTA_THRESHOLD,
+            cycle_split_duration_minutes=cycle_split_duration_minutes,
+            min_cycle_duration_minutes=min_cycle_duration_minutes or DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+            max_cycle_duration_minutes=max_cycle_duration_minutes or DEFAULT_MAX_CYCLE_DURATION_MINUTES,
+        )
+        
         self._lhs_window_hours = lhs_window_hours
         self._history_lookback_days = (
             int(history_lookback_days)

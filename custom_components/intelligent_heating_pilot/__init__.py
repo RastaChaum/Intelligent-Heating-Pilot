@@ -21,14 +21,22 @@ from homeassistant.util import dt as dt_util
 from .application import HeatingApplicationService
 from .const import (
     CONF_CLOUD_COVER_ENTITY,
+    CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_DATA_RETENTION_DAYS,
     CONF_LHS_RETENTION_DAYS,
+    CONF_MAX_CYCLE_DURATION_MINUTES,
+    CONF_MIN_CYCLE_DURATION_MINUTES,
     CONF_SCHEDULER_ENTITIES,
+    CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
     DECISION_MODE_SIMPLE,
+    DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
     DEFAULT_DATA_RETENTION_DAYS,
+    DEFAULT_MAX_CYCLE_DURATION_MINUTES,
+    DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+    DEFAULT_TEMP_DELTA_THRESHOLD,
     DOMAIN,
 )
 from .infrastructure.adapters import (
@@ -82,6 +90,23 @@ class IntelligentHeatingPilotCoordinator:
             or DEFAULT_DATA_RETENTION_DAYS
         )
         self._decision_mode = DECISION_MODE_SIMPLE
+        
+        # Heating cycle detection parameters
+        self._temp_delta_threshold = float(
+            self._get_config_value(CONF_TEMP_DELTA_THRESHOLD) 
+            or DEFAULT_TEMP_DELTA_THRESHOLD
+        )
+        self._cycle_split_duration_minutes = self._get_config_value(CONF_CYCLE_SPLIT_DURATION_MINUTES)
+        if self._cycle_split_duration_minutes is not None:
+            self._cycle_split_duration_minutes = int(self._cycle_split_duration_minutes)
+        self._min_cycle_duration_minutes = int(
+            self._get_config_value(CONF_MIN_CYCLE_DURATION_MINUTES) 
+            or DEFAULT_MIN_CYCLE_DURATION_MINUTES
+        )
+        self._max_cycle_duration_minutes = int(
+            self._get_config_value(CONF_MAX_CYCLE_DURATION_MINUTES) 
+            or DEFAULT_MAX_CYCLE_DURATION_MINUTES
+        )
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
@@ -145,6 +170,10 @@ class IntelligentHeatingPilotCoordinator:
             cycle_cache=self._cycle_cache,
             history_lookback_days=self._data_retention_days,
             decision_mode=self._decision_mode,
+            temp_delta_threshold=self._temp_delta_threshold,
+            cycle_split_duration_minutes=self._cycle_split_duration_minutes,
+            min_cycle_duration_minutes=self._min_cycle_duration_minutes,
+            max_cycle_duration_minutes=self._max_cycle_duration_minutes,
         )
         
         # Create event bridge

@@ -19,7 +19,11 @@
           "humidity_in_entity_id": "Capteur d'humidité de la pièce pour affiner les calculs",
           "humidity_out_entity_id": "Capteur d'humidité extérieure pour affiner les calculs",
           "cloud_cover_entity_id": "Capteur de couverture nuageuse pour prendre en compte l'impact solaire",
-          "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage (par défaut : 30 jours)"
+          "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage (par défaut : 30 jours)",
+          "temp_delta_threshold": "Seuil de différence de température pour détecter le début/fin d'un cycle de chauffe (par défaut : 0.2°C). Valeurs plus faibles = détection plus sensible.",
+          "cycle_split_duration_minutes": "Découpe les longs cycles de chauffe en sous-cycles de cette durée pour l'augmentation de données ML (laisser vide pour désactiver le découpage).",
+          "min_cycle_duration_minutes": "Durée minimale pour considérer un cycle de chauffe valide. Filtre les micro-cycles courts (bruit).",
+          "max_cycle_duration_minutes": "Durée maximale pour un seul cycle de chauffe. Filtre les cycles anormalement longs (dysfonctionnements)."
         }
       }
     },
@@ -43,10 +47,18 @@
           "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
           "humidity_out_entity_id": "Capteur d'humidité extérieure (optionnel)",
           "cloud_cover_entity_id": "Capteur de couverture nuageuse (optionnel)",
-          "lhs_retention_days": "Rétention des données de pente (jours)"
+          "lhs_retention_days": "Rétention des données de pente (jours)",
+          "temp_delta_threshold": "Seuil de détection de température (°C)",
+          "cycle_split_duration_minutes": "Durée de découpage des cycles (minutes)",
+          "min_cycle_duration_minutes": "Durée minimale de cycle (minutes)",
+          "max_cycle_duration_minutes": "Durée maximale de cycle (minutes)"
         },
         "data_description": {
-          "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage"
+          "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage",
+          "temp_delta_threshold": "Seuil de différence de température pour détecter le début/fin d'un cycle de chauffe (par défaut : 0.2°C).",
+          "cycle_split_duration_minutes": "Découpe les longs cycles en sous-cycles pour l'apprentissage ML (laisser vide pour désactiver).",
+          "min_cycle_duration_minutes": "Durée minimale pour considérer un cycle de chauffe valide.",
+          "max_cycle_duration_minutes": "Durée maximale pour un seul cycle de chauffe."
         }
       }
     }

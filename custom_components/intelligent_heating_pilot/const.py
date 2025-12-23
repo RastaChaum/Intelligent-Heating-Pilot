@@ -13,6 +13,12 @@ CONF_DATA_RETENTION_DAYS = "data_retention_days"  # Retention period for all IHP
 CONF_LHS_RETENTION_DAYS = "lhs_retention_days"  # Deprecated: Use CONF_DATA_RETENTION_DAYS
 CONF_DECISION_MODE = "decision_mode"  # NEW: Choose between 'simple' and 'ml'
 
+# Heating Cycle Detection Parameters
+CONF_TEMP_DELTA_THRESHOLD = "temp_delta_threshold"
+CONF_CYCLE_SPLIT_DURATION_MINUTES = "cycle_split_duration_minutes"
+CONF_MIN_CYCLE_DURATION_MINUTES = "min_cycle_duration_minutes"
+CONF_MAX_CYCLE_DURATION_MINUTES = "max_cycle_duration_minutes"
+
 # Legacy keys (kept for backward compatibility if needed)
 CONF_THERMAL_SLOPE_ENTITY = "thermal_slope_entity"
 CONF_CURRENT_TEMP_ENTITY = "current_temp_entity"
@@ -32,6 +38,12 @@ DEFAULT_NAME = "Intelligent Heating Pilot"
 DEFAULT_DATA_RETENTION_DAYS = 30  # Keep IHP data (cycles, slopes, etc.) for 30 days
 DEFAULT_LHS_RETENTION_DAYS = 30  # Deprecated: Use DEFAULT_DATA_RETENTION_DAYS
 DEFAULT_DECISION_MODE = DECISION_MODE_SIMPLE  # Simple mode by default
+
+# Default values for Heating Cycle Detection
+DEFAULT_TEMP_DELTA_THRESHOLD = 0.2  # °C threshold for cycle start/end detection
+DEFAULT_CYCLE_SPLIT_DURATION_MINUTES = None  # No splitting by default
+DEFAULT_MIN_CYCLE_DURATION_MINUTES = 5  # Minimum 5 minutes
+DEFAULT_MAX_CYCLE_DURATION_MINUTES = 300  # Maximum 5 hours
 
 # Service names
 SERVICE_CALCULATE_START_TIME = "calculate_start_time"

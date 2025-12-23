@@ -14,14 +14,22 @@ from typing import cast
 
 from .const import (
     CONF_CLOUD_COVER_ENTITY,
+    CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
+    CONF_MAX_CYCLE_DURATION_MINUTES,
+    CONF_MIN_CYCLE_DURATION_MINUTES,
     CONF_NAME,
     CONF_SCHEDULER_ENTITIES,
+    CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
+    DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
     DEFAULT_LHS_RETENTION_DAYS,
+    DEFAULT_MAX_CYCLE_DURATION_MINUTES,
+    DEFAULT_MIN_CYCLE_DURATION_MINUTES,
     DEFAULT_NAME,
+    DEFAULT_TEMP_DELTA_THRESHOLD,
     DOMAIN,
 )
 
@@ -122,6 +130,54 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         max=90,
                         step=1,
                         unit_of_measurement="days",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_TEMP_DELTA_THRESHOLD,
+                    default=DEFAULT_TEMP_DELTA_THRESHOLD
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=1.0,
+                        step=0.1,
+                        unit_of_measurement="°C",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_CYCLE_SPLIT_DURATION_MINUTES,
+                    default=DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=15,
+                        max=120,
+                        step=15,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_MIN_CYCLE_DURATION_MINUTES,
+                    default=DEFAULT_MIN_CYCLE_DURATION_MINUTES
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=30,
+                        step=1,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_MAX_CYCLE_DURATION_MINUTES,
+                    default=DEFAULT_MAX_CYCLE_DURATION_MINUTES
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=60,
+                        max=720,
+                        step=60,
+                        unit_of_measurement="minutes",
                         mode=selector.NumberSelectorMode.BOX
                     )
                 ),
@@ -238,6 +294,54 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                         max=90,
                         step=1,
                         unit_of_measurement="days",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_TEMP_DELTA_THRESHOLD,
+                    default=current_data.get(CONF_TEMP_DELTA_THRESHOLD, DEFAULT_TEMP_DELTA_THRESHOLD)
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=1.0,
+                        step=0.1,
+                        unit_of_measurement="°C",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_CYCLE_SPLIT_DURATION_MINUTES,
+                    default=current_data.get(CONF_CYCLE_SPLIT_DURATION_MINUTES, DEFAULT_CYCLE_SPLIT_DURATION_MINUTES)
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=15,
+                        max=120,
+                        step=15,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_MIN_CYCLE_DURATION_MINUTES,
+                    default=current_data.get(CONF_MIN_CYCLE_DURATION_MINUTES, DEFAULT_MIN_CYCLE_DURATION_MINUTES)
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=30,
+                        step=1,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_MAX_CYCLE_DURATION_MINUTES,
+                    default=current_data.get(CONF_MAX_CYCLE_DURATION_MINUTES, DEFAULT_MAX_CYCLE_DURATION_MINUTES)
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=60,
+                        max=720,
+                        step=60,
+                        unit_of_measurement="minutes",
                         mode=selector.NumberSelectorMode.BOX
                     )
                 ),

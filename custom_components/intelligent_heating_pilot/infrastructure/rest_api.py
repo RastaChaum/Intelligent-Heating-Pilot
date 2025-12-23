@@ -101,11 +101,19 @@ async def extract_heating_cycles_handler(request: Request) -> Response:
 
         device_config_reader = HADeviceConfigReader(hass, coordinator.config)
         
+        # Read cycle detection parameters from coordinator configuration
+        from custom_components.intelligent_heating_pilot.const import (
+            DEFAULT_TEMP_DELTA_THRESHOLD,
+            DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
+            DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+            DEFAULT_MAX_CYCLE_DURATION_MINUTES,
+        )
+        
         heating_cycle_service = HeatingCycleService(
-            temp_delta_threshold=0.2,
-            cycle_split_duration_minutes=None,
-            min_cycle_duration_minutes=5,
-            max_cycle_duration_minutes=300,
+            temp_delta_threshold=getattr(coordinator, '_temp_delta_threshold', DEFAULT_TEMP_DELTA_THRESHOLD),
+            cycle_split_duration_minutes=getattr(coordinator, '_cycle_split_duration_minutes', DEFAULT_CYCLE_SPLIT_DURATION_MINUTES),
+            min_cycle_duration_minutes=getattr(coordinator, '_min_cycle_duration_minutes', DEFAULT_MIN_CYCLE_DURATION_MINUTES),
+            max_cycle_duration_minutes=getattr(coordinator, '_max_cycle_duration_minutes', DEFAULT_MAX_CYCLE_DURATION_MINUTES),
         )
 
         use_case = ExtractHeatingCyclesUseCase(
