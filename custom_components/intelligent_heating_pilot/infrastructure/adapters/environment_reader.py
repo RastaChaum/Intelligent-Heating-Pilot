@@ -21,6 +21,22 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def _get_entity_name(hass: HomeAssistant, entity_id: str) -> str:
+    """Get the friendly name of an entity, falling back to entity_id.
+    
+    Args:
+        hass: Home Assistant instance
+        entity_id: Entity ID to get name for
+        
+    Returns:
+        Friendly name or entity_id if not found
+    """
+    state = hass.states.get(entity_id)
+    if state:
+        return state.attributes.get("friendly_name", entity_id)
+    return entity_id
+
+
 class HAEnvironmentReader:
     """Reads environmental conditions from Home Assistant entities.
     
@@ -53,6 +69,7 @@ class HAEnvironmentReader:
         self._humidity_in_entity_id = humidity_in_entity_id
         self._humidity_out_entity_id = humidity_out_entity_id
         self._cloud_cover_entity_id = cloud_cover_entity_id
+        self._device_name = _get_entity_name(hass, vtherm_entity_id)
     
     async def get_current_environment(self) -> EnvironmentState | None:
         """Read current environmental state from HA entities.
@@ -63,13 +80,13 @@ class HAEnvironmentReader:
         # Get current indoor temperature from VTherm
         vtherm_state = self._hass.states.get(self._vtherm_entity_id)
         if not vtherm_state:
-            _LOGGER.warning("VTherm entity not found: %s", self._vtherm_entity_id)
+            _LOGGER.warning("[%s] VTherm entity not found", self._device_name)
             return None
         
         # Use v8.0.0+ compatible attribute access
         current_temp_raw = get_vtherm_attribute(vtherm_state, "current_temperature")
         if current_temp_raw is None:
-            _LOGGER.warning("No current_temperature in VTherm %s", self._vtherm_entity_id)
+            _LOGGER.warning("[%s] No current_temperature available", self._device_name)
             return None
         
         try:

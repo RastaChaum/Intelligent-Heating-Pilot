@@ -22,6 +22,22 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def _get_entity_name(hass: HomeAssistant, entity_id: str) -> str:
+    """Get the friendly name of an entity, falling back to entity_id.
+    
+    Args:
+        hass: Home Assistant instance
+        entity_id: Entity ID to get name for
+        
+    Returns:
+        Friendly name or entity_id if not found
+    """
+    state = hass.states.get(entity_id)
+    if state:
+        return state.attributes.get("friendly_name", entity_id)
+    return entity_id
+
+
 class HASchedulerReader(ISchedulerReader):
     """Home Assistant implementation of scheduler reader.
     
@@ -72,15 +88,17 @@ class HASchedulerReader(ISchedulerReader):
             state = self._hass.states.get(entity_id)
             if not state:
                 # Use debug level if HA is still starting up, warning otherwise
+                device_name = _get_entity_name(self._hass, entity_id)
                 if self._hass.is_running:
-                    _LOGGER.warning("Scheduler entity not found: %s", entity_id)
+                    _LOGGER.warning("[%s] Scheduler entity not found", device_name)
                 else:
-                    _LOGGER.debug("Scheduler entity not yet available (HA starting): %s", entity_id)
+                    _LOGGER.debug("[%s] Scheduler entity not yet available (HA starting)", device_name)
                 continue
             
             # Skip disabled schedulers (state is "off")
             if state.state == "off":
-                _LOGGER.debug("Scheduler %s is disabled (state: off), skipping", entity_id)
+                device_name = _get_entity_name(self._hass, entity_id)
+                _LOGGER.debug("[%s] Scheduler is disabled (state: off), skipping", device_name)
                 continue
             
             # Extract next trigger time and target temperature
@@ -101,9 +119,10 @@ class HASchedulerReader(ISchedulerReader):
                 )
         
         if chosen_time and chosen_temp is not None and chosen_entity:
+            device_name = _get_entity_name(self._hass, chosen_entity)
             _LOGGER.info(
-                "Next timeslot: %s at %s (%.1f°C)",
-                chosen_entity,
+                "[%s] Next timeslot at %s (%.1f°C)",
+                device_name,
                 chosen_time.strftime("%H:%M"),
                 chosen_temp
             )
