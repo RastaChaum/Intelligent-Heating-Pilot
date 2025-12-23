@@ -11,28 +11,13 @@ from datetime import datetime
 from homeassistant.core import HomeAssistant
 
 from ...domain.interfaces import ISchedulerCommander
+from .utils import get_entity_name
 
 _LOGGER = logging.getLogger(__name__)
 
 # Scheduler service configuration
 SCHEDULER_DOMAIN = "scheduler"
 SERVICE_RUN_ACTION = "run_action"
-
-
-def _get_entity_name(hass: HomeAssistant, entity_id: str) -> str:
-    """Get the friendly name of an entity, falling back to entity_id.
-    
-    Args:
-        hass: Home Assistant instance
-        entity_id: Entity ID to get name for
-        
-    Returns:
-        Friendly name or entity_id if not found
-    """
-    state = hass.states.get(entity_id)
-    if state:
-        return state.attributes.get("friendly_name", entity_id)
-    return entity_id
 
 
 class HASchedulerCommander(ISchedulerCommander):
@@ -73,7 +58,7 @@ class HASchedulerCommander(ISchedulerCommander):
         # Format time as HH:MM for scheduler service
         trigger_time_str = target_time.strftime("%H:%M")
         
-        device_name = _get_entity_name(self._hass, scheduler_entity_id)
+        device_name = get_entity_name(self._hass, scheduler_entity_id)
         _LOGGER.info(
             "[%s] Triggering scheduler action at time %s",
             device_name,
@@ -120,7 +105,7 @@ class HASchedulerCommander(ISchedulerCommander):
         now = dt_util.now()
         current_time_str = now.strftime("%H:%M")
         
-        device_name = _get_entity_name(self._hass, scheduler_entity_id)
+        device_name = get_entity_name(self._hass, scheduler_entity_id)
         _LOGGER.info(
             "[%s] Canceling scheduler action by reverting to current time %s",
             device_name,

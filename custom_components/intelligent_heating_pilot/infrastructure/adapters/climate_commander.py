@@ -10,26 +10,12 @@ from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant
 
+from .utils import get_entity_name
+
 if TYPE_CHECKING:
     pass
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _get_entity_name(hass: HomeAssistant, entity_id: str) -> str:
-    """Get the friendly name of an entity, falling back to entity_id.
-    
-    Args:
-        hass: Home Assistant instance
-        entity_id: Entity ID to get name for
-        
-    Returns:
-        Friendly name or entity_id if not found
-    """
-    state = hass.states.get(entity_id)
-    if state:
-        return state.attributes.get("friendly_name", entity_id)
-    return entity_id
 
 
 class HAClimateCommander:
@@ -48,7 +34,7 @@ class HAClimateCommander:
         """
         self._hass = hass
         self._climate_entity_id = climate_entity_id
-        self._device_name = _get_entity_name(hass, climate_entity_id)
+        self._device_name = get_entity_name(hass, climate_entity_id)
     
     async def set_temperature(self, target_temp: float) -> None:
         """Set target temperature for the climate entity.
