@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+- **Overshoot Risk Detection Not Activating** - Fixed critical bug where overshoot risk monitoring was never triggered during preheating
+  - Integrated `check_overshoot_risk()` into `HAEventBridge._recalculate_and_publish()`
+  - Overshoot detection now runs on every VTherm temperature update during active preheating
+  - Prevents temperature from exceeding target by monitoring heating slope and estimated temperature
+  - Added comprehensive unit tests for event bridge integration
+  - Added detailed documentation section in HOW_IT_WORKS.md explaining overshoot prevention
+  - Fixes issue where preheating could reach target temperature too early, wasting energy
 
 ## [0.4.2] - 2025-12-19
 
