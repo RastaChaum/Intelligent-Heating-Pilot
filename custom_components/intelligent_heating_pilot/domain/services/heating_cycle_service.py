@@ -65,7 +65,7 @@ class HeatingCycleService(IHeatingCycleService):
         history_data_set: HistoricalDataSet,
         start_time: datetime,
         end_time: datetime,
-        cycle_split_duration_minutes: int = 0,
+        cycle_split_duration_minutes: int | None = 0,
     ) -> list[HeatingCycle]:
         """Extract heating cycles from a HistoricalDataSet within a given time range.
         
@@ -77,7 +77,7 @@ class HeatingCycleService(IHeatingCycleService):
             start_time: The start of the time range for cycle extraction.
             end_time: The end of the time range for cycle extraction.
             cycle_split_duration_minutes: Duration in minutes to split long cycles
-                into smaller sub-cycles for granular analysis. If 0, no splitting.
+                into smaller sub-cycles for granular analysis. If 0 or None, no splitting.
             
         Returns:
             A list of HeatingCycle value objects.
