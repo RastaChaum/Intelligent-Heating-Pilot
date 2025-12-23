@@ -346,6 +346,65 @@ class TestOvershootPrevention:
         mock_adapters["climate_commander"].turn_off.assert_not_called()
 
 
+class TestOvershootRiskEventBridgeIntegration:
+    """Test overshoot risk integration with event bridge monitoring."""
+    
+    @pytest.mark.asyncio
+    async def test_overshoot_detected_on_temperature_update_during_preheating(
+        self, app_service, mock_adapters
+    ):
+        """Test that overshoot risk is checked when temperature updates during preheating.
+        
+        This simulates the complete flow:
+        1. Preheating is active
+        2. VTherm temperature changes
+        3. Event bridge triggers check_overshoot_risk
+        4. Overshoot is detected and heating is stopped
+        """
+        target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
+        current_time = make_aware(datetime(2025, 1, 15, 6, 0, 0))
+        
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=20.0,  # Target: 20°C
+            timeslot_id="morning",
+            scheduler_entity="schedule.heating",
+        )
+        
+        # Scenario: Room is already at 19.5°C and heating fast
+        # With slope of 3°C/h, in 0.5h: 19.5 + 1.5 = 21°C
+        # Threshold is 20.5°C, so 21°C > 20.5°C = OVERSHOOT!
+        environment = EnvironmentState(
+            indoor_temperature=19.5,  # Close to target
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+            timestamp=current_time,
+        )
+        
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment
+        mock_adapters["environment_reader"].get_vtherm_slope.return_value = 3.0  # Fast heating
+        
+        # GIVEN: Preheating was started earlier
+        app_service._is_preheating_active = True
+        app_service._preheating_target_time = target_time
+        app_service._active_scheduler_entity = "schedule.heating"
+        
+        # WHEN: Temperature update triggers overshoot check
+        # (This would normally be called by HAEventBridge._recalculate_and_publish)
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=current_time):
+            await app_service.check_overshoot_risk(scheduler_entity_id=timeslot.scheduler_entity)
+        
+        # THEN: Overshoot should be detected and scheduler.cancel_action called
+        mock_adapters["scheduler_commander"].cancel_action.assert_called_once()
+        
+        # AND: Preheating state should be cleared
+        assert app_service._is_preheating_active is False
+        assert app_service._preheating_target_time is None
+        assert app_service._active_scheduler_entity is None
+
+
 class TestNoDirectVThermControl:
     """Test suite ensuring scheduler is used instead of direct VTherm control."""
     
