@@ -44,7 +44,7 @@ class SimpleDecisionStrategy(IDecisionStrategy):
             scheduler_reader: Implementation of scheduler reading interface
             model_storage: Implementation of model storage interface
         """
-        _LOGGER.info("Initializing SimpleDecisionStrategy")
+        _LOGGER.debug("Initializing SimpleDecisionStrategy")
         self._scheduler_reader = scheduler_reader
         self._storage = model_storage
         self._prediction_service = PredictionService()
@@ -62,7 +62,7 @@ class SimpleDecisionStrategy(IDecisionStrategy):
         Returns:
             A heating decision based on simple predictive rules
         """
-        _LOGGER.info("SimpleDecisionStrategy.decide_heating_action called")
+        _LOGGER.debug("SimpleDecisionStrategy.decide_heating_action called")
         _LOGGER.debug(f"Environment: indoor={environment.indoor_temperature}°C, "
                      f"outdoor={environment.outdoor_temp}°C, "
                      f"humidity={environment.indoor_humidity}%")
@@ -147,7 +147,7 @@ class SimpleDecisionStrategy(IDecisionStrategy):
         Returns:
             Decision to stop heating if overshoot is detected
         """
-        _LOGGER.info("SimpleDecisionStrategy.check_overshoot_risk called")
+        _LOGGER.debug("SimpleDecisionStrategy.check_overshoot_risk called")
         _LOGGER.debug(f"Current slope: {current_slope:.4f}°C/hour, "
                      f"indoor_temp={environment.indoor_temperature}°C")
         

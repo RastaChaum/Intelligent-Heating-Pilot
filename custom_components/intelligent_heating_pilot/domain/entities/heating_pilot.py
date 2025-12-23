@@ -44,7 +44,7 @@ class HeatingPilot:
                               (simple rules or ML-based)
             scheduler_commander: Implementation of scheduler control interface
         """
-        _LOGGER.info("Initializing HeatingPilot")
+        _LOGGER.debug("Initializing HeatingPilot")
         self._decision_strategy = decision_strategy
         self._scheduler_commander = scheduler_commander
         _LOGGER.debug(f"HeatingPilot initialized with strategy: {type(decision_strategy).__name__}")
@@ -64,7 +64,7 @@ class HeatingPilot:
         Returns:
             A heating decision with the action to take
         """
-        _LOGGER.info("HeatingPilot.decide_heating_action called")
+        _LOGGER.debug("HeatingPilot.decide_heating_action called")
         _LOGGER.debug(f"Delegating decision to {type(self._decision_strategy).__name__}")
         
         decision = await self._decision_strategy.decide_heating_action(environment)
@@ -88,7 +88,7 @@ class HeatingPilot:
         Returns:
             Decision to stop heating if overshoot is detected
         """
-        _LOGGER.info("HeatingPilot.check_overshoot_risk called")
+        _LOGGER.debug("HeatingPilot.check_overshoot_risk called")
         _LOGGER.debug(f"Delegating overshoot check to {type(self._decision_strategy).__name__}")
         
         decision = await self._decision_strategy.check_overshoot_risk(

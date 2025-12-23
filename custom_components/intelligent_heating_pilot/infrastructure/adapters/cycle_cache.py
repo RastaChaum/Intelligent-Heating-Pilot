@@ -106,7 +106,7 @@ class HACycleCache(ICycleCache):
         device_data = self._data.get(device_id)
         if not device_data:
             _LOGGER.debug("No cache found for device_id=%s", device_id)
-            _LOGGER.info("Exiting HACycleCache.get_cache_data")
+            _LOGGER.debug("Exiting HACycleCache.get_cache_data")
             return None
         
         # Deserialize cycles
@@ -116,7 +116,7 @@ class HACycleCache(ICycleCache):
         
         if last_search_time is None:
             _LOGGER.warning("Invalid last_search_time in cache for device %s", device_id)
-            _LOGGER.info("Exiting HACycleCache.get_cache_data")
+            _LOGGER.debug("Exiting HACycleCache.get_cache_data")
             return None
         
         cache_data = CycleCacheData(
@@ -131,7 +131,7 @@ class HACycleCache(ICycleCache):
             len(cycles),
             last_search_time,
         )
-        _LOGGER.info("Exiting HACycleCache.get_cache_data")
+        _LOGGER.debug("Exiting HACycleCache.get_cache_data")
         
         return cache_data
     
@@ -222,7 +222,7 @@ class HACycleCache(ICycleCache):
         cache_data = await self.get_cache_data(device_id)
         if not cache_data:
             _LOGGER.debug("No cache to prune for device %s", device_id)
-            _LOGGER.info("Exiting HACycleCache.prune_old_cycles")
+            _LOGGER.debug("Exiting HACycleCache.prune_old_cycles")
             return
         
         cutoff_time = reference_time - timedelta(days=cache_data.retention_days)
@@ -254,7 +254,7 @@ class HACycleCache(ICycleCache):
         else:
             _LOGGER.debug("No cycles to prune for device %s", device_id)
         
-        _LOGGER.info("Exiting HACycleCache.prune_old_cycles")
+        _LOGGER.debug("Exiting HACycleCache.prune_old_cycles")
     
     async def clear_cache(self, device_id: str) -> None:
         """Clear all cached cycles for a device.
@@ -274,7 +274,7 @@ class HACycleCache(ICycleCache):
         else:
             _LOGGER.debug("No cache to clear for device %s", device_id)
         
-        _LOGGER.info("Exiting HACycleCache.clear_cache")
+        _LOGGER.debug("Exiting HACycleCache.clear_cache")
     
     async def get_last_search_time(self, device_id: str) -> datetime | None:
         """Get the timestamp of the last cycle search.
@@ -293,7 +293,7 @@ class HACycleCache(ICycleCache):
         result = cache_data.last_search_time if cache_data else None
         
         _LOGGER.debug("Last search time for device %s: %s", device_id, result)
-        _LOGGER.info("Exiting HACycleCache.get_last_search_time")
+        _LOGGER.debug("Exiting HACycleCache.get_last_search_time")
         
         return result
     

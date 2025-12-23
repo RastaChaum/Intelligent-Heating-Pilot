@@ -46,7 +46,7 @@ class MLDecisionStrategy(IDecisionStrategy):
             scheduler_reader: Implementation of scheduler reading interface
             # ml_client: Client to communicate with ML model API
         """
-        _LOGGER.info("Initializing MLDecisionStrategy")
+        _LOGGER.debug("Initializing MLDecisionStrategy")
         self._scheduler_reader = scheduler_reader
         # self._ml_client = ml_client  # TODO: Implement ML client
         _LOGGER.warning("MLDecisionStrategy is not fully implemented yet. "
@@ -64,7 +64,7 @@ class MLDecisionStrategy(IDecisionStrategy):
         Returns:
             A heating decision predicted by the ML model
         """
-        _LOGGER.info("MLDecisionStrategy.decide_heating_action called")
+        _LOGGER.debug("MLDecisionStrategy.decide_heating_action called")
         _LOGGER.debug(f"Environment: indoor={environment.indoor_temperature}°C, "
                      f"outdoor={environment.outdoor_temp}°C, "
                      f"humidity={environment.indoor_humidity}%")
@@ -115,7 +115,7 @@ class MLDecisionStrategy(IDecisionStrategy):
         Returns:
             Decision to stop heating if ML model predicts overshoot
         """
-        _LOGGER.info("MLDecisionStrategy.check_overshoot_risk called")
+        _LOGGER.debug("MLDecisionStrategy.check_overshoot_risk called")
         _LOGGER.debug(f"Current slope: {current_slope:.4f}°C/hour, "
                      f"indoor_temp={environment.indoor_temperature}°C")
         
