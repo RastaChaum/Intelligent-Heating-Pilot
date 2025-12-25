@@ -65,7 +65,7 @@ class HeatingCycleService(IHeatingCycleService):
         history_data_set: HistoricalDataSet,
         start_time: datetime,
         end_time: datetime,
-        cycle_split_duration_minutes: int = 0,
+        cycle_split_duration_minutes: int | None = 0,
     ) -> list[HeatingCycle]:
         """Extract heating cycles from a HistoricalDataSet within a given time range.
         
@@ -77,7 +77,7 @@ class HeatingCycleService(IHeatingCycleService):
             start_time: The start of the time range for cycle extraction.
             end_time: The end of the time range for cycle extraction.
             cycle_split_duration_minutes: Duration in minutes to split long cycles
-                into smaller sub-cycles for granular analysis. If 0, no splitting.
+                into smaller sub-cycles for granular analysis. If 0 or None, no splitting.
             
         Returns:
             A list of HeatingCycle value objects.
@@ -91,7 +91,8 @@ class HeatingCycleService(IHeatingCycleService):
         self._validate_critical_data(history_data_set)
         
         # Use provided cycle_split_duration_minutes if specified (>0), otherwise use instance default
-        split_duration = cycle_split_duration_minutes if cycle_split_duration_minutes > 0 else self._cycle_split_duration_minutes
+        # Handle legacy None values for backward compatibility
+        split_duration = cycle_split_duration_minutes if (cycle_split_duration_minutes is not None and cycle_split_duration_minutes > 0) else self._cycle_split_duration_minutes
         
         # Récupérer les données d'historique triées par timestamp
         heating_state_history = sorted(
@@ -333,7 +334,8 @@ class HeatingCycleService(IHeatingCycleService):
         )
 
         # If splitting is enabled, return sub-cycles (used for ML augmentation).
-        if split_duration_minutes > 0 and duration_minutes > split_duration_minutes:
+        # Handle legacy None values for backward compatibility
+        if split_duration_minutes is not None and split_duration_minutes > 0 and duration_minutes > split_duration_minutes:
             return self._split_into_cycles(device_id, start_time, end_time, start_indoor_temp, end_indoor_temp, target_temp, history_data_set, split_duration_minutes)
 
         return [cycle]
