@@ -42,7 +42,7 @@ class HeatingCycleService(IHeatingCycleService):
             min_cycle_duration_minutes: Minimum duration for a valid heating cycle.
             max_cycle_duration_minutes: Maximum duration for a single heating cycle (before splitting).
         """
-        _LOGGER.info("Entering HeatingCycleService.__init__")
+        _LOGGER.debug("Entering HeatingCycleService.__init__")
         _LOGGER.debug(
             "Initializing with temp_delta_threshold=%s, cycle_split_duration_minutes=%s, "
             "min_cycle_duration_minutes=%s, max_cycle_duration_minutes=%s",
@@ -57,7 +57,7 @@ class HeatingCycleService(IHeatingCycleService):
         self._min_cycle_duration_minutes = min_cycle_duration_minutes
         self._max_cycle_duration_minutes = max_cycle_duration_minutes
 
-        _LOGGER.info("Exiting HeatingCycleService.__init__")
+        _LOGGER.debug("Exiting HeatingCycleService.__init__")
     
     async def extract_heating_cycles(
         self,
@@ -85,7 +85,7 @@ class HeatingCycleService(IHeatingCycleService):
         Raises:
             ValueError: If critical historical data keys are missing from the dataset.
         """
-        _LOGGER.info("Extracting heating cycles from %s to %s", start_time, end_time)
+        _LOGGER.debug("Extracting heating cycles from %s to %s", start_time, end_time)
         
         # Validate critical data availability
         self._validate_critical_data(history_data_set)

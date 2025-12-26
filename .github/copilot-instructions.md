@@ -57,9 +57,14 @@ All new features must be developed using TDD:
 
 ### Logging Standards
 
-1. **Method Entry/Exit Logging** - All public methods in the domain and application layers must log at `INFO` level on entry and exit.
-2. **Parameter/Return Value Logging** - Input parameters and return values should be logged at `DEBUG` level.
-3. **Structured Logging** - Prefer structured logging (e.g., JSON) where possible for easier parsing and analysis.
+1. **Method Entry/Exit Logging** - All public methods in the domain and application layers must log at `DEBUG` level on entry and exit.
+2. **State Changes and Results** - Use `INFO` level ONLY for:
+   - State changes of IHP devices (e.g., heating started/stopped, mode changed)
+   - Results of calculations or significant business events (e.g., decision results, LHS calculations)
+   - Actual actions being performed (e.g., setting temperature, triggering scheduler)
+3. **Device Context in Logs** - Infrastructure layer logs that reference IHP devices must include the device's user-friendly name (from Home Assistant's `friendly_name` attribute) rather than the entity ID.
+4. **Parameter/Return Value Logging** - Input parameters and return values should be logged at `DEBUG` level.
+5. **Initialization Logging** - Component initialization, configuration retrieval, and data fetching should be logged at `DEBUG` level.
 
 ### Python Environment Standards
 

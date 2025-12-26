@@ -123,7 +123,7 @@ class HeatingApplicationService:
             scheduler_commander=scheduler_commander,
         )
         
-        _LOGGER.info(f"HeatingApplicationService initialized with decision mode: {decision_mode}")
+        _LOGGER.debug(f"HeatingApplicationService initialized with decision mode: {decision_mode}")
         
         # Runtime state for anticipation scheduling
         self._last_scheduled_time: datetime | None = None

@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant
 
+from .utils import get_entity_name
+
 if TYPE_CHECKING:
     pass
 
@@ -32,6 +34,7 @@ class HAClimateCommander:
         """
         self._hass = hass
         self._climate_entity_id = climate_entity_id
+        self._device_name = get_entity_name(hass, climate_entity_id)
     
     async def set_temperature(self, target_temp: float) -> None:
         """Set target temperature for the climate entity.
@@ -40,8 +43,8 @@ class HAClimateCommander:
             target_temp: Target temperature in Celsius
         """
         _LOGGER.info(
-            "Setting %s temperature to %.1f°C",
-            self._climate_entity_id,
+            "[%s] Setting temperature to %.1f°C",
+            self._device_name,
             target_temp
         )
         
@@ -62,8 +65,8 @@ class HAClimateCommander:
             mode: HVAC mode (heat, off, auto, etc.)
         """
         _LOGGER.info(
-            "Setting %s HVAC mode to %s",
-            self._climate_entity_id,
+            "[%s] Setting HVAC mode to %s",
+            self._device_name,
             mode
         )
         

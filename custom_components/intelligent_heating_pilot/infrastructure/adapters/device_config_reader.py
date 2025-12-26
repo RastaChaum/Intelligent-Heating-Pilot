@@ -52,7 +52,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
         Raises:
             ValueError: If device_id doesn't match or configuration is invalid
         """
-        _LOGGER.info("Retrieving device configuration for device_id=%s", device_id)
+        _LOGGER.debug("Retrieving device configuration for device_id=%s", device_id)
 
         # In the IHP architecture, device_id corresponds to the config entry ID
         if device_id != self._config_entry.entry_id:

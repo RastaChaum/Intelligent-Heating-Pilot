@@ -96,7 +96,7 @@ class HAEventBridge:
         )
         self._listeners.append(unsub)
         
-        _LOGGER.info("Event bridge tracking %d entities", len(self._tracked_entities))
+        _LOGGER.debug("Event bridge tracking %d entities", len(self._tracked_entities))
     
     def _handle_vtherm_change(self, event: Event[EventStateChangedData]) -> None:
         """Handle VTherm state changes (slope learning + update).
@@ -178,4 +178,4 @@ class HAEventBridge:
         for unsub in self._listeners:
             unsub()
         self._listeners.clear()
-        _LOGGER.info("Event bridge cleaned up")
+        _LOGGER.debug("Event bridge cleaned up")

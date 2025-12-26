@@ -22,7 +22,7 @@ async def async_register_http_views(hass: HomeAssistant) -> None:
         debug_heating_state_handler,
     )
 
-    _LOGGER.info("Registering HTTP handlers for Intelligent Heating Pilot")
+    _LOGGER.debug("Registering HTTP handlers for Intelligent Heating Pilot")
 
     # Register handlers directly with aiohttp router
     hass.http.app.router.add_post(
@@ -41,4 +41,4 @@ async def async_register_http_views(hass: HomeAssistant) -> None:
         debug_heating_state_handler,
     )
 
-    _LOGGER.info("Successfully registered HTTP handlers for Intelligent Heating Pilot")
+    _LOGGER.debug("Successfully registered HTTP handlers for Intelligent Heating Pilot")

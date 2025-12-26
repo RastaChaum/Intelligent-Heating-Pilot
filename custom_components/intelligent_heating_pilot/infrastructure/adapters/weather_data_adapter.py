@@ -38,7 +38,7 @@ class WeatherDataAdapter(IHistoricalDataAdapter):
             hass: Home Assistant instance
         """
         self._hass = hass
-        _LOGGER.info("Initialized WeatherDataAdapter")
+        _LOGGER.debug("Initialized WeatherDataAdapter")
 
     async def fetch_historical_data(
         self,
@@ -61,7 +61,7 @@ class WeatherDataAdapter(IHistoricalDataAdapter):
         Raises:
             ValueError: If entity_id is invalid or history cannot be retrieved
         """
-        _LOGGER.info(
+        _LOGGER.debug(
             "Fetching weather history for %s from %s to %s",
             entity_id,
             start_time,

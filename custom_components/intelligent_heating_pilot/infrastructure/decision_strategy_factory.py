@@ -48,7 +48,7 @@ class DecisionStrategyFactory:
         Raises:
             ValueError: If mode is not recognized
         """
-        _LOGGER.info(f"Creating decision strategy for mode: {mode}")
+        _LOGGER.debug(f"Creating decision strategy for mode: {mode}")
         
         if mode == DECISION_MODE_SIMPLE:
             _LOGGER.debug("Instantiating SimpleDecisionStrategy")

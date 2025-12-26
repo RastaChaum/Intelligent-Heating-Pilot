@@ -14,6 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from ...domain.value_objects import EnvironmentState
 from ..vtherm_compat import get_vtherm_attribute
+from .utils import get_entity_name
 
 if TYPE_CHECKING:
     pass
@@ -53,6 +54,7 @@ class HAEnvironmentReader:
         self._humidity_in_entity_id = humidity_in_entity_id
         self._humidity_out_entity_id = humidity_out_entity_id
         self._cloud_cover_entity_id = cloud_cover_entity_id
+        self._device_name = get_entity_name(hass, vtherm_entity_id)
     
     async def get_current_environment(self) -> EnvironmentState | None:
         """Read current environmental state from HA entities.
@@ -63,13 +65,13 @@ class HAEnvironmentReader:
         # Get current indoor temperature from VTherm
         vtherm_state = self._hass.states.get(self._vtherm_entity_id)
         if not vtherm_state:
-            _LOGGER.warning("VTherm entity not found: %s", self._vtherm_entity_id)
+            _LOGGER.warning("[%s] VTherm entity not found", self._device_name)
             return None
         
         # Use v8.0.0+ compatible attribute access
         current_temp_raw = get_vtherm_attribute(vtherm_state, "current_temperature")
         if current_temp_raw is None:
-            _LOGGER.warning("No current_temperature in VTherm %s", self._vtherm_entity_id)
+            _LOGGER.warning("[%s] No current_temperature available", self._device_name)
             return None
         
         try:

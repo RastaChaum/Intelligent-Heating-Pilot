@@ -11,6 +11,7 @@ from datetime import datetime
 from homeassistant.core import HomeAssistant
 
 from ...domain.interfaces import ISchedulerCommander
+from .utils import get_entity_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,9 +58,10 @@ class HASchedulerCommander(ISchedulerCommander):
         # Format time as HH:MM for scheduler service
         trigger_time_str = target_time.strftime("%H:%M")
         
+        device_name = get_entity_name(self._hass, scheduler_entity_id)
         _LOGGER.info(
-            "Triggering scheduler action for %s at time %s",
-            scheduler_entity_id,
+            "[%s] Triggering scheduler action at time %s",
+            device_name,
             trigger_time_str
         )
         
@@ -103,9 +105,10 @@ class HASchedulerCommander(ISchedulerCommander):
         now = dt_util.now()
         current_time_str = now.strftime("%H:%M")
         
+        device_name = get_entity_name(self._hass, scheduler_entity_id)
         _LOGGER.info(
-            "Canceling scheduler action for %s by reverting to current time %s",
-            scheduler_entity_id,
+            "[%s] Canceling scheduler action by reverting to current time %s",
+            device_name,
             current_time_str
         )
         
