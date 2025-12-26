@@ -232,7 +232,11 @@ Here's the full journey from a scheduled event to IHP triggering heating:
 4. HEATING CYCLE MONITORING
    └─ IHP watches temperature rise
       ├─ Collects VTherm's slope observations
-      ├─ Prevents overshooting (stops early if approaching target)
+      ├─ **OVERSHOOT RISK DETECTION**: Monitors estimated temperature
+      │  └─ On every temperature update during preheating:
+      │     ├─ Calculate: estimated_temp = current_temp + (slope × time_remaining)
+      │     ├─ Check: if estimated_temp > target_temp + 0.5°C
+      │     └─ Action: Stop preheating (revert to scheduler setpoint)
       └─ Waits for cycle completion
 
 5. CYCLE COMPLETION & LEARNING
@@ -271,6 +275,117 @@ Scheduler State = "off"
    ├─ No heating will be triggered
    └─ IHP waits for scheduler to be re-enabled
 ```
+
+
+---
+
+## 🛡️ Overshoot Risk Prevention
+
+### What is Overshoot?
+
+**Overshoot** occurs when preheating starts too early, causing the room temperature to exceed the target before the scheduled time. This wastes energy and can reduce comfort.
+
+**Example of Overshoot:**
+```
+Target: 20°C at 09:00
+Preheating started: 07:00 (with LHS = 2°C/h, anticipating 2 hours needed)
+Problem: By 08:00, room reaches 20°C (1 hour early!)
+Result: Room continues heating to 21-22°C, wasting energy
+```
+
+### How IHP Prevents Overshoot
+
+IHP continuously monitors temperature during preheating and **stops early** if it detects overshoot risk.
+
+#### Detection Algorithm
+
+During active preheating, on every VTherm temperature update:
+
+1. **Get current data:**
+   - Current temperature: 19°C
+   - Current heating slope: 3°C/hour
+   - Time until target: 30 minutes (0.5 hours)
+   - Target temperature: 20°C
+
+2. **Calculate estimated temperature:**
+   ```
+   estimated_temp = current_temp + (slope × time_remaining)
+   estimated_temp = 19°C + (3°C/h × 0.5h) = 20.5°C
+   ```
+
+3. **Check overshoot threshold:**
+   ```
+   overshoot_threshold = target_temp + 0.5°C
+   overshoot_threshold = 20°C + 0.5°C = 20.5°C
+   
+   if estimated_temp >= overshoot_threshold:
+       STOP PREHEATING (revert to scheduler setpoint)
+   ```
+
+4. **Action taken:**
+   - Calls `scheduler.cancel_action()` to revert to current scheduled temperature
+   - Clears preheating state
+   - Logs warning with current, estimated, and target temperatures
+   - Respects scheduler conditions (won't cancel if scheduler is disabled)
+
+#### Key Features
+
+| Feature | Behavior |
+|---------|----------|
+| **Trigger Frequency** | Every VTherm temperature change during preheating |
+| **Threshold** | Target temperature + 0.5°C |
+| **Action** | Revert to scheduler setpoint (via `cancel_action`) |
+| **Conditions** | Only active during preheating with valid scheduler entity |
+| **Safety** | Checks scheduler is enabled before reverting |
+
+### When Overshoot Detection Activates
+
+**Conditions for overshoot check:**
+1. ✅ Preheating is currently active (`_is_preheating_active = True`)
+2. ✅ Scheduler entity is set (`_active_scheduler_entity` is not None)
+3. ✅ VTherm temperature has changed (event bridge triggers)
+4. ✅ Current slope is positive and valid
+5. ✅ Target time is in the future
+6. ✅ Estimated temperature > threshold
+
+**Example Log Output:**
+```
+WARNING: Overshoot risk! Current: 19.0°C, estimated: 21.0°C, target: 20.0°C - reverting to current schedule
+```
+
+### Why Overshoot Can Still Occur
+
+Even with detection enabled, overshoot might happen if:
+
+1. **Slope changes rapidly**: If heating suddenly accelerates between temperature updates
+2. **Infrequent updates**: If VTherm reports temperature changes slowly (>5 minutes)
+3. **Thermal inertia**: Radiators/heating elements continue warming after shutdown
+4. **Threshold too loose**: Default 0.5°C threshold might be insufficient for fast heating systems
+
+### Tuning Recommendations
+
+If you experience overshoot despite the detection:
+
+1. **Check VTherm slope attribute**: Ensure it's being reported correctly
+2. **Monitor log frequency**: Look for "Preheating active, checking overshoot risk" messages
+3. **Consider TPI settings**: Adjust VTherm's TPI parameters for better temperature control
+4. **Verify sensor accuracy**: Ensure temperature sensor is accurate and responsive
+
+### Troubleshooting Overshoot Detection
+
+**Problem: Overshoot still occurring**
+
+Possible causes:
+- Slope calculation is delayed or inaccurate
+- VTherm temperature updates are too infrequent
+- Heating system has high thermal inertia
+
+**Problem: Preheating stops too early (undershoot)**
+
+Possible causes:
+- Slope is overestimated (system heats slower than predicted)
+- Need more heating cycles for LHS to stabilize
+- Environmental conditions changed (colder outdoor temperature)
 
 ---
 
