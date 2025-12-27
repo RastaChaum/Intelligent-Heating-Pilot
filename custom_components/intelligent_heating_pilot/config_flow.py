@@ -299,7 +299,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_TEMP_DELTA_THRESHOLD,
-                    default=DEFAULT_TEMP_DELTA_THRESHOLD
+                    default=current_data.get(CONF_TEMP_DELTA_THRESHOLD, DEFAULT_TEMP_DELTA_THRESHOLD)
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.1,
@@ -323,7 +323,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_MIN_CYCLE_DURATION_MINUTES,
-                    default=DEFAULT_MIN_CYCLE_DURATION_MINUTES
+                    default=current_data.get(CONF_MIN_CYCLE_DURATION_MINUTES, DEFAULT_MIN_CYCLE_DURATION_MINUTES)
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1,
@@ -335,7 +335,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_MAX_CYCLE_DURATION_MINUTES,
-                    default=DEFAULT_MAX_CYCLE_DURATION_MINUTES
+                    default=current_data.get(CONF_MAX_CYCLE_DURATION_MINUTES, DEFAULT_MAX_CYCLE_DURATION_MINUTES)
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=15,
