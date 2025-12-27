@@ -333,7 +333,7 @@ class HeatingCycleService(IHeatingCycleService):
         )
 
         # If splitting is enabled, return sub-cycles (used for ML augmentation).
-        if split_duration_minutes > 0 and duration_minutes > split_duration_minutes:
+        if split_duration_minutes is not None and split_duration_minutes > 0 and duration_minutes > split_duration_minutes:
             return self._split_into_cycles(device_id, start_time, end_time, start_indoor_temp, end_indoor_temp, target_temp, history_data_set, split_duration_minutes)
 
         return [cycle]
