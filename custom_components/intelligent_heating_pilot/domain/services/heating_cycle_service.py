@@ -91,7 +91,6 @@ class HeatingCycleService(IHeatingCycleService):
         self._validate_critical_data(history_data_set)
         
         # Use provided cycle_split_duration_minutes if specified (>0), otherwise use instance default
-        # Handle legacy None values for backward compatibility
         split_duration = cycle_split_duration_minutes if (cycle_split_duration_minutes is not None and cycle_split_duration_minutes > 0) else self._cycle_split_duration_minutes
         
         # Récupérer les données d'historique triées par timestamp
@@ -334,7 +333,6 @@ class HeatingCycleService(IHeatingCycleService):
         )
 
         # If splitting is enabled, return sub-cycles (used for ML augmentation).
-        # Handle legacy None values for backward compatibility
         if split_duration_minutes is not None and split_duration_minutes > 0 and duration_minutes > split_duration_minutes:
             return self._split_into_cycles(device_id, start_time, end_time, start_indoor_temp, end_indoor_temp, target_temp, history_data_set, split_duration_minutes)
 
