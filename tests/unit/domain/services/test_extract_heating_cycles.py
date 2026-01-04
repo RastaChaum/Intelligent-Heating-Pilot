@@ -471,3 +471,46 @@ class TestExtractEdgeCases:
         )
         # 45-minute cycle split at 15-minute intervals = 3 sub-cycles + 1 remainder of 3 minutes
         assert len(cycles_split) == 3
+
+    @pytest.mark.asyncio
+    async def test_explicit_none_split_parameter_uses_instance_default(self, service, base_time):
+        """Given cycle_split_duration_minutes=None (legacy cache data), falls back to instance default without errors."""
+        # This test ensures backward compatibility with legacy cache entries where split=None
+        t0 = base_time
+        t1 = t0 + timedelta(minutes=10)
+        t2 = t0 + timedelta(minutes=40)
+        t3 = t0 + timedelta(minutes=50)
+        
+        dataset = HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(t0, 18.0),
+                    m(t1, 18.5),
+                    m(t2, 20.4),
+                    m(t3, 20.4),
+                ],
+                HistoricalDataKey.TARGET_TEMP: [
+                    m(t0, 20.0),
+                    m(t1, 20.0),
+                    m(t2, 20.0),
+                    m(t3, 20.0),
+                ],
+                HistoricalDataKey.HEATING_STATE: [
+                    m(t0, True, hvac_action="heating", hvac_mode="heat"),
+                    m(t1, True, hvac_action="heating", hvac_mode="heat"),
+                    m(t2, False, hvac_action="off", hvac_mode="heat"),
+                    m(t3, False, hvac_action="off", hvac_mode="heat"),
+                ],
+            }
+        )
+
+        # Service with instance default split=None, and explicitly passing None
+        # Should not raise TypeError on None > 0 comparison
+        cycles = await service.extract_heating_cycles(
+            "my_device_id", dataset, t0, t3, cycle_split_duration_minutes=None
+        )
+        
+        # Should return 1 cycle (no splitting since instance default is None)
+        assert len(cycles) == 1
+        assert cycles[0].start_time == t0
+        # Verify no TypeError was raised during extraction
