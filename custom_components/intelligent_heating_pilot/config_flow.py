@@ -54,7 +54,6 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
         if user_input is not None:
             processed: dict[str, Any] = {**user_input}
-            errors = {}
 
             # Parse schedulers from multiline text into list
             sched_text = processed.get(CONF_SCHEDULER_ENTITIES, "") or ""
@@ -65,13 +64,13 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             for field in (CONF_HUMIDITY_IN_ENTITY, CONF_HUMIDITY_OUT_ENTITY, CONF_CLOUD_COVER_ENTITY):
                 val = processed.get(field, "")
                 if not val or (isinstance(val, str) and val.strip() == ""):
-                    processed[field] = ""
+                    processed.pop(field, None)
 
             # Required validations
             vtherm_val = processed.get(CONF_VTHERM_ENTITY)
             if not vtherm_val or (isinstance(vtherm_val, str) and vtherm_val.strip() == ""):
                 errors[CONF_VTHERM_ENTITY] = "required"
-            if not processed.get(CONF_SCHEDULER_ENTITIES):
+            if len(processed.get(CONF_SCHEDULER_ENTITIES, [])) == 0:
                 errors[CONF_SCHEDULER_ENTITIES] = "required"
 
             if not errors:
@@ -199,6 +198,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Manage the options."""
         errors: dict[str, str] = {}
+        normalized_input: dict[str, Any] = {}
 
         if user_input is not None:
             # Start with user input
@@ -289,48 +289,41 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         schema_dict: dict[Any, Any] = {}
 
         # Required: VTherm (only set default if exists and non-empty)
-        if vtherm_val and vtherm_val != "":
-            schema_dict[vol.Required(CONF_VTHERM_ENTITY, default=vtherm_val)] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="climate",
-                    integration="versatile_thermostat"
-                )
+        vtherm_field = (
+            vol.Required(CONF_VTHERM_ENTITY, default=vtherm_val)
+            if vtherm_val and vtherm_val != ""
+            else vol.Required(CONF_VTHERM_ENTITY)
+        )
+        schema_dict[vtherm_field] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain="climate",
+                integration="versatile_thermostat"
             )
-        else:
-            schema_dict[vol.Required(CONF_VTHERM_ENTITY)] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="climate",
-                    integration="versatile_thermostat"
-                )
-            )
+        )
 
         # Required: Schedulers (multiple, only set default if non-empty list)
-        if default_schedulers_list and len(default_schedulers_list) > 0:
-            schema_dict[vol.Required(CONF_SCHEDULER_ENTITIES, default=default_schedulers_list)] = selector.SelectSelector(
+        scheduler_selector = (
+            selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=scheduler_options,
                     multiple=True,
                     mode=selector.SelectSelectorMode.DROPDOWN
                 )
-            ) if scheduler_options else selector.EntitySelector(
+            )
+            if scheduler_options
+            else selector.EntitySelector(
                 selector.EntitySelectorConfig(
                     domain="switch",
                     multiple=True
                 )
             )
-        else:
-            schema_dict[vol.Required(CONF_SCHEDULER_ENTITIES)] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=scheduler_options,
-                    multiple=True,
-                    mode=selector.SelectSelectorMode.DROPDOWN
-                )
-            ) if scheduler_options else selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="switch",
-                    multiple=True
-                )
-            )
+        )
+        schedulers_field = (
+            vol.Required(CONF_SCHEDULER_ENTITIES, default=default_schedulers_list)
+            if default_schedulers_list and len(default_schedulers_list) > 0
+            else vol.Required(CONF_SCHEDULER_ENTITIES)
+        )
+        schema_dict[schedulers_field] = scheduler_selector
 
         # Optional humidity/cloud fields: Use suggested_value to pre-fill while allowing clearing
         schema_dict[vol.Optional(
