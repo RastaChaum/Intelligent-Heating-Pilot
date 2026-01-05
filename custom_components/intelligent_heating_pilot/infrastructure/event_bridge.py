@@ -134,6 +134,14 @@ class HAEventBridge:
     
     async def _recalculate_and_publish(self) -> None:
         """Recalculate anticipation and publish event for sensors."""
+        # Check for overshoot risk if currently preheating
+        # This must be done BEFORE recalculation to catch overshoot early
+        if self._app_service._is_preheating_active and self._app_service._active_scheduler_entity:
+            _LOGGER.debug("Preheating active, checking overshoot risk")
+            await self._app_service.check_overshoot_risk(
+                scheduler_entity_id=self._app_service._active_scheduler_entity
+            )
+        
         anticipation_data = await self._app_service.calculate_and_schedule_anticipation()
         
         if anticipation_data:
