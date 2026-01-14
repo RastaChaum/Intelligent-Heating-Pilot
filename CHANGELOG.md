@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.4.4] - 2026-01-04
+
+### Fixed
+- **Integration Failed to Start** ([#67](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/67))
+  - Fixed `TypeError: '>' not supported between instances of 'NoneType' and 'int'` when `cycle_split_duration_minutes` is not configured
+  - Integration now properly handles cases where cycle split duration is not set
+  - Ensures compatibility with Home Assistant 2026.1.0 beta
+- **Optional Fields Persistence in Options Flow** ([#54](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/54), [#65](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/65))
+  - Fixed inability to clear optional entity fields (indoor humidity, outdoor humidity, cloud cover) in configuration UI
+  - Replaced `default=value` with `description={'suggested_value': value}` for optional entity selectors to allow proper clearing
+  - Implemented explicit deletion logic to remove cleared optional fields from saved options
+  - Added validation for required fields (VTherm and Schedulers) with clear error messages
+  - Improved options merging to handle cleared values correctly
+
 ## [0.4.3] - 2025-12-23
 
 ### Added

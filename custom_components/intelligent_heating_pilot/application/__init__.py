@@ -308,6 +308,7 @@ class HeatingApplicationService:
                 _LOGGER.debug("Returning %d cycles within retention", len(cycles))
                 _LOGGER.debug("Exiting _get_cycles_with_cache")
                 return cycles
+            return []
         else:
             _LOGGER.info("No cache found, performing full extraction")
             
@@ -440,8 +441,7 @@ class HeatingApplicationService:
                 device_id=device_id,
                 history_data_set=historical_data_set,
                 start_time=start_time,
-                end_time=end_time,
-                cycle_split_duration_minutes=None,
+                end_time=end_time
             )
         except ValueError as exc:
             _LOGGER.warning(
