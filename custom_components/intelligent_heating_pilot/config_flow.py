@@ -55,25 +55,31 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         if user_input is not None:
             processed: dict[str, Any] = {**user_input}
 
-            # Parse schedulers from multiline text into list
-            sched_text = processed.get(CONF_SCHEDULER_ENTITIES, "") or ""
-            if isinstance(sched_text, str):
-                processed[CONF_SCHEDULER_ENTITIES] = [ln.strip() for ln in sched_text.splitlines() if ln.strip()]
+            _LOGGER.debug("Received user_input in async_step_user: %s", user_input)
 
-            # Normalize optional entity fields: persist empty as ""
-            for field in (CONF_HUMIDITY_IN_ENTITY, CONF_HUMIDITY_OUT_ENTITY, CONF_CLOUD_COVER_ENTITY):
-                val = processed.get(field, "")
-                if not val or (isinstance(val, str) and val.strip() == ""):
-                    processed.pop(field, None)
+            # Schedulers already a list from SelectSelector (multiple=True)
+            # Just ensure it's always a list
+            sched_in = processed.get(CONF_SCHEDULER_ENTITIES, [])
+            if not isinstance(sched_in, list):
+                sched_in = [sched_in] if sched_in else []
+            processed[CONF_SCHEDULER_ENTITIES] = sched_in
+
+            # Note: EntitySelector optional fields are simply not present in user_input if not filled
+            # No need to remove them as they won't exist in the dict
+
+            _LOGGER.debug("Processed data before validation: %s", processed)
 
             # Required validations
             vtherm_val = processed.get(CONF_VTHERM_ENTITY)
             if not vtherm_val or (isinstance(vtherm_val, str) and vtherm_val.strip() == ""):
                 errors[CONF_VTHERM_ENTITY] = "required"
-            if len(processed.get(CONF_SCHEDULER_ENTITIES, [])) == 0:
+            
+            schedulers_val = processed.get(CONF_SCHEDULER_ENTITIES)
+            if not schedulers_val or len(schedulers_val) == 0:
                 errors[CONF_SCHEDULER_ENTITIES] = "required"
 
             if not errors:
+                _LOGGER.info("Creating entry with data: %s", processed)
                 await self.async_set_unique_id(processed[CONF_NAME])
                 self._abort_if_unique_id_configured()
                 return cast(
@@ -98,24 +104,51 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         # Sort by label for easier selection
         scheduler_options.sort(key=lambda x: x["label"])
 
-        # Build the schema for the configuration form using TextSelectors
+        # Build the schema for the configuration form using Entity and Select selectors (same as options flow)
+        # Scheduler selector: use SelectSelector if options available, else EntitySelector
+        scheduler_selector = (
+            selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=scheduler_options,
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN
+                )
+            )
+            if scheduler_options
+            else selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain="switch",
+                    multiple=True
+                )
+            )
+        )
+
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
-                vol.Required(CONF_VTHERM_ENTITY): selector.TextSelector(
-                    selector.TextSelectorConfig(multiline=False)
+                vol.Required(CONF_VTHERM_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="climate",
+                        integration="versatile_thermostat"
+                    )
                 ),
-                vol.Required(CONF_SCHEDULER_ENTITIES): selector.TextSelector(
-                    selector.TextSelectorConfig(multiline=True)
+                vol.Required(CONF_SCHEDULER_ENTITIES): scheduler_selector,
+                vol.Optional(CONF_HUMIDITY_IN_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor",
+                        device_class="humidity"
+                    )
                 ),
-                vol.Optional(CONF_HUMIDITY_IN_ENTITY): selector.TextSelector(
-                    selector.TextSelectorConfig(multiline=False)
+                vol.Optional(CONF_HUMIDITY_OUT_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor",
+                        device_class="humidity"
+                    )
                 ),
-                vol.Optional(CONF_HUMIDITY_OUT_ENTITY): selector.TextSelector(
-                    selector.TextSelectorConfig(multiline=False)
-                ),
-                vol.Optional(CONF_CLOUD_COVER_ENTITY): selector.TextSelector(
-                    selector.TextSelectorConfig(multiline=False)
+                vol.Optional(CONF_CLOUD_COVER_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor"
+                    )
                 ),
                 vol.Optional(
                     CONF_LHS_RETENTION_DAYS,
@@ -237,10 +270,9 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 # Merge with existing options
                 merged_options: dict[str, Any] = {**self.config_entry.options}
                 merged_options.update(normalized_input)
-                # Delete optional fields that were cleared
+                # For optional fields that were cleared: explicitly set to None to override data
                 for field in fields_to_delete:
-                    if field in merged_options:
-                        del merged_options[field]
+                    merged_options[field] = None
                 return cast(
                     FlowResult,
                     self.async_create_entry(title="", data=merged_options),
@@ -255,15 +287,15 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             current_data = {**self.config_entry.data, **current_options}
 
         def _opt_or_data(key: str, default: Any = None) -> Any:
+            # First check options (overrides data)
             if key in current_options:
-                return current_options.get(key)
+                val = current_options.get(key)
+                # None means explicitly deleted, don't fallback to data
+                if val is None:
+                    return default
+                return val
+            # Fallback to data
             return current_data.get(key, default)
-
-        def _opt_optional_only(key: str) -> Any | None:
-            # For optionals, do NOT fallback to data; if not present in options, treat as empty
-            if key in current_options:
-                return current_options.get(key)
-            return None
 
         # Get all scheduler entities for SelectSelector
         scheduler_options = []
@@ -281,9 +313,9 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         if isinstance(default_schedulers_list, str):
             default_schedulers_list = [default_schedulers_list]
         vtherm_val = _opt_or_data(CONF_VTHERM_ENTITY)
-        hum_in_val = _opt_optional_only(CONF_HUMIDITY_IN_ENTITY)
-        hum_out_val = _opt_optional_only(CONF_HUMIDITY_OUT_ENTITY)
-        cloud_val = _opt_optional_only(CONF_CLOUD_COVER_ENTITY)
+        hum_in_val = _opt_or_data(CONF_HUMIDITY_IN_ENTITY)
+        hum_out_val = _opt_or_data(CONF_HUMIDITY_OUT_ENTITY)
+        cloud_val = _opt_or_data(CONF_CLOUD_COVER_ENTITY)
 
         # Build schema dynamically: only set default if value exists and is non-empty
         schema_dict: dict[Any, Any] = {}

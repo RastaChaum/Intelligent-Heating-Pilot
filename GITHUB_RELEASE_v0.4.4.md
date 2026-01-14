@@ -2,13 +2,49 @@
 
 ## 🐛 Important Bug Fixes
 
-This release fixes two critical issues that prevented IHP from starting or configuring properly.
+This release fixes critical issues that prevented IHP from starting or configuring properly, and improves the overall user experience.
 
 ---
 
 ## What's Fixed
 
-### 1. ❌ Integration Failed to Start (#67)
+### 1. ❌ Config Forms Not Consistent Between Add and Modify (#54)
+
+**Problem:** When adding a new IHP device vs. modifying an existing one, the forms behaved differently:
+- Adding a device used basic text fields (you had to type entity IDs manually)
+- Modifying a device showed a nice dropdown with search functionality
+- Optional sensors you selected when adding a device weren't saved
+- Optional sensors couldn't be removed once added
+
+**What we fixed:** Both forms now work the same way with entity search dropdowns. Your optional sensors (humidity, cloud cover) are properly saved and can be cleared when you don't need them anymore.
+
+**Impact:**
+- ✅ Search for entities by name when adding or modifying devices
+- ✅ Same user-friendly experience everywhere
+- ✅ Optional sensors work as expected
+- ✅ Full control over your configuration
+
+---
+
+### 2. 📊 Cleaner Logs for Better Troubleshooting
+
+**Problem:** The Home Assistant logs were cluttered with too many messages from IHP, making it hard to see what was actually happening with your heating.
+
+**What we improved:** Logs now show what matters:
+- Device names (like "Living Room Thermostat") instead of cryptic entity IDs
+- Important events (heating started/stopped, decisions made) clearly visible
+- Technical details hidden in DEBUG mode when you need them
+- Less noise, more signal
+
+**Impact:**
+- ✅ Easier to understand what IHP is doing
+- ✅ Faster troubleshooting when something's wrong
+- ✅ See your device names in logs, not technical IDs
+- ✅ Professional logging experience
+
+---
+
+### 3. ❌ Integration Failed to Start (#67)
 
 **Problem:** IHP integration failed to load with a `TypeError` on startup for some users.
 
@@ -23,19 +59,6 @@ TypeError: '>' not supported between instances of 'NoneType' and 'int'
 - ✅ Integration loads correctly on startup
 - ✅ Works with default configuration without errors
 - ✅ Compatible with Home Assistant 2026.1.0 beta
-
----
-
-### 2. ❌ Optional Entities Couldn't Be Removed (#54)
-
-**Problem:** When you tried to remove optional sensors (indoor humidity, outdoor humidity, cloud cover) using the clear button (×) in the configuration dialog, they would reappear after saving.
-
-**What we fixed:** You can now properly clear optional entity fields. When you click the × button to remove a sensor, it stays removed after saving and reopening the configuration.
-
-**Impact:**
-- ✅ Clear button now works correctly
-- ✅ Optional sensors stay cleared after saving
-- ✅ You have full control over which sensors to use
 
 ---
 
@@ -73,7 +96,9 @@ rm v0.4.4.zip
 - **Issues Fixed:** 
   - [#67 - Integration fails to start](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/67)
   - [#54 - Optional fields cannot be cleared](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/54)
-- **Pull Request:** [#65](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/65)
+- **Pull Requests:** 
+  - [#65 - Optional fields persistence](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/65)
+  - [#59 - Logging improvements](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/59)
 - **Full Changelog:** [CHANGELOG.md](CHANGELOG.md)
 - **Documentation:** [Configuration Guide](docs/CONFIGURATION.md)
 
@@ -96,5 +121,5 @@ Special thanks to @Benjamin45590 for the detailed bug report.
 ---
 
 **Full Version:** v0.4.4  
-**Release Date:** January 4, 2026  
+**Release Date:** January 14, 2026  
 **Status:** Stable

@@ -64,7 +64,7 @@ class ExtractHeatingCyclesUseCase:
         Raises:
             ValueError: If device not found or data cannot be fetched
         """
-        _LOGGER.info(
+        _LOGGER.debug(
             "Executing heating cycle extraction for device=%s, start=%s, end=%s",
             device_id,
             start_time,
@@ -115,7 +115,7 @@ class ExtractHeatingCyclesUseCase:
             WeatherDataAdapter,
         )
 
-        _LOGGER.info("Fetching historical data for device from %s to %s", start_time, end_time)
+        _LOGGER.debug("Fetching historical data for device from %s to %s", start_time, end_time)
 
         combined_data: dict[HistoricalDataKey, list] = {}
 

@@ -34,7 +34,8 @@
     "error": {
       "cannot_connect": "Failed to connect",
       "invalid_auth": "Invalid authentication",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "required": "This field is required"
     },
     "abort": {
       "already_configured": "This integration is already configured"
@@ -64,6 +65,9 @@
           "max_cycle_duration_minutes": "Maximum duration for a single heating cycle."
         }
       }
+    },
+    "error": {
+      "required": "This field is required"
     }
   }
 }

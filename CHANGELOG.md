@@ -13,19 +13,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-## [0.4.4] - 2026-01-04
+## [0.4.4] - 2026-01-14
 
 ### Fixed
+- **Config Flow Consistency** - Fixed inconsistent behavior between add and modify device forms
+  - Add device form now uses entity selectors with search functionality (same as modify form)
+  - Entity search/autocomplete works in both add and modify forms
+  - Optional entities (humidity sensors, cloud cover) are properly saved during device creation
+  - Optional entities can now be cleared and stay cleared (no longer reappear after removal)
+  - Consistent user experience between adding and modifying IHP devices
 - **Integration Failed to Start** ([#67](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/67))
   - Fixed `TypeError: '>' not supported between instances of 'NoneType' and 'int'` when `cycle_split_duration_minutes` is not configured
   - Integration now properly handles cases where cycle split duration is not set
   - Ensures compatibility with Home Assistant 2026.1.0 beta
 - **Optional Fields Persistence in Options Flow** ([#54](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/54), [#65](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/65))
   - Fixed inability to clear optional entity fields (indoor humidity, outdoor humidity, cloud cover) in configuration UI
-  - Replaced `default=value` with `description={'suggested_value': value}` for optional entity selectors to allow proper clearing
-  - Implemented explicit deletion logic to remove cleared optional fields from saved options
+  - Optional fields now use `suggested_value` pattern to allow proper clearing
+  - Implemented explicit `None` value for deleted optional fields to override data from initial creation
   - Added validation for required fields (VTherm and Schedulers) with clear error messages
   - Improved options merging to handle cleared values correctly
+
+### Changed
+- **Logging Improvements** ([#59](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/59))
+  - Method entry/exit logging moved to DEBUG level for cleaner INFO logs
+  - INFO level now reserved for state changes and important events
+  - Device logs now include friendly names instead of entity IDs for better readability
+  - Improved log structure for easier troubleshooting
 
 ## [0.4.3] - 2025-12-23
 
