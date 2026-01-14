@@ -44,10 +44,10 @@ class HeatingPilot:
                               (simple rules or ML-based)
             scheduler_commander: Implementation of scheduler control interface
         """
-        _LOGGER.debug("Initializing HeatingPilot")
+        _LOGGER.info("Initializing HeatingPilot")
         self._decision_strategy = decision_strategy
         self._scheduler_commander = scheduler_commander
-        _LOGGER.debug(f"HeatingPilot initialized with strategy: {type(decision_strategy).__name__}")
+        _LOGGER.info(f"HeatingPilot initialized with strategy: {type(decision_strategy).__name__}")
     
     async def decide_heating_action(
         self,

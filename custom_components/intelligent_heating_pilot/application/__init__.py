@@ -123,7 +123,7 @@ class HeatingApplicationService:
             scheduler_commander=scheduler_commander,
         )
         
-        _LOGGER.debug(f"HeatingApplicationService initialized with decision mode: {decision_mode}")
+        _LOGGER.info(f"HeatingApplicationService initialized with decision mode: {decision_mode}")
         
         # Runtime state for anticipation scheduling
         self._last_scheduled_time: datetime | None = None
@@ -164,7 +164,7 @@ class HeatingApplicationService:
             Contextual LHS in °C/h or global LHS as fallback
         """
         target_hour = target_time.hour
-        _LOGGER.info(
+        _LOGGER.debug(
             "Computing contextual LHS for hour %02d using HeatingCycles%s",
             target_hour,
             " (with cache)" if self._cycle_cache else "",
@@ -267,7 +267,7 @@ class HeatingApplicationService:
                     return cycles
                 return []
             
-            _LOGGER.debug(
+            _LOGGER.info(
                 "Last search was %.1f hours ago (>= 24h), searching for new cycles",
                 hours_since_last_search,
             )
@@ -309,7 +309,7 @@ class HeatingApplicationService:
                 _LOGGER.debug("Exiting _get_cycles_with_cache")
                 return cycles
         else:
-            _LOGGER.debug("No cache found, performing full extraction")
+            _LOGGER.info("No cache found, performing full extraction")
             
             # No cache exists, perform full extraction
             search_start = target_time - timedelta(days=self._history_lookback_days)
@@ -420,7 +420,7 @@ class HeatingApplicationService:
                 )
                 combined_data.update(humidity_in.data)
             except Exception as exc:
-                _LOGGER.debug("Failed to fetch indoor humidity history: %s", exc)
+                _LOGGER.warning("Failed to fetch indoor humidity history: %s", exc)
         if outdoor_humidity_id:
             try:
                 humidity_out = await sensor_adapter.fetch_historical_data(
@@ -431,7 +431,7 @@ class HeatingApplicationService:
                 )
                 combined_data.update(humidity_out.data)
             except Exception as exc:
-                _LOGGER.debug("Failed to fetch outdoor humidity history: %s", exc)
+                _LOGGER.warning("Failed to fetch outdoor humidity history: %s", exc)
 
         # Construct dataset and extract cycles
         historical_data_set = HistoricalDataSet(data=combined_data)
@@ -444,7 +444,7 @@ class HeatingApplicationService:
                 cycle_split_duration_minutes=None,
             )
         except ValueError as exc:
-            _LOGGER.debug(
+            _LOGGER.warning(
                 "Cannot extract heating cycles: %s",
                 exc,
             )
@@ -599,7 +599,7 @@ class HeatingApplicationService:
         if self._is_preheating_active:
             # If anticipated start moved to the future (after now), we should stop pre-heating
             if anticipated_start > now and self._preheating_target_time == target_time:
-                _LOGGER.warning(
+                _LOGGER.info(
                     "Anticipated start time moved later (now: %s, new start: %s). "
                     "LHS improved from %.2f to %.2f°C/h. Reverting to current scheduled state.",
                     now.isoformat(),
@@ -686,7 +686,7 @@ class HeatingApplicationService:
         overshoot_threshold = timeslot.target_temp + 0.5
         
         if estimated_temp >= overshoot_threshold and self._is_preheating_active:
-            _LOGGER.warning(
+            _LOGGER.info(
                 "Overshoot risk! Current: %.1f°C, estimated: %.1f°C, target: %.1f°C - reverting to current schedule",
                 environment.indoor_temperature,
                 estimated_temp,

@@ -90,7 +90,7 @@ class SimpleDecisionStrategy(IDecisionStrategy):
         
         # Get learned heating slope
         lhs = await self._storage.get_learned_heating_slope()
-        _LOGGER.debug(f"Learned heating slope: {lhs:.4f}°C/hour")
+        _LOGGER.info(f"Learned heating slope: {lhs:.4f}°C/hour")
         
         # Calculate prediction
         prediction = self._prediction_service.predict_heating_time(
@@ -130,7 +130,7 @@ class SimpleDecisionStrategy(IDecisionStrategy):
                 action=HeatingAction.NO_ACTION,
                 reason=f"Wait until {prediction.anticipated_start_time.isoformat()}"
             )
-            _LOGGER.debug(f"Decision: {decision.action.value} - {decision.reason}")
+            _LOGGER.info(f"Decision: {decision.action.value} - {decision.reason}")
             return decision
     
     async def check_overshoot_risk(
