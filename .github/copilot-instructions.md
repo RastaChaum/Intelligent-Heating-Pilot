@@ -64,7 +64,7 @@ All new features must be developed using TDD:
    - Actual actions being performed (e.g., setting temperature, triggering scheduler)
 3. **Device Context in Logs** - Infrastructure layer logs that reference IHP devices must include the device's user-friendly name (from Home Assistant's `friendly_name` attribute) rather than the entity ID.
 4. **Parameter/Return Value Logging** - Input parameters and return values should be logged at `DEBUG` level.
-5. **Initialization Logging** - Component initialization, configuration retrieval, and data fetching should be logged at `INFO` level.
+5. **Initialization Logging** - Component initialization, configuration retrieval, and data fetching should be logged at `DEBUG` level.
 
 ### Python Environment Standards
 
