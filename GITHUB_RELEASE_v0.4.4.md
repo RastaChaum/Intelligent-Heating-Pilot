@@ -1,14 +1,54 @@
-# Release v0.4.4 - Configuration Bug Fixes
+# Release v0.4.4-rc.1 - Configuration & Logging Improvements
 
-## 🐛 Important Bug Fixes
+## 🐛 Bug Fixes & Improvements
 
-This release fixes two critical issues that prevented IHP from starting or configuring properly.
+This pre-release fixes critical configuration issues and improves logging for better debugging.
 
 ---
 
 ## What's Fixed
 
-### 1. ❌ Integration Failed to Start (#67)
+### 1. ❌ Config Flow: Inconsistent Behavior Between Add and Modify (#Issue TBD)
+
+**Problem:** The "Add Device" and "Modify Device" forms had different user experiences:
+- Add form used plain text fields (no entity search/autocomplete)
+- Modify form used entity selectors with search functionality
+- Optional entities weren't saved during device creation
+- Optional entities couldn't be removed once added
+
+**What we fixed:** 
+- Add and Modify forms now use identical entity selectors
+- Entity search/autocomplete works in both forms
+- Optional entities (humidity sensors, cloud cover) are properly saved
+- Optional entities can be cleared and stay cleared
+
+**Impact:** 
+- ✅ Consistent user experience between Add and Modify
+- ✅ Entity search works everywhere
+- ✅ Optional entities properly saved and removable
+- ✅ Better validation with clear error messages
+
+---
+
+### 2. 📊 Logging Improvements (#59)
+
+**Problem:** Logs were cluttered with too many INFO messages, making it hard to track actual device actions.
+
+**What we improved:**
+- Method entry/exit now logged at DEBUG level
+- INFO level reserved for actual state changes and important events
+- Device logs now include friendly names instead of entity IDs
+- Better structured logging for troubleshooting
+
+**Impact:**
+- ✅ Cleaner INFO logs showing only important events
+- ✅ More readable device identification in logs
+- ✅ Easier debugging with DEBUG level details
+- ✅ Better log organization
+
+---
+
+### 3. ❌ Integration Failed to Start (Previous fix)
 
 **Problem:** IHP integration failed to load with a `TypeError` on startup for some users.
 
@@ -17,44 +57,32 @@ This release fixes two critical issues that prevented IHP from starting or confi
 TypeError: '>' not supported between instances of 'NoneType' and 'int'
 ```
 
-**What we fixed:** The integration now properly handles cases where cycle split duration is not configured. Your IHP will start successfully even if you haven't set all advanced cycle detection parameters.
+**What we fixed:** The integration now properly handles cases where cycle split duration is not configured.
 
 **Impact:** 
 - ✅ Integration loads correctly on startup
 - ✅ Works with default configuration without errors
-- ✅ Compatible with Home Assistant 2026.1.0 beta
 
 ---
 
-### 2. ❌ Optional Entities Couldn't Be Removed (#54)
+## 📦 How to Test This Pre-Release
 
-**Problem:** When you tried to remove optional sensors (indoor humidity, outdoor humidity, cloud cover) using the clear button (×) in the configuration dialog, they would reappear after saving.
+### Via Git (For Testing)
 
-**What we fixed:** You can now properly clear optional entity fields. When you click the × button to remove a sensor, it stays removed after saving and reopening the configuration.
-
-**Impact:**
-- ✅ Clear button now works correctly
-- ✅ Optional sensors stay cleared after saving
-- ✅ You have full control over which sensors to use
-
----
-
-## 📦 How to Update
-
-### Via HACS (Recommended)
-
-1. Open HACS → Integrations
-2. Find "Intelligent Heating Pilot"
-3. Click "Update" to v0.4.4
-4. Restart Home Assistant
+```bash
+cd /config/custom_components/intelligent_heating_pilot
+git fetch
+git checkout v0.4.4-rc.1
+# Restart Home Assistant
+```
 
 ### Manual Installation
 
 ```bash
 cd /config/custom_components/
-wget https://github.com/RastaChaum/Intelligent-Heating-Pilot/archive/refs/tags/v0.4.4.zip
-unzip v0.4.4.zip -d intelligent_heating_pilot
-rm v0.4.4.zip
+wget https://github.com/RastaChaum/Intelligent-Heating-Pilot/archive/refs/tags/v0.4.4-rc.1.zip
+unzip v0.4.4-rc.1.zip -d intelligent_heating_pilot
+rm v0.4.4-rc.1.zip
 # Restart Home Assistant
 ```
 
@@ -62,18 +90,19 @@ rm v0.4.4.zip
 
 ## ⬆️ Upgrading from v0.4.3
 
-**No action required** - this is a drop-in replacement. Your existing configuration will continue to work.
-
-**Optional:** After upgrading, you may want to review your optional sensor configuration and remove any sensors you're not using.
+**Recommended testing:**
+1. Test creating a new IHP device with optional entities
+2. Test modifying existing device configuration
+3. Test removing optional entities
+4. Check that logs are cleaner and more readable
 
 ---
 
 ## 🔗 Links
 
-- **Issues Fixed:** 
-  - [#67 - Integration fails to start](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/67)
-  - [#54 - Optional fields cannot be cleared](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/54)
-- **Pull Request:** [#65](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/65)
+- **Pull Requests:** 
+  - [#65 - Optional fields persistence](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/65)
+  - [#59 - Logging improvements](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/59)
 - **Full Changelog:** [CHANGELOG.md](CHANGELOG.md)
 - **Documentation:** [Configuration Guide](docs/CONFIGURATION.md)
 
@@ -87,14 +116,12 @@ rm v0.4.4.zip
 
 ---
 
-## 🙏 Thank You
+## ⚠️ Pre-Release Notice
 
-Thanks to all users who reported these issues and helped with testing!
-
-Special thanks to @Benjamin45590 for the detailed bug report.
+This is a **release candidate** for testing. Please report any issues before we publish the stable v0.4.4 release.
 
 ---
 
-**Full Version:** v0.4.4  
-**Release Date:** January 4, 2026  
-**Status:** Stable
+**Full Version:** v0.4.4-rc.1  
+**Release Date:** January 14, 2026  
+**Status:** Pre-release (Release Candidate)
