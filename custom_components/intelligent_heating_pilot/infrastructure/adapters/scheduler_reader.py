@@ -15,6 +15,7 @@ from homeassistant.util import dt as dt_util
 from ...domain.interfaces import ISchedulerReader
 from ...domain.value_objects import ScheduledTimeslot
 from ..vtherm_compat import get_vtherm_attribute
+from .utils import get_entity_name
 
 if TYPE_CHECKING:
     from homeassistant.core import State
@@ -72,15 +73,17 @@ class HASchedulerReader(ISchedulerReader):
             state = self._hass.states.get(entity_id)
             if not state:
                 # Use debug level if HA is still starting up, warning otherwise
+                device_name = get_entity_name(self._hass, entity_id)
                 if self._hass.is_running:
-                    _LOGGER.warning("Scheduler entity not found: %s", entity_id)
+                    _LOGGER.warning("[%s] Scheduler entity not found", device_name)
                 else:
-                    _LOGGER.debug("Scheduler entity not yet available (HA starting): %s", entity_id)
+                    _LOGGER.debug("[%s] Scheduler entity not yet available (HA starting)", device_name)
                 continue
             
             # Skip disabled schedulers (state is "off")
             if state.state == "off":
-                _LOGGER.debug("Scheduler %s is disabled (state: off), skipping", entity_id)
+                device_name = get_entity_name(self._hass, entity_id)
+                _LOGGER.debug("[%s] Scheduler is disabled (state: off), skipping", device_name)
                 continue
             
             # Extract next trigger time and target temperature
@@ -101,9 +104,10 @@ class HASchedulerReader(ISchedulerReader):
                 )
         
         if chosen_time and chosen_temp is not None and chosen_entity:
+            device_name = get_entity_name(self._hass, chosen_entity)
             _LOGGER.info(
-                "Next timeslot: %s at %s (%.1f°C)",
-                chosen_entity,
+                "[%s] Next timeslot at %s (%.1f°C)",
+                device_name,
                 chosen_time.strftime("%H:%M"),
                 chosen_temp
             )
