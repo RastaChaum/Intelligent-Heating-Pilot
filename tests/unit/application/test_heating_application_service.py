@@ -13,8 +13,6 @@ from custom_components.intelligent_heating_pilot.application import HeatingAppli
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ScheduledTimeslot,
     EnvironmentState,
-    HeatingCycle,
-    LHSCacheEntry,
 )
 
 # Constant for patch target to avoid duplication
@@ -560,7 +558,7 @@ class TestIHPEnabledDisabled:
         self, app_service, mock_adapters
     ):
         """Test that when IHP is disabled, scheduler commands are skipped but calculations continue."""
-        base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        base_time = make_aware(datetime(2025, 1, 15, 6, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
         timeslot = ScheduledTimeslot(
@@ -602,7 +600,7 @@ class TestIHPEnabledDisabled:
         self, app_service, mock_adapters
     ):
         """Test that when IHP is enabled, scheduler commands are triggered normally."""
-        base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        base_time = make_aware(datetime(2025, 1, 15, 6, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
         timeslot = ScheduledTimeslot(
