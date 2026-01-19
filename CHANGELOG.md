@@ -8,8 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **RC workflow suite** – New GitHub Actions for release candidates (prepare, increment, promote) plus CLI helper `scripts/rc-helper.sh` and documentation to manage RC cycles safely in production.
 
 ### Changed
+- **Release automation cleanup** – Legacy pre-release/release workflows removed in favor of the RC-based pipeline to avoid duplicate runs and align production releases with validated RCs.
 
 ### Fixed
 
