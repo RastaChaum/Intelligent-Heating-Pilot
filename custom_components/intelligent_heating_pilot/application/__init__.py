@@ -555,9 +555,17 @@ class HeatingApplicationService:
                 lhs=prediction.learned_heating_slope,
             )
         else:
-            _LOGGER.info(
-                "IHP disabled - clearing anticipation state and skipping scheduler command"
-            )
+            # IHP disabled - revert to standard scenario if preheating was active
+            if self._is_preheating_active:
+                _LOGGER.info(
+                    "IHP disabled while preheating active - reverting to current scheduled state"
+                )
+                # Call cancel_action to revert thermostat to current time's preset/temperature
+                await self._scheduler_commander.cancel_action(timeslot.scheduler_entity)
+            else:
+                _LOGGER.debug("IHP disabled - no active preheating to revert")
+            
+            # Clear anticipation state
             self._clear_anticipation_state()
         
         # Return data for sensors

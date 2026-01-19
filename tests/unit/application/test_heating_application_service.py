@@ -637,7 +637,7 @@ class TestIHPEnabledDisabled:
     async def test_ihp_disabled_mid_preheat_clears_state(
         self, app_service, mock_adapters
     ):
-        """Test that disabling IHP while preheating is active clears anticipation state."""
+        """Test that disabling IHP while preheating is active reverts to current scheduled state."""
         base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         
@@ -695,7 +695,8 @@ class TestIHPEnabledDisabled:
         assert result is not None
         assert "anticipated_start_time" in result
         
-        # Verify no scheduler commands were called (neither run nor cancel)
+        # Verify cancel_action was called to revert to current scheduled state
+        mock_adapters["scheduler_commander"].cancel_action.assert_called_once_with("schedule.heating")
+        # Verify run_action was NOT called
         mock_adapters["scheduler_commander"].run_action.assert_not_called()
-        mock_adapters["scheduler_commander"].cancel_action.assert_not_called()
 
