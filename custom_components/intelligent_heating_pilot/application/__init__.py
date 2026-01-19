@@ -454,8 +454,12 @@ class HeatingApplicationService:
         _LOGGER.debug("Exiting _extract_cycles_from_recorder")
         return heating_cycles
     
-    async def calculate_and_schedule_anticipation(self) -> dict | None:
+    async def calculate_and_schedule_anticipation(self, ihp_enabled: bool = True) -> dict | None:
         """Calculate anticipation and schedule heating start.
+        
+        Args:
+            ihp_enabled: Whether IHP preheating is enabled. When False, calculations
+                        continue but scheduler commands are skipped.
         
         Returns:
             Dict with anticipation data for sensors, or None if not applicable
@@ -541,14 +545,17 @@ class HeatingApplicationService:
             _LOGGER.debug("Tracking scheduler entity: %s", timeslot.scheduler_entity)
             self._active_scheduler_entity = timeslot.scheduler_entity
         
-        # Schedule if needed
-        await self._schedule_anticipation(
-            anticipated_start=prediction.anticipated_start_time,
-            target_time=timeslot.target_time,
-            target_temp=timeslot.target_temp,
-            scheduler_entity_id=timeslot.scheduler_entity,
-            lhs=prediction.learned_heating_slope,
-        )
+        # Schedule if needed (only if IHP is enabled)
+        if ihp_enabled:
+            await self._schedule_anticipation(
+                anticipated_start=prediction.anticipated_start_time,
+                target_time=timeslot.target_time,
+                target_temp=timeslot.target_temp,
+                scheduler_entity_id=timeslot.scheduler_entity,
+                lhs=prediction.learned_heating_slope,
+            )
+        else:
+            _LOGGER.debug("IHP disabled - skipping scheduler command, continuing calculations")
         
         # Return data for sensors
         return {

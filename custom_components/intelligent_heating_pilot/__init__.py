@@ -25,6 +25,7 @@ from .const import (
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_DATA_RETENTION_DAYS,
+    CONF_IHP_ENABLED,
     CONF_LHS_RETENTION_DAYS,
     CONF_MAX_CYCLE_DURATION_MINUTES,
     CONF_MIN_CYCLE_DURATION_MINUTES,
@@ -52,7 +53,7 @@ from .view import async_register_http_views
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[str] = [Platform.SENSOR]
+PLATFORMS: list[str] = [Platform.SENSOR, Platform.SWITCH]
 LHS_CACHE_TTL_HOURS = 24
 
 class IntelligentHeatingPilotCoordinator:
@@ -108,6 +109,13 @@ class IntelligentHeatingPilotCoordinator:
         self._max_cycle_duration_minutes = int(
             self._get_config_value(CONF_MAX_CYCLE_DURATION_MINUTES) 
             or DEFAULT_MAX_CYCLE_DURATION_MINUTES
+        )
+        
+        # IHP enabled state (default to True for backward compatibility)
+        self._ihp_enabled = bool(
+            self._get_config_value(CONF_IHP_ENABLED) 
+            if self._get_config_value(CONF_IHP_ENABLED) is not None 
+            else True
         )
         
         # Infrastructure adapters
@@ -219,8 +227,10 @@ class IntelligentHeatingPilotCoordinator:
         if not self._app_service:
             return
         
-        # Calculate and schedule via application service
-        anticipation_data = await self._app_service.calculate_and_schedule_anticipation()
+        # Calculate and schedule via application service (passing IHP enabled state)
+        anticipation_data = await self._app_service.calculate_and_schedule_anticipation(
+            ihp_enabled=self._ihp_enabled
+        )
         
         # Cache for sensors
         self._last_anticipation_data = anticipation_data
@@ -270,7 +280,33 @@ class IntelligentHeatingPilotCoordinator:
         """Get cached LHS for sensors."""
         return self._lhs_cache
     
-
+    def is_ihp_enabled(self) -> bool:
+        """Get IHP enabled state."""
+        return self._ihp_enabled
+    
+    async def set_ihp_enabled(self, enabled: bool) -> None:
+        """Set IHP enabled state.
+        
+        Args:
+            enabled: True to enable IHP preheating, False to disable
+        """
+        _LOGGER.info("Setting IHP enabled state to: %s", enabled)
+        self._ihp_enabled = enabled
+        
+        # Update config entry options to persist state
+        new_data = {**self.config.data}
+        new_options = dict(self.config.options) if self.config.options else {}
+        new_options[CONF_IHP_ENABLED] = enabled
+        
+        self.hass.config_entries.async_update_entry(
+            self.config,
+            options=new_options
+        )
+        
+        # Trigger a recalculation to apply the new state
+        await self.async_update()
+    
+    
     
     def get_vtherm_entity(self) -> str:
         """Get VTherm entity ID."""
