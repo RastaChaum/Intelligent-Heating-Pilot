@@ -555,7 +555,10 @@ class HeatingApplicationService:
                 lhs=prediction.learned_heating_slope,
             )
         else:
-            _LOGGER.debug("IHP disabled - skipping scheduler command, continuing calculations")
+            _LOGGER.info(
+                "IHP disabled - clearing anticipation state and skipping scheduler command"
+            )
+            self._clear_anticipation_state()
         
         # Return data for sensors
         return {
