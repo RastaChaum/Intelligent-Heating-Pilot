@@ -163,6 +163,34 @@ See [Configuration Guide](CONFIGURATION.md#heating-cycle-detection-parameters) f
 
 **A:** Yes! Create multiple IHP instances (one per thermostat). Each learns independently.
 
+### Q: Can I use IHP without a scheduler? (New in v0.5.0+)
+
+**A:** Yes! The scheduler is now **optional**. When configured without a scheduler:
+
+- ✅ IHP continues to **learn** your heating slope
+- ✅ All learning sensors work normally
+- ⚠️ Anticipation sensors show **"unknown"** (no scheduled events)
+- ⚠️ IHP does **not auto-trigger** heating
+
+**Use case**: Call the `calculate_anticipated_start_time` service in your own automations for dynamic scheduling (e.g., based on phone alarm, voice commands, calendar events).
+
+See [Configuration Guide - Using IHP Without a Scheduler](CONFIGURATION.md#using-ihp-without-a-scheduler) for examples.
+
+### Q: How do I use the calculation service?
+
+**A:** **New in v0.5.0+**: Call `intelligent_heating_pilot.calculate_anticipated_start_time` in automations:
+
+```yaml
+service: intelligent_heating_pilot.calculate_anticipated_start_time
+data:
+  entity_id: sensor.intelligent_heating_pilot_living_room_anticipated_start_time
+  target_time: "{{ states('sensor.phone_next_alarm') }}"
+  target_temp: 21.0
+response_variable: heating_calc
+```
+
+The service returns when to start heating, estimated duration, learned slope, and confidence level. Use these values to create smart, adaptive heating automations!
+
 ### Q: What happens if I don't have outdoor temperature sensor?
 
 **A:** That's fine! IHP works without it, just uses default assumptions. Adding the sensor improves accuracy.
