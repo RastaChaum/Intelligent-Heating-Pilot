@@ -52,7 +52,7 @@ DEFAULT_MIN_CYCLE_DURATION_MINUTES = 5  # Minimum 5 minutes
 DEFAULT_MAX_CYCLE_DURATION_MINUTES = 300  # Maximum 5 hours
 
 # Service names
-SERVICE_CALCULATE_START_TIME = "calculate_start_time"
+SERVICE_CALCULATE_ANTICIPATED_START_TIME = "calculate_anticipated_start_time"
 SERVICE_SCHEDULER_RUN_ACTION = "run_action"
 
 # Attributes

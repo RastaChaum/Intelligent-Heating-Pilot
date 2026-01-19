@@ -653,8 +653,19 @@ class HeatingApplicationService:
         """Calculate anticipation and schedule heating start.
 
         Returns:
-            Dict with anticipation data for sensors, or None if not applicable
+            Dict with anticipation data for sensors, or None if not applicable.
+            When scheduler is not configured or no timeslot is available,
+            returns a dict with clear_values=True to reset sensors to unknown state.
         """
+        # Get next timeslot first to check if any scheduler is configured
+        timeslot = await self._scheduler_reader.get_next_timeslot()
+
+        # If no timeslot and no active scheduler, it means no scheduler was ever configured
+        if not timeslot and not self._active_scheduler_entity:
+            _LOGGER.debug("No scheduler configured for this device")
+            # Return clear_values dict to reset sensors to unknown
+            return {"clear_values": True}
+
         # Check if the currently tracked scheduler has been disabled
         if self._active_scheduler_entity:
             if not await self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
@@ -663,24 +674,18 @@ class HeatingApplicationService:
                     self._active_scheduler_entity
                 )
                 await self._clear_anticipation_state()
-                # Return None to clear sensor values
-                return None
+                # Return clear_values dict to reset sensors to unknown
+                return {"clear_values": True}
 
-        # Get next timeslot
-        timeslot = await self._scheduler_reader.get_next_timeslot()
+        # No timeslot available (scheduler was configured but now disabled or no valid timeslot)
         if not timeslot:
             _LOGGER.debug("No scheduled timeslot found")
             # Clear all tracking state when no timeslot is available
-            # This handles both the case where the scheduler was just disabled
-            # and when _active_scheduler_entity is already None
-            if (
-                self._is_preheating_active
-                or self._active_scheduler_entity
-                or self._preheating_target_time
-            ):
+            if self._is_preheating_active or self._active_scheduler_entity or self._preheating_target_time:
                 _LOGGER.info("Clearing anticipation state (no timeslot available)")
                 await self._clear_anticipation_state()
-            return None
+            # Return clear_values dict to reset sensors to unknown
+            return {"clear_values": True}
 
         # Get current environment
         environment = await self._environment_reader.get_current_environment()

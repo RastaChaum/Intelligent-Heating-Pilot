@@ -74,9 +74,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             if not vtherm_val or (isinstance(vtherm_val, str) and vtherm_val.strip() == ""):
                 errors[CONF_VTHERM_ENTITY] = "required"
 
-            schedulers_val = processed.get(CONF_SCHEDULER_ENTITIES)
-            if not schedulers_val or len(schedulers_val) == 0:
-                errors[CONF_SCHEDULER_ENTITIES] = "required"
+            # Scheduler is now optional - no validation needed
 
             if not errors:
                 _LOGGER.info("Creating entry with data: %s", processed)
@@ -127,7 +125,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         domain="climate", integration="versatile_thermostat"
                     )
                 ),
-                vol.Required(CONF_SCHEDULER_ENTITIES): scheduler_selector,
+                vol.Optional(CONF_SCHEDULER_ENTITIES): scheduler_selector,
                 vol.Optional(CONF_HUMIDITY_IN_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
                 ),
@@ -261,9 +259,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             if not normalized_input.get(CONF_VTHERM_ENTITY):
                 errors[CONF_VTHERM_ENTITY] = "required"
 
-            schedulers_val = normalized_input.get(CONF_SCHEDULER_ENTITIES)
-            if not schedulers_val:
-                errors[CONF_SCHEDULER_ENTITIES] = "required"
+            # Scheduler is now optional - no validation needed
 
             if not errors:
                 # Merge with existing options
@@ -328,7 +324,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             selector.EntitySelectorConfig(domain="climate", integration="versatile_thermostat")
         )
 
-        # Required: Schedulers (multiple, only set default if non-empty list)
+        # Optional: Schedulers (multiple, only set default if non-empty list)
         scheduler_selector = (
             selector.SelectSelector(
                 selector.SelectSelectorConfig(
@@ -343,9 +339,9 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             )
         )
         schedulers_field = (
-            vol.Required(CONF_SCHEDULER_ENTITIES, default=default_schedulers_list)
+            vol.Optional(CONF_SCHEDULER_ENTITIES, default=default_schedulers_list)
             if default_schedulers_list and len(default_schedulers_list) > 0
-            else vol.Required(CONF_SCHEDULER_ENTITIES)
+            else vol.Optional(CONF_SCHEDULER_ENTITIES)
         )
         schema_dict[schedulers_field] = scheduler_selector
 
