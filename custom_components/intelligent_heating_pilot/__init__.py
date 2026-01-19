@@ -17,6 +17,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import HomeAssistant, callback, ServiceCall
 from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
@@ -467,7 +468,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for entry_id, coord in hass.data[DOMAIN].items():
             if isinstance(coord, IntelligentHeatingPilotCoordinator):
                 # Check if this coordinator owns the entity by checking entity registry
-                entity_reg = hass.helpers.entity_registry.async_get(hass)
+                entity_reg = er.async_get(hass)
                 entity_entry = entity_reg.async_get(entity_id)
                 if entity_entry and entity_entry.config_entry_id == entry_id:
                     entry_id_found = entry_id
@@ -505,11 +506,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         target_temp = float(target_temp)
         
-        # Get learned heating slope (contextual if possible)
-        if device_coordinator._app_service:
-            lhs = await device_coordinator._app_service._get_contextual_lhs(target_time)
-        else:
-            lhs = await device_coordinator._model_storage.get_learned_heating_slope()
+        # Get learned heating slope (contextual)
+        if not device_coordinator._app_service:
+            _LOGGER.error("Application service not available for device")
+            return
+        
+        lhs = await device_coordinator._app_service._get_contextual_lhs(target_time)
         
         # Calculate anticipated start time using prediction service
         from .domain.services import PredictionService

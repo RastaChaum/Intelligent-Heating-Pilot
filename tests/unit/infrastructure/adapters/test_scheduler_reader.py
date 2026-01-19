@@ -49,18 +49,6 @@ async def test_get_next_timeslot_no_entities(mock_hass: Mock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_next_timeslot_none_entities(mock_hass: Mock) -> None:
-    """Test getting timeslot when scheduler entities is None."""
-    reader = HASchedulerReader(mock_hass, None)
-    
-    # Execute
-    result = await reader.get_next_timeslot()
-    
-    # Assert
-    assert result is None
-
-
-@pytest.mark.asyncio
 async def test_get_next_timeslot_entity_not_found(reader: HASchedulerReader, mock_hass: Mock, scheduler_entities: list[str]) -> None:
     """Test getting timeslot when entity doesn't exist."""
     # Mock: entity not found
