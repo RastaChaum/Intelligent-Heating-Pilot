@@ -17,7 +17,6 @@ class DeviceConfig:
         humidity_out_entity_id: Entity ID for outdoor humidity (optional)
         cloud_cover_entity_id: Entity ID for cloud coverage (optional)
         lhs_retention_days: Number of days to retain slope data
-        ihp_enabled: Whether IHP preheating is enabled (True) or disabled (False)
     """
     device_id: str
     vtherm_entity_id: str
@@ -26,7 +25,6 @@ class DeviceConfig:
     humidity_out_entity_id: str | None = None
     cloud_cover_entity_id: str | None = None
     lhs_retention_days: int = 30
-    ihp_enabled: bool = True
 
 
 class IDeviceConfigReader(ABC):
