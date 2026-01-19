@@ -570,6 +570,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         SERVICE_CALCULATE_ANTICIPATED_START_TIME,
         handle_calculate_anticipated_start_time,
         schema=calculate_anticipated_start_time_schema,
+        supports_response=True,
     )
     
     # Forward setup to platforms
