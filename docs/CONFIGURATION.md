@@ -95,30 +95,29 @@ Without a scheduler, you can use the **`calculate_anticipated_start_time`** serv
 **Example: Wake-up heating based on phone alarm**
 
 ```yaml
-automation:
-  - alias: "Dynamic Wake-up Heating"
-    trigger:
-      - platform: state
-        entity_id: sensor.phone_next_alarm
-    action:
-      # Calculate when to start heating
-      - service: intelligent_heating_pilot.calculate_anticipated_start_time
-        data:
-          entity_id: sensor.intelligent_heating_pilot_living_room_anticipated_start_time
-          target_time: "{{ states('sensor.phone_next_alarm') }}"
-          target_temp: 21.0
-        response_variable: heating_calc
-      
-      # Wait until the calculated start time
-      - delay:
-          seconds: "{{ (as_datetime(heating_calc.anticipated_start_time) - now()).total_seconds() }}"
-      
-      # Start heating
-      - service: climate.set_temperature
-        target:
-          entity_id: climate.living_room
-        data:
-          temperature: 21.0
+alias: "Dynamic Wake-up Heating"
+trigger:
+    - platform: state
+    entity_id: sensor.phone_next_alarm
+action:
+    # Calculate when to start heating
+    - service: intelligent_heating_pilot.calculate_anticipated_start_time
+    data:
+        entity_id: sensor.intelligent_heating_pilot_living_room_anticipated_start_time
+        target_time: "{{ states('sensor.phone_next_alarm') }}"
+        target_temp: 21.0
+    response_variable: heating_calc
+    
+    # Wait until the calculated start time
+    - delay:
+        seconds: "{{ (as_datetime(heating_calc.anticipated_start_time) - now()).total_seconds() }}"
+    
+    # Start heating
+    - service: climate.set_temperature
+    target:
+        entity_id: climate.living_room
+    data:
+        temperature: 21.0
 ```
 
 **Service Parameters:**
