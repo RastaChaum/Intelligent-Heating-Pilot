@@ -59,13 +59,3 @@ class IDeviceConfigReader(ABC):
             List of configured device IDs
         """
         pass
-
-    @abstractmethod
-    async def set_ihp_enabled(self, device_id: str, enabled: bool) -> None:
-        """Set IHP enabled state for a device.
-        
-        Args:
-            device_id: The device identifier
-            enabled: True to enable IHP preheating, False to disable
-        """
-        pass
