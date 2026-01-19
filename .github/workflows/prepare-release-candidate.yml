@@ -1,0 +1,163 @@
+name: Prepare Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 0.5.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare-rc:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: integration
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate version format
+        id: validate
+        run: |
+          if [[ ! "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Version invalide. Format attendu: X.Y.Z"
+            exit 1
+          fi
+          echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          echo "rc_tag=v${{ inputs.version }}-rc1" >> $GITHUB_OUTPUT
+
+      - name: Check if RC already exists
+        run: |
+          if git rev-parse "v${{ inputs.version }}-rc1" >/dev/null 2>&1; then
+            echo "⚠️ Un RC existe déjà pour cette version"
+            echo "Utilisez le workflow 'Increment RC Version' pour créer rc2, rc3, etc."
+            exit 1
+          fi
+
+      - name: Extract unreleased changes from CHANGELOG
+        id: changelog
+        run: |
+          # Extraction de la section Unreleased
+          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/,/## \[/' CHANGELOG.md | sed '1d;$d')
+          
+          if [ -z "$CHANGELOG_CONTENT" ]; then
+            echo "❌ Aucun changement dans la section Unreleased du CHANGELOG.md"
+            echo "Veuillez d'abord documenter vos changements dans CHANGELOG.md"
+            exit 1
+          fi
+          
+          # Sauvegarde dans un fichier
+          echo "$CHANGELOG_CONTENT" > /tmp/release-notes.md
+
+      - name: Create GITHUB_RELEASE file
+        run: |
+          cat > "GITHUB_RELEASE_v${{ inputs.version }}.md" << 'EOF'
+# Release v${{ inputs.version }} - Release Candidate
+
+## 🧪 Release Candidate
+Cette version est une **release candidate** destinée aux tests en production et aux beta-testeurs.
+
+EOF
+          
+          # Ajouter le contenu du changelog
+          cat /tmp/release-notes.md >> "GITHUB_RELEASE_v${{ inputs.version }}.md"
+          
+          cat >> "GITHUB_RELEASE_v${{ inputs.version }}.md" << 'EOF'
+
+---
+
+## ⚠️ Important
+Cette version est en phase de test. Veuillez remonter tout problème via les Issues GitHub.
+EOF
+
+      - name: Commit release notes
+        run: |
+          git add "GITHUB_RELEASE_v${{ inputs.version }}.md"
+          git commit -m "chore(release): prepare RC for v${{ inputs.version }}
+
+- Create release notes file
+- Ready for RC testing phase"
+          git push origin integration
+
+      - name: Create RC tag
+        run: |
+          git tag -a "${{ steps.validate.outputs.rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc1
+
+Release candidate pour tests en production.
+
+Changements prévus :
+$(cat /tmp/release-notes.md)"
+          
+          git push origin "${{ steps.validate.outputs.rc_tag }}"
+
+      - name: Create GitHub Pre-Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.validate.outputs.rc_tag }}" \
+            --title "🧪 v${{ inputs.version }}-rc1 - Release Candidate" \
+            --notes-file "GITHUB_RELEASE_v${{ inputs.version }}.md" \
+            --prerelease \
+            --target integration
+
+      - name: Create tracking issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_BODY="## 🧪 Release Candidate Testing - v${{ inputs.version }}
+
+Cette issue suit les tests de la release candidate \`v${{ inputs.version }}-rc1\`.
+
+### 📋 Checklist de test
+- [ ] Tests en environnement de production
+- [ ] Validation des nouvelles fonctionnalités
+- [ ] Test de régression (non-regression)
+- [ ] Vérification de la documentation
+- [ ] Tests par beta-testeurs
+
+### 🔗 Liens
+- [Release Notes](../blob/integration/GITHUB_RELEASE_v${{ inputs.version }}.md)
+- [Pre-Release GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.validate.outputs.rc_tag }})
+
+### 📝 Instructions
+1. Testez cette version en production
+2. Signalez tout problème dans cette issue
+3. Si corrections nécessaires → nouveau RC (rc2, rc3...)
+4. Si tout OK → merge vers main pour release finale
+
+**Tag actuel:** \`${{ steps.validate.outputs.rc_tag }}\`"
+
+          ISSUE_NUMBER=$(gh issue create \
+            --title "🧪 RC Testing: v${{ inputs.version }}" \
+            --body "$ISSUE_BODY" \
+            --label "release-candidate,testing" \
+            --assignee "@me")
+          
+          echo "Issue de suivi créée: $ISSUE_NUMBER"
+
+      - name: Summary
+        run: |
+          echo "## ✅ Release Candidate créée avec succès" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ steps.validate.outputs.rc_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branche:** \`integration\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Prochaines étapes" >> $GITHUB_STEP_SUMMARY
+          echo "1. Testez la RC en production" >> $GITHUB_STEP_SUMMARY
+          echo "2. Si corrections nécessaires:" >> $GITHUB_STEP_SUMMARY
+          echo "   - Faire les corrections sur \`integration\`" >> $GITHUB_STEP_SUMMARY
+          echo "   - Utiliser le workflow 'Increment RC Version'" >> $GITHUB_STEP_SUMMARY
+          echo "3. Si tout OK:" >> $GITHUB_STEP_SUMMARY
+          echo "   - Créer une PR \`integration\` → \`main\`" >> $GITHUB_STEP_SUMMARY
+          echo "   - Le merge déclenchera la release finale" >> $GITHUB_STEP_SUMMARY
