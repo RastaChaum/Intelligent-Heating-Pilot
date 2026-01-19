@@ -112,11 +112,8 @@ class IntelligentHeatingPilotCoordinator:
         )
         
         # IHP enabled state (default to True for backward compatibility)
-        self._ihp_enabled = bool(
-            self._get_config_value(CONF_IHP_ENABLED) 
-            if self._get_config_value(CONF_IHP_ENABLED) is not None 
-            else True
-        )
+        ihp_enabled_value = self._get_config_value(CONF_IHP_ENABLED)
+        self._ihp_enabled = bool(ihp_enabled_value if ihp_enabled_value is not None else True)
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
@@ -294,7 +291,6 @@ class IntelligentHeatingPilotCoordinator:
         self._ihp_enabled = enabled
         
         # Update config entry options to persist state
-        new_data = {**self.config.data}
         new_options = dict(self.config.options) if self.config.options else {}
         new_options[CONF_IHP_ENABLED] = enabled
         
@@ -305,8 +301,6 @@ class IntelligentHeatingPilotCoordinator:
         
         # Trigger a recalculation to apply the new state
         await self.async_update()
-    
-    
     
     def get_vtherm_entity(self) -> str:
         """Get VTherm entity ID."""

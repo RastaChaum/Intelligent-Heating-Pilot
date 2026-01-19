@@ -48,7 +48,6 @@ class IntelligentHeatingPilotEnableSwitch(SwitchEntity):
             "manufacturer": "Intelligent Heating Pilot",
             "model": "Intelligent Preheating with ML",
         }
-        self._attr_is_on = coordinator.is_ihp_enabled()
 
     @property
     def is_on(self) -> bool:
