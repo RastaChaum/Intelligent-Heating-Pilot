@@ -113,7 +113,7 @@ class IntelligentHeatingPilotCoordinator:
         
         # IHP enabled state (default to True for backward compatibility)
         ihp_enabled_value = self._get_config_value(CONF_IHP_ENABLED)
-        self._ihp_enabled = ihp_enabled_value is not False
+        self._ihp_enabled = True if ihp_enabled_value is None else bool(ihp_enabled_value)
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
