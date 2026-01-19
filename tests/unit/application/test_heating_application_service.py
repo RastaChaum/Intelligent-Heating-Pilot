@@ -632,4 +632,70 @@ class TestIHPEnabledDisabled:
         
         # Verify scheduler commands WERE called
         mock_adapters["scheduler_commander"].run_action.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_ihp_disabled_mid_preheat_clears_state(
+        self, app_service, mock_adapters
+    ):
+        """Test that disabling IHP while preheating is active clears anticipation state."""
+        base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
+        
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=21.0,
+            timeslot_id="morning",
+            scheduler_entity="schedule.heating",
+        )
+        
+        environment = EnvironmentState(
+            indoor_temperature=19.0,
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+            timestamp=base_time,
+        )
+        
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 0.5
+        
+        # Step 1: Start preheating with IHP enabled
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
+            await app_service.calculate_and_schedule_anticipation(ihp_enabled=True)
+        
+        # Verify preheating started
+        assert app_service._is_preheating_active is True
+        assert app_service._preheating_target_time == target_time
+        mock_adapters["scheduler_commander"].run_action.assert_called_once()
+        
+        # Step 2: Time advances, user disables IHP mid-preheat
+        later_time = make_aware(datetime(2025, 1, 15, 5, 0, 0))
+        environment_later = EnvironmentState(
+            indoor_temperature=19.5,
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+            timestamp=later_time,
+        )
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment_later
+        mock_adapters["scheduler_commander"].run_action.reset_mock()
+        mock_adapters["scheduler_commander"].cancel_action.reset_mock()
+        
+        # Disable IHP while preheating
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=later_time):
+            result = await app_service.calculate_and_schedule_anticipation(ihp_enabled=False)
+        
+        # Verify anticipation state was cleared
+        assert app_service._is_preheating_active is False
+        assert app_service._preheating_target_time is None
+        assert app_service._active_scheduler_entity is None
+        
+        # Verify calculations still performed
+        assert result is not None
+        assert "anticipated_start_time" in result
+        
+        # Verify no scheduler commands were called (neither run nor cancel)
+        mock_adapters["scheduler_commander"].run_action.assert_not_called()
+        mock_adapters["scheduler_commander"].cancel_action.assert_not_called()
 
