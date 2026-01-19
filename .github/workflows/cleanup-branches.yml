@@ -1,0 +1,33 @@
+name: Cleanup Merged Branches
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete merged branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          
+          # Ne pas supprimer integration ou main
+          if [[ "$BRANCH" == "integration" ]] || [[ "$BRANCH" == "main" ]]; then
+            echo "⏭️  Branche protégée, pas de suppression"
+            exit 0
+          fi
+          
+          # Supprimer la branche
+          gh api \
+            --method DELETE \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/git/refs/heads/$BRANCH" \
+          && echo "✅ Branche $BRANCH supprimée" \
+          || echo "⚠️  Impossible de supprimer la branche $BRANCH"
