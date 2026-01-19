@@ -547,3 +547,88 @@ class TestAdditionalScenarios:
 
         # Still only one trigger
         assert mock_adapters["scheduler_commander"].run_action.call_count == 1
+
+
+class TestIHPEnabledDisabled:
+    """Test suite for IHP enable/disable functionality."""
+    
+    @pytest.mark.asyncio
+    async def test_ihp_disabled_skips_scheduler_commands(
+        self, app_service, mock_adapters
+    ):
+        """Test that when IHP is disabled, scheduler commands are skipped but calculations continue."""
+        base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
+        
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=21.0,
+            timeslot_id="morning",
+            scheduler_entity="schedule.heating",
+        )
+        
+        environment = EnvironmentState(
+            indoor_temperature=19.0,
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+            timestamp=base_time,
+        )
+        
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        
+        # Calculate with IHP disabled
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
+            result = await app_service.calculate_and_schedule_anticipation(ihp_enabled=False)
+        
+        # Verify calculations were performed and data returned
+        assert result is not None
+        assert "anticipated_start_time" in result
+        assert "next_schedule_time" in result
+        assert "learned_heating_slope" in result
+        assert result["learned_heating_slope"] == 2.0
+        
+        # Verify scheduler commands were NOT called
+        mock_adapters["scheduler_commander"].run_action.assert_not_called()
+        mock_adapters["scheduler_commander"].cancel_action.assert_not_called()
+    
+    @pytest.mark.asyncio
+    async def test_ihp_enabled_triggers_scheduler_commands(
+        self, app_service, mock_adapters
+    ):
+        """Test that when IHP is enabled, scheduler commands are triggered normally."""
+        base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
+        
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=21.0,
+            timeslot_id="morning",
+            scheduler_entity="schedule.heating",
+        )
+        
+        environment = EnvironmentState(
+            indoor_temperature=19.0,
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+            timestamp=base_time,
+        )
+        
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        
+        # Calculate with IHP enabled (default behavior)
+        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
+            result = await app_service.calculate_and_schedule_anticipation(ihp_enabled=True)
+        
+        # Verify calculations were performed
+        assert result is not None
+        assert "anticipated_start_time" in result
+        
+        # Verify scheduler commands WERE called
+        mock_adapters["scheduler_commander"].run_action.assert_called_once()
+
