@@ -55,6 +55,38 @@ calculate_start_time:
           step: 0.1
           unit_of_measurement: "°C/h"
 
+calculate_anticipated_start_time:
+  name: Calculate Anticipated Start Time from IHP Device
+  description: Calculate the optimal start time for a configured IHP device to reach target temperature at the specified time. Uses the device's learned heating slope and current environmental data.
+  fields:
+    entity_id:
+      name: IHP Entity ID
+      description: The entity ID of the IHP device (e.g., sensor.intelligent_heating_pilot_anticipated_start_time)
+      required: true
+      example: "sensor.intelligent_heating_pilot_anticipated_start_time"
+      selector:
+        entity:
+          domain: sensor
+          integration: intelligent_heating_pilot
+    target_time:
+      name: Target Time
+      description: Time when the target temperature should be reached
+      required: true
+      example: "2024-01-15 07:00:00"
+      selector:
+        datetime:
+    target_temp:
+      name: Target Temperature
+      description: Desired target temperature in Celsius (optional, uses VTherm target if not specified)
+      required: false
+      example: 21.0
+      selector:
+        number:
+          min: 0
+          max: 40
+          step: 0.1
+          unit_of_measurement: "°C"
+
 reset_learning:
   name: Reset Learning History
   description: Clear all learned heating slopes and reset to default values

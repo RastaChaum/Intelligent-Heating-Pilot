@@ -458,7 +458,9 @@ class HeatingApplicationService:
         """Calculate anticipation and schedule heating start.
         
         Returns:
-            Dict with anticipation data for sensors, or None if not applicable
+            Dict with anticipation data for sensors, or None if not applicable.
+            When scheduler is not configured or no timeslot is available,
+            returns a dict with clear_values=True to reset sensors to unknown state.
         """
         # Check if the currently tracked scheduler has been disabled
         if self._active_scheduler_entity:
@@ -468,8 +470,8 @@ class HeatingApplicationService:
                     self._active_scheduler_entity
                 )
                 self._clear_anticipation_state()
-                # Return None to clear sensor values
-                return None
+                # Return clear_values dict to reset sensors to unknown
+                return {"clear_values": True}
         
         # Get next timeslot
         timeslot = await self._scheduler_reader.get_next_timeslot()
@@ -481,7 +483,8 @@ class HeatingApplicationService:
             if self._is_preheating_active or self._active_scheduler_entity or self._preheating_target_time:
                 _LOGGER.info("Clearing anticipation state (no timeslot available)")
                 self._clear_anticipation_state()
-            return None
+            # Return clear_values dict to reset sensors to unknown
+            return {"clear_values": True}
         
         # Get current environment
         environment = await self._environment_reader.get_current_environment()
