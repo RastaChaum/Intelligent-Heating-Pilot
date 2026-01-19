@@ -13,11 +13,13 @@
 
 A configuration dialog will appear. Here's what you need:
 
-| Field | What It Is | How to Find |
-|-------|-----------|------------|
-| **Name** | A friendly name for this IHP instance | Any name you want (e.g., "Living Room") |
-| **VTherm Entity** | Your Versatile Thermostat climate entity | Go to **Devices** → Find your thermostat → Copy entity name (e.g., `climate.living_room`) |
-| **Scheduler Entity** | HACS Scheduler switch(es) that control the VTherm | Go to **Devices** → Find your scheduler → Copy entity name (e.g., `switch.schedule_heating`) |
+| Field | Required? | What It Is | How to Find |
+|-------|-----------|-----------|------------|
+| **Name** | ✅ Yes | A friendly name for this IHP instance | Any name you want (e.g., "Living Room") |
+| **VTherm Entity** | ✅ Yes | Your Versatile Thermostat climate entity | Go to **Devices** → Find your thermostat → Copy entity name (e.g., `climate.living_room`) |
+| **Scheduler Entity** | ⚠️ Optional | HACS Scheduler switch(es) that control the VTherm | Go to **Devices** → Find your scheduler → Copy entity name (e.g., `switch.schedule_heating`) |
+
+> **New in v0.5.0+**: The Scheduler Entity is now **optional**. See [Using IHP Without a Scheduler](#using-ihp-without-a-scheduler) below.
 
 ### Step 3: (Optional) Add Environmental Sensors
 
@@ -65,6 +67,82 @@ Once configured, IHP operates automatically:
 4. **Triggers** heating at the optimal anticipation time
 
 **You don't need to do anything—IHP works in the background!**
+
+---
+
+## Using IHP Without a Scheduler
+
+**New in v0.5.0+**: You can now use IHP without configuring a scheduler entity. This is useful for:
+
+- 🤖 **Dynamic scheduling** based on external triggers (e.g., smartphone alarm, calendar events)
+- 🔧 **Custom automations** that calculate start times programmatically
+- 📱 **Voice-controlled** heating schedules
+- 🧪 **Testing** IHP's prediction capabilities
+
+### What Happens Without a Scheduler?
+
+When no scheduler is configured:
+
+- ✅ IHP continues to **learn** from your heating cycles
+- ✅ The **Learned Heating Slope** sensor updates normally
+- ⚠️ Anticipation sensors show **"unknown"** (no scheduled events to anticipate)
+- ⚠️ IHP does **not automatically trigger** heating (you control this via automations)
+
+### Using the Calculation Service
+
+Without a scheduler, you can use the **`calculate_anticipated_start_time`** service in your own automations:
+
+**Example: Wake-up heating based on phone alarm**
+
+```yaml
+alias: "Dynamic Wake-up Heating"
+trigger:
+    - platform: state
+    entity_id: sensor.phone_next_alarm
+action:
+    # Calculate when to start heating
+    - service: intelligent_heating_pilot.calculate_anticipated_start_time
+    data:
+        entity_id: sensor.intelligent_heating_pilot_living_room_anticipated_start_time
+        target_time: "{{ states('sensor.phone_next_alarm') }}"
+        target_temp: 21.0
+    response_variable: heating_calc
+    
+    # Wait until the calculated start time
+    - delay:
+        seconds: "{{ (as_datetime(heating_calc.anticipated_start_time) - now()).total_seconds() }}"
+    
+    # Start heating
+    - service: climate.set_temperature
+    target:
+        entity_id: climate.living_room
+    data:
+        temperature: 21.0
+```
+
+**Service Parameters:**
+
+| Parameter | Required? | Description | Example |
+|-----------|-----------|-------------|---------|
+| `entity_id` | ✅ Yes | Any IHP sensor entity (to identify the device) | `sensor.intelligent_heating_pilot_living_room_anticipated_start_time` |
+| `target_time` | ✅ Yes | When you want target temperature reached | `"2024-01-15 07:00:00"` or template |
+| `target_temp` | ⚠️ Optional | Desired temperature (defaults to VTherm's current target) | `21.0` |
+
+**Service Response:**
+
+The service returns calculation results visible in Developer Tools:
+
+```yaml
+anticipated_start_time: "2024-01-15T06:27:00+01:00"
+target_time: "2024-01-15T07:00:00+01:00"
+target_temp: 21.0
+current_temp: 18.5
+estimated_duration_minutes: 33.0
+learned_heating_slope: 2.1
+confidence_level: 0.85
+```
+
+**Use these values in your automations** to create intelligent, adaptive heating schedules!
 
 ---
 
