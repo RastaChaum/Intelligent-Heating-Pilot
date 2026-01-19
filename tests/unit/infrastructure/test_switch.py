@@ -49,7 +49,7 @@ class TestIntelligentHeatingPilotEnableSwitch:
 
     def test_switch_unique_id(self, switch_entity):
         """Test that switch has correct unique ID."""
-        assert switch_entity.unique_id == "test_entry_123_ihp_enabled"
+        assert switch_entity.unique_id == "test_entry_123_preheating_enabled"
 
     def test_switch_device_info(self, switch_entity):
         """Test that switch has correct device info."""

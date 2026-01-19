@@ -49,7 +49,7 @@ class IntelligentHeatingPilotEnableSwitch(SwitchEntity):
         """Initialize the switch."""
         self.coordinator = coordinator
         self._config_entry = config_entry
-        self._attr_unique_id = f"{config_entry.entry_id}_ihp_enabled"
+        self._attr_unique_id = f"{config_entry.entry_id}_preheating_enabled"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, config_entry.entry_id)},
             "name": name,
