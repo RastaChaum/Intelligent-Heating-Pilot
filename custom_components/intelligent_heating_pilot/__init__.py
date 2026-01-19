@@ -291,8 +291,8 @@ class IntelligentHeatingPilotCoordinator:
         self._ihp_enabled = enabled
         
         # Update config entry options to persist state
-        # Note: async_update_entry is synchronous despite its name (HA convention)
-        # It schedules the update to occur, so no await needed
+        # Note: async_update_entry schedules an async update but returns None (fire-and-forget)
+        # so it doesn't need to be awaited here
         new_options = dict(self.config.options) if self.config.options else {}
         new_options[CONF_IHP_ENABLED] = enabled
         
