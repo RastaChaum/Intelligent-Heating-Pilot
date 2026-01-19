@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -10,6 +10,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_NAME, DOMAIN
+
+if TYPE_CHECKING:
+    from . import IntelligentHeatingPilotCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,7 +23,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Intelligent Heating Pilot switch."""
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator: IntelligentHeatingPilotCoordinator = hass.data[DOMAIN][config_entry.entry_id]
     name = config_entry.data.get(CONF_NAME, "Intelligent Heating Pilot")
 
     switches = [
@@ -37,7 +40,12 @@ class IntelligentHeatingPilotEnableSwitch(SwitchEntity):
     _attr_name = "IHP Preheating"
     _attr_icon = "mdi:home-thermometer"
 
-    def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
+    def __init__(
+        self, 
+        coordinator: IntelligentHeatingPilotCoordinator, 
+        config_entry: ConfigEntry, 
+        name: str
+    ) -> None:
         """Initialize the switch."""
         self.coordinator = coordinator
         self._config_entry = config_entry

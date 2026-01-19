@@ -17,6 +17,9 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
     LHSCacheEntry,
 )
 
+# Constant for patch target to avoid duplication
+DT_UTIL_NOW_PATCH_TARGET = "custom_components.intelligent_heating_pilot.application.dt_util.now"
+
 
 def make_aware(dt: datetime) -> datetime:
     """Make a datetime timezone-aware (UTC)."""
@@ -116,7 +119,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         
         # Step 1: Initial calculation triggers pre-heating at 04:00
         # Mock dt_util.now() to return base_time
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
             # LHS=2°C/h → anticipated start = 04:00 (in past, so trigger now)
             await app_service.calculate_and_schedule_anticipation()
         
@@ -141,7 +144,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         
         # Step 3: Recalculate - anticipated start now 05:00 (later than 04:45)
         # With better LHS, needs less time → should STOP heating
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=later_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=later_time):
             await app_service.calculate_and_schedule_anticipation()
         
         # Verify system reverted to current schedule
@@ -180,7 +183,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         mock_adapters["model_storage"].get_learned_heating_slope.return_value = 0.5
         
         # Initial calculation - low LHS means early start
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
             await app_service.calculate_and_schedule_anticipation()
         
         assert app_service._is_preheating_active is True
@@ -200,7 +203,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         mock_adapters["scheduler_commander"].run_action.reset_mock()
         
         # Recalculate - should continue heating
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=later_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=later_time):
             await app_service.calculate_and_schedule_anticipation()
         
         # Should NOT revert (cancel not called) and not re-trigger run_action
@@ -236,7 +239,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         mock_adapters["model_storage"].get_learned_heating_slope.return_value = 0.5
         
         # Start pre-heating
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
             await app_service.calculate_and_schedule_anticipation()
         assert app_service._is_preheating_active is True
         
@@ -252,7 +255,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         mock_adapters["environment_reader"].get_current_environment.return_value = environment_at_target
         
         # Recalculate at target time
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=target_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=target_time):
             await app_service.calculate_and_schedule_anticipation()
         
         # Pre-heating should be marked complete
@@ -299,7 +302,7 @@ class TestOvershootPrevention:
         
         # Check overshoot - will detect overshoot risk
         # (current 20°C + 3°C/h * 0.5h = 21.5°C > threshold 21.5°C)
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=current_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=current_time):
             await app_service.check_overshoot_risk(scheduler_entity_id=timeslot.scheduler_entity)
         
         # Should use scheduler cancel_action, NOT climate turn_off
@@ -339,7 +342,7 @@ class TestOvershootPrevention:
         app_service._is_preheating_active = False
         app_service._preheating_target_time = None
 
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=current_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=current_time):
             await app_service.check_overshoot_risk(scheduler_entity_id=timeslot.scheduler_entity)
 
         mock_adapters["scheduler_commander"].cancel_action.assert_not_called()
@@ -380,7 +383,7 @@ class TestNoDirectVThermControl:
         mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
         
         # Calculate and schedule - should trigger pre-heating
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
             await app_service.calculate_and_schedule_anticipation()
         
         # Verify scheduler.run_action was called
@@ -401,7 +404,7 @@ class TestAdditionalScenarios:
         now = make_aware(datetime(2025, 1, 15, 4, 0, 0))
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = None
 
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=now):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=now):
             await app_service.calculate_and_schedule_anticipation()
 
         mock_adapters["scheduler_commander"].run_action.assert_not_called()
@@ -432,7 +435,7 @@ class TestAdditionalScenarios:
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
 
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=now):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=now):
             await app_service.calculate_and_schedule_anticipation()
 
         mock_adapters["scheduler_commander"].run_action.assert_not_called()
@@ -463,7 +466,7 @@ class TestAdditionalScenarios:
         mock_adapters["environment_reader"].is_heating_active.return_value = True
         mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
        
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=now):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=now):
             app_service._is_preheating_active = True
             await app_service.calculate_and_schedule_anticipation()
 
@@ -496,7 +499,7 @@ class TestAdditionalScenarios:
         app_service._is_preheating_active = True
         app_service._preheating_target_time = target_time
 
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=past_now):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=past_now):
             await app_service.calculate_and_schedule_anticipation()
 
         assert app_service._is_preheating_active is False
@@ -526,7 +529,7 @@ class TestAdditionalScenarios:
         mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
 
         # Initial trigger
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
             await app_service.calculate_and_schedule_anticipation()
         assert app_service._is_preheating_active is True
         assert mock_adapters["scheduler_commander"].run_action.call_count == 1
@@ -542,7 +545,7 @@ class TestAdditionalScenarios:
         )
         mock_adapters["environment_reader"].get_current_environment.return_value = environment_soon
 
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=soon):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=soon):
             await app_service.calculate_and_schedule_anticipation()
 
         # Still only one trigger
@@ -580,7 +583,7 @@ class TestIHPEnabledDisabled:
         mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
         
         # Calculate with IHP disabled
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
             result = await app_service.calculate_and_schedule_anticipation(ihp_enabled=False)
         
         # Verify calculations were performed and data returned
@@ -622,7 +625,7 @@ class TestIHPEnabledDisabled:
         mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
         
         # Calculate with IHP enabled (default behavior)
-        with patch("custom_components.intelligent_heating_pilot.application.dt_util.now", return_value=base_time):
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
             result = await app_service.calculate_and_schedule_anticipation(ihp_enabled=True)
         
         # Verify calculations were performed
