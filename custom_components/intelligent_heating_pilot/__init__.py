@@ -77,6 +77,8 @@ class IntelligentHeatingPilotCoordinator:
         """
         self.hass = hass
         self.config = config_entry
+        # Keep a snapshot of options to detect toggle-only changes (avoid reloads)
+        self._options_snapshot = dict(config_entry.options or {})
         
         # Extract configuration with options override support
         self._vtherm_entity = self._get_config_value(CONF_VTHERM_ENTITY)
@@ -113,7 +115,7 @@ class IntelligentHeatingPilotCoordinator:
         
         # IHP enabled state (default to True for backward compatibility)
         ihp_enabled_value = self._get_config_value(CONF_IHP_ENABLED)
-        self._ihp_enabled = True if ihp_enabled_value is None else bool(ihp_enabled_value)
+        self._ihp_enabled = self._as_bool(ihp_enabled_value, default=True)
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
@@ -296,10 +298,13 @@ class IntelligentHeatingPilotCoordinator:
         new_options = dict(self.config.options) if self.config.options else {}
         new_options[CONF_IHP_ENABLED] = enabled
         
+        # Update snapshot before and after so the options listener can short-circuit reloads
+        self._options_snapshot = dict(self.config.options or {})
         self.hass.config_entries.async_update_entry(
             self.config,
             options=new_options
         )
+        self._options_snapshot = dict(new_options)
         
         # Trigger a recalculation to apply the new state
         await self.async_update()
@@ -339,6 +344,25 @@ class IntelligentHeatingPilotCoordinator:
         if isinstance(raw, str):
             return [raw]
         return []
+
+    @staticmethod
+    def _as_bool(value: Any, default: bool = False) -> bool:
+        """Normalize truthy/falsy values to a strict boolean.
+
+        Important for stringified options (e.g. "False" should yield False).
+        """
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "1", "yes", "on"}:
+                return True
+            if lowered in {"false", "0", "no", "off"}:
+                return False
+            return default
+        if isinstance(value, (int, float)):
+            return bool(value)
+        return default
 
     async def _get_global_lhs_cached_or_fallback(self) -> float:
         """Return global LHS from cache if fresh, otherwise fallback to stored value.
@@ -457,7 +481,28 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options and reload integration."""
+    coordinator: IntelligentHeatingPilotCoordinator | None = hass.data[DOMAIN].get(entry.entry_id)
+
+    previous_options = dict(getattr(coordinator, "_options_snapshot", {}) or {}) if coordinator else {}
+    previous_no_toggle = {k: v for k, v in previous_options.items() if k != CONF_IHP_ENABLED}
+    current_no_toggle = {k: v for k, v in entry.options.items() if k != CONF_IHP_ENABLED}
+    ihp_enabled = IntelligentHeatingPilotCoordinator._as_bool(
+        entry.options.get(CONF_IHP_ENABLED),
+        default=True,
+    )
+
+    # If only the ihp_enabled flag changed, skip full reload
+    if coordinator and previous_no_toggle == current_no_toggle:
+        _LOGGER.info("[%s] Options updated (ihp_enabled only), skipping reload", entry.entry_id)
+        coordinator._options_snapshot = dict(entry.options)
+        coordinator._ihp_enabled = ihp_enabled
+        await coordinator.async_update()
+        return
+
     _LOGGER.info("[%s] Options updated, reloading", entry.entry_id)
+    if coordinator:
+        coordinator._options_snapshot = dict(entry.options)
+
     await hass.config_entries.async_reload(entry.entry_id)
     
     # Force update after reload
