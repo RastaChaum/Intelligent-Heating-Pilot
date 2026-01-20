@@ -8,14 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-
-### Changed
-
-### Fixed
-
-## [0.5.0-rc.1] - 2026-01-20
-
-### Added
 - **IHP Enable/Disable Switch** ([#77](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/77)) – New domain entity to toggle IHP preheating on/off per device while preserving learned data
   - Switch entity `switch.intelligent_heating_pilot_<device>_enable_preheating` for each configured IHP device
   - Full domain layer support with DDD-compliant abstraction
