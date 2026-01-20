@@ -25,3 +25,9 @@ Cette version est une **release candidate** destinée aux tests en production et
 
 ## ⚠️ Important
 Cette version est en phase de test. Veuillez remonter tout problème via les Issues GitHub.
+
+---
+
+## 🔧 RC 2 - 2026-01-20
+
+fix errors in prepare-release-workflow
