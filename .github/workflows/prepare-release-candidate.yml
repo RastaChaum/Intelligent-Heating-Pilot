@@ -48,8 +48,11 @@ jobs:
       - name: Extract unreleased changes from CHANGELOG
         id: changelog
         run: |
-          # Extraction de la section Unreleased
-          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/,/## \[/' CHANGELOG.md | sed '1d;$d')
+          # Extraction de la section Unreleased (entre ## [Unreleased] et la prochaine section ##)
+          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next}/^## \[/{flag=0}flag' CHANGELOG.md)
+          
+          # Supprimer les lignes vides au début et à la fin
+          CHANGELOG_CONTENT=$(echo "$CHANGELOG_CONTENT" | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
           
           if [ -z "$CHANGELOG_CONTENT" ]; then
             echo "❌ Aucun changement dans la section Unreleased du CHANGELOG.md"
@@ -59,6 +62,7 @@ jobs:
           
           # Sauvegarde dans un fichier
           echo "$CHANGELOG_CONTENT" > /tmp/release-notes.md
+          echo "✅ Notes de version extraites du CHANGELOG"
 
       - name: Create GITHUB_RELEASE file
         run: |
