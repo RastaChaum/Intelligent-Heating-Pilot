@@ -64,13 +64,13 @@ jobs:
           # Ajouter les corrections au fichier de release notes
           cat >> "GITHUB_RELEASE_v${VERSION}.md" << EOF
 
----
+          ---
 
-## 🔧 RC ${RC_NUM} - $(date +%Y-%m-%d)
+          ## 🔧 RC ${RC_NUM} - $(date +%Y-%m-%d)
 
-${{ inputs.fix_description }}
+          ${{ inputs.fix_description }}
 
-EOF
+          EOF
 
       - name: Commit updated release notes
         run: |
@@ -118,15 +118,15 @@ EOF
           if [ -n "$ISSUE_NUMBER" ]; then
             gh issue comment "$ISSUE_NUMBER" --body "## 🔄 Nouveau RC disponible: rc${RC_NUM}
 
-**Tag:** \`${{ steps.rc-number.outputs.next_rc_tag }}\`
+            **Tag:** \`${{ steps.rc-number.outputs.next_rc_tag }}\`
 
-### Corrections apportées
-${{ inputs.fix_description }}
+            ### Corrections apportées
+            ${{ inputs.fix_description }}
 
-### 🔗 Lien
-[Pre-Release GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.rc-number.outputs.next_rc_tag }})
+            ### 🔗 Lien
+            [Pre-Release GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.rc-number.outputs.next_rc_tag }})
 
-Merci de tester cette nouvelle version et de signaler tout problème dans cette issue."
+            Merci de tester cette nouvelle version et de signaler tout problème dans cette issue."
           fi
 
       - name: Summary
