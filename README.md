@@ -1,7 +1,7 @@
 # Intelligent Heating Pilot (IHP)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-![Version](https://img.shields.io/badge/version-0.4.3-blue)
+![Version](https://img.shields.io/badge/version-0.5.0--rc.1-blue)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 
 > **The Adaptive Brain for Versatile Thermostat**
@@ -57,7 +57,7 @@ Settings → Devices & Services → + Add Integration
 
 ## 🎯 Features
 
-### Current (v0.4.3)
+### Current (v0.5.0-rc.1)
 
 - ✅ **Smart Pre-heating** - Automatically calculates optimal start time
 - ✅ **Enable/Disable Switch** - Toggle preheating on/off while maintaining learning
