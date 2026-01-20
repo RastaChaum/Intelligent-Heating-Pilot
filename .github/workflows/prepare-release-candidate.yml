@@ -63,23 +63,22 @@ jobs:
       - name: Create GITHUB_RELEASE file
         run: |
           cat > "GITHUB_RELEASE_v${{ inputs.version }}.md" << 'EOF'
-# Release v${{ inputs.version }} - Release Candidate
+          # Release v${{ inputs.version }} - Release Candidate
 
-## 🧪 Release Candidate
-Cette version est une **release candidate** destinée aux tests en production et aux beta-testeurs.
+          ## 🧪 Release Candidate
+          Cette version est une **release candidate** destinée aux tests en production et aux beta-testeurs.
 
-EOF
+          EOF
           
           # Ajouter le contenu du changelog
           cat /tmp/release-notes.md >> "GITHUB_RELEASE_v${{ inputs.version }}.md"
           
           cat >> "GITHUB_RELEASE_v${{ inputs.version }}.md" << 'EOF'
-
----
-
-## ⚠️ Important
-Cette version est en phase de test. Veuillez remonter tout problème via les Issues GitHub.
-EOF
+          ---
+          
+          ## ⚠️ Important
+          Cette version est en phase de test. Veuillez remonter tout problème via les Issues GitHub.
+          EOF
 
       - name: Commit release notes
         run: |
@@ -91,8 +90,7 @@ EOF
 
       - name: Create RC tag
         run: |
-          # Créer le message du tag sans variable multiline
-          git tag -a "${{ steps.validate.outputs.rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc1" -m "Release candidate pour tests en production."
+          git tag -a "${{ steps.validate.outputs.rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc1" -m "Release candidate pour tests en production." -m "Changements prévus :" -m "$(cat /tmp/release-notes.md)"
           
           git push origin "${{ steps.validate.outputs.rc_tag }}"
 
@@ -112,31 +110,34 @@ EOF
         run: |
           ISSUE_BODY="## 🧪 Release Candidate Testing - v${{ inputs.version }}
 
-Cette issue suit les tests de la release candidate \`v${{ inputs.version }}-rc1\`.
+          Cette issue suit les tests de la release candidate \`v${{ inputs.version }}-rc1\`."
 
-### 📋 Checklist de test
-- [ ] Tests en environnement de production
-- [ ] Validation des nouvelles fonctionnalités
-- [ ] Test de régression (non-regression)
-- [ ] Vérification de la documentation
-- [ ] Tests par beta-testeurs
+          ### 📋 Checklist de test
+          - [ ] Tests en environnement de production
+          - [ ] Validation des nouvelles fonctionnalités
+          - [ ] Test de régression (non-regression)
+          - [ ] Vérification de la documentation
+          - [ ] Tests par beta-testeurs
 
-### 🔗 Liens
-- [Release Notes](../blob/integration/GITHUB_RELEASE_v${{ inputs.version }}.md)
-- [Pre-Release GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.validate.outputs.rc_tag }})
+          ### 🔗 Liens
+          - [Release Notes](../blob/integration/GITHUB_RELEASE_v${{ inputs.version }}.md)
+          - [Pre-Release GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.validate.outputs.rc_tag }})
 
-### 📝 Instructions
-1. Testez cette version en production
-2. Signalez tout problème dans cette issue
-3. Si corrections nécessaires → nouveau RC (rc2, rc3...)
-4. Si tout OK → merge vers main pour release finale
+          ### 📝 Instructions
+          1. Testez cette version en production
+          2. Signalez tout problème dans cette issue
+          3. Si corrections nécessaires → nouveau RC (rc2, rc3...)
+          4. Si tout OK → merge vers main pour release finale
 
-**Tag actuel:** \`${{ steps.validate.outputs.rc_tag }}\`"
+          **Tag actuel:** \`${{ steps.validate.outputs.rc_tag }}\`"
 
-          gh issue create \
-            --title "🧪 RC Testing: v${{ inputs.version }}" \
-            --body "$ISSUE_BODY" \
-            --label "release-candidate,testing"
+                    ISSUE_NUMBER=$(gh issue create \
+                      --title "🧪 RC Testing: v${{ inputs.version }}" \
+                      --body "$ISSUE_BODY" \
+                      --label "release-candidate,testing" \
+                      --assignee "@me")
+                    
+                    echo "Issue de suivi créée: $ISSUE_NUMBER"
 
       - name: Summary
         run: |
