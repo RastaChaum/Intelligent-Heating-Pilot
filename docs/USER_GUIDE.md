@@ -79,6 +79,21 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 2. Look for "Anticipation Time" sensor
 3. Shows when IHP will trigger heating next
 
+### Task: Enable or disable IHP preheating
+
+**Steps:**
+1. Find your IHP device
+2. Look for "IHP Preheating" switch
+3. Turn OFF to disable automatic preheating (IHP continues learning but won't trigger heating)
+4. Turn ON to re-enable automatic preheating
+
+**Why disable?**
+- 🎛️ You want manual control temporarily
+- 👀 You want to monitor IHP's predictions without it taking action
+- 🔧 You're testing or troubleshooting
+
+**Note:** When disabled, IHP continues to learn and calculate—you'll still see predictions in sensors.
+
 ### Task: Change configuration
 
 **Steps:**
@@ -201,7 +216,13 @@ The service returns when to start heating, estimated duration, learned slope, an
 
 ### Q: Can I manually override IHP?
 
-**A:** Yes. You can manually turn on/off your thermostat anytime. IHP won't interfere with manual control.
+**A:** Yes! You have multiple options:
+
+1. **Use the IHP Preheating switch** - Turn OFF to disable automatic preheating while keeping learning active
+2. **Manual thermostat control** - You can manually turn on/off your thermostat anytime. IHP won't interfere.
+3. **Disable the scheduler** - IHP automatically stops when scheduler is disabled
+
+The switch is useful when you want temporary manual control but want IHP to continue learning in the background.
 
 ### Q: Where is IHP storing my data?
 
