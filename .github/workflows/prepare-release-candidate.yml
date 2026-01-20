@@ -91,7 +91,8 @@ EOF
 
       - name: Create RC tag
         run: |
-          git tag -a "${{ steps.validate.outputs.rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc1" -m "Release candidate pour tests en production." -m "Changements prévus :" -m "$(cat /tmp/release-notes.md)"
+          # Créer le message du tag sans variable multiline
+          git tag -a "${{ steps.validate.outputs.rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc1" -m "Release candidate pour tests en production."
           
           git push origin "${{ steps.validate.outputs.rc_tag }}"
 
@@ -132,13 +133,10 @@ Cette issue suit les tests de la release candidate \`v${{ inputs.version }}-rc1\
 
 **Tag actuel:** \`${{ steps.validate.outputs.rc_tag }}\`"
 
-          ISSUE_NUMBER=$(gh issue create \
+          gh issue create \
             --title "🧪 RC Testing: v${{ inputs.version }}" \
             --body "$ISSUE_BODY" \
-            --label "release-candidate,testing" \
-            --assignee "@me")
-          
-          echo "Issue de suivi créée: $ISSUE_NUMBER"
+            --label "release-candidate,testing"
 
       - name: Summary
         run: |
