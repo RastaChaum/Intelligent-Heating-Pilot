@@ -84,20 +84,14 @@ EOF
       - name: Commit release notes
         run: |
           git add "GITHUB_RELEASE_v${{ inputs.version }}.md"
-          git commit -m "chore(release): prepare RC for v${{ inputs.version }}
-
-- Create release notes file
-- Ready for RC testing phase"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(release): prepare RC for v${{ inputs.version }}" -m "Create release notes file" -m "Ready for RC testing phase"
           git push origin integration
 
       - name: Create RC tag
         run: |
-          git tag -a "${{ steps.validate.outputs.rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc1
-
-Release candidate pour tests en production.
-
-Changements prévus :
-$(cat /tmp/release-notes.md)"
+          git tag -a "${{ steps.validate.outputs.rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc1" -m "Release candidate pour tests en production." -m "Changements prévus :" -m "$(cat /tmp/release-notes.md)"
           
           git push origin "${{ steps.validate.outputs.rc_tag }}"
 
