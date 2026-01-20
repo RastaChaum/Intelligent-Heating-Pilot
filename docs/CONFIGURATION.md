@@ -273,7 +273,26 @@ You can configure multiple IHP instances—one per VTherm:
 
 ## Entities Created by IHP
 
-After configuration, IHP creates these sensors on your device:
+After configuration, IHP creates these entities on your device:
+
+### Control Switch
+
+| Switch | What It Does | Default State |
+|--------|-------------|--------------|
+| **IHP Preheating** | Enable/disable intelligent preheating | ON (enabled) |
+
+**When Enabled (ON):**
+- ✅ IHP triggers heating at calculated anticipation time
+- ✅ Learning and calculations continue normally
+- ✅ All sensors update as expected
+
+**When Disabled (OFF):**
+- ❌ IHP does NOT trigger heating (scheduler runs in legacy mode)
+- ✅ Learning continues (heating cycles still detected)
+- ✅ Calculations continue (predictions still shown in sensors)
+- ✅ You can monitor what IHP would do without it taking control
+
+**Use Case:** Temporarily disable preheating during manual heating control, or when you want to monitor IHP's predictions without automatic intervention.
 
 ### Main Sensors
 

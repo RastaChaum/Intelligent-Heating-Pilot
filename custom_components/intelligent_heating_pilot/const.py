@@ -22,6 +22,7 @@ CONF_TEMP_DELTA_THRESHOLD = "temp_delta_threshold"
 CONF_CYCLE_SPLIT_DURATION_MINUTES = "cycle_split_duration_minutes"
 CONF_MIN_CYCLE_DURATION_MINUTES = "min_cycle_duration_minutes"
 CONF_MAX_CYCLE_DURATION_MINUTES = "max_cycle_duration_minutes"
+CONF_IHP_ENABLED = "ihp_enabled"  # Enable/disable IHP preheating
 
 # Legacy keys (kept for backward compatibility if needed)
 CONF_THERMAL_SLOPE_ENTITY = "thermal_slope_entity"

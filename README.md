@@ -60,6 +60,7 @@ Settings → Devices & Services → + Add Integration
 ### Current (v0.4.3)
 
 - ✅ **Smart Pre-heating** - Automatically calculates optimal start time
+- ✅ **Enable/Disable Switch** - Toggle preheating on/off while maintaining learning
 - ✅ **Cycle Detection** - Learns from real heating cycles, not VTherm slopes
 - ✅ **Configurable Detection Parameters** - Fine-tune cycle detection for your heating system
 - ✅ **Time-Contextual Learning** - Different heating speeds by time of day

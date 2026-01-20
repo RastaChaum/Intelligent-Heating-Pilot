@@ -649,8 +649,12 @@ class HeatingApplicationService:
         _LOGGER.debug("Exiting _extract_cycles_from_recorder")
         return heating_cycles
 
-    async def calculate_and_schedule_anticipation(self) -> dict | None:
+    async def calculate_and_schedule_anticipation(self, ihp_enabled: bool = True) -> dict | None:
         """Calculate anticipation and schedule heating start.
+
+        Args:
+            ihp_enabled: Whether IHP preheating is enabled. When False, calculations
+                        continue but scheduler commands are skipped.
 
         Returns:
             Dict with anticipation data for sensors, or None if not applicable.
@@ -746,14 +750,28 @@ class HeatingApplicationService:
             _LOGGER.debug("Tracking scheduler entity: %s", timeslot.scheduler_entity)
             self._active_scheduler_entity = timeslot.scheduler_entity
 
-        # Schedule if needed
-        await self._schedule_anticipation(
-            anticipated_start=prediction.anticipated_start_time,
-            target_time=timeslot.target_time,
-            target_temp=timeslot.target_temp,
-            scheduler_entity_id=timeslot.scheduler_entity,
-            lhs=prediction.learned_heating_slope,
-        )
+        # Schedule if needed (only if IHP is enabled)
+        if ihp_enabled:
+            await self._schedule_anticipation(
+                anticipated_start=prediction.anticipated_start_time,
+                target_time=timeslot.target_time,
+                target_temp=timeslot.target_temp,
+                scheduler_entity_id=timeslot.scheduler_entity,
+                lhs=prediction.learned_heating_slope,
+            )
+        else:
+            # IHP disabled - revert to standard scenario if preheating was active
+            if self._is_preheating_active:
+                _LOGGER.info(
+                    "IHP disabled while preheating active - reverting to current scheduled state"
+                )
+                # Call cancel_action to revert thermostat to current time's preset/temperature
+                await self._scheduler_commander.cancel_action(timeslot.scheduler_entity)
+            else:
+                _LOGGER.debug("IHP disabled - no active preheating to revert")
+
+            # Clear anticipation state
+            self._clear_anticipation_state()
 
         # Return data for sensors
         return {
@@ -842,17 +860,25 @@ class HeatingApplicationService:
         self._last_scheduled_lhs = lhs
 
         # If anticipated start is in past but target is future, trigger now
-        if anticipated_start <= now < target_time and not self._is_preheating_active:
-            _LOGGER.info(
-                "Anticipated start %s is past, triggering pre-heating immediately",
-                anticipated_start.isoformat(),
-            )
-            # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
-            # Respects scheduler conditions (skip_conditions=False in the adapter)
-            await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
-            self._is_preheating_active = True
-            self._preheating_target_time = target_time
-            self._active_scheduler_entity = scheduler_entity_id
+        # This handles both: not yet preheating OR already preheating but with past anticipation
+        if anticipated_start <= now < target_time:
+            if not self._is_preheating_active:
+                _LOGGER.info(
+                    "Anticipated start %s is past, triggering pre-heating immediately",
+                    anticipated_start.isoformat()
+                )
+                # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
+                # Respects scheduler conditions (skip_conditions=False in the adapter)
+                await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
+                self._is_preheating_active = True
+                self._preheating_target_time = target_time
+                self._active_scheduler_entity = scheduler_entity_id
+            else:
+                # Already preheating but anticipation is past - ensure we stay in preheating
+                _LOGGER.debug(
+                    "Already preheating (started earlier), continuation through target time %s",
+                    target_time.isoformat()
+                )
             return
 
         # If both are in past, skip
