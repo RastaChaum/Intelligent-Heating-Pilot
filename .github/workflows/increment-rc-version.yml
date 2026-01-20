@@ -75,18 +75,12 @@ EOF
       - name: Commit updated release notes
         run: |
           git add "GITHUB_RELEASE_v${{ inputs.version }}.md"
-          git commit -m "chore(release): update RC notes for v${{ inputs.version }}-rc${{ steps.rc-number.outputs.next_rc_num }}
-
-Corrections:
-${{ inputs.fix_description }}"
+          git commit -m "chore(release): update RC notes for v${{ inputs.version }}-rc${{ steps.rc-number.outputs.next_rc_num }}" -m "Corrections:" -m "${{ inputs.fix_description }}"
           git push origin integration
 
       - name: Create new RC tag
         run: |
-          git tag -a "${{ steps.rc-number.outputs.next_rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc${{ steps.rc-number.outputs.next_rc_num }}
-
-Corrections apportées:
-${{ inputs.fix_description }}"
+          git tag -a "${{ steps.rc-number.outputs.next_rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc${{ steps.rc-number.outputs.next_rc_num }}" -m "Corrections apportées:" -m "${{ inputs.fix_description }}"
           
           git push origin "${{ steps.rc-number.outputs.next_rc_tag }}"
 
