@@ -647,17 +647,25 @@ class HeatingApplicationService:
         self._last_scheduled_lhs = lhs
         
         # If anticipated start is in past but target is future, trigger now
-        if anticipated_start <= now < target_time and not self._is_preheating_active:
-            _LOGGER.info(
-                "Anticipated start %s is past, triggering pre-heating immediately",
-                anticipated_start.isoformat()
-            )
-            # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
-            # Respects scheduler conditions (skip_conditions=False in the adapter)
-            await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
-            self._is_preheating_active = True
-            self._preheating_target_time = target_time
-            self._active_scheduler_entity = scheduler_entity_id
+        # This handles both: not yet preheating OR already preheating but with past anticipation
+        if anticipated_start <= now < target_time:
+            if not self._is_preheating_active:
+                _LOGGER.info(
+                    "Anticipated start %s is past, triggering pre-heating immediately",
+                    anticipated_start.isoformat()
+                )
+                # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
+                # Respects scheduler conditions (skip_conditions=False in the adapter)
+                await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
+                self._is_preheating_active = True
+                self._preheating_target_time = target_time
+                self._active_scheduler_entity = scheduler_entity_id
+            else:
+                # Already preheating but anticipation is past - ensure we stay in preheating
+                _LOGGER.debug(
+                    "Already preheating (started earlier), continuation through target time %s",
+                    target_time.isoformat()
+                )
             return
         
         # If both are in past, skip
