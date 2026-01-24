@@ -481,6 +481,17 @@ class HeatingApplicationService:
             if self._is_preheating_active or self._active_scheduler_entity or self._preheating_target_time:
                 _LOGGER.info("Clearing anticipation state (no timeslot available)")
                 self._clear_anticipation_state()
+            
+            # Even without a scheduler, we should still learn from historical heating cycles
+            # This ensures LHS continues to be updated based on actual heating behavior
+            try:
+                now = dt_util.now()
+                # Use current time as target to extract recent heating cycles
+                lhs = await self._get_contextual_lhs(now)
+                _LOGGER.debug("Updated LHS from historical data (no scheduler): %.2f°C/h", lhs)
+            except Exception as exc:
+                _LOGGER.debug("Failed to update LHS without scheduler: %s", exc)
+            
             return None
         
         # Get current environment
