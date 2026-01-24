@@ -155,11 +155,20 @@ class HAEventBridge:
             _LOGGER.debug("Published anticipation event for sensors")
         else:
             # Publish event to clear sensor values (set to unknown)
+            # Get current learned slope to keep slope sensor updated
+            lhs = 2.0  # Default fallback
+            if hasattr(self._app_service, "_model_storage") and self._app_service._model_storage:
+                try:
+                    lhs = await self._app_service._model_storage.get_learned_heating_slope()
+                except Exception:
+                    _LOGGER.debug("Failed to get learned slope for clear event, using default")
+            
             self._hass.bus.async_fire(
                 "intelligent_heating_pilot_anticipation_calculated",
                 {
                     "entry_id": self._entry_id,
                     "clear_values": True,  # Signal to sensors to clear their values
+                    "learned_heating_slope": lhs,  # Keep slope sensor updated
                 },
             )
             _LOGGER.debug("Published clear event for sensors")

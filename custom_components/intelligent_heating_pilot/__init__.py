@@ -248,11 +248,13 @@ class IntelligentHeatingPilotCoordinator:
         else:
             # No anticipation data available (no scheduler or no timeslot)
             # Fire clear event to set sensors to unknown state
+            # Include learned_heating_slope so the slope sensor can still update
             self.hass.bus.async_fire(
                 f"{DOMAIN}_anticipation_calculated",
                 {
                     "entry_id": self.config.entry_id,
                     "clear_values": True,
+                    "learned_heating_slope": self._lhs_cache,
                 },
             )
     
