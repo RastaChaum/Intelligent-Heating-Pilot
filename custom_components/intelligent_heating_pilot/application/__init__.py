@@ -719,3 +719,11 @@ class HeatingApplicationService:
         """Reset all learned slope history."""
         _LOGGER.info("Resetting learned heating slope history")
         await self._model_storage.clear_slope_history()
+    
+    async def get_learned_heating_slope(self) -> float:
+        """Get the current learned heating slope.
+        
+        Returns:
+            Current learned heating slope in °C/h
+        """
+        return await self._model_storage.get_learned_heating_slope()
