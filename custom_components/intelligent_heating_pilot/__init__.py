@@ -245,6 +245,16 @@ class IntelligentHeatingPilotCoordinator:
                     "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
                 },
             )
+        else:
+            # No anticipation data available (no scheduler or no timeslot)
+            # Fire clear event to set sensors to unknown state
+            self.hass.bus.async_fire(
+                f"{DOMAIN}_anticipation_calculated",
+                {
+                    "entry_id": self.config.entry_id,
+                    "clear_values": True,
+                },
+            )
     
     async def async_cleanup(self) -> None:
         """Cleanup resources."""
