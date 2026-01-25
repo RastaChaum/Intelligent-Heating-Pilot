@@ -311,19 +311,10 @@ class HeatingApplicationService:
                 return cycles
             return []
         else:
-            _LOGGER.info("No cache found, performing initial extraction")
+            _LOGGER.info("No cache found, performing full extraction")
             
-            # OPTIMIZATION: Limit initial extraction to reduce CPU/RAM usage
-            # On first setup, only extract last 7 days instead of full retention period
-            # This prevents heavy load during device configuration
-            initial_lookback_days = min(7, self._history_lookback_days)
-            _LOGGER.info(
-                "First-time extraction limited to %d days (full retention: %d days)",
-                initial_lookback_days,
-                self._history_lookback_days,
-            )
-            
-            search_start = target_time - timedelta(days=initial_lookback_days)
+            # No cache exists, perform full extraction
+            search_start = target_time - timedelta(days=self._history_lookback_days)
             search_end = target_time
             
             cycles = await self._extract_cycles_from_recorder(
