@@ -53,6 +53,12 @@ def mock_adapters():
     environment_reader.get_current_environment = AsyncMock()
     environment_reader.is_heating_active = AsyncMock(return_value=False)
     environment_reader.get_vtherm_slope = Mock(return_value=None)
+    environment_reader.get_vtherm_entity_id = Mock(return_value="climate.test_vtherm")
+    environment_reader.get_hass = Mock()
+    
+    # Mock HomeAssistant instance
+    hass = Mock()
+    hass.async_create_task = Mock()
     
     return {
         "scheduler_reader": scheduler_reader,
@@ -60,6 +66,7 @@ def mock_adapters():
         "scheduler_commander": scheduler_commander,
         "climate_commander": climate_commander,
         "environment_reader": environment_reader,
+        "hass": hass,
     }
 
 
@@ -72,6 +79,7 @@ def app_service(mock_adapters):
         scheduler_commander=mock_adapters["scheduler_commander"],
         climate_commander=mock_adapters["climate_commander"],
         environment_reader=mock_adapters["environment_reader"],
+        hass=mock_adapters["hass"],
         lhs_window_hours=6.0,
     )
 

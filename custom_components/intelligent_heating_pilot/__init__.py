@@ -169,6 +169,7 @@ class IntelligentHeatingPilotCoordinator:
             scheduler_commander=self._scheduler_commander,
             climate_commander=self._climate_commander,
             environment_reader=self._environment_reader,
+            hass=self.hass,
             cycle_cache=self._cycle_cache,
             history_lookback_days=self._data_retention_days,
             decision_mode=self._decision_mode,
