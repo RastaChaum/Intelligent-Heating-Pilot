@@ -45,7 +45,7 @@ class HeatingApplicationService:
     - Domain services (PredictionService)
     - Infrastructure adapters (HA*)
     
-    NO Home Assistant dependencies - only uses adapter interfaces.
+    Uses Home Assistant timer API for reliable anticipation triggering.
     """
     
     def __init__(
@@ -137,7 +137,7 @@ class HeatingApplicationService:
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None  # Track which scheduler is being used
         
-        # Timer callback for cancelling scheduled anticipation trigger
+        # Cancel function returned by async_track_point_in_time for active timer
         self._anticipation_timer_cancel: Callable[[], None] | None = None
     
     def _clear_anticipation_state(self) -> None:
