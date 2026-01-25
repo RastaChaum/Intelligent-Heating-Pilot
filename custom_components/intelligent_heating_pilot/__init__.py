@@ -208,7 +208,7 @@ class IntelligentHeatingPilotCoordinator:
         
         # NOTE: Initial update is now deferred to async_setup_entry to avoid blocking
         # the config flow during device creation (prevents HA watchdog restart).
-        # See lines 375-394 for the deferred update logic.
+        # See lines 368-394 for the deferred update logic.
     
     def setup_listeners(self) -> None:
         """Setup event listeners via event bridge."""
