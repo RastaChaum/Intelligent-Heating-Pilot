@@ -137,7 +137,7 @@ class HeatingApplicationService:
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None  # Track which scheduler is being used
         
-        # Timer for anticipation triggering
+        # Timer callback for cancelling scheduled anticipation trigger
         self._anticipation_timer_cancel: Callable[[], None] | None = None
     
     def _clear_anticipation_state(self) -> None:
