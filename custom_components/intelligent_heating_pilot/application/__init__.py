@@ -313,7 +313,6 @@ class HeatingApplicationService:
         else:
             _LOGGER.info("No cache found, performing full extraction")
             
-            # No cache exists, perform full extraction
             search_start = target_time - timedelta(days=self._history_lookback_days)
             search_end = target_time
             

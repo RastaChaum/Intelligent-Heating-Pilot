@@ -100,7 +100,7 @@ The integration will reload automatically.
 
 **⚠️ Important Performance Note:**
 
-When you first configure IHP or increase the **Data Retention Days** setting, IHP will analyze your VTherm's historical data from Home Assistant's recorder database to extract heating cycles. 
+When you first configure IHP or increase the **Data Retention Days** setting, IHP will analyze your VTherm's historical data from Home Assistant's recorder database to extract heating cycles.
 
 **Expected behavior during initial extraction:**
 - 🕒 **Processing time**: Up to **5 minutes** or more with high retention settings (>30 days)
