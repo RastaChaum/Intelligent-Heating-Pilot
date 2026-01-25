@@ -206,8 +206,9 @@ class IntelligentHeatingPilotCoordinator:
             len(self._scheduler_entities),
         )
         
-        # Trigger initial calculation for sensors
-        await self.async_update()
+        # NOTE: Initial update is now deferred to async_setup_entry to avoid blocking
+        # the config flow during device creation (prevents HA watchdog restart).
+        # See lines 369-392 for the deferred update logic.
     
     def setup_listeners(self) -> None:
         """Setup event listeners via event bridge."""
@@ -371,10 +372,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info("[%s] HA started, triggering initial update", entry.entry_id)
         hass.async_create_task(coordinator.async_update())
     
-    # If HA already started, trigger update immediately, otherwise wait
+    # Schedule initial update asynchronously to avoid blocking config flow
+    # This prevents HA watchdog restart during device creation with scheduler
     if hass.is_running:
-        _LOGGER.debug("[%s] HA already running, triggering update now", entry.entry_id)
-        await coordinator.async_update()
+        _LOGGER.debug("[%s] HA already running, scheduling async update", entry.entry_id)
+        hass.async_create_task(coordinator.async_update())
     else:
         _LOGGER.debug("[%s] Waiting for HA start event before first update", entry.entry_id)
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started)
