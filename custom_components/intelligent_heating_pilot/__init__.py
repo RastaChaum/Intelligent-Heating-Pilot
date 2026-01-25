@@ -430,7 +430,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     _LOGGER.info("[%s] Options updated, reloading", entry.entry_id)
     await hass.config_entries.async_reload(entry.entry_id)
     
-    # Force update after reload
+    # Schedule async update after reload (non-blocking)
     coordinator = hass.data[DOMAIN].get(entry.entry_id)
     if coordinator:
-        await coordinator.async_update()
+        hass.async_create_task(coordinator.async_update())
