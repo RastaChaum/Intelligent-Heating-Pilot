@@ -7,7 +7,7 @@ of climate entity state changes.
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, Mock, call
+from unittest.mock import AsyncMock, Mock, call, patch
 import pytest
 
 from custom_components.intelligent_heating_pilot.application import HeatingApplicationService
@@ -15,6 +15,8 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ScheduledTimeslot,
     EnvironmentState,
 )
+# Import dt_util to patch it properly
+from homeassistant.util import dt as dt_util
 
 
 def make_aware(dt: datetime) -> datetime:
@@ -117,7 +119,7 @@ class TestAnticipationTimer:
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
         
         # Execute with mocked time
-        with pytest.mock.patch('custom_components.intelligent_heating_pilot.application.dt_util.now', return_value=now):
+        with patch.object(dt_util, 'now', return_value=now):
             await app_service.calculate_and_schedule_anticipation()
         
         # Verify: Timer should be scheduled (anticipation_timer_cancel should be set)
@@ -154,7 +156,7 @@ class TestAnticipationTimer:
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
         
         # Execute with mocked time
-        with pytest.mock.patch('custom_components.intelligent_heating_pilot.application.dt_util.now', return_value=now):
+        with patch.object(dt_util, 'now', return_value=now):
             await app_service.calculate_and_schedule_anticipation()
         
         # Verify: Action should be triggered immediately
@@ -195,7 +197,7 @@ class TestAnticipationTimer:
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
         
         # Schedule timer
-        with pytest.mock.patch('custom_components.intelligent_heating_pilot.application.dt_util.now', return_value=now):
+        with patch.object(dt_util, 'now', return_value=now):
             await app_service.calculate_and_schedule_anticipation()
         
         # Verify timer is set
@@ -237,7 +239,7 @@ class TestAnticipationTimer:
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
         
         # Schedule timer
-        with pytest.mock.patch('custom_components.intelligent_heating_pilot.application.dt_util.now', return_value=now):
+        with patch.object(dt_util, 'now', return_value=now):
             await app_service.calculate_and_schedule_anticipation()
         
         # Verify timer is set
@@ -247,7 +249,7 @@ class TestAnticipationTimer:
         mock_adapters["scheduler_reader"].is_scheduler_enabled.return_value = False
         
         # Call calculate_and_schedule_anticipation again
-        with pytest.mock.patch('custom_components.intelligent_heating_pilot.application.dt_util.now', return_value=now):
+        with patch.object(dt_util, 'now', return_value=now):
             await app_service.calculate_and_schedule_anticipation()
         
         # Verify timer was cancelled (state cleared)
