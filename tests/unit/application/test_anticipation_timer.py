@@ -15,7 +15,6 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ScheduledTimeslot,
     EnvironmentState,
 )
-# Import dt_util to patch it properly
 from homeassistant.util import dt as dt_util
 
 
