@@ -5,6 +5,7 @@ and infrastructure adapters, implementing use cases.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -390,8 +391,6 @@ class HeatingApplicationService:
         # Fetch climate data (indoor temp, target temp, heating state)
         # Add small delays between fetches to yield control to event loop
         try:
-            import asyncio
-            
             climate_adapter = ClimateDataAdapter(hass)
             indoor_data = await climate_adapter.fetch_historical_data(
                 device_id,
@@ -400,7 +399,7 @@ class HeatingApplicationService:
                 end_time,
             )
             combined_data.update(indoor_data.data)
-            await asyncio.sleep(0.1)  # Yield to event loop
+            await asyncio.sleep(0)  # Yield to event loop
 
             target_data = await climate_adapter.fetch_historical_data(
                 device_id,
@@ -409,7 +408,7 @@ class HeatingApplicationService:
                 end_time,
             )
             combined_data.update(target_data.data)
-            await asyncio.sleep(0.1)  # Yield to event loop
+            await asyncio.sleep(0)  # Yield to event loop
 
             heating_state = await climate_adapter.fetch_historical_data(
                 device_id,
@@ -418,7 +417,7 @@ class HeatingApplicationService:
                 end_time,
             )
             combined_data.update(heating_state.data)
-            await asyncio.sleep(0.1)  # Yield to event loop
+            await asyncio.sleep(0)  # Yield to event loop
         except Exception as exc:
             _LOGGER.warning("Failed to fetch climate historical data: %s", exc)
             _LOGGER.debug("Exiting _extract_cycles_from_recorder")
