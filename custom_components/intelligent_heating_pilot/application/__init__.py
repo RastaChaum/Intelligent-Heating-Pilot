@@ -175,6 +175,9 @@ class HeatingApplicationService:
         # Cancel any existing timer first
         self._cancel_anticipation_timer()
         
+        # Track which scheduler we're anticipating for
+        self._active_scheduler_entity = scheduler_entity_id
+        
         @callback
         def _trigger_anticipation(_now: datetime) -> None:
             """Callback to trigger anticipation when timer fires."""
@@ -769,8 +772,6 @@ class HeatingApplicationService:
                 target_temp,
                 scheduler_entity_id,
             )
-            # Track which scheduler we're anticipating for
-            self._active_scheduler_entity = scheduler_entity_id
     
     async def check_overshoot_risk(self, scheduler_entity_id: str) -> None:
         """Check if heating should stop to prevent overshoot."""
