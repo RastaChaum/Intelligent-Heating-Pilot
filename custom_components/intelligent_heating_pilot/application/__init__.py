@@ -200,14 +200,21 @@ class HeatingApplicationService:
             )
             # Clear the timer reference since it has fired
             self._anticipation_timer_cancel = None
-            # Trigger the action
-            self._hass.async_create_task(
-                self._trigger_anticipation_action(
-                    target_time,
-                    target_temp,
-                    scheduler_entity_id,
+            # Trigger the action with error handling
+            try:
+                self._hass.async_create_task(
+                    self._trigger_anticipation_action(
+                        target_time,
+                        target_temp,
+                        scheduler_entity_id,
+                    )
                 )
-            )
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.error(
+                    "Failed to create anticipation trigger task: %s",
+                    exc,
+                    exc_info=True,
+                )
 
         # Schedule the timer
         self._anticipation_timer_cancel = async_track_point_in_time(
