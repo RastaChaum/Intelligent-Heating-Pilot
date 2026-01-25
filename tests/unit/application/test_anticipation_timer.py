@@ -28,6 +28,10 @@ def mock_hass():
     """Create a mock Home Assistant instance."""
     hass = Mock()
     hass.async_create_task = Mock()
+    # Mock the event loop to support async_track_point_in_time
+    hass.loop = Mock()
+    hass.loop.time = Mock(return_value=0.0)
+    hass.loop.call_at = Mock(return_value=Mock())  # Returns cancel callback
     return hass
 
 
@@ -108,6 +112,7 @@ class TestAnticipationTimer:
         )
         
         environment = EnvironmentState(
+            now,
             indoor_temperature=18.0,
             outdoor_temp=5.0,
             indoor_humidity=50.0,
@@ -145,6 +150,7 @@ class TestAnticipationTimer:
         )
         
         environment = EnvironmentState(
+            now,
             indoor_temperature=18.0,
             outdoor_temp=5.0,
             indoor_humidity=50.0,
@@ -186,6 +192,7 @@ class TestAnticipationTimer:
         )
         
         environment = EnvironmentState(
+            now,
             indoor_temperature=18.0,
             outdoor_temp=5.0,
             indoor_humidity=50.0,
@@ -228,6 +235,7 @@ class TestAnticipationTimer:
         )
         
         environment = EnvironmentState(
+            now,
             indoor_temperature=18.0,
             outdoor_temp=5.0,
             indoor_humidity=50.0,

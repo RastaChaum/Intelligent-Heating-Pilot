@@ -14,7 +14,6 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ScheduledTimeslot,
     EnvironmentState,
     HeatingCycle,
-    LHSCacheEntry,
 )
 
 
