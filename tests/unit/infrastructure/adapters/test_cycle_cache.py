@@ -6,25 +6,10 @@ import pytest
 import sys
 import os
 
-# Add custom_components to path
-sys.path.insert(
-    0,
-    os.path.join(
-        os.path.dirname(__file__),
-        "../../../../custom_components/intelligent_heating_pilot",
-    ),
-)
 
-# Add domain fixtures path
-sys.path.insert(
-    0,
-    os.path.join(os.path.dirname(__file__), "../../domain"),
-)
-
-from domain.value_objects.heating import HeatingCycle
+from custom_components.intelligent_heating_pilot.domain.value_objects.heating import HeatingCycle
 # Import directly from module to avoid HA dependencies
-from infrastructure.adapters.cycle_cache import HACycleCache
-from fixtures import create_test_heating_cycle
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache import HACycleCache
 
 
 @pytest.fixture
@@ -64,7 +49,7 @@ def mock_store() -> Mock:
 async def cache(mock_hass: Mock, entry_id: str, mock_store: Mock) -> HACycleCache:
     """Create cache adapter with mocked dependencies."""
     with patch(
-        "infrastructure.adapters.cycle_cache.Store",
+        "custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache.Store",
         return_value=mock_store,
     ):
         cache_obj = HACycleCache(mock_hass, entry_id)
@@ -98,7 +83,7 @@ def create_test_heating_cycle(
 def test_init(mock_hass: Mock, entry_id: str) -> None:
     """Test cache adapter initialization."""
     with patch(
-        "infrastructure.adapters.cycle_cache.Store"
+        "custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache.Store"
     ) as mock_store_class:
         cache = HACycleCache(mock_hass, entry_id, retention_days=45)
         
@@ -145,7 +130,7 @@ async def test_get_cache_data_with_stored_data(
     mock_store.async_load = AsyncMock(return_value=stored_data)
     
     with patch(
-        "infrastructure.adapters.cycle_cache.Store",
+        "custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache.Store",
         return_value=mock_store,
     ):
         cache = HACycleCache(mock_hass, entry_id)
