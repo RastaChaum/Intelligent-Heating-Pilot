@@ -449,7 +449,7 @@ class HeatingApplicationService:
                 return cycles
             return []
         else:
-            _LOGGER.info("No cache found, performing full extraction")
+            _LOGGER.info("No cache found, performing initial extraction")
             
             # No cache exists, perform full extraction
             search_start = target_time - timedelta(days=self._history_lookback_days)
@@ -518,6 +518,7 @@ class HeatingApplicationService:
         combined_data: dict[HistoricalDataKey, list] = {}
 
         # Fetch climate data (indoor temp, target temp, heating state)
+        # Add small delays between fetches to yield control to event loop
         try:
             climate_adapter = ClimateDataAdapter(hass)
             indoor_data = await climate_adapter.fetch_historical_data(
@@ -527,6 +528,7 @@ class HeatingApplicationService:
                 end_time,
             )
             combined_data.update(indoor_data.data)
+            await asyncio.sleep(1)  # Yield to event loop
 
             target_data = await climate_adapter.fetch_historical_data(
                 device_id,
@@ -535,6 +537,7 @@ class HeatingApplicationService:
                 end_time,
             )
             combined_data.update(target_data.data)
+            await asyncio.sleep(1)  # Yield to event loop
 
             heating_state = await climate_adapter.fetch_historical_data(
                 device_id,
@@ -543,6 +546,7 @@ class HeatingApplicationService:
                 end_time,
             )
             combined_data.update(heating_state.data)
+            await asyncio.sleep(1)  # Yield to event loop
         except Exception as exc:
             _LOGGER.warning("Failed to fetch climate historical data: %s", exc)
             _LOGGER.debug("Exiting _extract_cycles_from_recorder")
@@ -561,6 +565,7 @@ class HeatingApplicationService:
                 combined_data.update(humidity_in.data)
             except Exception as exc:
                 _LOGGER.warning("Failed to fetch indoor humidity history: %s", exc)
+            await asyncio.sleep(1)  # Yield to event loop
         if outdoor_humidity_id:
             try:
                 humidity_out = await sensor_adapter.fetch_historical_data(
@@ -572,7 +577,7 @@ class HeatingApplicationService:
                 combined_data.update(humidity_out.data)
             except Exception as exc:
                 _LOGGER.warning("Failed to fetch outdoor humidity history: %s", exc)
-
+            await asyncio.sleep(1)  # Yield to event loop
         # Construct dataset and extract cycles
         historical_data_set = HistoricalDataSet(data=combined_data)
         try:
