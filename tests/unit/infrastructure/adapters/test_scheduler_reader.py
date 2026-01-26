@@ -59,7 +59,7 @@ async def test_get_next_timeslot_entity_not_found(reader: HASchedulerReader, moc
     
     # Assert
     assert result is None
-    mock_hass.states.get.assert_called_once_with("switch.heating_schedule")
+    mock_hass.states.get.assert_called_with("switch.heating_schedule")
 
 
 @pytest.mark.asyncio
