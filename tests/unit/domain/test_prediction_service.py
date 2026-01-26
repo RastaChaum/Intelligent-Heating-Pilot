@@ -168,7 +168,6 @@ class TestPredictionService(unittest.TestCase):
     def test_dead_time_increases_duration(self):
         """Test that dead_time parameter increases heating duration."""
         target_time = get_future_datetime(2)
-
         # Without dead time
         result_no_deadtime = self.service.predict_heating_time(
             current_temp=TEST_CURRENT_TEMP,
@@ -177,7 +176,6 @@ class TestPredictionService(unittest.TestCase):
             target_time=target_time,
             dead_time_minutes=0.0,
         )
-
         # With dead time
         result_with_deadtime = self.service.predict_heating_time(
             current_temp=TEST_CURRENT_TEMP,
@@ -199,7 +197,6 @@ class TestPredictionService(unittest.TestCase):
         """Test that the dead_time formula is correctly applied."""
         target_time = get_future_datetime(2)
         dead_time = 10.0
-
         result = self.service.predict_heating_time(
             current_temp=TEST_CURRENT_TEMP,
             target_temp=TEST_TARGET_TEMP,
@@ -207,7 +204,6 @@ class TestPredictionService(unittest.TestCase):
             target_time=target_time,
             dead_time_minutes=dead_time,
         )
-
         # Expected base time without corrections: dead_time + (temp_delta / slope) * 60
         # = 10 + (3.0 / 2.0) * 60 = 10 + 90 = 100 minutes
         # Plus default anticipation buffer of 5 minutes = 105 minutes

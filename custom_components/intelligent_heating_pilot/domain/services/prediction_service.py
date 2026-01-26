@@ -64,7 +64,6 @@ class PredictionService:
             humidity: Indoor humidity percentage (0-100)
             cloud_coverage: Cloud coverage percentage (0-100, 0=clear sky)
             dead_time_minutes: Dead time in minutes (initial period with minimal heating effect)
-
         Returns:
             Prediction result with start time and confidence
         """
@@ -101,7 +100,6 @@ class PredictionService:
         # Calculate base anticipation time (in minutes)
         # Formula: heating_time = dead_time + (temp_delta / slope) * 60
         anticipation_minutes = dead_time_minutes + (temp_delta / learned_slope) * 60.0
-
         # Apply environmental correction factors
         correction_factor = self._calculate_environmental_correction(
             outdoor_temp, humidity, cloud_coverage
