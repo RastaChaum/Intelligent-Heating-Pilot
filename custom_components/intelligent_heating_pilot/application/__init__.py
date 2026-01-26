@@ -626,7 +626,7 @@ class HeatingApplicationService:
                     "Active scheduler %s has been disabled. Clearing anticipation state.",
                     self._active_scheduler_entity
                 )
-                self._clear_anticipation_state()
+                await self._clear_anticipation_state()
                 # Return clear_values dict to reset sensors to unknown
                 return {"clear_values": True}
         
@@ -636,7 +636,7 @@ class HeatingApplicationService:
             # Clear all tracking state when no timeslot is available
             if self._is_preheating_active or self._active_scheduler_entity or self._preheating_target_time:
                 _LOGGER.info("Clearing anticipation state (no timeslot available)")
-                self._clear_anticipation_state()
+                await self._clear_anticipation_state()
             # Return clear_values dict to reset sensors to unknown
             return {"clear_values": True}
         
@@ -718,8 +718,8 @@ class HeatingApplicationService:
             else:
                 _LOGGER.debug("IHP disabled - no active preheating to revert")
             
-            # Clear anticipation state
-            self._clear_anticipation_state()
+            # Clear anticipation state (MUST await to cancel active timer immediately)
+            await self._clear_anticipation_state()
         
         # Return data for sensors
         return {
