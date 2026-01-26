@@ -62,8 +62,7 @@ async def test_get_next_timeslot_entity_not_found(
 
     # Assert
     assert result is None
-    # Verify the scheduler entity was checked (may be called multiple times for logging)
-    mock_hass.states.get.assert_any_call("switch.heating_schedule")
+    mock_hass.states.get.assert_called_with("switch.heating_schedule")
 
 
 @pytest.mark.asyncio
