@@ -176,6 +176,26 @@ The integration will reload automatically.
 - 🧠 **Learning History**: More retention = better slope calculations
 - 💾 **Storage**: Longer retention uses slightly more disk space (minimal)
 
+**⚠️ Important Performance Note:**
+
+When you first configure IHP or increase the **Data Retention Days** setting, IHP will analyze your VTherm's historical data from Home Assistant's recorder database to extract heating cycles.
+
+**Expected behavior during initial extraction:**
+- 🕒 **Processing time**: Up to **5 minutes** or more with high retention settings (>30 days)
+- 📊 **Typical example**: With `purge_keep_days` set to 60 days in recorder configuration, initial extraction takes approximately **2-3 minutes**
+- 🔄 **This only happens once**: After initial extraction, IHP uses incremental updates (every 24 hours) which are much faster
+- 📱 **UI may be slow**: Some features/UI elements may load slowly during this initial processing
+
+**Factors affecting processing time:**
+- Higher **Data Retention Days** = longer processing time
+- Higher **recorder `purge_keep_days`** = more historical data to process
+- Slower hardware (e.g., Raspberry Pi, Home Assistant Green) = longer processing time
+
+**Recommendation**: If you experience slowness exceeding 5 minutes, consider:
+- Reducing **Data Retention Days** to 30 days (default) or lower
+- Checking your recorder's `purge_keep_days` setting (typically in `configuration.yaml`)
+- Allowing the initial extraction to complete before making configuration changes
+
 ### Heating Cycle Detection Parameters
 
 **New in v0.4.3+**: Fine-tune how IHP detects and processes heating cycles for optimal Learning Heating Slope calculation.
