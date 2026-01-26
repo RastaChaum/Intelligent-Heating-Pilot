@@ -59,10 +59,11 @@ class HASchedulerReader(ISchedulerReader):
         upcoming timeslot with a valid time and temperature.
         
         Returns:
-            The next schedule timeslot, or None if no valid timeslots found.
+            The next schedule timeslot, or None if no valid timeslots found
+            or if no scheduler entities are configured.
         """
-        if not self._scheduler_entity_ids:
-            _LOGGER.warning("No scheduler entities configured")
+        if not self._scheduler_entity_ids or len(self._scheduler_entity_ids) == 0:
+            _LOGGER.debug("No scheduler entities configured - scheduler is optional")
             return None
         
         chosen_time: datetime | None = None

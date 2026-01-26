@@ -1,0 +1,135 @@
+name: Integration PR (to main)
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-integration-pr:
+    if: github.head_ref == 'integration'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version increment
+        id: version-check
+        run: |
+          # Version dans integration (manifest.json)
+          NEW_VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
+          
+          # Version dans main
+          git fetch origin main
+          OLD_VERSION=$(git show origin/main:custom_components/intelligent_heating_pilot/manifest.json | jq -r '.version')
+          
+          echo "old=$OLD_VERSION" >> $GITHUB_OUTPUT
+          echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
+          
+          if [ "$NEW_VERSION" == "$OLD_VERSION" ]; then
+            echo "incremented=false" >> $GITHUB_OUTPUT
+            echo "❌ La version n'a pas été incrémentée"
+          else
+            echo "incremented=true" >> $GITHUB_OUTPUT
+            echo "✅ Version incrémentée : $OLD_VERSION → $NEW_VERSION"
+          fi
+          
+          # Vérifier hacs.json aussi
+          HACS_VERSION=$(jq -r '.version' hacs.json)
+          if [ "$HACS_VERSION" != "$NEW_VERSION" ]; then
+            echo "hacs_synced=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Version dans hacs.json ($HACS_VERSION) != manifest.json ($NEW_VERSION)"
+          else
+            echo "hacs_synced=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check CHANGELOG has unreleased content
+        id: changelog-check
+        run: |
+          UNRELEASED=$(awk '/## \[Unreleased\]/,/## \[/' CHANGELOG.md | sed '1d;$d' | grep -v '^$' | wc -l)
+          
+          if [ "$UNRELEASED" -eq "0" ]; then
+            echo "has_content=false" >> $GITHUB_OUTPUT
+            echo "❌ Aucune entrée dans [Unreleased] du CHANGELOG"
+          else
+            echo "has_content=true" >> $GITHUB_OUTPUT
+            echo "✅ CHANGELOG contient des changements"
+          fi
+
+      - name: Check pre-release exists
+        id: prerelease-check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
+          
+          if gh release view "v$VERSION-beta" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Pre-release v$VERSION-beta existe"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Pre-release v$VERSION-beta n'existe pas"
+          fi
+
+      - name: Run full test suite
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          poetry install
+          poetry run pytest tests/ -v
+
+      - name: Summary comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION_OK="${{ steps.version-check.outputs.incremented }}"
+          HACS_OK="${{ steps.version-check.outputs.hacs_synced }}"
+          CHANGELOG_OK="${{ steps.changelog-check.outputs.has_content }}"
+          PRERELEASE_OK="${{ steps.prerelease-check.outputs.exists }}"
+          
+          MESSAGE="## 📋 Checklist de Release
+          
+          "
+          
+          if [ "$VERSION_OK" == "true" ]; then
+            MESSAGE+="✅ Version incrémentée (${{ steps.version-check.outputs.old }} → ${{ steps.version-check.outputs.new }})\n"
+          else
+            MESSAGE+="❌ Version NON incrémentée - veuillez mettre à jour \`manifest.json\` et \`hacs.json\`\n"
+          fi
+          
+          if [ "$HACS_OK" == "true" ]; then
+            MESSAGE+="✅ Versions synchronisées (manifest.json = hacs.json)\n"
+          else
+            MESSAGE+="❌ Versions NON synchronisées - veuillez mettre à jour \`hacs.json\`\n"
+          fi
+          
+          if [ "$CHANGELOG_OK" == "true" ]; then
+            MESSAGE+="✅ CHANGELOG contient des changements\n"
+          else
+            MESSAGE+="❌ CHANGELOG vide - veuillez documenter les changements\n"
+          fi
+          
+          if [ "$PRERELEASE_OK" == "true" ]; then
+            MESSAGE+="✅ Pre-release existe et a été testée\n"
+          else
+            MESSAGE+="⚠️ Pre-release non trouvée - assurez-vous d'avoir testé sur votre instance\n"
+          fi
+          
+          MESSAGE+="\n**Actions avant merge :**\n"
+          MESSAGE+="1. Vérifier que tous les tests sont passés\n"
+          MESSAGE+="2. Confirmer que la pre-release a été testée sur une instance Home Assistant réelle\n"
+          MESSAGE+="3. Vérifier que la documentation utilisateur est à jour\n"
+          MESSAGE+="\n**Après le merge :**\n"
+          MESSAGE+="- La release sera automatiquement créée sur GitHub\n"
+          MESSAGE+="- Le CHANGELOG sera mis à jour avec la date de release\n"
+          MESSAGE+="- La pre-release sera supprimée\n"
+          MESSAGE+="- HACS détectera la nouvelle version\n"
+          
+          echo -e "$MESSAGE" | gh pr comment ${{ github.event.pull_request.number }} --body-file -

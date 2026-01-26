@@ -11,12 +11,16 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from datetime import datetime
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback, ServiceCall
 from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+import voluptuous as vol
+from homeassistant.helpers import config_validation as cv
 
 from .application import HeatingApplicationService
 from .const import (
@@ -25,6 +29,7 @@ from .const import (
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_DATA_RETENTION_DAYS,
+    CONF_IHP_ENABLED,
     CONF_LHS_RETENTION_DAYS,
     CONF_MAX_CYCLE_DURATION_MINUTES,
     CONF_MIN_CYCLE_DURATION_MINUTES,
@@ -38,6 +43,7 @@ from .const import (
     DEFAULT_MIN_CYCLE_DURATION_MINUTES,
     DEFAULT_TEMP_DELTA_THRESHOLD,
     DOMAIN,
+    SERVICE_CALCULATE_ANTICIPATED_START_TIME,
 )
 from .infrastructure.adapters import (
     HAClimateCommander,
@@ -53,7 +59,7 @@ from .view import async_register_http_views
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[str] = [Platform.SENSOR]
+PLATFORMS: list[str] = [Platform.SENSOR, Platform.SWITCH]
 LHS_CACHE_TTL_HOURS = 24
 
 class IntelligentHeatingPilotCoordinator:
@@ -77,6 +83,8 @@ class IntelligentHeatingPilotCoordinator:
         """
         self.hass = hass
         self.config = config_entry
+        # Keep a snapshot of options to detect toggle-only changes (avoid reloads)
+        self._options_snapshot = dict(config_entry.options or {})
         
         # Extract configuration with options override support
         self._vtherm_entity = self._get_config_value(CONF_VTHERM_ENTITY)
@@ -110,6 +118,10 @@ class IntelligentHeatingPilotCoordinator:
             self._get_config_value(CONF_MAX_CYCLE_DURATION_MINUTES) 
             or DEFAULT_MAX_CYCLE_DURATION_MINUTES
         )
+        
+        # IHP enabled state (default to True for backward compatibility)
+        ihp_enabled_value = self._get_config_value(CONF_IHP_ENABLED)
+        self._ihp_enabled = self._as_bool(ihp_enabled_value, default=True)
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
@@ -211,8 +223,9 @@ class IntelligentHeatingPilotCoordinator:
             len(self._scheduler_entities),
         )
         
-        # Trigger initial calculation for sensors
-        await self.async_update()
+        # NOTE: Initial update is now deferred to async_setup_entry to avoid blocking
+        # the config flow during device creation (prevents HA watchdog restart).
+        # See lines 368-394 for the deferred update logic.
     
     def setup_listeners(self) -> None:
         """Setup event listeners via event bridge."""
@@ -224,8 +237,10 @@ class IntelligentHeatingPilotCoordinator:
         if not self._app_service:
             return
         
-        # Calculate and schedule via application service
-        anticipation_data = await self._app_service.calculate_and_schedule_anticipation()
+        # Calculate and schedule via application service (passing IHP enabled state)
+        anticipation_data = await self._app_service.calculate_and_schedule_anticipation(
+            ihp_enabled=self._ihp_enabled
+        )
         
         # Cache for sensors
         self._last_anticipation_data = anticipation_data
@@ -236,20 +251,32 @@ class IntelligentHeatingPilotCoordinator:
         
         # Fire event for sensors
         if anticipation_data:
-            self.hass.bus.async_fire(
-                f"{DOMAIN}_anticipation_calculated",
-                {
-                    "entry_id": self.config.entry_id,
-                    "anticipated_start_time": anticipation_data["anticipated_start_time"].isoformat(),
-                    "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
-                    "next_target_temperature": anticipation_data["next_target_temperature"],
-                    "anticipation_minutes": anticipation_data["anticipation_minutes"],
-                    "current_temp": anticipation_data["current_temp"],
-                    "learned_heating_slope": anticipation_data["learned_heating_slope"],
-                    "confidence_level": anticipation_data["confidence_level"],
-                    "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
-                },
-            )
+            # Check if this is a "clear values" event (no scheduler configured)
+            if anticipation_data.get("clear_values"):
+                _LOGGER.debug("No scheduler configured - firing clear_values event for sensors")
+                self.hass.bus.async_fire(
+                    f"{DOMAIN}_anticipation_calculated",
+                    {
+                        "entry_id": self.config.entry_id,
+                        "clear_values": True,
+                    },
+                )
+            else:
+                # Normal anticipation data
+                self.hass.bus.async_fire(
+                    f"{DOMAIN}_anticipation_calculated",
+                    {
+                        "entry_id": self.config.entry_id,
+                        "anticipated_start_time": anticipation_data["anticipated_start_time"].isoformat(),
+                        "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
+                        "next_target_temperature": anticipation_data["next_target_temperature"],
+                        "anticipation_minutes": anticipation_data["anticipation_minutes"],
+                        "current_temp": anticipation_data["current_temp"],
+                        "learned_heating_slope": anticipation_data["learned_heating_slope"],
+                        "confidence_level": anticipation_data["confidence_level"],
+                        "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
+                    },
+                )
     
     async def async_cleanup(self) -> None:
         """Cleanup resources."""
@@ -275,7 +302,35 @@ class IntelligentHeatingPilotCoordinator:
         """Get cached LHS for sensors."""
         return self._lhs_cache
     
-
+    def is_ihp_enabled(self) -> bool:
+        """Get IHP enabled state."""
+        return self._ihp_enabled
+    
+    async def set_ihp_enabled(self, enabled: bool) -> None:
+        """Set IHP enabled state.
+        
+        Args:
+            enabled: True to enable IHP preheating, False to disable
+        """
+        _LOGGER.info("Setting IHP enabled state to: %s", enabled)
+        self._ihp_enabled = enabled
+        
+        # Update config entry options to persist state
+        # Note: async_update_entry schedules an async update but returns None (fire-and-forget)
+        # so it doesn't need to be awaited here
+        new_options = dict(self.config.options) if self.config.options else {}
+        new_options[CONF_IHP_ENABLED] = enabled
+        
+        # Update snapshot before and after so the options listener can short-circuit reloads
+        self._options_snapshot = dict(self.config.options or {})
+        self.hass.config_entries.async_update_entry(
+            self.config,
+            options=new_options
+        )
+        self._options_snapshot = dict(new_options)
+        
+        # Trigger a recalculation to apply the new state
+        await self.async_update()
     
     def get_vtherm_entity(self) -> str:
         """Get VTherm entity ID."""
@@ -312,6 +367,25 @@ class IntelligentHeatingPilotCoordinator:
         if isinstance(raw, str):
             return [raw]
         return []
+
+    @staticmethod
+    def _as_bool(value: Any, default: bool = False) -> bool:
+        """Normalize truthy/falsy values to a strict boolean.
+
+        Important for stringified options (e.g. "False" should yield False).
+        """
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"true", "1", "yes", "on"}:
+                return True
+            if lowered in {"false", "0", "no", "off"}:
+                return False
+            return default
+        if isinstance(value, (int, float)):
+            return bool(value)
+        return default
 
     async def _get_global_lhs_cached_or_fallback(self) -> float:
         """Return global LHS from cache if fresh, otherwise fallback to stored value.
@@ -376,10 +450,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info("[%s] HA started, triggering initial update", entry.entry_id)
         hass.async_create_task(coordinator.async_update())
     
-    # If HA already started, trigger update immediately, otherwise wait
+    # Schedule initial update asynchronously to avoid blocking config flow
+    # This prevents HA watchdog restart during device creation with scheduler
     if hass.is_running:
-        _LOGGER.debug("[%s] HA already running, triggering update now", entry.entry_id)
-        await coordinator.async_update()
+        _LOGGER.debug("[%s] HA already running, scheduling non-blocking async update", entry.entry_id)
+        hass.async_create_task(coordinator.async_update())
     else:
         _LOGGER.debug("[%s] Waiting for HA start event before first update", entry.entry_id)
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started)
@@ -408,7 +483,158 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if coordinator._model_storage:
                 coordinator._lhs_cache = await coordinator._model_storage.get_learned_heating_slope()
     
-    hass.services.async_register(DOMAIN, "reset_learning", handle_reset_learning)
+    async def handle_calculate_anticipated_start_time(call: ServiceCall):
+        """Handle calculate_anticipated_start_time service.
+        
+        This service calculates the anticipated start time for a given IHP device
+        to reach a target temperature at a specified time. It uses the device's
+        learned heating slope and current environmental data.
+        """
+        _LOGGER.debug("Entering handle_calculate_anticipated_start_time")
+        
+        # Extract service call parameters
+        entity_id = call.data.get("entity_id")
+        target_time_raw = call.data.get("target_time")
+        target_temp = call.data.get("target_temp")
+        
+        if not entity_id:
+            _LOGGER.error("entity_id is required for calculate_anticipated_start_time service")
+            return
+        
+        if not target_time_raw:
+            _LOGGER.error("target_time is required for calculate_anticipated_start_time service")
+            return
+        
+        # Parse target_time
+        if isinstance(target_time_raw, str):
+            target_time = dt_util.parse_datetime(target_time_raw)
+            if target_time is None:
+                try:
+                    target_time = datetime.fromisoformat(target_time_raw)
+                except ValueError:
+                    _LOGGER.error("Invalid target_time format: %s", target_time_raw)
+                    return
+        elif isinstance(target_time_raw, datetime):
+            target_time = target_time_raw
+        else:
+            _LOGGER.error("Invalid target_time type: %s", type(target_time_raw))
+            return
+        
+        # Ensure target_time has timezone
+        if target_time.tzinfo is None:
+            target_time = dt_util.as_local(target_time)
+        
+        # Extract entry_id from entity_id
+        # Entity IDs follow pattern: sensor.{name}_{sensor_type}
+        # We need to find the config entry that owns this entity
+        entry_id_found = None
+        for entry_id, coord in hass.data[DOMAIN].items():
+            if isinstance(coord, IntelligentHeatingPilotCoordinator):
+                # Check if this coordinator owns the entity by checking entity registry
+                entity_reg = er.async_get(hass)
+                entity_entry = entity_reg.async_get(entity_id)
+                if entity_entry and entity_entry.config_entry_id == entry_id:
+                    entry_id_found = entry_id
+                    break
+        
+        if not entry_id_found:
+            _LOGGER.error("Could not find IHP device for entity_id: %s", entity_id)
+            return
+        
+        # Get the coordinator for this device
+        device_coordinator = hass.data[DOMAIN].get(entry_id_found)
+        if not device_coordinator or not isinstance(device_coordinator, IntelligentHeatingPilotCoordinator):
+            _LOGGER.error("Invalid coordinator for entry_id: %s", entry_id_found)
+            return
+        
+        # Get current environment
+        if not device_coordinator._environment_reader:
+            _LOGGER.error("Environment reader not available for device")
+            return
+        
+        environment = await device_coordinator._environment_reader.get_current_environment()
+        if not environment:
+            _LOGGER.error("Could not read current environment")
+            return
+        
+        # Use target_temp from service call, or fallback to VTherm's current target
+        if target_temp is None:
+            # Try to get target temp from VTherm
+            vtherm_state = hass.states.get(device_coordinator._vtherm_entity)
+            if vtherm_state:
+                target_temp = vtherm_state.attributes.get("temperature")
+            if target_temp is None:
+                _LOGGER.error("target_temp not provided and could not be read from VTherm")
+                return
+        
+        target_temp = float(target_temp)
+        
+        # Get learned heating slope (contextual)
+        if not device_coordinator._app_service:
+            _LOGGER.error("Application service not available for device")
+            return
+        
+        lhs = await device_coordinator._app_service._get_contextual_lhs(target_time)
+        
+        # Calculate anticipated start time using prediction service
+        from .domain.services import PredictionService
+        prediction_service = PredictionService()
+        
+        prediction = prediction_service.predict_heating_time(
+            current_temp=environment.indoor_temperature,
+            target_temp=target_temp,
+            outdoor_temp=environment.outdoor_temp,
+            humidity=environment.indoor_humidity,
+            learned_slope=lhs,
+            target_time=target_time,
+            cloud_coverage=environment.cloud_coverage,
+        )
+        
+        _LOGGER.info(
+            "Service calculate_anticipated_start_time: "
+            "anticipated_start=%s, target_time=%s, target_temp=%.1f°C, "
+            "current_temp=%.1f°C, LHS=%.2f°C/h, confidence=%.2f",
+            prediction.anticipated_start_time.isoformat(),
+            target_time.isoformat(),
+            target_temp,
+            environment.indoor_temperature,
+            prediction.learned_heating_slope,
+            prediction.confidence_level,
+        )
+        
+        # Return the result as service response data
+        # Note: Service responses are only available in HA 2023.7+
+        # For older versions, this will just log the result
+        return {
+            "anticipated_start_time": prediction.anticipated_start_time.isoformat(),
+            "target_time": target_time.isoformat(),
+            "target_temp": target_temp,
+            "current_temp": environment.indoor_temperature,
+            "estimated_duration_minutes": prediction.estimated_duration_minutes,
+            "learned_heating_slope": prediction.learned_heating_slope,
+            "confidence_level": prediction.confidence_level,
+        }
+    
+    # Define service schema
+    calculate_anticipated_start_time_schema = vol.Schema({
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("target_time"): cv.datetime,
+        vol.Optional("target_temp"): vol.Coerce(float),
+    })
+    
+    hass.services.async_register(
+        DOMAIN, 
+        "reset_learning", 
+        handle_reset_learning
+    )
+    
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CALCULATE_ANTICIPATED_START_TIME,
+        handle_calculate_anticipated_start_time,
+        schema=calculate_anticipated_start_time_schema,
+        supports_response=True,
+    )
     
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -430,10 +656,31 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options and reload integration."""
+    coordinator: IntelligentHeatingPilotCoordinator | None = hass.data[DOMAIN].get(entry.entry_id)
+
+    previous_options = dict(getattr(coordinator, "_options_snapshot", {}) or {}) if coordinator else {}
+    previous_no_toggle = {k: v for k, v in previous_options.items() if k != CONF_IHP_ENABLED}
+    current_no_toggle = {k: v for k, v in entry.options.items() if k != CONF_IHP_ENABLED}
+    ihp_enabled = IntelligentHeatingPilotCoordinator._as_bool(
+        entry.options.get(CONF_IHP_ENABLED),
+        default=True,
+    )
+
+    # If only the ihp_enabled flag changed, skip full reload
+    if coordinator and previous_no_toggle == current_no_toggle:
+        _LOGGER.info("[%s] Options updated (ihp_enabled only), skipping reload", entry.entry_id)
+        coordinator._options_snapshot = dict(entry.options)
+        coordinator._ihp_enabled = ihp_enabled
+        await coordinator.async_update()
+        return
+
     _LOGGER.info("[%s] Options updated, reloading", entry.entry_id)
+    if coordinator:
+        coordinator._options_snapshot = dict(entry.options)
+
     await hass.config_entries.async_reload(entry.entry_id)
     
-    # Force update after reload
+    # Schedule async update after reload (non-blocking)
     coordinator = hass.data[DOMAIN].get(entry.entry_id)
     if coordinator:
-        await coordinator.async_update()
+        hass.async_create_task(coordinator.async_update())

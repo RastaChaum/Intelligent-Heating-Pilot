@@ -449,7 +449,7 @@ class HeatingApplicationService:
                 return cycles
             return []
         else:
-            _LOGGER.info("No cache found, performing full extraction")
+            _LOGGER.info("No cache found, performing initial extraction")
             
             # No cache exists, perform full extraction
             search_start = target_time - timedelta(days=self._history_lookback_days)
@@ -518,6 +518,7 @@ class HeatingApplicationService:
         combined_data: dict[HistoricalDataKey, list] = {}
 
         # Fetch climate data (indoor temp, target temp, heating state)
+        # Add small delays between fetches to yield control to event loop
         try:
             climate_adapter = ClimateDataAdapter(hass)
             indoor_data = await climate_adapter.fetch_historical_data(
@@ -527,6 +528,7 @@ class HeatingApplicationService:
                 end_time,
             )
             combined_data.update(indoor_data.data)
+            await asyncio.sleep(1)  # Yield to event loop
 
             target_data = await climate_adapter.fetch_historical_data(
                 device_id,
@@ -535,6 +537,7 @@ class HeatingApplicationService:
                 end_time,
             )
             combined_data.update(target_data.data)
+            await asyncio.sleep(1)  # Yield to event loop
 
             heating_state = await climate_adapter.fetch_historical_data(
                 device_id,
@@ -543,6 +546,7 @@ class HeatingApplicationService:
                 end_time,
             )
             combined_data.update(heating_state.data)
+            await asyncio.sleep(1)  # Yield to event loop
         except Exception as exc:
             _LOGGER.warning("Failed to fetch climate historical data: %s", exc)
             _LOGGER.debug("Exiting _extract_cycles_from_recorder")
@@ -561,6 +565,7 @@ class HeatingApplicationService:
                 combined_data.update(humidity_in.data)
             except Exception as exc:
                 _LOGGER.warning("Failed to fetch indoor humidity history: %s", exc)
+            await asyncio.sleep(1)  # Yield to event loop
         if outdoor_humidity_id:
             try:
                 humidity_out = await sensor_adapter.fetch_historical_data(
@@ -572,7 +577,7 @@ class HeatingApplicationService:
                 combined_data.update(humidity_out.data)
             except Exception as exc:
                 _LOGGER.warning("Failed to fetch outdoor humidity history: %s", exc)
-
+            await asyncio.sleep(1)  # Yield to event loop
         # Construct dataset and extract cycles
         historical_data_set = HistoricalDataSet(data=combined_data)
         try:
@@ -593,12 +598,27 @@ class HeatingApplicationService:
         _LOGGER.debug("Exiting _extract_cycles_from_recorder")
         return heating_cycles
     
-    async def calculate_and_schedule_anticipation(self) -> dict | None:
+    async def calculate_and_schedule_anticipation(self, ihp_enabled: bool = True) -> dict | None:
         """Calculate anticipation and schedule heating start.
         
+        Args:
+            ihp_enabled: Whether IHP preheating is enabled. When False, calculations
+                        continue but scheduler commands are skipped.
+        
         Returns:
-            Dict with anticipation data for sensors, or None if not applicable
+            Dict with anticipation data for sensors, or None if not applicable.
+            When scheduler is not configured or no timeslot is available,
+            returns a dict with clear_values=True to reset sensors to unknown state.
         """
+        # Get next timeslot first to check if any scheduler is configured
+        timeslot = await self._scheduler_reader.get_next_timeslot()
+        
+        # If no timeslot and no active scheduler, it means no scheduler was ever configured
+        if not timeslot and not self._active_scheduler_entity:
+            _LOGGER.debug("No scheduler configured for this device")
+            # Return clear_values dict to reset sensors to unknown
+            return {"clear_values": True}
+        
         # Check if the currently tracked scheduler has been disabled
         if self._active_scheduler_entity:
             if not await self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
@@ -606,21 +626,19 @@ class HeatingApplicationService:
                     "Active scheduler %s has been disabled. Clearing anticipation state.",
                     self._active_scheduler_entity
                 )
-                await self._clear_anticipation_state()
-                # Return None to clear sensor values
-                return None
+                self._clear_anticipation_state()
+                # Return clear_values dict to reset sensors to unknown
+                return {"clear_values": True}
         
-        # Get next timeslot
-        timeslot = await self._scheduler_reader.get_next_timeslot()
+        # No timeslot available (scheduler was configured but now disabled or no valid timeslot)
         if not timeslot:
             _LOGGER.debug("No scheduled timeslot found")
             # Clear all tracking state when no timeslot is available
-            # This handles both the case where the scheduler was just disabled
-            # and when _active_scheduler_entity is already None
             if self._is_preheating_active or self._active_scheduler_entity or self._preheating_target_time:
                 _LOGGER.info("Clearing anticipation state (no timeslot available)")
-                await self._clear_anticipation_state()
-            return None
+                self._clear_anticipation_state()
+            # Return clear_values dict to reset sensors to unknown
+            return {"clear_values": True}
         
         # Get current environment
         environment = await self._environment_reader.get_current_environment()
@@ -680,14 +698,28 @@ class HeatingApplicationService:
             _LOGGER.debug("Tracking scheduler entity: %s", timeslot.scheduler_entity)
             self._active_scheduler_entity = timeslot.scheduler_entity
         
-        # Schedule if needed
-        await self._schedule_anticipation(
-            anticipated_start=prediction.anticipated_start_time,
-            target_time=timeslot.target_time,
-            target_temp=timeslot.target_temp,
-            scheduler_entity_id=timeslot.scheduler_entity,
-            lhs=prediction.learned_heating_slope,
-        )
+        # Schedule if needed (only if IHP is enabled)
+        if ihp_enabled:
+            await self._schedule_anticipation(
+                anticipated_start=prediction.anticipated_start_time,
+                target_time=timeslot.target_time,
+                target_temp=timeslot.target_temp,
+                scheduler_entity_id=timeslot.scheduler_entity,
+                lhs=prediction.learned_heating_slope,
+            )
+        else:
+            # IHP disabled - revert to standard scenario if preheating was active
+            if self._is_preheating_active:
+                _LOGGER.info(
+                    "IHP disabled while preheating active - reverting to current scheduled state"
+                )
+                # Call cancel_action to revert thermostat to current time's preset/temperature
+                await self._scheduler_commander.cancel_action(timeslot.scheduler_entity)
+            else:
+                _LOGGER.debug("IHP disabled - no active preheating to revert")
+            
+            # Clear anticipation state
+            self._clear_anticipation_state()
         
         # Return data for sensors
         return {
@@ -777,17 +809,25 @@ class HeatingApplicationService:
         self._last_scheduled_lhs = lhs
         
         # If anticipated start is in past but target is future, trigger now
-        if anticipated_start <= now < target_time and not self._is_preheating_active:
-            _LOGGER.info(
-                "Anticipated start %s is past, triggering pre-heating immediately",
-                anticipated_start.isoformat()
-            )
-            # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
-            # Respects scheduler conditions (skip_conditions=False in the adapter)
-            await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
-            self._is_preheating_active = True
-            self._preheating_target_time = target_time
-            self._active_scheduler_entity = scheduler_entity_id
+        # This handles both: not yet preheating OR already preheating but with past anticipation
+        if anticipated_start <= now < target_time:
+            if not self._is_preheating_active:
+                _LOGGER.info(
+                    "Anticipated start %s is past, triggering pre-heating immediately",
+                    anticipated_start.isoformat()
+                )
+                # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
+                # Respects scheduler conditions (skip_conditions=False in the adapter)
+                await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
+                self._is_preheating_active = True
+                self._preheating_target_time = target_time
+                self._active_scheduler_entity = scheduler_entity_id
+            else:
+                # Already preheating but anticipation is past - ensure we stay in preheating
+                _LOGGER.debug(
+                    "Already preheating (started earlier), continuation through target time %s",
+                    target_time.isoformat()
+                )
             return
         
         # If both are in past, skip
