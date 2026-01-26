@@ -59,6 +59,10 @@ def mock_adapters():
     hass = Mock()
     hass.async_create_task = Mock()
     
+    # Mock timer scheduler
+    timer_scheduler = Mock()
+    timer_scheduler.schedule_timer = Mock(return_value=Mock())  # Returns cancel function
+    
     return {
         "scheduler_reader": scheduler_reader,
         "model_storage": model_storage,
@@ -66,6 +70,7 @@ def mock_adapters():
         "climate_commander": climate_commander,
         "environment_reader": environment_reader,
         "hass": hass,
+        "timer_scheduler": timer_scheduler,
     }
 
 
@@ -78,6 +83,7 @@ def app_service(mock_adapters):
         scheduler_commander=mock_adapters["scheduler_commander"],
         climate_commander=mock_adapters["climate_commander"],
         environment_reader=mock_adapters["environment_reader"],
+        timer_scheduler=mock_adapters["timer_scheduler"],
         hass=mock_adapters["hass"],
         lhs_window_hours=6.0,
     )
