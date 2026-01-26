@@ -13,6 +13,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
+    CONF_DEAD_TIME_MINUTES,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
@@ -23,6 +24,7 @@ from .const import (
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
+    DEFAULT_DEAD_TIME_MINUTES,
     DEFAULT_LHS_RETENTION_DAYS,
     DEFAULT_MAX_CYCLE_DURATION_MINUTES,
     DEFAULT_MIN_CYCLE_DURATION_MINUTES,
@@ -145,7 +147,20 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                     )
                 ),
                 vol.Optional(
-                    CONF_TEMP_DELTA_THRESHOLD, default=DEFAULT_TEMP_DELTA_THRESHOLD
+                    CONF_DEAD_TIME_MINUTES,
+                    default=DEFAULT_DEAD_TIME_MINUTES
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=60.0,
+                        step=1.0,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_TEMP_DELTA_THRESHOLD,
+                    default=DEFAULT_TEMP_DELTA_THRESHOLD
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.1,
@@ -373,12 +388,22 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 mode=selector.NumberSelectorMode.BOX,
             )
         )
-        schema_dict[
-            vol.Optional(
-                CONF_TEMP_DELTA_THRESHOLD,
-                default=_opt_or_data(CONF_TEMP_DELTA_THRESHOLD, DEFAULT_TEMP_DELTA_THRESHOLD),
+        schema_dict[vol.Optional(
+            CONF_DEAD_TIME_MINUTES,
+            default=_opt_or_data(CONF_DEAD_TIME_MINUTES, DEFAULT_DEAD_TIME_MINUTES)
+        )] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0.0,
+                max=60.0,
+                step=1.0,
+                unit_of_measurement="minutes",
+                mode=selector.NumberSelectorMode.BOX
             )
-        ] = selector.NumberSelector(
+        )
+        schema_dict[vol.Optional(
+            CONF_TEMP_DELTA_THRESHOLD,
+            default=_opt_or_data(CONF_TEMP_DELTA_THRESHOLD, DEFAULT_TEMP_DELTA_THRESHOLD)
+        )] = selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.1,
                 max=1.0,

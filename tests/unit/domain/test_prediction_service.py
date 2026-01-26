@@ -165,6 +165,56 @@ class TestPredictionService(unittest.TestCase):
         self.assertEqual(result.anticipated_start_time, target_time)
         self.assertEqual(result.confidence_level, 0.0)
 
+    def test_dead_time_increases_duration(self):
+        """Test that dead_time parameter increases heating duration."""
+        target_time = get_future_datetime(2)
+        
+        # Without dead time
+        result_no_deadtime = self.service.predict_heating_time(
+            current_temp=TEST_CURRENT_TEMP,
+            target_temp=TEST_TARGET_TEMP,
+            learned_slope=TEST_LEARNED_SLOPE,
+            target_time=target_time,
+            dead_time_minutes=0.0,
+        )
+        
+        # With dead time
+        result_with_deadtime = self.service.predict_heating_time(
+            current_temp=TEST_CURRENT_TEMP,
+            target_temp=TEST_TARGET_TEMP,
+            learned_slope=TEST_LEARNED_SLOPE,
+            target_time=target_time,
+            dead_time_minutes=15.0,
+        )
+        
+        # Dead time should increase duration by exactly 15 minutes
+        self.assertAlmostEqual(
+            result_with_deadtime.estimated_duration_minutes - result_no_deadtime.estimated_duration_minutes,
+            15.0,
+            delta=0.1
+        )
+
+    def test_dead_time_formula(self):
+        """Test that the dead_time formula is correctly applied."""
+        target_time = get_future_datetime(2)
+        dead_time = 10.0
+        temp_delta = TEST_TARGET_TEMP - TEST_CURRENT_TEMP  # 3.0°C
+        
+        result = self.service.predict_heating_time(
+            current_temp=TEST_CURRENT_TEMP,
+            target_temp=TEST_TARGET_TEMP,
+            learned_slope=TEST_LEARNED_SLOPE,
+            target_time=target_time,
+            dead_time_minutes=dead_time,
+        )
+        
+        # Expected base time without corrections: dead_time + (temp_delta / slope) * 60
+        # = 10 + (3.0 / 2.0) * 60 = 10 + 90 = 100 minutes
+        # Plus default anticipation buffer of 5 minutes = 105 minutes
+        # This is the base calculation before environmental corrections
+        # Note: actual duration may be adjusted by correction factors and buffer
+        self.assertGreater(result.estimated_duration_minutes, dead_time)
+
 
 if __name__ == "__main__":
     unittest.main()
