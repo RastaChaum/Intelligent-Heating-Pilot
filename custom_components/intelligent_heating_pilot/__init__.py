@@ -51,6 +51,8 @@ from .infrastructure.adapters import (
     HAModelStorage,
     HASchedulerCommander,
     HASchedulerReader,
+    HACycleCache,
+    HATimerScheduler,
 )
 from .infrastructure.event_bridge import HAEventBridge
 from .view import async_register_http_views
@@ -172,6 +174,9 @@ class IntelligentHeatingPilotCoordinator:
             cloud_cover_entity_id=self._cloud_cover,
         )
 
+        # Create timer scheduler adapter
+        self._timer_scheduler = HATimerScheduler(self.hass)
+
         # Create application service
         self._app_service = HeatingApplicationService(
             scheduler_reader=self._scheduler_reader,
@@ -179,7 +184,7 @@ class IntelligentHeatingPilotCoordinator:
             scheduler_commander=self._scheduler_commander,
             climate_commander=self._climate_commander,
             environment_reader=self._environment_reader,
-            hass=self.hass,
+            timer_scheduler=self._timer_scheduler,
             cycle_cache=self._cycle_cache,
             history_lookback_days=self._data_retention_days,
             decision_mode=self._decision_mode,

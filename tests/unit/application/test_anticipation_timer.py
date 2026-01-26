@@ -68,6 +68,10 @@ def mock_adapters(mock_hass):
     environment_reader.get_vtherm_entity_id = Mock(return_value="climate.test_vtherm")
     environment_reader.get_hass = Mock(return_value=mock_hass)
     
+    # Mock timer scheduler
+    timer_scheduler = Mock()
+    timer_scheduler.schedule_timer = Mock(return_value=Mock())  # Returns cancel function
+    
     return {
         "scheduler_reader": scheduler_reader,
         "model_storage": model_storage,
@@ -75,6 +79,7 @@ def mock_adapters(mock_hass):
         "climate_commander": climate_commander,
         "environment_reader": environment_reader,
         "hass": mock_hass,
+        "timer_scheduler": timer_scheduler,
     }
 
 
@@ -87,7 +92,7 @@ def app_service(mock_adapters):
         scheduler_commander=mock_adapters["scheduler_commander"],
         climate_commander=mock_adapters["climate_commander"],
         environment_reader=mock_adapters["environment_reader"],
-        hass=mock_adapters["hass"],
+        timer_scheduler=mock_adapters["timer_scheduler"],
         lhs_window_hours=6.0,
     )
 

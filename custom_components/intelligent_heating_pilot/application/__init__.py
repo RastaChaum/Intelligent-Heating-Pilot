@@ -6,13 +6,12 @@ and infrastructure adapters, implementing use cases.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Callable
 
 from homeassistant.util import dt as dt_util
-from homeassistant.helpers.event import async_track_point_in_time
-from homeassistant.core import HomeAssistant, callback
 
 from ..const import DEFAULT_DATA_RETENTION_DAYS, DEFAULT_DECISION_MODE
 from ..domain.entities import HeatingPilot
@@ -33,6 +32,7 @@ if TYPE_CHECKING:
         HASchedulerCommander,
         HASchedulerReader,
     )
+    from ..domain.interfaces import ITimerScheduler
 
 _LOGGER = logging.getLogger(__name__)
 LHS_CACHE_TTL_HOURS = 24
@@ -46,7 +46,7 @@ class HeatingApplicationService:
     - Domain services (PredictionService)
     - Infrastructure adapters (HA*)
 
-    Uses Home Assistant timer API for reliable anticipation triggering.
+    NO Home Assistant dependencies - only uses adapter interfaces.
     """
 
     def __init__(
@@ -56,7 +56,7 @@ class HeatingApplicationService:
         scheduler_commander: "HASchedulerCommander",
         climate_commander: "HAClimateCommander",
         environment_reader: "HAEnvironmentReader",
-        hass: HomeAssistant,
+        timer_scheduler: "ITimerScheduler",
         cycle_cache: "HACycleCache | None" = None,
         lhs_window_hours: float = 6.0,
         history_lookback_days: int | None = None,
@@ -76,7 +76,7 @@ class HeatingApplicationService:
             scheduler_commander: Triggers scheduler actions
             climate_commander: Controls climate entity
             environment_reader: Reads environmental conditions
-            hass: Home Assistant instance for timer scheduling
+            timer_scheduler: Schedules timer callbacks for anticipation
             cycle_cache: Optional cache for heating cycles (enables incremental updates)
             lhs_window_hours: Time window in hours for contextual LHS (default: 6)
             history_lookback_days: Number of days of HA history to query
@@ -94,7 +94,7 @@ class HeatingApplicationService:
         self._scheduler_commander = scheduler_commander
         self._climate_commander = climate_commander
         self._environment_reader = environment_reader
-        self._hass = hass
+        self._timer_scheduler = timer_scheduler
         self._cycle_cache = cycle_cache
         self._prediction_service = PredictionService()
         self._lhs_calculation_service = LHSCalculationService()
@@ -148,8 +148,11 @@ class HeatingApplicationService:
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None  # Track which scheduler is being used
 
-        # Cancel function returned by async_track_point_in_time for active timer
+        # Cancel function returned by timer scheduler for active timer
         self._anticipation_timer_cancel: Callable[[], None] | None = None
+
+        # Lock to protect timer state transitions from race conditions
+        self._timer_lock = asyncio.Lock()
 
     def _clear_anticipation_state(self) -> None:
         """Clear all anticipation tracking state."""
@@ -183,44 +186,44 @@ class HeatingApplicationService:
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity to trigger
         """
+        _LOGGER.debug(
+            "Entering _schedule_anticipation_timer: anticipated_start=%s, scheduler=%s",
+            anticipated_start.isoformat(),
+            scheduler_entity_id,
+        )
+
         # Cancel any existing timer first
         self._cancel_anticipation_timer()
 
         # Track which scheduler we're anticipating for
         self._active_scheduler_entity = scheduler_entity_id
 
-        @callback
-        def _trigger_anticipation(_now: datetime) -> None:
+        # Create callback for timer
+        async def _trigger_callback() -> None:
             """Callback to trigger anticipation when timer fires."""
             _LOGGER.info(
                 "Anticipation timer fired at %s for target %s (%.1f°C)",
-                _now.isoformat(),
+                dt_util.now().isoformat(),
                 target_time.isoformat(),
                 target_temp,
             )
-            # Clear the timer reference since it has fired
-            self._anticipation_timer_cancel = None
-            # Trigger the action with error handling
-            try:
-                self._hass.async_create_task(
-                    self._trigger_anticipation_action(
-                        target_time,
-                        target_temp,
-                        scheduler_entity_id,
-                    )
-                )
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.error(
-                    "Failed to create anticipation trigger task: %s",
-                    exc,
-                    exc_info=True,
+
+            # Use lock to protect timer state transitions
+            async with self._timer_lock:
+                # Clear the timer reference since it has fired
+                self._anticipation_timer_cancel = None
+
+                # Trigger the action
+                await self._trigger_anticipation_action(
+                    target_time,
+                    target_temp,
+                    scheduler_entity_id,
                 )
 
-        # Schedule the timer
-        self._anticipation_timer_cancel = async_track_point_in_time(
-            self._hass,
-            _trigger_anticipation,
+        # Schedule the timer using the interface
+        self._anticipation_timer_cancel = self._timer_scheduler.schedule_timer(
             anticipated_start,
+            _trigger_callback,
         )
 
         now = dt_util.now()
@@ -230,6 +233,7 @@ class HeatingApplicationService:
             anticipated_start.isoformat(),
             wait_minutes,
         )
+        _LOGGER.debug("Exiting _schedule_anticipation_timer")
 
     async def _trigger_anticipation_action(
         self,
@@ -244,6 +248,12 @@ class HeatingApplicationService:
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity to trigger
         """
+        _LOGGER.debug(
+            "Entering _trigger_anticipation_action: target_time=%s, temp=%.1f°C, scheduler=%s",
+            target_time.isoformat(),
+            target_temp,
+            scheduler_entity_id,
+        )
         _LOGGER.info(
             "Triggering anticipation action for target %s (%.1f°C)",
             target_time.isoformat(),
@@ -266,6 +276,8 @@ class HeatingApplicationService:
         self._is_preheating_active = True
         self._preheating_target_time = target_time
         self._active_scheduler_entity = scheduler_entity_id
+
+        _LOGGER.debug("Exiting _trigger_anticipation_action")
 
     # NOTE: process_slope_update() removed - we now extract slopes directly from
     # Home Assistant recorder via HeatingCycleService, so no disk-based persistence needed

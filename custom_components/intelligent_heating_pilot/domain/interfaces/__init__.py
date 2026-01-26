@@ -16,6 +16,7 @@ from .scheduler_commander_interface import ISchedulerCommander
 from .scheduler_reader_interface import ISchedulerReader
 from .sensor_data_adapter_interface import ISensorDataAdapter
 from .weather_data_adapter_interface import IWeatherDataAdapter
+from .timer_scheduler import ITimerScheduler
 
 __all__ = [
     "ISchedulerReader",
@@ -28,4 +29,5 @@ __all__ = [
     "IHistoricalDataAdapter",
     "ISensorDataAdapter",
     "IWeatherDataAdapter",
+    "ITimerScheduler",
 ]
