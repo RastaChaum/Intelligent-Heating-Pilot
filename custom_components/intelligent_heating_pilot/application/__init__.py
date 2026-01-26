@@ -202,35 +202,34 @@ class HeatingApplicationService:
             scheduler_entity_id,
         )
 
+        # Create callback for timer (outside lock - will execute later when timer fires)
+        async def _trigger_callback() -> None:
+            """Callback to trigger anticipation when timer fires."""
+            _LOGGER.info(
+                "Anticipation timer fired at %s for target %s (%.1f°C)",
+                dt_util.now().isoformat(),
+                target_time.isoformat(),
+                target_temp,
+            )
+
+            # Use lock to protect timer state transitions
+            async with self._timer_lock:
+                # Clear the timer reference since it has fired
+                self._anticipation_timer_cancel = None
+
+                # Trigger the action
+                await self._trigger_anticipation_action(
+                    target_time,
+                    target_temp,
+                    scheduler_entity_id,
+                )
+
         async with self._timer_lock:
             # Cancel any existing timer first
             self._cancel_anticipation_timer_internal()
 
             # Track which scheduler we're anticipating for
             self._active_scheduler_entity = scheduler_entity_id
-
-            # Create callback for timer
-            async def _trigger_callback() -> None:
-                """Callback to trigger anticipation when timer fires."""
-                _LOGGER.info(
-                    "Anticipation timer fired at %s for target %s (%.1f°C)",
-                    dt_util.now().isoformat(),
-                    target_time.isoformat(),
-                    target_temp,
-                )
-
-                # Use lock to protect timer state transitions
-                async with self._timer_lock:
-                    # Clear the timer reference since it has fired
-                    self._anticipation_timer_cancel = None
-
-                    # Trigger the action
-                    await self._trigger_anticipation_action(
-                        target_time,
-                        target_temp,
-                        scheduler_entity_id,
-                    )
-
             # Schedule the timer using the interface
             self._anticipation_timer_cancel = self._timer_scheduler.schedule_timer(
                 anticipated_start,
