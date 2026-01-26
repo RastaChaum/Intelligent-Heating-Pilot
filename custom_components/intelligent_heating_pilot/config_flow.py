@@ -15,6 +15,7 @@ from typing import cast
 from .const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
+    CONF_DEAD_TIME_MINUTES,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
@@ -25,6 +26,7 @@ from .const import (
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
+    DEFAULT_DEAD_TIME_MINUTES,
     DEFAULT_LHS_RETENTION_DAYS,
     DEFAULT_MAX_CYCLE_DURATION_MINUTES,
     DEFAULT_MIN_CYCLE_DURATION_MINUTES,
@@ -159,6 +161,18 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         max=90,
                         step=1,
                         unit_of_measurement="days",
+                        mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_DEAD_TIME_MINUTES,
+                    default=DEFAULT_DEAD_TIME_MINUTES
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=60.0,
+                        step=1.0,
+                        unit_of_measurement="minutes",
                         mode=selector.NumberSelectorMode.BOX
                     )
                 ),
@@ -397,6 +411,18 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 max=90,
                 step=1,
                 unit_of_measurement="days",
+                mode=selector.NumberSelectorMode.BOX
+            )
+        )
+        schema_dict[vol.Optional(
+            CONF_DEAD_TIME_MINUTES,
+            default=_opt_or_data(CONF_DEAD_TIME_MINUTES, DEFAULT_DEAD_TIME_MINUTES)
+        )] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0.0,
+                max=60.0,
+                step=1.0,
+                unit_of_measurement="minutes",
                 mode=selector.NumberSelectorMode.BOX
             )
         )

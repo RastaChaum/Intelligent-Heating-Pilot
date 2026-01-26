@@ -61,6 +61,7 @@ class HeatingApplicationService:
         cycle_split_duration_minutes: int = 0,
         min_cycle_duration_minutes: int | None = None,
         max_cycle_duration_minutes: int | None = None,
+        dead_time_minutes: float = 0.0,
     ) -> None:
         """Initialize the application service.
         
@@ -79,6 +80,7 @@ class HeatingApplicationService:
             cycle_split_duration_minutes: Duration for splitting long cycles (minutes, 0=disabled)
             min_cycle_duration_minutes: Minimum cycle duration (minutes)
             max_cycle_duration_minutes: Maximum cycle duration (minutes)
+            dead_time_minutes: Dead time in minutes (initial heating delay)
         """
         self._scheduler_reader = scheduler_reader
         self._model_storage = model_storage
@@ -109,6 +111,7 @@ class HeatingApplicationService:
             if history_lookback_days is not None
             else int(DEFAULT_DATA_RETENTION_DAYS)
         )
+        self._dead_time_minutes = dead_time_minutes
         
         # Create decision strategy based on mode
         decision_strategy = DecisionStrategyFactory.create_strategy(
@@ -522,6 +525,7 @@ class HeatingApplicationService:
             learned_slope=lhs,
             target_time=timeslot.target_time,
             cloud_coverage=environment.cloud_coverage,
+            dead_time_minutes=self._dead_time_minutes,
         )
         
         _LOGGER.info(

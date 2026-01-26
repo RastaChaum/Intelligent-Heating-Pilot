@@ -7,11 +7,13 @@ from typing import TYPE_CHECKING, Any
 from ...domain.interfaces.device_config_reader import DeviceConfig, IDeviceConfigReader
 from ...const import (
     CONF_CLOUD_COVER_ENTITY,
+    CONF_DEAD_TIME_MINUTES,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
+    DEFAULT_DEAD_TIME_MINUTES,
     DEFAULT_LHS_RETENTION_DAYS,
 )
 
@@ -82,6 +84,11 @@ class HADeviceConfigReader(IDeviceConfigReader):
             or DEFAULT_LHS_RETENTION_DAYS
         )
 
+        dead_time_minutes = float(
+            self._get_config_value(config, options, CONF_DEAD_TIME_MINUTES)
+            or DEFAULT_DEAD_TIME_MINUTES
+        )
+
         device_config = DeviceConfig(
             device_id=device_id,
             vtherm_entity_id=vtherm_entity,
@@ -90,6 +97,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
             humidity_out_entity_id=humidity_out,
             cloud_cover_entity_id=cloud_cover,
             lhs_retention_days=lhs_retention_days,
+            dead_time_minutes=dead_time_minutes,
         )
 
         _LOGGER.debug("Retrieved device configuration: %s", device_config)

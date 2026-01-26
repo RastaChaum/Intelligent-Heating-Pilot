@@ -48,6 +48,7 @@ class PredictionService:
         outdoor_temp: float | None = None,
         humidity: float | None = None,
         cloud_coverage: float | None = None,
+        dead_time_minutes: float = 0.0,
     ) -> PredictionResult:
         """Calculate when heating should start.
         
@@ -61,6 +62,7 @@ class PredictionService:
             outdoor_temp: Outdoor temperature in Celsius
             humidity: Indoor humidity percentage (0-100)
             cloud_coverage: Cloud coverage percentage (0-100, 0=clear sky)
+            dead_time_minutes: Dead time in minutes (initial period with minimal heating effect)
             
         Returns:
             Prediction result with start time and confidence
@@ -96,7 +98,8 @@ class PredictionService:
             )
         
         # Calculate base anticipation time (in minutes)
-        anticipation_minutes = (temp_delta / learned_slope) * 60.0
+        # Formula: heating_time = dead_time + (temp_delta / slope) * 60
+        anticipation_minutes = dead_time_minutes + (temp_delta / learned_slope) * 60.0
         
         # Apply environmental correction factors
         correction_factor = self._calculate_environmental_correction(
@@ -119,10 +122,11 @@ class PredictionService:
         confidence = self._calculate_confidence(learned_slope, outdoor_temp, humidity)
         
         _LOGGER.debug(
-            "Prediction: ΔT=%.1f°C, slope=%.2f°C/h, correction=%.2f, "
+            "Prediction: ΔT=%.1f°C, slope=%.2f°C/h, dead_time=%.1f min, correction=%.2f, "
             "duration=%.1f min, confidence=%.2f",
             temp_delta,
             learned_slope,
+            dead_time_minutes,
             correction_factor,
             anticipation_minutes,
             confidence

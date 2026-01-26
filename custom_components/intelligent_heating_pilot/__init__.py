@@ -22,6 +22,7 @@ from .application import HeatingApplicationService
 from .const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
+    CONF_DEAD_TIME_MINUTES,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_DATA_RETENTION_DAYS,
@@ -34,6 +35,7 @@ from .const import (
     DECISION_MODE_SIMPLE,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
     DEFAULT_DATA_RETENTION_DAYS,
+    DEFAULT_DEAD_TIME_MINUTES,
     DEFAULT_MAX_CYCLE_DURATION_MINUTES,
     DEFAULT_MIN_CYCLE_DURATION_MINUTES,
     DEFAULT_TEMP_DELTA_THRESHOLD,
@@ -109,6 +111,10 @@ class IntelligentHeatingPilotCoordinator:
             self._get_config_value(CONF_MAX_CYCLE_DURATION_MINUTES) 
             or DEFAULT_MAX_CYCLE_DURATION_MINUTES
         )
+        self._dead_time_minutes = float(
+            self._get_config_value(CONF_DEAD_TIME_MINUTES)
+            or DEFAULT_DEAD_TIME_MINUTES
+        )
         
         # Infrastructure adapters
         self._model_storage: HAModelStorage | None = None
@@ -176,6 +182,7 @@ class IntelligentHeatingPilotCoordinator:
             cycle_split_duration_minutes=self._cycle_split_duration_minutes,
             min_cycle_duration_minutes=self._min_cycle_duration_minutes,
             max_cycle_duration_minutes=self._max_cycle_duration_minutes,
+            dead_time_minutes=self._dead_time_minutes,
         )
         
         # Create event bridge

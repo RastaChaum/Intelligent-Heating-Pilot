@@ -17,6 +17,7 @@ class DeviceConfig:
         humidity_out_entity_id: Entity ID for outdoor humidity (optional)
         cloud_cover_entity_id: Entity ID for cloud coverage (optional)
         lhs_retention_days: Number of days to retain slope data
+        dead_time_minutes: Dead time in minutes (time before heating becomes effective)
     """
     device_id: str
     vtherm_entity_id: str
@@ -25,6 +26,7 @@ class DeviceConfig:
     humidity_out_entity_id: str | None = None
     cloud_cover_entity_id: str | None = None
     lhs_retention_days: int = 30
+    dead_time_minutes: float = 0.0
 
 
 class IDeviceConfigReader(ABC):
