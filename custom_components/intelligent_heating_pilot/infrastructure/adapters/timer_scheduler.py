@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Awaitable, Callable, Coroutine, Any
+from typing import Callable, Coroutine, Any
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_point_in_time
@@ -32,7 +32,7 @@ class HATimerScheduler(ITimerScheduler):
         """
         self._hass = hass
     
-    async def schedule_timer(
+    def schedule_timer(
         self,
         target_time: datetime,
         callback_func: Callable[[], Coroutine[Any, Any, Any]],

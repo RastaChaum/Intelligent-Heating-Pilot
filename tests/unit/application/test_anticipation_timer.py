@@ -276,7 +276,7 @@ class TestAnticipationTimer:
         assert app_service._anticipation_timer_cancel is not None
         
         # Clear anticipation state
-        app_service._clear_anticipation_state()
+        await app_service._clear_anticipation_state()
         
         # Verify timer was cancelled
         assert app_service._anticipation_timer_cancel is None
