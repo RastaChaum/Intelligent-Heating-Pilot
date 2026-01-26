@@ -2,15 +2,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
-
-from typing import cast
 
 from .const import (
     CONF_CLOUD_COVER_ENTITY,

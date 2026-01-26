@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ...domain.interfaces.device_config_reader import DeviceConfig, IDeviceConfigReader
 from ...const import (
     CONF_CLOUD_COVER_ENTITY,
     CONF_DEAD_TIME_MINUTES,
@@ -16,10 +15,11 @@ from ...const import (
     DEFAULT_DEAD_TIME_MINUTES,
     DEFAULT_LHS_RETENTION_DAYS,
 )
+from ...domain.interfaces.device_config_reader import DeviceConfig, IDeviceConfigReader
 
 if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant
     from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 

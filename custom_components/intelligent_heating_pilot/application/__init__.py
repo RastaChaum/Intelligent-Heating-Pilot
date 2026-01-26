@@ -11,24 +11,24 @@ from typing import TYPE_CHECKING
 
 from homeassistant.util import dt as dt_util
 
+from ..const import DEFAULT_DATA_RETENTION_DAYS, DEFAULT_DECISION_MODE
 from ..domain.entities import HeatingPilot
-from ..domain.services import PredictionService, LHSCalculationService, HeatingCycleService
+from ..domain.services import HeatingCycleService, LHSCalculationService, PredictionService
 from ..domain.value_objects import (
+    HeatingCycle,
     HistoricalDataKey,
     HistoricalDataSet,
-    HeatingCycle,
 )
 from ..infrastructure.decision_strategy_factory import DecisionStrategyFactory
-from ..const import DEFAULT_DECISION_MODE, DEFAULT_DATA_RETENTION_DAYS
 
 if TYPE_CHECKING:
     from ..infrastructure.adapters import (
         HAClimateCommander,
+        HACycleCache,
         HAEnvironmentReader,
         HAModelStorage,
         HASchedulerCommander,
         HASchedulerReader,
-        HACycleCache,
     )
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,12 +48,12 @@ class HeatingApplicationService:
     
     def __init__(
         self,
-        scheduler_reader: "HASchedulerReader",
-        model_storage: "HAModelStorage",
-        scheduler_commander: "HASchedulerCommander",
-        climate_commander: "HAClimateCommander",
-        environment_reader: "HAEnvironmentReader",
-        cycle_cache: "HACycleCache | None" = None,
+        scheduler_reader: HASchedulerReader,
+        model_storage: HAModelStorage,
+        scheduler_commander: HASchedulerCommander,
+        climate_commander: HAClimateCommander,
+        environment_reader: HAEnvironmentReader,
+        cycle_cache: HACycleCache | None = None,
         lhs_window_hours: float = 6.0,
         history_lookback_days: int | None = None,
         decision_mode: str = DEFAULT_DECISION_MODE,
@@ -93,10 +93,10 @@ class HeatingApplicationService:
         
         # Create HeatingCycleService with configured parameters
         from ..const import (
-            DEFAULT_TEMP_DELTA_THRESHOLD,
             DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
-            DEFAULT_MIN_CYCLE_DURATION_MINUTES,
             DEFAULT_MAX_CYCLE_DURATION_MINUTES,
+            DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+            DEFAULT_TEMP_DELTA_THRESHOLD,
         )
         self._heating_cycle_service = HeatingCycleService(
             temp_delta_threshold=temp_delta_threshold or DEFAULT_TEMP_DELTA_THRESHOLD,
@@ -464,15 +464,14 @@ class HeatingApplicationService:
             Dict with anticipation data for sensors, or None if not applicable
         """
         # Check if the currently tracked scheduler has been disabled
-        if self._active_scheduler_entity:
-            if not await self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
-                _LOGGER.warning(
-                    "Active scheduler %s has been disabled. Clearing anticipation state.",
-                    self._active_scheduler_entity
-                )
-                self._clear_anticipation_state()
-                # Return None to clear sensor values
-                return None
+        if self._active_scheduler_entity and not await self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
+            _LOGGER.warning(
+                "Active scheduler %s has been disabled. Clearing anticipation state.",
+                self._active_scheduler_entity
+            )
+            self._clear_anticipation_state()
+            # Return None to clear sensor values
+            return None
         
         # Get next timeslot
         timeslot = await self._scheduler_reader.get_next_timeslot()
