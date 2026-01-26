@@ -731,6 +731,7 @@ class HeatingApplicationService:
                 self._last_scheduled_time = anticipated_start
                 self._last_scheduled_lhs = lhs
                 self._is_preheating_active = False
+                self._preheating_target_time = None
                 
                 # Schedule timer for the new anticipated time
                 self._schedule_anticipation_timer(
@@ -770,15 +771,15 @@ class HeatingApplicationService:
             _LOGGER.debug("Both times are past, skipping")
             self._cancel_anticipation_timer()
             return
-        
-        # Anticipated start is in the future - schedule timer to trigger it
-        if not self._is_preheating_active:
-            self._schedule_anticipation_timer(
-                anticipated_start,
-                target_time,
-                target_temp,
-                scheduler_entity_id,
-            )
+        # Anticipated start is in the future - schedule timer to trigger it.
+        # We always (re)schedule here so that the timer reflects the most recent
+        # anticipated start time, even if pre-heating is already active.
+        self._schedule_anticipation_timer(
+            anticipated_start,
+            target_time,
+            target_temp,
+            scheduler_entity_id,
+        )
     
     async def check_overshoot_risk(self, scheduler_entity_id: str) -> None:
         """Check if heating should stop to prevent overshoot."""
