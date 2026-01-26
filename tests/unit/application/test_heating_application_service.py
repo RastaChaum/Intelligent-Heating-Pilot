@@ -84,7 +84,6 @@ def app_service(mock_adapters):
         climate_commander=mock_adapters["climate_commander"],
         environment_reader=mock_adapters["environment_reader"],
         timer_scheduler=mock_adapters["timer_scheduler"],
-        hass=mock_adapters["hass"],
         lhs_window_hours=6.0,
     )
 
