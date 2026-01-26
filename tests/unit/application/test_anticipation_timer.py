@@ -12,8 +12,9 @@ import pytest
 
 from custom_components.intelligent_heating_pilot.application import HeatingApplicationService
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
-    ScheduledTimeslot,
     EnvironmentState,
+    PredictionResult,
+    ScheduledTimeslot,
 )
 from homeassistant.util import dt as dt_util
 
@@ -131,6 +132,67 @@ class TestAnticipationTimer:
         
         # Verify: Action should NOT be triggered immediately
         mock_adapters["scheduler_commander"].run_action.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_timer_rescheduled_when_anticipated_start_updates(
+        self, app_service, mock_adapters
+    ):
+        """Test timer reschedules when anticipated start time changes."""
+        now = make_aware(datetime(2025, 1, 15, 4, 0, 0))
+        target_time = make_aware(datetime(2025, 1, 15, 7, 30, 0))
+
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=21.0,
+            timeslot_id="test_slot",
+            scheduler_entity="switch.test_scheduler",
+        )
+
+        environment = EnvironmentState(
+            now,
+            indoor_temperature=18.0,
+            outdoor_temp=5.0,
+            indoor_humidity=50.0,
+            cloud_coverage=0.5,
+        )
+
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment
+
+        first_prediction = PredictionResult(
+            anticipated_start_time=make_aware(datetime(2025, 1, 15, 5, 0, 0)),
+            estimated_duration_minutes=90.0,
+            confidence_level=0.9,
+            learned_heating_slope=1.5,
+        )
+        second_prediction = PredictionResult(
+            anticipated_start_time=make_aware(datetime(2025, 1, 15, 4, 30, 0)),
+            estimated_duration_minutes=120.0,
+            confidence_level=0.85,
+            learned_heating_slope=1.6,
+        )
+
+        cancel_first = Mock()
+        cancel_second = Mock()
+
+        with patch.object(
+            app_service._prediction_service,
+            "predict_heating_time",
+            side_effect=[first_prediction, second_prediction],
+        ) as predict_mock, patch(
+            "custom_components.intelligent_heating_pilot.application.async_track_point_in_time",
+            side_effect=[cancel_first, cancel_second],
+        ) as track_mock, patch.object(dt_util, "now", return_value=now):
+            await app_service.calculate_and_schedule_anticipation()
+            await app_service.calculate_and_schedule_anticipation()
+
+        assert predict_mock.call_count == 2
+        assert track_mock.call_count == 2
+        assert track_mock.call_args_list[0].args[2] == first_prediction.anticipated_start_time
+        assert track_mock.call_args_list[1].args[2] == second_prediction.anticipated_start_time
+        assert cancel_first.called
+        assert not cancel_second.called
+        assert app_service._anticipation_timer_cancel is cancel_second
     
     @pytest.mark.asyncio
     async def test_immediate_trigger_when_anticipation_in_past(
