@@ -8,6 +8,7 @@
 |-------|-------|
 | IHP doesn't appear in integrations | [Installation Issues](#installation-issues) |
 | Can't complete configuration | [Configuration Issues](#configuration-issues) |
+| Home Assistant slow after IHP setup | [Home Assistant slow or unresponsive after IHP configuration](#home-assistant-slow-or-unresponsive-after-ihp-configuration) |
 | Predictions are inaccurate | [Prediction Issues](#prediction-issues) |
 | Sensors show no data | [Sensor Issues](#sensor-issues) |
 | Heating never triggers | [Heating Not Triggering](#heating-not-triggering) |
@@ -77,6 +78,57 @@
    - Find Intelligent Heating Pilot
    - Click ⋮ → Reconfigure
    - Paste the exact entity name
+
+### Home Assistant slow or unresponsive after IHP configuration
+
+**Symptoms:**
+- Configuration saves successfully
+- But UI becomes slow to load
+- Features take several minutes to respond
+- May last up to 5 minutes after configuration
+
+**Cause:**
+- IHP is performing initial extraction of heating cycles from recorder history
+- With high **Data Retention Days** settings (>30 days) or high recorder `purge_keep_days` (>10 days), this can take several minutes
+
+**Expected behavior:**
+- ⏱️ **Processing time**: 2-5 minutes depending on retention settings
+- 📊 **Example**: With 60-day retention and `purge_keep_days=60`, initial extraction takes ~3 minutes
+- ✅ **This only happens once**: After initial extraction, updates are incremental and fast
+- 📱 **UI may be temporarily slow**: This is normal during initial processing
+
+**Solution:**
+
+1. **Wait for initial extraction to complete:**
+   - Allow 5-10 minutes for first-time processing
+   - Check logs to confirm extraction is in progress
+   - UI responsiveness will return once complete
+
+2. **If slowness persists beyond 10 minutes:**
+   - Check Home Assistant logs for errors:
+     ```yaml
+     logger:
+       logs:
+         custom_components.intelligent_heating_pilot: debug
+     ```
+   - Look for messages about heating cycle extraction
+
+3. **Reduce Data Retention Days if needed:**
+   - Settings → Devices & Services
+   - Find Intelligent Heating Pilot
+   - Click ⋮ → Reconfigure
+   - Lower **Data Retention Days** to 30 or less
+   - This reduces initial processing time
+
+4. **Check your recorder configuration:**
+   - High `purge_keep_days` in recorder increases processing time
+   - Consider reducing recorder retention if performance is critical
+   - See Home Assistant recorder documentation
+
+**Prevention:**
+- Use default **Data Retention Days** (30 days) initially
+- Increase retention gradually after IHP is stable
+- Be aware that higher retention = longer initial processing
 
 ### "No scheduler entities available" error
 
