@@ -20,7 +20,7 @@ from homeassistant.util import dt as dt_util
 
 from .application import HeatingApplicationService
 from .const import (
-    CONF_AUTO_LEARNING_DEAD_TIME,
+    CONF_AUTO_LEARNING,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_DATA_RETENTION_DAYS,
@@ -34,7 +34,7 @@ from .const import (
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
     DECISION_MODE_SIMPLE,
-    DEFAULT_AUTO_LEARNING_DEAD_TIME,
+    DEFAULT_AUTO_LEARNING,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
     DEFAULT_DATA_RETENTION_DAYS,
     DEFAULT_DEAD_TIME_MINUTES,
@@ -117,10 +117,10 @@ class IntelligentHeatingPilotCoordinator:
             self._get_config_value(CONF_DEAD_TIME_MINUTES)
             or DEFAULT_DEAD_TIME_MINUTES
         )
-        auto_learning_value = self._get_config_value(CONF_AUTO_LEARNING_DEAD_TIME)
-        self._auto_learning_dead_time = bool(
+        auto_learning_value = self._get_config_value(CONF_AUTO_LEARNING)
+        self._auto_learning = bool(
             auto_learning_value if auto_learning_value is not None 
-            else DEFAULT_AUTO_LEARNING_DEAD_TIME
+            else DEFAULT_AUTO_LEARNING
         )
         
         # Infrastructure adapters
@@ -190,7 +190,7 @@ class IntelligentHeatingPilotCoordinator:
             min_cycle_duration_minutes=self._min_cycle_duration_minutes,
             max_cycle_duration_minutes=self._max_cycle_duration_minutes,
             dead_time_minutes=self._dead_time_minutes,
-            auto_learning_dead_time=self._auto_learning_dead_time,
+            auto_learning=self._auto_learning,
         )
         
         # Create event bridge
