@@ -6,8 +6,8 @@ of climate entity state changes.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, Mock, call, patch
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from custom_components.intelligent_heating_pilot.application import HeatingApplicationService
@@ -101,7 +101,6 @@ class TestAnticipationTimer:
         """Test that a timer is scheduled when anticipated start is in the future."""
         # Setup: Current time is 04:00, anticipated start is 06:00, target is 07:30
         now = make_aware(datetime(2025, 1, 15, 4, 0, 0))
-        anticipated_start = make_aware(datetime(2025, 1, 15, 6, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 7, 30, 0))
         
         timeslot = ScheduledTimeslot(
@@ -181,7 +180,6 @@ class TestAnticipationTimer:
         """Test that timer is cancelled when anticipation state is cleared."""
         # Setup: Schedule a timer first
         now = make_aware(datetime(2025, 1, 15, 4, 0, 0))
-        anticipated_start = make_aware(datetime(2025, 1, 15, 6, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 7, 30, 0))
         
         timeslot = ScheduledTimeslot(
@@ -208,7 +206,6 @@ class TestAnticipationTimer:
         
         # Verify timer is set
         assert app_service._anticipation_timer_cancel is not None
-        cancel_callback = app_service._anticipation_timer_cancel
         
         # Clear anticipation state
         app_service._clear_anticipation_state()
