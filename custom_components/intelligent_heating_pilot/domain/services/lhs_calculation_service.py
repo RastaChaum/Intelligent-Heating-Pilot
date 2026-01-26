@@ -171,3 +171,42 @@ class LHSCalculationService:
         )
         
         return avg_slope
+
+    def calculate_average_dead_time(self, heating_cycles: list[HeatingCycle]) -> float | None:
+        """Calculate average dead_time from cycles that have dead_time_cycle calculated.
+        
+        Only cycles with a valid dead_time_cycle_minutes value are included in the average.
+        
+        Args:
+            heating_cycles: List of heating cycles to analyze
+            
+        Returns:
+            Average dead time in minutes, or None if no valid data
+        """
+        _LOGGER.debug(
+            "Calculating average dead_time from %d heating cycles",
+            len(heating_cycles)
+        )
+        
+        # Filter cycles that have dead_time_cycle calculated
+        cycles_with_dead_time = [
+            c for c in heating_cycles 
+            if c.dead_time_cycle_minutes is not None and c.dead_time_cycle_minutes > 0
+        ]
+        
+        if not cycles_with_dead_time:
+            _LOGGER.debug("No cycles with valid dead_time_cycle, cannot calculate average")
+            return None
+        
+        # Calculate simple average
+        total_dead_time = sum(c.dead_time_cycle_minutes for c in cycles_with_dead_time)
+        avg_dead_time = total_dead_time / len(cycles_with_dead_time)
+        
+        _LOGGER.info(
+            "Calculated average dead_time from %d cycles: %.1f minutes",
+            len(cycles_with_dead_time),
+            avg_dead_time
+        )
+        
+        return avg_dead_time
+
