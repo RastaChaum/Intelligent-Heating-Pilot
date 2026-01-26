@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Callable, Awaitable
+from typing import Any, Callable, Awaitable, Coroutine
 
 
 class ITimerScheduler(ABC):
@@ -21,7 +21,7 @@ class ITimerScheduler(ABC):
     def schedule_timer(
         self,
         target_time: datetime,
-        callback: Callable[[], Awaitable[None]],
+        callback: Callable[[], Coroutine[Any, Any, Any]],
     ) -> Callable[[], None]:
         """Schedule a callback to execute at a specific time.
         
