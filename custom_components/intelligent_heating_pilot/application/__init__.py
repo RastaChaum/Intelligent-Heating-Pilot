@@ -160,7 +160,7 @@ class HeatingApplicationService:
             self._anticipation_timer_cancel()
             self._anticipation_timer_cancel = None
     
-    def _schedule_anticipation_timer(
+    async def _schedule_anticipation_timer(
         self,
         anticipated_start: datetime,
         target_time: datetime,
@@ -168,6 +168,8 @@ class HeatingApplicationService:
         scheduler_entity_id: str,
     ) -> None:
         """Schedule a timer to trigger anticipation at the specified time.
+        
+        Protected by lock to prevent race conditions during timer scheduling.
         
         Args:
             anticipated_start: When to trigger the anticipation
@@ -181,47 +183,49 @@ class HeatingApplicationService:
             scheduler_entity_id,
         )
         
-        # Cancel any existing timer first
-        self._cancel_anticipation_timer()
-        
-        # Track which scheduler we're anticipating for
-        self._active_scheduler_entity = scheduler_entity_id
-        
-        # Create callback for timer
-        async def _trigger_callback() -> None:
-            """Callback to trigger anticipation when timer fires."""
-            _LOGGER.info(
-                "Anticipation timer fired at %s for target %s (%.1f°C)",
-                dt_util.now().isoformat(),
-                target_time.isoformat(),
-                target_temp,
+        async with self._timer_lock:
+            # Cancel any existing timer first
+            self._cancel_anticipation_timer()
+            
+            # Track which scheduler we're anticipating for
+            self._active_scheduler_entity = scheduler_entity_id
+            
+            # Create callback for timer
+            async def _trigger_callback() -> None:
+                """Callback to trigger anticipation when timer fires."""
+                _LOGGER.info(
+                    "Anticipation timer fired at %s for target %s (%.1f°C)",
+                    dt_util.now().isoformat(),
+                    target_time.isoformat(),
+                    target_temp,
+                )
+                
+                # Use lock to protect timer state transitions
+                async with self._timer_lock:
+                    # Clear the timer reference since it has fired
+                    self._anticipation_timer_cancel = None
+                    
+                    # Trigger the action
+                    await self._trigger_anticipation_action(
+                        target_time,
+                        target_temp,
+                        scheduler_entity_id,
+                    )
+            
+            # Schedule the timer using the interface
+            self._anticipation_timer_cancel = self._timer_scheduler.schedule_timer(
+                anticipated_start,
+                _trigger_callback,
             )
             
-            # Use lock to protect timer state transitions
-            async with self._timer_lock:
-                # Clear the timer reference since it has fired
-                self._anticipation_timer_cancel = None
-                
-                # Trigger the action
-                await self._trigger_anticipation_action(
-                    target_time,
-                    target_temp,
-                    scheduler_entity_id,
-                )
+            now = dt_util.now()
+            wait_minutes = (anticipated_start - now).total_seconds() / 60.0
+            _LOGGER.info(
+                "Anticipation timer scheduled: will trigger at %s (in %.1f minutes)",
+                anticipated_start.isoformat(),
+                wait_minutes,
+            )
         
-        # Schedule the timer using the interface
-        self._anticipation_timer_cancel = self._timer_scheduler.schedule_timer(
-            anticipated_start,
-            _trigger_callback,
-        )
-        
-        now = dt_util.now()
-        wait_minutes = (anticipated_start - now).total_seconds() / 60.0
-        _LOGGER.info(
-            "Anticipation timer scheduled: will trigger at %s (in %.1f minutes)",
-            anticipated_start.isoformat(),
-            wait_minutes,
-        )
         _LOGGER.debug("Exiting _schedule_anticipation_timer")
     
     async def _trigger_anticipation_action(
@@ -746,7 +750,7 @@ class HeatingApplicationService:
                 self._preheating_target_time = None
                 
                 # Schedule timer for the new anticipated time
-                self._schedule_anticipation_timer(
+                await self._schedule_anticipation_timer(
                     anticipated_start,
                     target_time,
                     target_temp,
@@ -786,7 +790,7 @@ class HeatingApplicationService:
         # Anticipated start is in the future - schedule timer to trigger it.
         # We always (re)schedule here so that the timer reflects the most recent
         # anticipated start time, even if pre-heating is already active.
-        self._schedule_anticipation_timer(
+        await self._schedule_anticipation_timer(
             anticipated_start,
             target_time,
             target_temp,
