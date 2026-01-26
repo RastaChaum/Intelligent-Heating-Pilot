@@ -469,17 +469,14 @@ class HeatingApplicationService:
             Dict with anticipation data for sensors, or None if not applicable
         """
         # Check if the currently tracked scheduler has been disabled
-        if self._active_scheduler_entity and not await self._scheduler_reader.is_scheduler_enabled(
-            self._active_scheduler_entity
-        ):
+        if self._active_scheduler_entity and not await self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
             _LOGGER.warning(
                 "Active scheduler %s has been disabled. Clearing anticipation state.",
-                self._active_scheduler_entity,
+                self._active_scheduler_entity
             )
             self._clear_anticipation_state()
             # Return None to clear sensor values
             return None
-
         # Get next timeslot
         timeslot = await self._scheduler_reader.get_next_timeslot()
         if not timeslot:
