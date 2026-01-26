@@ -217,7 +217,6 @@ class TestPredictionService(unittest.TestCase):
         """Test that the dead_time formula is correctly applied."""
         target_time = get_future_datetime(2)
         dead_time = 10.0
-        temp_delta = TEST_TARGET_TEMP - TEST_CURRENT_TEMP  # 3.0°C
         
         result = self.service.predict_heating_time(
             current_temp=TEST_CURRENT_TEMP,
