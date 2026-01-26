@@ -184,17 +184,18 @@ class TestAnticipationTimer:
             app_service._prediction_service,
             "predict_heating_time",
             side_effect=[first_prediction, second_prediction],
-        ) as predict_mock, patch(
-            "custom_components.intelligent_heating_pilot.application.async_track_point_in_time",
+        ) as predict_mock, patch.object(
+            app_service._timer_scheduler,
+            "schedule_timer",
             side_effect=[cancel_first, cancel_second],
-        ) as track_mock, patch.object(dt_util, "now", return_value=now):
+        ) as schedule_mock, patch.object(dt_util, "now", return_value=now):
             await app_service.calculate_and_schedule_anticipation()
             await app_service.calculate_and_schedule_anticipation()
 
         assert predict_mock.call_count == 2
-        assert track_mock.call_count == 2
-        assert track_mock.call_args_list[0].args[2] == first_prediction.anticipated_start_time
-        assert track_mock.call_args_list[1].args[2] == second_prediction.anticipated_start_time
+        assert schedule_mock.call_count == 2
+        assert schedule_mock.call_args_list[0].args[0] == first_prediction.anticipated_start_time
+        assert schedule_mock.call_args_list[1].args[0] == second_prediction.anticipated_start_time
         assert cancel_first.called
         assert not cancel_second.called
         assert app_service._anticipation_timer_cancel is cancel_second
