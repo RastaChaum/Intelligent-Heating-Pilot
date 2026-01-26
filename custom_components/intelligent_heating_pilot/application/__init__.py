@@ -154,9 +154,9 @@ class HeatingApplicationService:
         # Lock to protect timer state transitions from race conditions
         self._timer_lock = asyncio.Lock()
 
-    def _clear_anticipation_state(self) -> None:
+    async def _clear_anticipation_state(self) -> None:
         """Clear all anticipation tracking state."""
-        self._cancel_anticipation_timer()
+        await self._cancel_anticipation_timer()
         self._is_preheating_active = False
         self._preheating_target_time = None
         self._last_scheduled_time = None
@@ -164,8 +164,16 @@ class HeatingApplicationService:
         self._active_scheduler_entity = None
         _LOGGER.debug("Anticipation state cleared")
 
-    def _cancel_anticipation_timer(self) -> None:
-        """Cancel any active anticipation timer."""
+    async def _cancel_anticipation_timer(self) -> None:
+        """Cancel any active anticipation timer.
+
+        Protected by lock to prevent race conditions during cancellation.
+        """
+        async with self._timer_lock:
+            self._cancel_anticipation_timer_internal()
+
+    def _cancel_anticipation_timer_internal(self) -> None:
+        """Cancel timer without lock protection (for internal use within lock)."""
         if self._anticipation_timer_cancel is not None:
             _LOGGER.debug("Cancelling active anticipation timer")
             self._anticipation_timer_cancel()
@@ -196,7 +204,7 @@ class HeatingApplicationService:
 
         async with self._timer_lock:
             # Cancel any existing timer first
-            self._cancel_anticipation_timer()
+            self._cancel_anticipation_timer_internal()
 
             # Track which scheduler we're anticipating for
             self._active_scheduler_entity = scheduler_entity_id
@@ -270,7 +278,7 @@ class HeatingApplicationService:
                 "Scheduler %s is disabled. Cannot trigger anticipation action.",
                 scheduler_entity_id,
             )
-            self._clear_anticipation_state()
+            await self._clear_anticipation_state()
             return
 
         # Use scheduler's run_action to trigger the action
@@ -649,14 +657,16 @@ class HeatingApplicationService:
             Dict with anticipation data for sensors, or None if not applicable
         """
         # Check if the currently tracked scheduler has been disabled
-        if self._active_scheduler_entity and not await self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
-            _LOGGER.warning(
-                "Active scheduler %s has been disabled. Clearing anticipation state.",
-                self._active_scheduler_entity
-            )
-            self._clear_anticipation_state()
-            # Return None to clear sensor values
-            return None
+        if self._active_scheduler_entity:
+            if not await self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
+                _LOGGER.warning(
+                    "Active scheduler %s has been disabled. Clearing anticipation state.",
+                    self._active_scheduler_entity
+                )
+                await self._clear_anticipation_state()
+                # Return None to clear sensor values
+                return None
+
         # Get next timeslot
         timeslot = await self._scheduler_reader.get_next_timeslot()
         if not timeslot:
@@ -670,7 +680,7 @@ class HeatingApplicationService:
                 or self._preheating_target_time
             ):
                 _LOGGER.info("Clearing anticipation state (no timeslot available)")
-                self._clear_anticipation_state()
+                await self._clear_anticipation_state()
             return None
 
         # Get current environment
@@ -784,7 +794,7 @@ class HeatingApplicationService:
             )
             # If we were tracking this scheduler, clear the state
             if self._active_scheduler_entity == scheduler_entity_id:
-                self._clear_anticipation_state()
+                await self._clear_anticipation_state()
             return
 
         # Only if scheduler is enabled, check if we're currently pre-heating and should revert
@@ -820,7 +830,7 @@ class HeatingApplicationService:
             # If we've reached the target time, mark pre-heating as complete
             if now >= target_time:
                 _LOGGER.info("Target time reached, pre-heating complete")
-                self._clear_anticipation_state()
+                await self._clear_anticipation_state()
                 return
 
         # Update tracking
@@ -844,7 +854,7 @@ class HeatingApplicationService:
         # If both are in past, skip
         if anticipated_start <= now and target_time <= now:
             _LOGGER.debug("Both times are past, skipping")
-            self._cancel_anticipation_timer()
+            await self._cancel_anticipation_timer()
             return
         # Anticipated start is in the future - schedule timer to trigger it.
         # We always (re)schedule here so that the timer reflects the most recent
@@ -900,7 +910,7 @@ class HeatingApplicationService:
                     "Scheduler %s is disabled. Cannot cancel action for overshoot prevention.",
                     scheduler_entity_id,
                 )
-            self._clear_anticipation_state()
+            await self._clear_anticipation_state()
 
     async def reset_learned_slopes(self) -> None:
         """Reset all learned slope history."""
