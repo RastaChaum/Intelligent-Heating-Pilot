@@ -333,6 +333,13 @@ class HeatingCycleService(IHeatingCycleService):
             tariff_history, energy_history, runtime_history, start_time, end_time, total_energy_kwh
         )
 
+        # Calculate dead_time_cycle for this cycle
+        dead_time_cycle_minutes = self._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_indoor_temp,
+            history_data_set=history_data_set,
+        )
+
         # Build HeatingCycle with computed tariff details (may be empty)
         cycle = HeatingCycle(
             device_id=device_id,
@@ -342,6 +349,7 @@ class HeatingCycleService(IHeatingCycleService):
             end_temp=end_indoor_temp,
             start_temp=start_indoor_temp,
             tariff_details=tariff_details,
+            dead_time_cycle_minutes=dead_time_cycle_minutes,
         )
         _LOGGER.debug(
             "Created single heating cycle: %s (energy=%.3fkWh duration=%.1fmin cost=%.3f€)",
@@ -420,6 +428,15 @@ class HeatingCycleService(IHeatingCycleService):
                 temp_per_minute * split_duration_minutes
             )
 
+            # Calculate dead_time_cycle only for the first sub-cycle
+            dead_time_cycle_minutes = None
+            if i == 0:
+                dead_time_cycle_minutes = self._calculate_dead_time_cycle(
+                    start_time=current_sub_cycle_start_time,
+                    start_temp=current_sub_cycle_start_temp,
+                    history_data_set=history_data_set,
+                )
+
             sub_cycle = HeatingCycle(
                 device_id=device_id,
                 start_time=current_sub_cycle_start_time,
@@ -428,6 +445,7 @@ class HeatingCycleService(IHeatingCycleService):
                 end_temp=sub_cycle_end_temp,
                 start_temp=current_sub_cycle_start_temp,
                 tariff_details=[],  # TODO: calculate for sub-cycle
+                dead_time_cycle_minutes=dead_time_cycle_minutes,
             )
             created.append(sub_cycle)
             _LOGGER.debug("  Created sub-cycle %d: %s", i + 1, sub_cycle)
@@ -446,6 +464,7 @@ class HeatingCycleService(IHeatingCycleService):
                 end_temp=end_indoor_temp,
                 start_temp=current_sub_cycle_start_temp,
                 tariff_details=[],  # TODO: calculate for remaining sub-cycle
+                dead_time_cycle_minutes=None,  # Not for remaining cycles
             )
             created.append(remaining_cycle)
             _LOGGER.debug("  Created remaining sub-cycle: %s", remaining_cycle)
@@ -606,6 +625,57 @@ class HeatingCycleService(IHeatingCycleService):
             total_cost_euro += cost_segment
 
         return total_cost_euro, tariff_details
+
+    def _calculate_dead_time_cycle(
+        self,
+        start_time: datetime,
+        start_temp: float,
+        history_data_set: HistoricalDataSet,
+        temp_change_threshold: float = 0.1,
+    ) -> float | None:
+        """Calculate the dead time for a specific cycle.
+        
+        Dead time is the period from cycle start to the first measurable temperature change.
+        
+        Args:
+            start_time: When the heating cycle started
+            start_temp: Initial temperature at cycle start
+            history_data_set: Historical temperature data
+            temp_change_threshold: Minimum temperature change to detect (default: 0.1°C)
+            
+        Returns:
+            Dead time in minutes, or None if cannot be determined
+        """
+        indoor_temp_history = history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, [])
+        
+        if not indoor_temp_history:
+            return None
+        
+        # Sort by timestamp
+        sorted_temps = sorted(indoor_temp_history, key=lambda m: m.timestamp)
+        
+        # Find temperature measurements after cycle start
+        for measurement in sorted_temps:
+            if measurement.timestamp <= start_time:
+                continue
+                
+            try:
+                current_temp = float(measurement.value)
+                # Check if temperature has changed by at least the threshold
+                if abs(current_temp - start_temp) >= temp_change_threshold:
+                    dead_time_minutes = (measurement.timestamp - start_time).total_seconds() / 60.0
+                    _LOGGER.debug(
+                        "Dead time calculated: %.1f minutes (temp change from %.1f to %.1f°C)",
+                        dead_time_minutes,
+                        start_temp,
+                        current_temp
+                    )
+                    return dead_time_minutes
+            except (ValueError, TypeError):
+                continue
+        
+        # If no temperature change detected, cannot determine dead time
+        return None
 
     def _validate_critical_data(self, history_data_set: HistoricalDataSet) -> None:
         """Validate that critical historical data keys are present in the dataset.

@@ -63,6 +63,7 @@ class HeatingApplicationService:
         min_cycle_duration_minutes: int | None = None,
         max_cycle_duration_minutes: int | None = None,
         dead_time_minutes: float = 0.0,
+        auto_learning_dead_time: bool = True,
     ) -> None:
         """Initialize the application service.
 
@@ -82,6 +83,7 @@ class HeatingApplicationService:
             min_cycle_duration_minutes: Minimum cycle duration (minutes)
             max_cycle_duration_minutes: Maximum cycle duration (minutes)
             dead_time_minutes: Dead time in minutes (initial heating delay)
+            auto_learning_dead_time: If True, learn dead_time from heating cycles
         """
         self._scheduler_reader = scheduler_reader
         self._model_storage = model_storage
@@ -117,6 +119,7 @@ class HeatingApplicationService:
             else int(DEFAULT_DATA_RETENTION_DAYS)
         )
         self._dead_time_minutes = dead_time_minutes
+        self._auto_learning_dead_time = auto_learning_dead_time
 
         # Create decision strategy based on mode
         decision_strategy = DecisionStrategyFactory.create_strategy(
@@ -224,6 +227,67 @@ class HeatingApplicationService:
             global_lhs,
         )
         return global_lhs
+
+    async def _get_effective_dead_time(self, target_time: datetime) -> float:
+        """Get effective dead_time (learned or configured).
+
+        If auto_learning is enabled, calculates average dead_time from heating cycles.
+        Otherwise, uses the configured dead_time_minutes value.
+
+        Args:
+            target_time: Target schedule time (used for cycle extraction)
+
+        Returns:
+            Dead time in minutes
+        """
+        # If auto-learning is disabled, use configured value
+        if not self._auto_learning_dead_time:
+            _LOGGER.debug(
+                "Auto-learning disabled, using configured dead_time: %.1f minutes",
+                self._dead_time_minutes
+            )
+            return self._dead_time_minutes
+
+        # Auto-learning enabled: calculate from cycles
+        _LOGGER.debug("Auto-learning enabled, calculating dead_time from cycles")
+
+        # Get device ID
+        vtherm_id = self._environment_reader.get_vtherm_entity_id()
+
+        # Get heating cycles (same as for LHS calculation)
+        try:
+            if self._cycle_cache:
+                heating_cycles = await self._get_cycles_with_cache(vtherm_id, target_time)
+            else:
+                heating_cycles = await self._extract_cycles_from_recorder(
+                    vtherm_id,
+                    target_time - timedelta(days=self._history_lookback_days),
+                    target_time,
+                )
+        except Exception as exc:
+            _LOGGER.warning(
+                "Failed to extract cycles for dead_time calculation: %s, using configured value",
+                exc
+            )
+            return self._dead_time_minutes
+
+        # Calculate average dead_time from cycles
+        if heating_cycles:
+            avg_dead_time = self._lhs_calculation_service.calculate_average_dead_time(heating_cycles)
+            if avg_dead_time is not None and avg_dead_time > 0:
+                _LOGGER.info(
+                    "Learned dead_time from %d cycles: %.1f minutes",
+                    len(heating_cycles),
+                    avg_dead_time
+                )
+                return avg_dead_time
+
+        # Fallback to configured value if no valid learned dead_time
+        _LOGGER.debug(
+            "No valid learned dead_time, using configured value: %.1f minutes",
+            self._dead_time_minutes
+        )
+        return self._dead_time_minutes
 
     async def _get_cycles_with_cache(
         self,
@@ -502,6 +566,9 @@ class HeatingApplicationService:
         # Get contextual LHS from time window preceding target time
         lhs = await self._get_contextual_lhs(timeslot.target_time)
 
+        # Get effective dead_time (learned or configured)
+        dead_time = await self._get_effective_dead_time(timeslot.target_time)
+
         # Check if already at target
         if environment.indoor_temperature >= timeslot.target_temp:
             _LOGGER.debug(
@@ -532,7 +599,7 @@ class HeatingApplicationService:
             learned_slope=lhs,
             target_time=timeslot.target_time,
             cloud_coverage=environment.cloud_coverage,
-            dead_time_minutes=self._dead_time_minutes,
+            dead_time_minutes=dead_time,
         )
 
         _LOGGER.info(

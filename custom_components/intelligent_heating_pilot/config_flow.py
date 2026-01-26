@@ -11,6 +11,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_AUTO_LEARNING_DEAD_TIME,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_DEAD_TIME_MINUTES,
@@ -23,6 +24,7 @@ from .const import (
     CONF_SCHEDULER_ENTITIES,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
+    DEFAULT_AUTO_LEARNING_DEAD_TIME,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
     DEFAULT_DEAD_TIME_MINUTES,
     DEFAULT_LHS_RETENTION_DAYS,
@@ -158,6 +160,10 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         mode=selector.NumberSelectorMode.BOX
                     )
                 ),
+                vol.Optional(
+                    CONF_AUTO_LEARNING_DEAD_TIME,
+                    default=DEFAULT_AUTO_LEARNING_DEAD_TIME
+                ): selector.BooleanSelector(),
                 vol.Optional(
                     CONF_TEMP_DELTA_THRESHOLD,
                     default=DEFAULT_TEMP_DELTA_THRESHOLD
@@ -400,6 +406,10 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 mode=selector.NumberSelectorMode.BOX
             )
         )
+        schema_dict[vol.Optional(
+            CONF_AUTO_LEARNING_DEAD_TIME,
+            default=_opt_or_data(CONF_AUTO_LEARNING_DEAD_TIME, DEFAULT_AUTO_LEARNING_DEAD_TIME)
+        )] = selector.BooleanSelector()
         schema_dict[vol.Optional(
             CONF_TEMP_DELTA_THRESHOLD,
             default=_opt_or_data(CONF_TEMP_DELTA_THRESHOLD, DEFAULT_TEMP_DELTA_THRESHOLD)

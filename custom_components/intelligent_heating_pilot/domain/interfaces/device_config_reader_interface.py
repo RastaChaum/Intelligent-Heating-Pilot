@@ -19,6 +19,7 @@ class DeviceConfig:
         cloud_cover_entity_id: Entity ID for cloud coverage (optional)
         lhs_retention_days: Number of days to retain slope data
         dead_time_minutes: Dead time in minutes (time before heating becomes effective)
+        auto_learning_dead_time: If True, learn dead_time from heating cycles
     """
 
     device_id: str
@@ -29,6 +30,7 @@ class DeviceConfig:
     cloud_cover_entity_id: str | None = None
     lhs_retention_days: int = 30
     dead_time_minutes: float = 0.0
+    auto_learning_dead_time: bool = True
 
 
 class IDeviceConfigReader(ABC):

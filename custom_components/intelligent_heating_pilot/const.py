@@ -15,6 +15,7 @@ CONF_DATA_RETENTION_DAYS = (
 CONF_LHS_RETENTION_DAYS = "lhs_retention_days"  # Deprecated: Use CONF_DATA_RETENTION_DAYS
 CONF_DECISION_MODE = "decision_mode"  # NEW: Choose between 'simple' and 'ml'
 CONF_DEAD_TIME_MINUTES = "dead_time_minutes"  # Dead time in minutes (initial heating delay)
+CONF_AUTO_LEARNING_DEAD_TIME = "auto_learning_dead_time"  # Auto-learn dead_time from cycles
 
 # Heating Cycle Detection Parameters
 CONF_TEMP_DELTA_THRESHOLD = "temp_delta_threshold"
@@ -42,6 +43,7 @@ DEFAULT_DATA_RETENTION_DAYS = 30  # Keep IHP data (cycles, slopes, etc.) for 30 
 DEFAULT_LHS_RETENTION_DAYS = 30  # Deprecated: Use DEFAULT_DATA_RETENTION_DAYS
 DEFAULT_DECISION_MODE = DECISION_MODE_SIMPLE  # Simple mode by default
 DEFAULT_DEAD_TIME_MINUTES = 0.0  # Default dead time (0 = will be learned from cycles)
+DEFAULT_AUTO_LEARNING_DEAD_TIME = True  # Auto-learning enabled by default
 
 # Default values for Heating Cycle Detection
 DEFAULT_TEMP_DELTA_THRESHOLD = 0.2  # °C threshold for cycle start/end detection
