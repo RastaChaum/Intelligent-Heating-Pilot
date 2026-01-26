@@ -161,7 +161,8 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         # Verify system reverted to current schedule
         mock_adapters["scheduler_commander"].cancel_action.assert_called_once()
         assert app_service._is_preheating_active is False
-        assert app_service._preheating_target_time is target_time
+        # After reverting and scheduling a new timer, preheating_target_time is cleared
+        assert app_service._preheating_target_time is None
         
         # Verify we did NOT trigger another run_action (that would restart heating)
         mock_adapters["scheduler_commander"].run_action.assert_not_called()
@@ -713,3 +714,62 @@ class TestIHPEnabledDisabled:
         # Verify run_action was NOT called
         mock_adapters["scheduler_commander"].run_action.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_disabling_ihp_cancels_active_timer(
+        self, app_service, mock_adapters
+    ):
+        """Test that disabling IHP cancels the active anticipation timer.
+        
+        This test verifies the fix for: when IHP is disabled while a timer
+        is scheduled for anticipation, the timer is immediately canceled.
+        This prevents the timer from firing after IHP is disabled and
+        recreating a new timer.
+        """
+        base_time = make_aware(datetime(2025, 1, 15, 18, 0, 0))
+        target_time = make_aware(datetime(2025, 1, 15, 19, 38, 0))
+        anticipated_start = make_aware(datetime(2025, 1, 15, 18, 29, 41))
+        
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=22.0,
+            timeslot_id="evening",
+            scheduler_entity="schedule.heating_evening",
+        )
+        
+        environment = EnvironmentState(
+            indoor_temperature=19.9,
+            outdoor_temp=19.9,
+            indoor_humidity=50.0,
+            cloud_coverage=0.0,
+            timestamp=base_time,
+        )
+        
+        mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
+        mock_adapters["environment_reader"].get_current_environment.return_value = environment
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        
+        # Mock timer scheduler to return a cancel function
+        mock_cancel_func = Mock()
+        mock_adapters["timer_scheduler"].schedule_timer.return_value = mock_cancel_func
+        
+        # Step 1: Schedule anticipation with IHP enabled
+        # This will schedule a timer for the anticipated start time
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
+            await app_service.calculate_and_schedule_anticipation(ihp_enabled=True)
+        
+        # Verify timer was scheduled
+        assert app_service._anticipation_timer_cancel is mock_cancel_func
+        mock_adapters["timer_scheduler"].schedule_timer.assert_called_once()
+        
+        # Step 2: Disable IHP - should cancel the timer
+        with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
+            await app_service.calculate_and_schedule_anticipation(ihp_enabled=False)
+        
+        # Verify timer was canceled
+        mock_cancel_func.assert_called_once()
+        
+        # Verify anticipation state was completely cleared
+        assert app_service._anticipation_timer_cancel is None
+        assert app_service._is_preheating_active is False
+        assert app_service._preheating_target_time is None
+        assert app_service._active_scheduler_entity is None

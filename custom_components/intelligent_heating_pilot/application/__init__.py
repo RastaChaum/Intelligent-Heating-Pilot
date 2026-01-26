@@ -718,8 +718,8 @@ class HeatingApplicationService:
             else:
                 _LOGGER.debug("IHP disabled - no active preheating to revert")
             
-            # Clear anticipation state
-            self._clear_anticipation_state()
+            # Clear anticipation state (MUST await to cancel active timer immediately)
+            await self._clear_anticipation_state()
         
         # Return data for sensors
         return {
