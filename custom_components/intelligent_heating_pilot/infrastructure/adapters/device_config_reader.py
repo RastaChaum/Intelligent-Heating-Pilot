@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ...const import (
-    CONF_AUTO_LEARNING_DEAD_TIME,
+    CONF_AUTO_LEARNING,
     CONF_CLOUD_COVER_ENTITY,
     CONF_DEAD_TIME_MINUTES,
     CONF_HUMIDITY_IN_ENTITY,
@@ -14,7 +14,7 @@ from ...const import (
     CONF_LHS_RETENTION_DAYS,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
-    DEFAULT_AUTO_LEARNING_DEAD_TIME,
+    DEFAULT_AUTO_LEARNING,
     DEFAULT_DEAD_TIME_MINUTES,
     DEFAULT_LHS_RETENTION_DAYS,
 )
@@ -92,10 +92,10 @@ class HADeviceConfigReader(IDeviceConfigReader):
             or DEFAULT_DEAD_TIME_MINUTES
         )
 
-        auto_learning_dead_time_value = self._get_config_value(config, options, CONF_AUTO_LEARNING_DEAD_TIME)
-        auto_learning_dead_time = bool(
-            auto_learning_dead_time_value if auto_learning_dead_time_value is not None 
-            else DEFAULT_AUTO_LEARNING_DEAD_TIME
+        auto_learning_value = self._get_config_value(config, options, CONF_AUTO_LEARNING)
+        auto_learning = bool(
+            auto_learning_value if auto_learning_value is not None 
+            else DEFAULT_AUTO_LEARNING
         )
 
         device_config = DeviceConfig(
@@ -107,7 +107,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
             cloud_cover_entity_id=cloud_cover,
             lhs_retention_days=lhs_retention_days,
             dead_time_minutes=dead_time_minutes,
-            auto_learning_dead_time=auto_learning_dead_time,
+            auto_learning=auto_learning,
         )
 
         _LOGGER.debug("Retrieved device configuration: %s", device_config)

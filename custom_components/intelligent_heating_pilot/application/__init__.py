@@ -63,7 +63,7 @@ class HeatingApplicationService:
         min_cycle_duration_minutes: int | None = None,
         max_cycle_duration_minutes: int | None = None,
         dead_time_minutes: float = 0.0,
-        auto_learning_dead_time: bool = True,
+        auto_learning: bool = True,
     ) -> None:
         """Initialize the application service.
 
@@ -83,7 +83,7 @@ class HeatingApplicationService:
             min_cycle_duration_minutes: Minimum cycle duration (minutes)
             max_cycle_duration_minutes: Maximum cycle duration (minutes)
             dead_time_minutes: Dead time in minutes (initial heating delay)
-            auto_learning_dead_time: If True, learn dead_time from heating cycles
+            auto_learning: If True, learn parameters from heating cycles
         """
         self._scheduler_reader = scheduler_reader
         self._model_storage = model_storage
@@ -119,7 +119,7 @@ class HeatingApplicationService:
             else int(DEFAULT_DATA_RETENTION_DAYS)
         )
         self._dead_time_minutes = dead_time_minutes
-        self._auto_learning_dead_time = auto_learning_dead_time
+        self._auto_learning = auto_learning
 
         # Create decision strategy based on mode
         decision_strategy = DecisionStrategyFactory.create_strategy(
@@ -228,33 +228,30 @@ class HeatingApplicationService:
         )
         return global_lhs
 
-    async def _get_effective_dead_time(self, target_time: datetime) -> float:
-        """Get effective dead_time (learned or configured).
+    async def _get_cycles_and_calculate_parameters(
+        self, target_time: datetime
+    ) -> tuple[list[HeatingCycle], float, float]:
+        """Get heating cycles and calculate both LHS and dead_time from them.
 
-        If auto_learning is enabled, calculates average dead_time from heating cycles.
-        Otherwise, uses the configured dead_time_minutes value.
+        This consolidates cycle extraction to avoid duplicate calls to cache/recorder.
 
         Args:
-            target_time: Target schedule time (used for cycle extraction)
+            target_time: Target schedule time
 
         Returns:
-            Dead time in minutes
+            Tuple of (heating_cycles, contextual_lhs, effective_dead_time)
         """
-        # If auto-learning is disabled, use configured value
-        if not self._auto_learning_dead_time:
-            _LOGGER.debug(
-                "Auto-learning disabled, using configured dead_time: %.1f minutes",
-                self._dead_time_minutes
-            )
-            return self._dead_time_minutes
-
-        # Auto-learning enabled: calculate from cycles
-        _LOGGER.debug("Auto-learning enabled, calculating dead_time from cycles")
+        target_hour = target_time.hour
+        _LOGGER.debug(
+            "Extracting cycles and calculating LHS + dead_time for hour %02d%s",
+            target_hour,
+            " (with cache)" if self._cycle_cache else "",
+        )
 
         # Get device ID
         vtherm_id = self._environment_reader.get_vtherm_entity_id()
 
-        # Get heating cycles (same as for LHS calculation)
+        # Extract heating cycles (with cache if available)
         try:
             if self._cycle_cache:
                 heating_cycles = await self._get_cycles_with_cache(vtherm_id, target_time)
@@ -266,28 +263,88 @@ class HeatingApplicationService:
                 )
         except Exception as exc:
             _LOGGER.warning(
-                "Failed to extract cycles for dead_time calculation: %s, using configured value",
-                exc
+                "Failed to extract cycles: %s, using defaults",
+                exc,
             )
-            return self._dead_time_minutes
+            heating_cycles = []
 
-        # Calculate average dead_time from cycles
+        # Calculate contextual LHS from cycles
         if heating_cycles:
+            contextual_lhs = self._lhs_calculation_service.calculate_contextual_lhs(
+                heating_cycles=heating_cycles,
+                target_hour=target_hour,
+            )
+            _LOGGER.info(
+                "Contextual LHS for hour %02d from %d cycles: %.2f°C/h",
+                target_hour,
+                len(heating_cycles),
+                contextual_lhs,
+            )
+        else:
+            # Fallback: if cycles empty, use global learned LHS
+            contextual_lhs = await self._model_storage.get_learned_heating_slope()
+            _LOGGER.warning(
+                "No HeatingCycles available, using global LHS: %.2f°C/h",
+                contextual_lhs,
+            )
+
+        # Calculate effective dead_time
+        if self._auto_learning and heating_cycles:
+            # Auto-learning enabled: calculate from cycles
             avg_dead_time = self._lhs_calculation_service.calculate_average_dead_time(heating_cycles)
             if avg_dead_time is not None and avg_dead_time > 0:
+                effective_dead_time = avg_dead_time
                 _LOGGER.info(
                     "Learned dead_time from %d cycles: %.1f minutes",
                     len(heating_cycles),
-                    avg_dead_time
+                    effective_dead_time
                 )
-                return avg_dead_time
+            else:
+                effective_dead_time = self._dead_time_minutes
+                _LOGGER.debug(
+                    "No valid learned dead_time, using configured value: %.1f minutes",
+                    effective_dead_time
+                )
+        else:
+            # Auto-learning disabled or no cycles: use configured value
+            effective_dead_time = self._dead_time_minutes
+            _LOGGER.debug(
+                "Using configured dead_time: %.1f minutes (auto_learning=%s)",
+                effective_dead_time,
+                self._auto_learning
+            )
 
-        # Fallback to configured value if no valid learned dead_time
-        _LOGGER.debug(
-            "No valid learned dead_time, using configured value: %.1f minutes",
-            self._dead_time_minutes
-        )
-        return self._dead_time_minutes
+        return heating_cycles, contextual_lhs, effective_dead_time
+
+    async def _get_contextual_lhs(self, target_time: datetime) -> float:
+        """Get contextual LHS using detected HeatingCycles with optional cache.
+
+        DEPRECATED: Use _get_cycles_and_calculate_parameters instead to avoid duplicate extraction.
+        This method is kept for backward compatibility but now delegates to the consolidated method.
+
+        Args:
+            target_time: Target schedule time
+
+        Returns:
+            Contextual LHS in °C/h or global LHS as fallback
+        """
+        _, lhs, _ = await self._get_cycles_and_calculate_parameters(target_time)
+        return lhs
+
+    async def _get_effective_dead_time(self, target_time: datetime) -> float:
+        """Get effective dead_time (learned or configured).
+
+        DEPRECATED: Use _get_cycles_and_calculate_parameters instead to avoid duplicate extraction.
+        This method is kept for backward compatibility but now delegates to the consolidated method.
+
+        Args:
+            target_time: Target schedule time
+
+        Returns:
+            Dead time in minutes
+        """
+        _, _, dead_time = await self._get_cycles_and_calculate_parameters(target_time)
+        return dead_time
 
     async def _get_cycles_with_cache(
         self,
@@ -563,11 +620,8 @@ class HeatingApplicationService:
             _LOGGER.warning("Cannot read current environment")
             return None
 
-        # Get contextual LHS from time window preceding target time
-        lhs = await self._get_contextual_lhs(timeslot.target_time)
-
-        # Get effective dead_time (learned or configured)
-        dead_time = await self._get_effective_dead_time(timeslot.target_time)
+        # Get contextual LHS and effective dead_time (consolidated to avoid duplicate extraction)
+        _, lhs, dead_time = await self._get_cycles_and_calculate_parameters(timeslot.target_time)
 
         # Check if already at target
         if environment.indoor_temperature >= timeslot.target_temp:
