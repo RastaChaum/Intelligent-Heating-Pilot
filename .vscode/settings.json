@@ -35,11 +35,9 @@
   ],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-  // Editor settings for code quality
   "editor.rulers": [100],
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
-  // Pre-commit integration
   "git.autoStash": false
 }
 
