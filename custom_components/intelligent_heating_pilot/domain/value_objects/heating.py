@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
-from datetime import datetime
 
 
 class HeatingAction(Enum):
@@ -64,6 +64,9 @@ class HeatingCycle:
         start_temp: The temperature at the beginning of the heating cycle.
         tariff_details: A list of TariffDetail objects, breaking down energy, duration,
                         and cost by specific TariffPeriodDetail periods within the cycle.
+        dead_time_cycle_minutes: Dead time for this specific cycle in minutes. Time from 
+                                 cycle start to first measurable temperature change. 
+                                 None if cannot be determined.
     """
     
     device_id: str
@@ -73,12 +76,23 @@ class HeatingCycle:
     end_temp: float
     start_temp: float
     tariff_details: list[TariffPeriodDetail] | None = None
+    dead_time_cycle_minutes: float | None = None
 
     @property
     def avg_heating_slope(self) -> float:
-        """Calculates the average heating slope in °C/hour for the heating cycle."""
-        duration_hours = (self.end_time - self.start_time).total_seconds() / 3600
-        if duration_hours == 0:
+        """Calculates the average heating slope in °C/hour for the heating cycle.
+        
+        Excludes the dead_time_cycle period to get the true heating slope once 
+        the system is actively heating (without initial inertia).
+        """
+        # Calculate effective start time (after dead_time_cycle)
+        if self.dead_time_cycle_minutes and self.dead_time_cycle_minutes > 0:
+            effective_start_time = self.start_time + timedelta(minutes=self.dead_time_cycle_minutes)
+            duration_hours = (self.end_time - effective_start_time).total_seconds() / 3600
+        else:
+            duration_hours = (self.end_time - self.start_time).total_seconds() / 3600
+        
+        if duration_hours <= 0:
             return 0.0
         temp_increase = self.end_temp - self.start_temp
         return temp_increase / duration_hours
