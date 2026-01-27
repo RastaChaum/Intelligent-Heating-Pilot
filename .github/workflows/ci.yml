@@ -1,0 +1,133 @@
+name: CI - Code Quality & Tests
+
+on:
+  push:
+    branches:
+      - main
+      - integration
+      - 'feature/**'
+      - 'fix/**'
+  pull_request:
+    branches:
+      - main
+      - integration
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.2
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-
+      
+      - name: Install dependencies
+        run: poetry install --no-interaction
+      
+      - name: Check Python syntax
+        run: |
+          echo "Checking Python syntax for all files..."
+          find custom_components -name "*.py" -exec python -m py_compile {} +
+          echo "✓ All Python files have valid syntax"
+      
+      - name: Run Ruff linter
+        run: |
+          poetry run ruff check custom_components/ tests/ --output-format=github
+        continue-on-error: true
+      
+      - name: Run Ruff formatter check
+        run: |
+          poetry run ruff format --check custom_components/ tests/
+        continue-on-error: true
+      
+      - name: Run mypy type checker
+        run: |
+          poetry run mypy custom_components/intelligent_heating_pilot/
+        continue-on-error: true
+  
+  tests:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.2
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-
+      
+      - name: Install dependencies
+        run: poetry install --no-interaction
+      
+      - name: Run unit tests
+        run: |
+          poetry run pytest tests/unit/ -v --cov=custom_components.intelligent_heating_pilot --cov-report=xml --cov-report=term
+      
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+        continue-on-error: true
+  
+  syntax-check-only:
+    name: Quick Syntax Check (Fast Fail)
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      
+      - name: Check Python syntax (no dependencies)
+        run: |
+          echo "Running quick syntax check..."
+          python -m compileall -q custom_components/
+          echo "✓ All files compile successfully"

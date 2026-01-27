@@ -265,9 +265,10 @@ custom_components/intelligent_heating_pilot/
 
 ### Prerequisites
 
-- Python 3.11 or higher
+- Python 3.13 or higher
 - Poetry (for dependency management)
 - Git
+- (Recommended) VSCode with recommended extensions
 
 ### Installation
 
@@ -286,6 +287,101 @@ custom_components/intelligent_heating_pilot/
    ```bash
    poetry shell
    ```
+
+4. **Set up pre-commit hooks (REQUIRED)**:
+   ```bash
+   poetry run pre-commit install
+   ```
+   
+   This will automatically run code quality checks before each commit, preventing syntax errors and style issues from being committed.
+
+### Code Quality Tools Setup
+
+#### Pre-commit Hooks
+
+Pre-commit hooks are **mandatory** for all contributors. They automatically check your code before each commit to prevent syntax errors, style issues, and common mistakes.
+
+**Installation:**
+```bash
+# Install pre-commit hooks (one-time setup)
+poetry run pre-commit install
+
+# Test the hooks on all files (optional)
+poetry run pre-commit run --all-files
+```
+
+**What the hooks check:**
+- ✅ **Python syntax validation** - Ensures no syntax errors
+- ✅ **Ruff linting** - Code style and common issues
+- ✅ **Ruff formatting** - Consistent code formatting
+- ✅ **mypy type checking** - Type annotation validation
+- ✅ **Security checks** - Common security vulnerabilities (bandit)
+- ✅ **File hygiene** - Trailing whitespace, EOF newlines, etc.
+
+**Bypassing hooks (NOT recommended):**
+```bash
+# Only use in exceptional cases
+git commit --no-verify -m "message"
+```
+
+#### VSCode Configuration
+
+The repository includes VSCode configuration files in `.vscode/`. When you open the project, VSCode will:
+
+1. **Suggest recommended extensions** - Accept the prompt to install them
+2. **Auto-format on save** - Using Ruff formatter
+3. **Show linting errors** - Real-time feedback as you type
+4. **Run type checking** - Mypy integration
+
+**Recommended extensions (auto-suggested):**
+- **Ruff** (`charliermarsh.ruff`) - Linter and formatter
+- **Python** (`ms-python.python`) - Python language support
+- **Pylance** (`ms-python.vscode-pylance`) - Advanced IntelliSense
+- **Mypy** (`matangover.mypy`) - Type checking
+- **Error Lens** (`usernamehw.errorlens`) - Inline error display
+
+**Manual VSCode setup (if needed):**
+1. Install the recommended extensions
+2. Open Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`)
+3. Select "Python: Select Interpreter"
+4. Choose the Poetry virtual environment (`.venv/bin/python`)
+
+**Key VSCode settings (already configured):**
+```json
+{
+  "editor.formatOnSave": true,           // Auto-format with Ruff
+  "ruff.lint.run": "onSave",            // Run linter on save
+  "python.linting.mypyEnabled": true,   // Enable mypy
+  "files.trimTrailingWhitespace": true  // Remove trailing spaces
+}
+```
+
+#### Manual Code Quality Checks
+
+You can manually run code quality checks at any time:
+
+```bash
+# Check Python syntax (fast check)
+find custom_components -name "*.py" -exec python -m py_compile {} +
+
+# Run Ruff linter
+poetry run ruff check custom_components/ tests/
+
+# Auto-fix Ruff issues
+poetry run ruff check --fix custom_components/ tests/
+
+# Run Ruff formatter
+poetry run ruff format custom_components/ tests/
+
+# Run mypy type checker
+poetry run mypy custom_components/intelligent_heating_pilot/
+
+# Run all pre-commit hooks manually
+poetry run pre-commit run --all-files
+
+# Run security check
+poetry run bandit -r custom_components/ -c pyproject.toml
+```
 
 ### Local Development Configuration
 
@@ -398,8 +494,27 @@ def test_prediction_calculates_anticipation():
 
 - Follow **PEP 8**
 - Use complete type annotations
-- Line length: 88 characters (Black formatter)
+- Line length: **100 characters** (Ruff formatter)
 - Descriptive names (no obscure abbreviations)
+
+### Ruff Configuration
+
+The project uses Ruff for both linting and formatting:
+
+```toml
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E203", "E501"]
+```
+
+**Selected rule categories:**
+- `E` - pycodestyle errors
+- `F` - Pyflakes (unused imports, undefined names, etc.)
+- `I` - isort (import sorting)
+- `UP` - pyupgrade (modern Python syntax)
+- `B` - flake8-bugbear (common bugs)
+- `SIM` - flake8-simplify (code simplification)
 
 ### Type Annotations
 
@@ -463,11 +578,17 @@ class EnvironmentState:
 
 ### Automatic Formatting
 
-Use **Black** for formatting:
+Use **Ruff** for formatting (replaces Black):
 
 ```bash
-poetry run black custom_components/ tests/
+# Format code
+poetry run ruff format custom_components/ tests/
+
+# Check formatting without modifying
+poetry run ruff format --check custom_components/ tests/
 ```
+
+**Note:** Pre-commit hooks automatically format your code, so manual formatting is rarely needed.
 
 ### Type Checking
 
@@ -481,11 +602,86 @@ poetry run mypy custom_components/intelligent_heating_pilot/
 
 ### Before Submitting
 
-1. ✅ All tests pass locally
-2. ✅ Code formatted with Black
-3. ✅ No mypy errors
-4. ✅ Documentation updated if necessary
-5. ✅ CHANGELOG.md updated (`[Unreleased]` section)
+**Pre-commit hooks will automatically check most of these, but verify:**
+
+1. ✅ All tests pass locally: `poetry run pytest tests/unit/ -v`
+2. ✅ Code formatted with Ruff (automatic via pre-commit)
+3. ✅ No syntax errors (automatic via pre-commit)
+4. ✅ No mypy errors (automatic via pre-commit)
+5. ✅ No security issues (automatic via pre-commit)
+6. ✅ Documentation updated if necessary
+7. ✅ CHANGELOG.md updated (`[Unreleased]` section)
+
+**Quick pre-submission check:**
+```bash
+# Run all quality checks manually
+poetry run pre-commit run --all-files
+
+# Run tests
+poetry run pytest tests/unit/ -v
+```
+
+### GitHub Actions CI/CD
+
+All pull requests automatically trigger GitHub Actions workflows that verify:
+
+#### 🚀 CI Workflow (`.github/workflows/ci.yml`)
+
+**Jobs:**
+1. **Quick Syntax Check (Fast Fail)**
+   - Runs first for immediate feedback
+   - Checks Python syntax without installing dependencies
+   - Fails fast if basic syntax errors exist
+
+2. **Code Quality Checks**
+   - Python syntax validation
+   - Ruff linting
+   - Ruff formatting check
+   - mypy type checking
+
+3. **Tests**
+   - Runs unit tests
+   - Generates coverage reports
+   - Uploads coverage to Codecov (if configured)
+
+**Workflow triggers:**
+- Push to `main`, `integration`, `feature/**`, `fix/**` branches
+- Pull requests to `main` or `integration`
+
+**What to do if CI fails:**
+1. Check the failed job in GitHub Actions tab
+2. Read the error messages
+3. Fix the issues locally
+4. Run `poetry run pre-commit run --all-files` to verify
+5. Commit and push the fixes
+
+**Note:** Some checks are set to `continue-on-error: true` for now, but they should still be addressed.
+
+### Release Workflow (`.github/workflows/create-release.yml`)
+
+Automatically creates releases when version tags are pushed:
+
+**Pre-release creation:**
+```bash
+# Tag a pre-release from integration branch
+git checkout integration
+git tag v0.5.0-beta.1 -m "Pre-release v0.5.0-beta.1"
+git push origin v0.5.0-beta.1
+```
+
+**Release creation:**
+```bash
+# Tag a release from main branch
+git checkout main
+git tag v0.5.0 -m "Release v0.5.0"
+git push origin v0.5.0
+```
+
+The workflow will:
+- Create a GitHub release (pre-release for beta tags)
+- Attach CHANGELOG.md and README.md
+- Close referenced issues
+- Update issue labels
 
 ### Commit Convention
 

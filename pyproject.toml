@@ -25,6 +25,8 @@ ruff = "^0.6.0"
 mypy = "^1.10"
 types-setuptools = "^68.0.0"
 pysqlite3-binary = "^0.5.4.post2"
+pre-commit = "^3.5.0"
+bandit = {extras = ["toml"], version = "^1.7.5"}
 
 [tool.poetry.group.test.dependencies]
 coverage = "^7.6"
@@ -50,6 +52,10 @@ warn_unused_configs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 addopts = "-q"
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = ["B101"]  # Skip assert_used (needed for tests)
 
 [build-system]
 requires = ["poetry-core>=1.9.0"]
