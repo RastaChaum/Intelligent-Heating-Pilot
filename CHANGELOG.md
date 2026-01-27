@@ -10,8 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- **Timer-Based Anticipation Triggering** ([#84](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/84)) – Improved the reliability of the preheating system by replacing event-driven triggering with timer-based triggering, reducing unexpected triggers and enhancing the accuracy of heating predictions.
 
 ### Fixed
+
+## [0.5.0] - 2026-01-25
+
+### Added
+- **IHP Enable/Disable Switch** ([#77](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/77)) – New domain entity to toggle IHP preheating on/off per device while preserving learned data
+  - Switch entity `switch.intelligent_heating_pilot_<device>_enable_preheating` for each configured IHP device
+  - Full domain layer support with DDD-compliant abstraction
+  - Comprehensive unit tests for switch functionality
+  - Documented in user guides
+- **Optional Scheduler Support** ([#75](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/75)) – Schedulers now optional; new service for dynamic calculations without scheduler binding
+  - New service `calculate_anticipated_start_time` for on-demand calculations with custom parameters
+  - Service accepts input parameters: `target_temperature`, `current_temperature`, `outdoor_temperature` (optional)
+  - Service returns `anticipated_start_time` and `heating_slope_used` for transparency
+  - Enables integration with other heating automation systems beyond Scheduler
+- **RC workflow suite** – New GitHub Actions for release candidates (prepare, increment, promote) plus CLI helper `scripts/rc-helper.sh` and documentation to manage RC cycles safely in production.
+
+### Changed
+- **Release automation cleanup** – Legacy pre-release/release workflows removed in favor of the RC-based pipeline to avoid duplicate runs and align production releases with validated RCs.
+- **Documentation maintenance** – Updated README badges and version, aligned docs index, and referenced open issues [#20](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/20) and [#66](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/66) for tracking.
+
 
 ## [0.4.4] - 2026-01-14
 
@@ -243,7 +264,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Release Links
 
-[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.5.0-rc.1...HEAD
+[0.5.0-rc.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.4...v0.5.0-rc.1
 [0.4.3]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.0...v0.4.1

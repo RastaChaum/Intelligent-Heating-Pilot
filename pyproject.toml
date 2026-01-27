@@ -1,11 +1,12 @@
 [tool.poetry]
 name = "intelligent-heating-pilot"
-version = "0.4.3"
+version = "0.5.0-rc.1"
 description = "Intelligent Heating Pilot for Home Assistant"
 authors = ["RastaChaum"]
 license = "MIT"
 readme = "README.md"
 packages = []                                                # No packaging; HA loads custom_components directly
+package-mode = false
 
 # Python constraint (align with HA core supported version)
 [tool.poetry.dependencies]

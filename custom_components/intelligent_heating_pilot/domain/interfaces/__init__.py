@@ -11,6 +11,7 @@ from .scheduler_commander import ISchedulerCommander
 from .decision_strategy import IDecisionStrategy
 from .heating_cycle_service import IHeatingCycleService
 from .cycle_cache import ICycleCache
+from .timer_scheduler import ITimerScheduler
 
 __all__ = [
     "ISchedulerReader",
@@ -19,4 +20,5 @@ __all__ = [
     "IDecisionStrategy",
     "IHeatingCycleService",
     "ICycleCache",
+    "ITimerScheduler",
 ]
