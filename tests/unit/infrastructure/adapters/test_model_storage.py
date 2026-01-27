@@ -1,4 +1,5 @@
 """Tests for HAModelStorage adapter (simplified after removing slope persistence)."""
+from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch
 
 import pytest
@@ -129,8 +130,6 @@ async def test_get_cached_global_lhs_none(storage: HAModelStorage) -> None:
 @pytest.mark.asyncio
 async def test_set_and_get_cached_global_lhs(storage: HAModelStorage, mock_store: Mock) -> None:
     """Test setting and getting global LHS cache."""
-    from datetime import datetime
-    
     lhs_value = 2.8
     now = datetime.now()
     
@@ -158,8 +157,6 @@ async def test_get_cached_contextual_lhs_none(storage: HAModelStorage) -> None:
 @pytest.mark.asyncio
 async def test_set_and_get_cached_contextual_lhs(storage: HAModelStorage, mock_store: Mock) -> None:
     """Test setting and getting contextual LHS cache."""
-    from datetime import datetime
-    
     lhs_value = 3.2
     hour = 14
     now = datetime.now()
@@ -181,8 +178,6 @@ async def test_set_and_get_cached_contextual_lhs(storage: HAModelStorage, mock_s
 @pytest.mark.asyncio
 async def test_cached_contextual_lhs_multiple_hours(storage: HAModelStorage) -> None:
     """Test that contextual LHS cache works for multiple hours independently."""
-    from datetime import datetime
-    
     # Set cache for different hours
     await storage.set_cached_contextual_lhs(10, 2.5, datetime.now())
     await storage.set_cached_contextual_lhs(14, 3.0, datetime.now())
@@ -225,8 +220,6 @@ async def test_deserialize_invalid_cache_entry(storage: HAModelStorage) -> None:
 @pytest.mark.asyncio
 async def test_serialize_deserialize_roundtrip(storage: HAModelStorage) -> None:
     """Test that serialization/deserialization is reversible."""
-    from datetime import datetime
-    
     original_value = 2.75
     original_time = datetime.now()
     
