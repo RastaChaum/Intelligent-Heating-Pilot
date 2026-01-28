@@ -3,8 +3,8 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from domain.services import LHSCalculationService
-from domain.value_objects import HeatingCycle
+from custom_components.intelligent_heating_pilot.domain.services import LHSCalculationService
+from custom_components.intelligent_heating_pilot.domain.value_objects import HeatingCycle
 
 
 class TestLHSCalculationService(unittest.TestCase):

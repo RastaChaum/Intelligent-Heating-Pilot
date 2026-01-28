@@ -16,7 +16,7 @@ class ISchedulerCommander(ABC):
     """
 
     @abstractmethod
-    async def run_action(self, target_time: datetime) -> None:
+    async def run_action(self, target_time: datetime, scheduler_entity_id: str) -> None:
         """Trigger a scheduler action for a specific timeslot.
 
         This will start heating in the mode configured in the scheduler
@@ -28,7 +28,7 @@ class ISchedulerCommander(ABC):
         pass
 
     @abstractmethod
-    async def cancel_action(self) -> None:
+    async def cancel_action(self, scheduler_entity_id: str) -> None:
         """Cancel current scheduler action and return to current timeslot.
 
         This is used to stop overshoot by reverting to the mode configured

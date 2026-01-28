@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from domain.value_objects.heating import HeatingCycle
-from infrastructure.adapters.cycle_cache import (
+from custom_components.intelligent_heating_pilot.domain.value_objects.heating import HeatingCycle
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache import (
     HACycleCache,
 )
 
