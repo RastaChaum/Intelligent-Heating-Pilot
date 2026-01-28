@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from ..interfaces import ISchedulerCommander
-from ..interfaces.decision_strategy_interface import IDecisionStrategy
+from ..interfaces import IDecisionStrategy, ISchedulerCommander
 from ..value_objects import (
     EnvironmentState,
     HeatingDecision,

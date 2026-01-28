@@ -81,7 +81,7 @@ async def extract_heating_cycles_handler(request: Request) -> Response:
         # Get the coordinator from hass data
         from homeassistant.core import HomeAssistant
 
-        from ...const import DOMAIN
+        from const import DOMAIN
 
         hass: HomeAssistant = request.app["hass"]
         coordinators = hass.data.get(DOMAIN, {})
@@ -100,7 +100,7 @@ async def extract_heating_cycles_handler(request: Request) -> Response:
             HeatingCycleService,
         )
 
-        from ...application.extract_heating_cycles_use_case import (
+        from application.extract_heating_cycles_use_case import (
             ExtractHeatingCyclesUseCase,
         )
         from .adapters.device_config_reader import (
@@ -110,7 +110,7 @@ async def extract_heating_cycles_handler(request: Request) -> Response:
         device_config_reader = HADeviceConfigReader(hass, coordinator.config)
 
         # Read cycle detection parameters from coordinator configuration
-        from ...const import (
+        from const import (
             DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
             DEFAULT_MAX_CYCLE_DURATION_MINUTES,
             DEFAULT_MIN_CYCLE_DURATION_MINUTES,
@@ -205,7 +205,7 @@ async def health_check_handler(request: Request) -> Response:
     """
     from homeassistant.core import HomeAssistant
 
-    from ...const import DOMAIN
+    from const import DOMAIN
 
     hass: HomeAssistant = request.app.get("hass")
     coordinators = hass.data.get(DOMAIN, {}) if hass else {}
@@ -262,7 +262,7 @@ async def debug_heating_state_handler(request: Request) -> Response:
         # Get coordinator
         from homeassistant.core import HomeAssistant
 
-        from ...const import DOMAIN
+        from const import DOMAIN
 
         hass: HomeAssistant = request.app["hass"]
         coordinators = hass.data.get(DOMAIN, {})
@@ -275,7 +275,7 @@ async def debug_heating_state_handler(request: Request) -> Response:
             )
 
         # Fetch heating state data
-        from ...domain.value_objects import (
+        from domain.value_objects import (
             HistoricalDataKey,
         )
         from .adapters.climate_data_adapter import (

@@ -8,6 +8,7 @@ NOTE: These tests require SQLite >= 3.40.1 to run with Home Assistant recorder.
 If SQLite version is too old, tests will be skipped.
 """
 
+
 import sqlite3
 from datetime import timedelta
 
@@ -103,7 +104,7 @@ async def test_climate_adapter_fetch_real_indoor_temp_history(hass):
     # Verify first value is correct (always recorded)
     assert measurements[0].value == pytest.approx(19.1)
     # Verify all values are in expected range
-    assert all(19.0 <= m.value <= 21.0 for m in measurements)
+    assert all(19.0 <= float(m.value) <= 21.0 for m in measurements)
     # Verify attributes are preserved from real HA states
     assert measurements[0].attributes["hvac_action"] == "heating"
     assert measurements[0].entity_id == entity_id
@@ -170,7 +171,7 @@ async def test_climate_adapter_fetch_real_target_temp_history(hass):
     # Verify first target temperature (always recorded)
     assert measurements[0].value == pytest.approx(20.0)
     # Verify all values are in expected range
-    assert all(20.0 <= m.value <= 22.0 for m in measurements)
+    assert all(20.0 <= float(m.value) <= 22.0 for m in measurements)
 
 
 @pytest.mark.usefixtures("recorder_mock")

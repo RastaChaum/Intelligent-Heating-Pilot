@@ -2,11 +2,11 @@
 
 import unittest
 
-from custom_components.intelligent_heating_pilot.domain.constants import (
+from domain.constants import (
     MAX_ANTICIPATION_TIME,
     MIN_ANTICIPATION_TIME,
 )
-from custom_components.intelligent_heating_pilot.domain.services import PredictionService
+from domain.services import PredictionService
 
 # Import fixtures
 from tests.unit.domain.fixtures import (

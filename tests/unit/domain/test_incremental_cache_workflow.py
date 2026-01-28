@@ -24,7 +24,7 @@ def device_id() -> str:
 @pytest.mark.asyncio
 async def test_incremental_append_logic(base_time: datetime, device_id: str) -> None:
     """Test the incremental append logic with cache."""
-    from custom_components.intelligent_heating_pilot.domain.value_objects import CycleCacheData
+    from domain.value_objects import CycleCacheData
 
     # Simulate initial cache
     initial_cycles = [
@@ -62,7 +62,7 @@ async def test_incremental_append_logic(base_time: datetime, device_id: str) -> 
 @pytest.mark.asyncio
 async def test_deduplication_logic(base_time: datetime, device_id: str) -> None:
     """Test that duplicate cycles are filtered."""
-    from custom_components.intelligent_heating_pilot.domain.value_objects import CycleCacheData
+    from domain.value_objects import CycleCacheData
 
     # Create a cycle
     cycle1 = create_test_heating_cycle(device_id, base_time)
@@ -89,7 +89,7 @@ async def test_deduplication_logic(base_time: datetime, device_id: str) -> None:
 @pytest.mark.asyncio
 async def test_empty_period_handling(base_time: datetime, device_id: str) -> None:
     """Test that empty periods (no cycles) update last_search_time."""
-    from custom_components.intelligent_heating_pilot.domain.value_objects import CycleCacheData
+    from domain.value_objects import CycleCacheData
 
     # Initial data
     initial_cycles = [create_test_heating_cycle(device_id, base_time)]
@@ -119,7 +119,7 @@ async def test_empty_period_handling(base_time: datetime, device_id: str) -> Non
 @pytest.mark.asyncio
 async def test_retention_filtering(base_time: datetime, device_id: str) -> None:
     """Test filtering cycles by retention period."""
-    from custom_components.intelligent_heating_pilot.domain.value_objects import CycleCacheData
+    from domain.value_objects import CycleCacheData
 
     # Create cycles at different ages
     cycles = [

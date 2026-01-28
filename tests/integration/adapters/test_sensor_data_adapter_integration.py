@@ -98,7 +98,7 @@ async def test_sensor_adapter_fetch_real_sensor_value_history(hass):
     # Verify first value is correct (always recorded)
     assert measurements[0].value == pytest.approx(18.5)
     # Verify all values are in expected range
-    assert all(18.0 <= m.value <= 20.0 for m in measurements)
+    assert all(18.0 <= float(m.value) <= 20.0 for m in measurements)
     # Verify attributes are preserved from real HA states
     assert measurements[0].attributes["unit_of_measurement"] == "°C"
     assert measurements[0].entity_id == entity_id
@@ -165,7 +165,7 @@ async def test_sensor_adapter_fetch_real_battery_level_history(hass):
     # Verify first battery level (always recorded)
     assert measurements[0].value == pytest.approx(100.0)
     # Verify all values are in expected range
-    assert all(0 <= m.value <= 100 for m in measurements)
+    assert all(0 <= float(m.value) <= 100 for m in measurements)
 
 
 @pytest.mark.usefixtures("recorder_mock")

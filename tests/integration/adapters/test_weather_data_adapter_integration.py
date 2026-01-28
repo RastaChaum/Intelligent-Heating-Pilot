@@ -101,7 +101,7 @@ async def test_weather_adapter_fetch_real_outdoor_temp_history(hass):
     # Verify first value is correct (always recorded)
     assert measurements[0].value == pytest.approx(12.5)
     # Verify all values are in expected range
-    assert all(12.0 <= m.value <= 15.0 for m in measurements)
+    assert all(12.0 <= float(m.value) <= 15.0 for m in measurements)
     # Verify attributes are preserved from real HA states
     assert measurements[0].attributes["humidity"] == 65
     assert measurements[0].entity_id == entity_id
@@ -167,7 +167,7 @@ async def test_weather_adapter_fetch_real_outdoor_humidity_history(hass):
     # Verify first humidity level (always recorded)
     assert measurements[0].value == pytest.approx(85.0)
     # Verify all values are in expected range
-    assert all(0 <= m.value <= 100 for m in measurements)
+    assert all(0 <= float(m.value) <= 100 for m in measurements)
 
 
 @pytest.mark.usefixtures("recorder_mock")
@@ -230,7 +230,7 @@ async def test_weather_adapter_fetch_real_cloud_coverage_history(hass):
     # Verify first cloud coverage value (always recorded)
     assert measurements[0].value == pytest.approx(5.0)
     # Verify all values are in expected range (0-100%)
-    assert all(0 <= m.value <= 100 for m in measurements)
+    assert all(0 <= float(m.value) <= 100 for m in measurements)
 
 
 @pytest.mark.usefixtures("recorder_mock")

@@ -4,10 +4,10 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from custom_components.intelligent_heating_pilot.domain.services.heating_cycle_service import (
+from domain.services.heating_cycle_service import (
     HeatingCycleService,
 )
-from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
+from domain.value_objects.historical_data import (
     HistoricalDataKey,
     HistoricalDataSet,
     HistoricalMeasurement,
