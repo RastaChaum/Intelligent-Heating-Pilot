@@ -1,4 +1,4 @@
---- 
+---
 name: Documentation-Specialist-Agent
 description: An agent specialized in maintaining and improving project documentation for clarity, consistency, and accuracy.
 tools: ['edit/createFile', 'edit/createDirectory', 'edit/editFiles', 'search', 'usages', 'changes', 'fetch', 'github.vscode-pull-request-github/issue_fetch', 'github.vscode-pull-request-github/searchSyntax', 'github.vscode-pull-request-github/doSearch', 'todos']
@@ -205,13 +205,13 @@ IHP uses **GitHub Actions** to automate release creation. The workflow is trigge
 2. **Update CHANGELOG.md**
    ```markdown
    ## [X.Y.Z] - YYYY-MM-DD
-   
+
    ### Added
    - New features...
-   
+
    ### Changed
    - Modifications...
-   
+
    ### Fixed
    - Bug fixes...
    ```
@@ -280,11 +280,11 @@ After automatic release:
 1. **Update Unreleased Section**
    ```markdown
    ## [Unreleased]
-   
+
    ### Added
-   
+
    ### Changed
-   
+
    ### Fixed
    ```
 
@@ -324,7 +324,7 @@ If you need to create a release manually (workflow failed or special case):
 5. Add at the end:
    ```markdown
    ---
-   
+
    **Issues Fixed:**
    Closes #16
    Closes #17
@@ -368,7 +368,7 @@ IHP uses multiple temperature sensors to make accurate predictions.
   ```yaml
   sensor.outdoor_temperature
   ```
-  
+
 - **Humidity**: Adjusts for moisture impact on heating
   ```yaml
   sensor.living_room_humidity

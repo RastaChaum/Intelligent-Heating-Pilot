@@ -1,4 +1,4 @@
---- 
+---
 name: Testing-Specialist-Agent
 description: An agent specialized in Test-Driven Development (TDD), writing comprehensive tests before implementation to ensure code quality and architectural compliance.
 tools: ['edit/createFile', 'edit/createDirectory', 'edit/editFiles', 'search', 'usages', 'changes', 'runTests', 'github.vscode-pull-request-github/issue_fetch']
@@ -75,11 +75,11 @@ def test_pilot_decides_to_preheat():
         target_temp=21.0,
         event_id="test_event"
     )
-    
+
     # ACT: Execute the behavior being tested
     controller = PilotController(scheduler_reader=mock_scheduler)
     decision = controller.decide_action()
-    
+
     # ASSERT: Verify the expected outcome
     assert decision.action_type == ActionType.START_HEATING
     assert decision.target_temp == 21.0
@@ -128,17 +128,17 @@ tests/
 Always test against abstract base classes (ABCs), not concrete implementations:
 
 ```python
-from domain.interfaces.scheduler_reader import ISchedulerReader
+from domain.interfaces.scheduler_reader_interface import ISchedulerReader
 
 def test_pilot_uses_scheduler_reader_interface():
     # ARRANGE: Mock the interface
     mock_scheduler = Mock(spec=ISchedulerReader)
     mock_scheduler.get_next_event.return_value = ScheduleEvent(...)
-    
+
     # ACT: Inject mock into domain logic
     controller = PilotController(scheduler_reader=mock_scheduler)
     decision = controller.decide_action()
-    
+
     # ASSERT: Verify interface method was called
     mock_scheduler.get_next_event.assert_called_once()
 ```
@@ -202,11 +202,11 @@ def test_environment_reader_handles_missing_sensor():
     # ARRANGE: Mock Home Assistant state
     mock_hass = Mock()
     mock_hass.states.get.return_value = None  # Sensor not found
-    
+
     # ACT: Create reader with mocked hass
     reader = HAEnvironmentReader(mock_hass, "sensor.temperature")
     result = reader.get_current_temp()
-    
+
     # ASSERT: Should handle gracefully
     assert result is None
 ```
@@ -253,7 +253,7 @@ import os
 def test_domain_layer_has_no_homeassistant_imports():
     """Verify domain layer is pure (no HA dependencies)."""
     domain_path = "custom_components/intelligent_heating_pilot/domain"
-    
+
     for root, _, files in os.walk(domain_path):
         for file in files:
             if file.endswith(".py"):
@@ -272,12 +272,12 @@ def test_domain_layer_has_no_homeassistant_imports():
 ```python
 def test_scheduler_reader_implements_interface():
     """Verify HASchedulerReader implements ISchedulerReader."""
-    from domain.interfaces.scheduler_reader import ISchedulerReader
+    from domain.interfaces.scheduler_reader_interface import ISchedulerReader
     from infrastructure.adapters.scheduler_reader import HASchedulerReader
-    
+
     # Check inheritance
     assert issubclass(HASchedulerReader, ISchedulerReader)
-    
+
     # Check all interface methods are implemented
     interface_methods = [m for m in dir(ISchedulerReader) if not m.startswith("_")]
     for method in interface_methods:
@@ -296,7 +296,7 @@ def test_environment_state_is_immutable():
         humidity=45.0,
         timestamp=datetime.now()
     )
-    
+
     # Should raise FrozenInstanceError (dataclass frozen=True)
     with pytest.raises(Exception):
         state.current_temp = 25.0
@@ -315,10 +315,10 @@ Every test should have a docstring explaining:
 def test_lhs_calculation_excludes_outliers():
     """
     Test that LHS calculation uses trimmed mean to exclude outliers.
-    
+
     Why: Extreme values (sensor errors, manual overrides) should not
     skew the learned heating slope, ensuring accurate predictions.
-    
+
     How: Provides dataset with outliers and verifies they are excluded
     from the final average using trimmed mean algorithm.
     """
@@ -350,16 +350,16 @@ Create tests that **fail initially** (RED phase):
 def test_new_feature_not_yet_implemented():
     """
     Test for Issue #XX: New multi-zone support.
-    
+
     This test will FAIL until Tech Lead implements the feature.
     """
     # ARRANGE
     zones = ["living_room", "bedroom"]
-    
+
     # ACT
     coordinator = MultiZoneCoordinator(zones)
     result = coordinator.coordinate_heating()
-    
+
     # ASSERT (will fail until implemented)
     assert result.zones_activated == ["living_room"]
 ```
@@ -538,11 +538,11 @@ from domain.value_objects import SlopeData
 
 class TestLHSHumidityCompensation:
     """Test suite for Issue #30: Humidity compensation in LHS."""
-    
+
     def test_lhs_adjusts_for_high_humidity(self):
         """
         High humidity (>60%) should increase heating time.
-        
+
         Physics: Humid air has higher heat capacity, requires more
         energy to heat, thus slope should be adjusted upward.
         """
@@ -550,39 +550,39 @@ class TestLHSHumidityCompensation:
         dry_env = create_test_environment(humidity=30.0)
         humid_env = create_test_environment(humidity=70.0)
         slopes = [SlopeData(slope=0.5, timestamp=...)]
-        
+
         service = LHSCalculationService()
-        
+
         # ACT
         dry_lhs = service.calculate(slopes, dry_env)
         humid_lhs = service.calculate(slopes, humid_env)
-        
+
         # ASSERT
         assert humid_lhs > dry_lhs, "Humid air should increase LHS"
-    
+
     def test_lhs_humidity_compensation_is_bounded(self):
         """
         Humidity compensation should have reasonable limits.
-        
+
         Prevents extreme adjustments from sensor errors.
         """
         # ARRANGE
         extreme_env = create_test_environment(humidity=99.0)
         slopes = [SlopeData(slope=0.5, timestamp=...)]
-        
+
         service = LHSCalculationService()
-        
+
         # ACT
         lhs = service.calculate(slopes, extreme_env)
-        
+
         # ASSERT
         assert lhs < 1.0, "Compensation should be bounded"
         assert lhs > 0.1, "Compensation should not zero out"
-    
+
     def test_lhs_handles_missing_humidity_sensor(self):
         """
         When humidity sensor unavailable, use base LHS without compensation.
-        
+
         Graceful degradation - feature optional, not breaking.
         """
         # ARRANGE
@@ -593,12 +593,12 @@ class TestLHSHumidityCompensation:
             timestamp=datetime.now()
         )
         slopes = [SlopeData(slope=0.5, timestamp=...)]
-        
+
         service = LHSCalculationService()
-        
+
         # ACT
         lhs = service.calculate(slopes, env_no_humidity)
-        
+
         # ASSERT
         assert lhs == 0.5, "Should use base slope when no humidity"
 ```
@@ -631,6 +631,6 @@ As a Testing Specialist agent:
 
 ---
 
-**Last Updated**: November 2025  
-**Role**: Testing Specialist (TDD Red Phase)  
+**Last Updated**: November 2025
+**Role**: Testing Specialist (TDD Red Phase)
 **Next Agent**: Tech Lead (TDD Green Phase)

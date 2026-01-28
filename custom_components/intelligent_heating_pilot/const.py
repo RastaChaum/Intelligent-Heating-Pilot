@@ -9,7 +9,9 @@ CONF_SCHEDULER_ENTITIES = "scheduler_entities"
 CONF_HUMIDITY_IN_ENTITY = "humidity_in_entity_id"
 CONF_HUMIDITY_OUT_ENTITY = "humidity_out_entity_id"
 CONF_CLOUD_COVER_ENTITY = "cloud_cover_entity_id"
-CONF_DATA_RETENTION_DAYS = "data_retention_days"  # Retention period for all IHP data (cycles, slopes, etc.)
+CONF_DATA_RETENTION_DAYS = (
+    "data_retention_days"  # Retention period for all IHP data (cycles, slopes, etc.)
+)
 CONF_LHS_RETENTION_DAYS = "lhs_retention_days"  # Deprecated: Use CONF_DATA_RETENTION_DAYS
 CONF_DECISION_MODE = "decision_mode"  # NEW: Choose between 'simple' and 'ml'
 

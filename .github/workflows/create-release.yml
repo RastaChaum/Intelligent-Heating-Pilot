@@ -12,20 +12,20 @@ permissions:
 jobs:
   create-release:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Get all history for changelog generation
-      
+
       - name: Extract version from tag
         id: version
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=${TAG#v}" >> $GITHUB_OUTPUT
-      
+
       - name: Check if release notes exist
         id: check_notes
         run: |
@@ -36,7 +36,7 @@ jobs:
           else
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
-      
+
       - name: Generate release body
         id: release_body
         run: |
@@ -57,7 +57,7 @@ jobs:
             echo "" >> release_body.md
             echo "See [CHANGELOG.md](./CHANGELOG.md) for details." >> release_body.md
           fi
-      
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -71,7 +71,7 @@ jobs:
             README.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Close issues referenced in release notes
         if: steps.check_notes.outputs.exists == 'true'
         run: |
@@ -82,7 +82,7 @@ jobs:
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Update project board
         if: steps.check_notes.outputs.exists == 'true'
         run: |

@@ -247,12 +247,12 @@ Please open an issue or submit a pull request. See [CONTRIBUTING.md](CONTRIBUTIN
 
 All documentation follows these principles:
 
-✅ **DRY Principle**: Single source of truth - no duplicate information  
-✅ **Clear Audience**: Each document targets specific readers (users vs contributors)  
-✅ **Consistent Format**: Standard templates and formatting throughout  
-✅ **Keep Current**: Updated with each release  
-✅ **Examples**: Practical examples where helpful  
-✅ **Searchable**: Well-structured with clear headings  
+✅ **DRY Principle**: Single source of truth - no duplicate information
+✅ **Clear Audience**: Each document targets specific readers (users vs contributors)
+✅ **Consistent Format**: Standard templates and formatting throughout
+✅ **Keep Current**: Updated with each release
+✅ **Examples**: Practical examples where helpful
+✅ **Searchable**: Well-structured with clear headings
 ✅ **Cross-referenced**: Links to related documentation
 
 ---

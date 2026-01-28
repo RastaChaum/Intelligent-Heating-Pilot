@@ -55,7 +55,7 @@ TypeError: '>' not supported between instances of 'NoneType' and 'int'
 
 **What we fixed:** The integration now properly handles cases where cycle split duration is not configured. Your IHP will start successfully even if you haven't set all advanced cycle detection parameters.
 
-**Impact:** 
+**Impact:**
 - ✅ Integration loads correctly on startup
 - ✅ Works with default configuration without errors
 - ✅ Compatible with Home Assistant 2026.1.0 beta
@@ -93,10 +93,10 @@ rm v0.4.4.zip
 
 ## 🔗 Links
 
-- **Issues Fixed:** 
+- **Issues Fixed:**
   - [#67 - Integration fails to start](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/67)
   - [#54 - Optional fields cannot be cleared](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/54)
-- **Pull Requests:** 
+- **Pull Requests:**
   - [#65 - Optional fields persistence](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/65)
   - [#59 - Logging improvements](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/59)
 - **Full Changelog:** [CHANGELOG.md](CHANGELOG.md)
@@ -120,6 +120,6 @@ Special thanks to @Benjamin45590 for the detailed bug report.
 
 ---
 
-**Full Version:** v0.4.4  
-**Release Date:** January 14, 2026  
+**Full Version:** v0.4.4
+**Release Date:** January 14, 2026
 **Status:** Stable

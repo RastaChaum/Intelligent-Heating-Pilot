@@ -1,4 +1,4 @@
---- 
+---
 name: Project-Manager-Agent
 description: An orchestrator agent that coordinates Testing Specialist, Tech Lead, and Documentation Specialist to implement features and bug fixes following TDD and DDD principles.
 tools: ['edit/createFile', 'edit/createDirectory', 'edit/editFiles', 'search', 'todos', 'runSubagent', 'runTests', 'usages', 'changes', 'github.vscode-pull-request-github/issue_fetch']
@@ -139,7 +139,7 @@ Keep user informed at each phase:
 
 Please fix Issue #45: Pre-heating starts too early in humid weather.
 
-The problem is that LHS calculation doesn't account for humidity, 
+The problem is that LHS calculation doesn't account for humidity,
 causing heating to start 30-45 minutes too early when humidity > 70%.
 ```
 
@@ -436,10 +436,10 @@ def test_humidity_adjustment_capped_at_15_percent():
     """Humidity compensation should not exceed 15%."""
     extreme_humid = create_test_environment(humidity=99.0)
     slopes = [SlopeData(slope=1.0, timestamp=...)]
-    
+
     service = LHSCalculationService()
     adjusted_lhs = service.calculate(slopes, extreme_humid)
-    
+
     assert adjusted_lhs <= 1.15, "Max 15% increase"
 ```
 
@@ -472,7 +472,7 @@ Investigating with Testing Specialist...
 
 @testing-specialist
 
-Tests failing for Issue #45. 
+Tests failing for Issue #45.
 Error: Expected LHS 1.15 for 75% humidity, got 1.10
 
 Please review if:
@@ -635,6 +635,6 @@ As Project Manager Orchestrator:
 
 ---
 
-**Last Updated**: November 2025  
-**Role**: Project Manager Orchestrator  
+**Last Updated**: November 2025
+**Role**: Project Manager Orchestrator
 **Coordinates**: Testing Specialist, Tech Lead, Documentation Specialist

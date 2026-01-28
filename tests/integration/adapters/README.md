@@ -102,7 +102,7 @@ async def test_my_integration(hass, test_start_time, test_end_time):
     adapter = MyAdapter(hass)
     hass.states.async_set("sensor.test", "42")
     await hass.async_block_till_done()
-    
+
     result = await adapter.fetch_historical_data(...)
     assert result.data[...]
 ```

@@ -239,7 +239,7 @@ Use this before pushing the tag:
 5. Append:
    ```markdown
    ---
-   
+
    **Issues Fixed:**
    Closes #16
    Closes #17
@@ -319,6 +319,6 @@ git push origin main v0.4.0
 
 ---
 
-**Last Updated**: November 2025  
-**Automation File**: `.github/workflows/create-release.yml`  
+**Last Updated**: November 2025
+**Automation File**: `.github/workflows/create-release.yml`
 **Documentation**: `.github/agents/documentation_specialist.agent.md`

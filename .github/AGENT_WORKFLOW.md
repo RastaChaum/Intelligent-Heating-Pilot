@@ -16,25 +16,25 @@ This document defines the **orchestrated workflow** for feature development and 
 flowchart TD
     Start([User: New Feature/Bug Fix Request]) --> Analyze[Analyze Issue/Requirement]
     Analyze --> Agent1[Agent 1: Testing Specialist]
-    
+
     Agent1 --> TestsWritten{Tests Written<br/>& Failing?}
     TestsWritten -->|No| Agent1
     TestsWritten -->|Yes| Agent2[Agent 2: Tech Lead]
-    
+
     Agent2 --> CodeImpl{Code Implemented<br/>& Tests Pass?}
     CodeImpl -->|No| Agent2
     CodeImpl -->|Yes| Review[User: Code Review]
-    
+
     Review --> Approved{Approved?}
     Approved -->|No - Changes Needed| Agent1
     Approved -->|Yes| Agent3[Agent 3: Documentation Specialist]
-    
+
     Agent3 --> DocsUpdated{Documentation<br/>Updated?}
     DocsUpdated -->|No| Agent3
     DocsUpdated -->|Yes| Merge[Merge PR]
-    
+
     Merge --> End([Complete])
-    
+
     style Agent1 fill:#ff6b6b
     style Agent2 fill:#4ecdc4
     style Agent3 fill:#45b7d1
@@ -71,10 +71,10 @@ flowchart TD
        """Test Issue #XX: Feature works as expected."""
        # ARRANGE
        setup = create_test_setup()
-       
+
        # ACT
        result = new_feature.execute(setup)
-       
+
        # ASSERT (will FAIL until implemented)
        assert result.success is True
    ```
@@ -151,10 +151,10 @@ flowchart TD
    ```bash
    # All tests pass
    pytest tests/ -v
-   
+
    # No linting errors
    python -m mypy custom_components/intelligent_heating_pilot/
-   
+
    # Coverage check
    pytest --cov=custom_components.intelligent_heating_pilot
    ```
@@ -242,10 +242,10 @@ flowchart TD
 1. **Update CHANGELOG.md**
    ```markdown
    ## [Unreleased]
-   
+
    ### Added
    - Humidity compensation in LHS calculation (#30)
-   
+
    ### Fixed
    - Issue #XX: Description of fix
    ```
@@ -329,7 +329,7 @@ Use `@agent-name` to invoke specific agents in GitHub Copilot:
 #### Starting a New Feature/Bug Fix
 
 ```markdown
-@testing-specialist 
+@testing-specialist
 
 I need to implement Issue #30: Add humidity compensation to LHS calculation.
 
@@ -450,12 +450,12 @@ class TestLHSHumidityCompensation:
         """High humidity should increase learned heating slope."""
         # Test implementation (will FAIL)
         ...
-    
+
     def test_humidity_adjustment_is_linear():
         """Adjustment should be linear between 0-60% humidity."""
         # Test implementation (will FAIL)
         ...
-    
+
     def test_missing_humidity_sensor_uses_base_lhs():
         """When sensor unavailable, use base LHS without compensation."""
         # Test implementation (will FAIL)
@@ -678,6 +678,6 @@ Track these metrics for process improvement:
 
 ---
 
-**Last Updated**: November 2025  
-**Workflow Version**: 1.0  
+**Last Updated**: November 2025
+**Workflow Version**: 1.0
 **Agents**: Testing Specialist, Tech Lead, Documentation Specialist

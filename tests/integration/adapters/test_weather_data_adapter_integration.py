@@ -3,23 +3,35 @@
 These tests use real HA state recording via hass.states.async_set + recorder,
 not manually constructed State objects, to ensure adapter behavior matches
 actual Home Assistant data structures.
+
+NOTE: These tests require SQLite >= 3.40.1 to run with Home Assistant recorder.
+If SQLite version is too old, tests will be skipped.
 """
+
+import sqlite3
 from datetime import timedelta
 
 import pytest
 from freezegun import freeze_time
-
-from homeassistant.util import dt as dt_util
 from homeassistant.components.recorder.history import get_significant_states
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
 )
 
+from custom_components.intelligent_heating_pilot.domain.value_objects import (
+    HistoricalDataKey,
+)
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.weather_data_adapter import (
     WeatherDataAdapter,
 )
-from custom_components.intelligent_heating_pilot.domain.value_objects import (
-    HistoricalDataKey,
+
+# Check SQLite version
+SQLITE_VERSION = tuple(map(int, sqlite3.sqlite_version.split(".")))
+REQUIRED_SQLITE = (3, 40, 1)
+pytestmark = pytest.mark.skipif(
+    SQLITE_VERSION < REQUIRED_SQLITE,
+    reason=f"SQLite {sqlite3.sqlite_version} < 3.40.1 required by HA recorder",
 )
 
 
@@ -29,7 +41,7 @@ async def test_weather_adapter_fetch_real_outdoor_temp_history(hass):
     entity_id = "weather.home"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
-    
+
     # Record real states via hass.states.async_set
     # Change state value each time to ensure get_significant_states captures them
     with freeze_time(now - timedelta(minutes=10)) as freezer:
@@ -43,7 +55,7 @@ async def test_weather_adapter_fetch_real_outdoor_temp_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now - timedelta(minutes=5))
         hass.states.async_set(
             entity_id,
@@ -55,7 +67,7 @@ async def test_weather_adapter_fetch_real_outdoor_temp_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now)
         hass.states.async_set(
             entity_id,
@@ -101,7 +113,7 @@ async def test_weather_adapter_fetch_real_outdoor_humidity_history(hass):
     entity_id = "weather.forecast"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
-    
+
     # Record states with changing humidity attribute
     with freeze_time(now - timedelta(minutes=20)) as freezer:
         hass.states.async_set(
@@ -114,7 +126,7 @@ async def test_weather_adapter_fetch_real_outdoor_humidity_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now - timedelta(minutes=10))
         hass.states.async_set(
             entity_id,
@@ -126,7 +138,7 @@ async def test_weather_adapter_fetch_real_outdoor_humidity_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now)
         hass.states.async_set(
             entity_id,
@@ -164,7 +176,7 @@ async def test_weather_adapter_fetch_real_cloud_coverage_history(hass):
     entity_id = "weather.local"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
-    
+
     # Record states with changing cloud_coverage attribute
     with freeze_time(now - timedelta(minutes=30)) as freezer:
         hass.states.async_set(
@@ -177,7 +189,7 @@ async def test_weather_adapter_fetch_real_cloud_coverage_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now - timedelta(minutes=15))
         hass.states.async_set(
             entity_id,
@@ -189,7 +201,7 @@ async def test_weather_adapter_fetch_real_cloud_coverage_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now)
         hass.states.async_set(
             entity_id,
@@ -227,7 +239,7 @@ async def test_weather_adapter_handles_missing_attributes_in_real_states(hass):
     entity_id = "weather.partial"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
-    
+
     # Record states with some missing attributes (edge case)
     with freeze_time(now - timedelta(minutes=10)) as freezer:
         # State with all attributes
@@ -241,7 +253,7 @@ async def test_weather_adapter_handles_missing_attributes_in_real_states(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now - timedelta(minutes=5))
         # State missing temperature attribute
         hass.states.async_set(
@@ -253,7 +265,7 @@ async def test_weather_adapter_handles_missing_attributes_in_real_states(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now)
         # State with temperature again
         hass.states.async_set(

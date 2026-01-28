@@ -1,4 +1,5 @@
 """Tests for VTherm compatibility layer."""
+
 from __future__ import annotations
 
 from unittest.mock import Mock
@@ -20,12 +21,12 @@ def test_get_vtherm_attribute_from_specific_states() -> None:
             "is_device_active": False,
         }
     }
-    
+
     # WHEN: Reading attributes using the compatibility function
     slope = get_vtherm_attribute(mock_state, "temperature_slope")
     ema_temp = get_vtherm_attribute(mock_state, "ema_temp")
     is_active = get_vtherm_attribute(mock_state, "is_device_active")
-    
+
     # THEN: Should read from nested specific_states
     assert slope == 0.04
     assert ema_temp == 20.25
@@ -42,12 +43,12 @@ def test_get_vtherm_attribute_from_root_legacy() -> None:
         "ema_temp": 21.0,
         "is_device_active": True,
     }
-    
+
     # WHEN: Reading attributes using the compatibility function
     slope = get_vtherm_attribute(mock_state, "temperature_slope")
     ema_temp = get_vtherm_attribute(mock_state, "ema_temp")
     is_active = get_vtherm_attribute(mock_state, "is_device_active")
-    
+
     # THEN: Should read from root level
     assert slope == 0.05
     assert ema_temp == 21.0
@@ -63,12 +64,12 @@ def test_get_vtherm_attribute_prefers_specific_states() -> None:
         "temperature_slope": 0.05,  # Old value at root
         "specific_states": {
             "temperature_slope": 0.04,  # New value in nested object
-        }
+        },
     }
-    
+
     # WHEN: Reading the attribute
     slope = get_vtherm_attribute(mock_state, "temperature_slope")
-    
+
     # THEN: Should prefer the new nested value
     assert slope == 0.04
 
@@ -78,13 +79,11 @@ def test_get_vtherm_attribute_missing_returns_default() -> None:
     # GIVEN: A VTherm state without the requested attribute
     mock_state = Mock()
     mock_state.entity_id = "climate.test_vtherm"
-    mock_state.attributes = {
-        "some_other_attr": "value"
-    }
-    
+    mock_state.attributes = {"some_other_attr": "value"}
+
     # WHEN: Reading a missing attribute with default
     result = get_vtherm_attribute(mock_state, "missing_attr", default=99.9)
-    
+
     # THEN: Should return the default
     assert result == 99.9
 
@@ -93,10 +92,10 @@ def test_get_vtherm_attribute_none_state() -> None:
     """Test that None state returns default."""
     # GIVEN: A None state
     mock_state = None
-    
+
     # WHEN: Reading an attribute
     result = get_vtherm_attribute(mock_state, "temperature_slope", default=0.0)
-    
+
     # THEN: Should return the default
     assert result == 0.0
 
@@ -107,10 +106,10 @@ def test_get_vtherm_attribute_empty_attributes() -> None:
     mock_state = Mock()
     mock_state.entity_id = "climate.test_vtherm"
     mock_state.attributes = {}
-    
+
     # WHEN: Reading an attribute
     result = get_vtherm_attribute(mock_state, "temperature_slope", default=0.0)
-    
+
     # THEN: Should return the default
     assert result == 0.0
 
@@ -124,9 +123,9 @@ def test_get_vtherm_attribute_specific_states_not_dict() -> None:
         "specific_states": "not a dict",  # Malformed
         "temperature_slope": 0.05,  # Fallback at root
     }
-    
+
     # WHEN: Reading an attribute
     slope = get_vtherm_attribute(mock_state, "temperature_slope")
-    
+
     # THEN: Should fallback to root level
     assert slope == 0.05

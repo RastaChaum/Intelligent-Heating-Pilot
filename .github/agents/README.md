@@ -135,7 +135,7 @@ The agents work in a **structured sequence** to ensure quality:
 
 **Orchestration**: The **Project Manager** agent automatically coordinates this workflow.
 
-**Complete workflow guide**: See [../AGENT_WORKFLOW.md](../AGENT_WORKFLOW.md)  
+**Complete workflow guide**: See [../AGENT_WORKFLOW.md](../AGENT_WORKFLOW.md)
 **Quick start guide**: See [../AGENT_QUICKSTART.md](../AGENT_QUICKSTART.md)
 
 ---
@@ -143,9 +143,9 @@ The agents work in a **structured sequence** to ensure quality:
 ## 📚 Agent Responsibilities Summary
 
 ### Testing Specialist (TDD Red Phase)
-**Input**: Issue requirements  
-**Process**: Design and write failing tests  
-**Output**: Comprehensive test suite (RED)  
+**Input**: Issue requirements
+**Process**: Design and write failing tests
+**Output**: Comprehensive test suite (RED)
 **Deliverables**:
 - Unit tests for domain logic
 - Integration tests if needed
@@ -153,9 +153,9 @@ The agents work in a **structured sequence** to ensure quality:
 - Centralized fixtures in `fixtures.py`
 
 ### Tech Lead (TDD Green + Refactor)
-**Input**: Failing test suite from Testing Specialist  
-**Process**: Implement code to pass tests, then refactor  
-**Output**: Clean, DDD-compliant implementation (GREEN)  
+**Input**: Failing test suite from Testing Specialist
+**Process**: Implement code to pass tests, then refactor
+**Output**: Clean, DDD-compliant implementation (GREEN)
 **Deliverables**:
 - Domain layer implementation (pure business logic)
 - Infrastructure adapters (HA integration)
@@ -163,9 +163,9 @@ The agents work in a **structured sequence** to ensure quality:
 - All tests passing, high coverage
 
 ### Documentation Specialist (Documentation)
-**Input**: Approved implementation from Tech Lead  
-**Process**: Update all relevant documentation  
-**Output**: Complete, up-to-date documentation  
+**Input**: Approved implementation from Tech Lead
+**Process**: Update all relevant documentation
+**Output**: Complete, up-to-date documentation
 **Deliverables**:
 - CHANGELOG.md update
 - README.md updates (if user-facing changes)
@@ -243,7 +243,7 @@ Each agent has specific configuration in its `.agent.md` file:
 
 ### Agent Instructions
 - [testing_specialist.agent.md](testing_specialist.agent.md) - Testing Specialist guidelines
-- [tech_lead.agent.md](tech_lead.agent.md) - Tech Lead guidelines  
+- [tech_lead.agent.md](tech_lead.agent.md) - Tech Lead guidelines
 - [documentation_specialist.agent.md](documentation_specialist.agent.md) - Documentation Specialist guidelines
 
 ### Workflow & Process
@@ -319,7 +319,7 @@ All agents follow **clean code standards**:
 Each agent file (`*.agent.md`) contains:
 
 ```yaml
---- 
+---
 name: Agent-Name
 description: Agent role and specialization
 tools: ['edit/createFile', 'search', 'runTests', ...]
@@ -374,13 +374,13 @@ Track these metrics for quality assurance:
 
 ## 🐛 Troubleshooting
 
-**Agent not responding as expected?**  
+**Agent not responding as expected?**
 → Be more specific in your request with concrete examples
 
-**Need detailed workflow examples?**  
+**Need detailed workflow examples?**
 → See [../AGENT_WORKFLOW.md](../AGENT_WORKFLOW.md)
 
-**Want to understand the theory?**  
+**Want to understand the theory?**
 → See [../../ARCHITECTURE.md](../../ARCHITECTURE.md) for DDD principles
 
 ---
@@ -447,6 +447,6 @@ Expected deliverables:
 
 ---
 
-**Last Updated**: November 2025  
-**Agent System Version**: 1.0  
+**Last Updated**: November 2025
+**Agent System Version**: 1.0
 **For Questions**: See [AGENT_WORKFLOW.md](../AGENT_WORKFLOW.md) or open a discussion

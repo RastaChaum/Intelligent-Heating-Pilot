@@ -1,4 +1,5 @@
 """REST API handlers for the Intelligent Heating Pilot integration."""
+
 from __future__ import annotations
 
 import json
@@ -13,16 +14,16 @@ _LOGGER = logging.getLogger(__name__)
 
 async def extract_heating_cycles_handler(request: Request) -> Response:
     """Handle POST request to extract heating cycles.
-    
+
     Endpoint: POST /api/intelligent_heating_pilot/extract_cycles/{device_id}
-    
+
     Request body (JSON):
     {
         "start_time": "2024-12-17T10:00:00+00:00",
         "end_time": "2024-12-17T20:00:00+00:00",
         "cycle_split_duration_minutes": 60  # Optional
     }
-    
+
     Response (JSON):
     {
         "success": true,
@@ -43,7 +44,7 @@ async def extract_heating_cycles_handler(request: Request) -> Response:
         # Parse request body
         try:
             data = await request.json()
-        except json.JSONDecodeError as exc:
+        except json.JSONDecodeError:
             return web.json_response(
                 {"error": "Invalid JSON in request body"},
                 status=400,
@@ -78,12 +79,13 @@ async def extract_heating_cycles_handler(request: Request) -> Response:
         cycle_split_duration_minutes = data.get("cycle_split_duration_minutes")
 
         # Get the coordinator from hass data
-        from custom_components.intelligent_heating_pilot.const import DOMAIN
         from homeassistant.core import HomeAssistant
-        
+
+        from ...const import DOMAIN
+
         hass: HomeAssistant = request.app["hass"]
         coordinators = hass.data.get(DOMAIN, {})
-        
+
         # Find coordinator matching the device_id (entry_id)
         coordinator = coordinators.get(device_id)
         if not coordinator:
@@ -94,26 +96,40 @@ async def extract_heating_cycles_handler(request: Request) -> Response:
             )
 
         # Create use case dynamically for this request
-        from custom_components.intelligent_heating_pilot.domain.interfaces.device_config_reader import IDeviceConfigReader
-        from custom_components.intelligent_heating_pilot.infrastructure.adapters.device_config_reader import HADeviceConfigReader
-        from custom_components.intelligent_heating_pilot.domain.services.heating_cycle_service import HeatingCycleService
-        from custom_components.intelligent_heating_pilot.application.extract_heating_cycles_use_case import ExtractHeatingCyclesUseCase
+        from domain.services.heating_cycle_service import (
+            HeatingCycleService,
+        )
+
+        from ...application.extract_heating_cycles_use_case import (
+            ExtractHeatingCyclesUseCase,
+        )
+        from .adapters.device_config_reader import (
+            HADeviceConfigReader,
+        )
 
         device_config_reader = HADeviceConfigReader(hass, coordinator.config)
-        
+
         # Read cycle detection parameters from coordinator configuration
-        from custom_components.intelligent_heating_pilot.const import (
-            DEFAULT_TEMP_DELTA_THRESHOLD,
+        from ...const import (
             DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
-            DEFAULT_MIN_CYCLE_DURATION_MINUTES,
             DEFAULT_MAX_CYCLE_DURATION_MINUTES,
+            DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+            DEFAULT_TEMP_DELTA_THRESHOLD,
         )
-        
+
         heating_cycle_service = HeatingCycleService(
-            temp_delta_threshold=getattr(coordinator, '_temp_delta_threshold', DEFAULT_TEMP_DELTA_THRESHOLD),
-            cycle_split_duration_minutes=getattr(coordinator, '_cycle_split_duration_minutes', DEFAULT_CYCLE_SPLIT_DURATION_MINUTES),
-            min_cycle_duration_minutes=getattr(coordinator, '_min_cycle_duration_minutes', DEFAULT_MIN_CYCLE_DURATION_MINUTES),
-            max_cycle_duration_minutes=getattr(coordinator, '_max_cycle_duration_minutes', DEFAULT_MAX_CYCLE_DURATION_MINUTES),
+            temp_delta_threshold=getattr(
+                coordinator, "_temp_delta_threshold", DEFAULT_TEMP_DELTA_THRESHOLD
+            ),
+            cycle_split_duration_minutes=getattr(
+                coordinator, "_cycle_split_duration_minutes", DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
+            ),
+            min_cycle_duration_minutes=getattr(
+                coordinator, "_min_cycle_duration_minutes", DEFAULT_MIN_CYCLE_DURATION_MINUTES
+            ),
+            max_cycle_duration_minutes=getattr(
+                coordinator, "_max_cycle_duration_minutes", DEFAULT_MAX_CYCLE_DURATION_MINUTES
+            ),
         )
 
         use_case = ExtractHeatingCyclesUseCase(
@@ -184,12 +200,13 @@ async def extract_heating_cycles_handler(request: Request) -> Response:
 
 async def health_check_handler(request: Request) -> Response:
     """Handle GET request for health check.
-    
+
     Endpoint: GET /api/intelligent_heating_pilot/health
     """
-    from custom_components.intelligent_heating_pilot.const import DOMAIN
     from homeassistant.core import HomeAssistant
-    
+
+    from ...const import DOMAIN
+
     hass: HomeAssistant = request.app.get("hass")
     coordinators = hass.data.get(DOMAIN, {}) if hass else {}
     is_ready = len(coordinators) > 0
@@ -206,9 +223,9 @@ async def health_check_handler(request: Request) -> Response:
 
 async def debug_heating_state_handler(request: Request) -> Response:
     """Handle GET request to debug heating state history.
-    
+
     Endpoint: GET /api/intelligent_heating_pilot/debug/heating_state/{device_id}?start_time=...&end_time=...
-    
+
     Returns raw heating state data to help debug cycle splitting issues.
     """
     try:
@@ -219,20 +236,21 @@ async def debug_heating_state_handler(request: Request) -> Response:
                 {"error": "Missing device_id in URL path"},
                 status=400,
             )
-        
+
         # Extract query parameters
         query_params = request.rel_url.query
         start_time_str = query_params.get("start_time")
         end_time_str = query_params.get("end_time")
-        
+
         if not start_time_str or not end_time_str:
             return web.json_response(
                 {"error": "Missing required query parameters: start_time and end_time"},
                 status=400,
             )
-        
+
         try:
             from datetime import datetime
+
             start_time = datetime.fromisoformat(start_time_str)
             end_time = datetime.fromisoformat(end_time_str)
         except ValueError as exc:
@@ -240,25 +258,30 @@ async def debug_heating_state_handler(request: Request) -> Response:
                 {"error": f"Invalid datetime format: {exc}"},
                 status=400,
             )
-        
+
         # Get coordinator
-        from custom_components.intelligent_heating_pilot.const import DOMAIN
         from homeassistant.core import HomeAssistant
-        
+
+        from ...const import DOMAIN
+
         hass: HomeAssistant = request.app["hass"]
         coordinators = hass.data.get(DOMAIN, {})
-        
+
         coordinator = coordinators.get(device_id)
         if not coordinator:
             return web.json_response(
                 {"error": f"Device {device_id} not configured"},
                 status=404,
             )
-        
+
         # Fetch heating state data
-        from custom_components.intelligent_heating_pilot.infrastructure.adapters.climate_data_adapter import ClimateDataAdapter
-        from custom_components.intelligent_heating_pilot.domain.value_objects import HistoricalDataKey
-        
+        from ...domain.value_objects import (
+            HistoricalDataKey,
+        )
+        from .adapters.climate_data_adapter import (
+            ClimateDataAdapter,
+        )
+
         climate_adapter = ClimateDataAdapter(hass)
         heating_state_data = await climate_adapter.fetch_historical_data(
             coordinator.config.data.get("vtherm_entity_id"),
@@ -266,9 +289,9 @@ async def debug_heating_state_handler(request: Request) -> Response:
             start_time,
             end_time,
         )
-        
+
         heating_states = heating_state_data.data.get(HistoricalDataKey.HEATING_STATE, [])
-        
+
         # Convert to JSON-serializable format
         states_json = [
             {
@@ -278,7 +301,7 @@ async def debug_heating_state_handler(request: Request) -> Response:
             }
             for measurement in heating_states
         ]
-        
+
         return web.json_response(
             {
                 "success": True,
@@ -290,7 +313,7 @@ async def debug_heating_state_handler(request: Request) -> Response:
                 "heating_states": states_json,
             }
         )
-        
+
     except Exception as exc:
         _LOGGER.exception("Unexpected error in debug endpoint: %s", exc)
         return web.json_response(

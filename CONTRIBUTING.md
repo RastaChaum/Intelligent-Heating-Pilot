@@ -21,6 +21,23 @@ We are committed to maintaining an open and welcoming community. We expect all c
 - Focus on what is best for the community
 - Show empathy towards other community members
 
+## 🏷️ Naming Convention for Interfaces and Implementations
+
+To ensure a clear distinction between interfaces (ABCs) and actual implementations:
+
+- All interface (ABC) files in `domain/interfaces/` must end with `_interface.py` (e.g., `scheduler_reader_interface.py`).
+
+- Implementation files in `infrastructure/adapters/` or elsewhere retain their functional name without a suffix (e.g., `scheduler_reader.py`).
+
+**Example:**
+
+- Interface: `domain/interfaces/scheduler_reader_interface.py` → class `ISchedulerReader`
+- Implementation: `infrastructure/adapters/scheduler_reader.py` → class `HASchedulerReader`
+
+Please adhere to this convention when creating or refactoring interface files.
+
+---
+
 ## 🚀 How to Contribute
 
 ### Reporting Bugs
@@ -87,7 +104,7 @@ main (production) ← integration (pre-release) ← feature/* (development)
 
 **Rules**:
 - 🚫 **Forbidden**: Direct feature development
-- ✅ **Allowed**: 
+- ✅ **Allowed**:
   - Merge from `feature/*` via PR with **squash merge**
   - Direct push by admin/contributors (minor fixes only)
 - ✅ **Merge strategy**: **Squash merge** (one commit per feature)
@@ -292,7 +309,7 @@ custom_components/intelligent_heating_pilot/
    ```bash
    poetry run pre-commit install
    ```
-   
+
    This will automatically run code quality checks before each commit, preventing syntax errors and style issues from being committed.
 
 ### Code Quality Tools Setup
@@ -445,6 +462,39 @@ tests/
 └── integration/         # Integration tests (optional, slower)
 ```
 
+### How to Write Tests - Import Paths
+
+**IMPORTANT:** All test files automatically have the correct Python path configured via `tests/conftest.py`.
+
+#### ✅ Correct import style (REQUIRED)
+
+All imports from the IHP component **MUST** use the full path starting with `custom_components.intelligent_heating_pilot`:
+
+```python
+from custom_components.intelligent_heating_pilot.domain.interfaces.scheduler_reader_interface import ISchedulerReader
+from custom_components.intelligent_heating_pilot.domain.value_objects import EnvironmentState, HeatingDecision
+from custom_components.intelligent_heating_pilot.domain.services.prediction_service import PredictionService
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.model_storage import ModelStorage
+from custom_components.intelligent_heating_pilot.application import HeatingApplicationService
+```
+
+#### ❌ Incorrect import styles (DO NOT USE)
+
+```python
+# ❌ DON'T: Direct imports without component prefix
+from domain.value_objects import EnvironmentState
+from infrastructure.adapters.model_storage import ModelStorage
+
+# ❌ DON'T: Manual sys.path manipulation in test files
+import sys
+import os
+sys.path.insert(0, ...)  # This is handled by conftest.py
+```
+
+**Why this matters:** The component uses relative imports internally (e.g., `from ...domain.interfaces`). Adding the component itself to sys.path would break these relative imports by making them "beyond top-level package". Only the repository root should be in sys.path, configured once in `tests/conftest.py`.
+
+**DO NOT** manually add `sys.path` setup in individual test files. The root `conftest.py` handles this for all tests.
+
 ### Running Tests
 
 ```bash
@@ -465,18 +515,19 @@ poetry run pytest tests/unit/domain/test_prediction_service.py -v
 
 ```python
 from unittest.mock import Mock
-from domain.interfaces.scheduler_reader import ISchedulerReader
-from domain.services.prediction_service import PredictionService
+from custom_components.intelligent_heating_pilot.domain.interfaces.scheduler_reader_interface import ISchedulerReader
+from custom_components.intelligent_heating_pilot.domain.services.prediction_service import PredictionService
+from custom_components.intelligent_heating_pilot.domain.value_objects import ScheduleTimeslot
 
 def test_prediction_calculates_anticipation():
     # GIVEN: Mock scheduler reader
     mock_scheduler = Mock(spec=ISchedulerReader)
     mock_scheduler.get_next_timeslot.return_value = ScheduleTimeslot(...)
-    
+
     # WHEN: Service makes a prediction
     service = PredictionService(scheduler_reader=mock_scheduler)
     result = service.calculate_anticipation(environment_state)
-    
+
     # THEN: Result meets expectations
     assert result.anticipated_start_time is not None
     assert result.confidence_level > 0.5
@@ -540,21 +591,21 @@ def calculate_preheat_duration(
     heating_slope: float,
 ) -> float:
     """Calculate the required preheat duration.
-    
+
     Args:
         current_temp: Current temperature in °C
         target_temp: Target temperature in °C
         heating_slope: Heating slope in °C/h
-    
+
     Returns:
         Duration in minutes
-        
+
     Raises:
         ValueError: If heating slope is <= 0
     """
     if heating_slope <= 0:
         raise ValueError("Heating slope must be positive")
-    
+
     delta_temp = target_temp - current_temp
     return (delta_temp / heating_slope) * 60
 ```
@@ -733,7 +784,7 @@ All PRs require:
    def calculate_preheat(self, hass: HomeAssistant):
        vtherm_state = hass.states.get("climate.vtherm")
    ```
-   
+
    ```python
    # ✅ GOOD
    def calculate_preheat(self, environment: EnvironmentState):
@@ -749,7 +800,7 @@ All PRs require:
            if event.temp > 20:  # Business rule!
                return None
    ```
-   
+
    ```python
    # ✅ GOOD (adapter only translates)
    class HASchedulerAdapter:
@@ -766,7 +817,7 @@ All PRs require:
        if state.temperature < 20:
            hass.services.call("climate", "turn_on")
    ```
-   
+
    ```python
    # ✅ GOOD
    async def decide(

@@ -1,8 +1,9 @@
 """Sensor platform for Intelligent Heating Pilot."""
+
 from __future__ import annotations
 
-from datetime import datetime
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -44,7 +45,9 @@ async def async_setup_entry(
         IntelligentHeatingPilotNextScheduleHmsSensor(coordinator, config_entry, name),
         # Metrics
         IntelligentHeatingPilotLearnedSlopeSensor(coordinator, config_entry, name),
-        IntelligentHeatingPilotPredictionConfidenceSensor(coordinator, config_entry, name),  # Phase 4: New
+        IntelligentHeatingPilotPredictionConfidenceSensor(
+            coordinator, config_entry, name
+        ),  # Phase 4: New
     ]
 
     async_add_entities(sensors, True)
@@ -96,14 +99,14 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
 
     _attr_name = "Anticipated Start Time"
     _attr_icon = "mdi:clock-start"
-    _attr_device_class = SensorDeviceClass.TIMESTAMP  # type: ignore[assignment]
-    
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
     def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, name)
         self._attr_unique_id = f"{config_entry.entry_id}_anticipated_start_time"
-        self._anticipated_start = None
-        self._attributes = {}
+        self._anticipated_start: datetime | None = None
+        self._attributes: dict[str, Any] = {}
 
     @property
     def native_value(self) -> datetime | None:
@@ -122,14 +125,14 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
 
     def _handle_anticipation_result(self, data: dict) -> None:
         """Handle new anticipation result."""
-        # Clear sensor values when scheduler is disabled or no timeslot is available  
-        # This sets the sensor to 'unknown' state and clears all attributes  
+        # Clear sensor values when scheduler is disabled or no timeslot is available
+        # This sets the sensor to 'unknown' state and clears all attributes
         if data.get("clear_values"):
             self._anticipated_start = None
             self._attributes = {}
             _LOGGER.info("Anticipated start time cleared (scheduler disabled or no timeslot)")
             return
-            
+
         anticipated_start = data.get(ATTR_ANTICIPATED_START_TIME)
         if anticipated_start:
             # Event carries ISO string; accept datetime too
@@ -152,7 +155,7 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
                 next_sched_attr = next_sched.isoformat()
             else:
                 next_sched_attr = None
-            
+
             self._attributes = {
                 ATTR_NEXT_SCHEDULE_TIME: next_sched_attr,
                 ATTR_NEXT_TARGET_TEMP: data.get(ATTR_NEXT_TARGET_TEMP),
@@ -162,8 +165,11 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
                 ATTR_LEARNED_HEATING_SLOPE: data.get(ATTR_LEARNED_HEATING_SLOPE),
                 "confidence_level": data.get("confidence_level"),  # Phase 4: New from domain
             }
-            _LOGGER.info("Anticipated start time updated: %s (confidence: %.2f)", 
-                        self._anticipated_start, data.get("confidence_level", 0.0))
+            _LOGGER.info(
+                "Anticipated start time updated: %s (confidence: %.2f)",
+                self._anticipated_start,
+                data.get("confidence_level", 0.0),
+            )
 
 
 class IntelligentHeatingPilotAnticipationTimeHmsSensor(IntelligentHeatingPilotSensorBase):
@@ -196,7 +202,7 @@ class IntelligentHeatingPilotAnticipationTimeHmsSensor(IntelligentHeatingPilotSe
             self._time_str = None
             self._attributes = {}
             return
-            
+
         value = data.get(ATTR_ANTICIPATED_START_TIME)
         dt_val: datetime | None = None
         if isinstance(value, str):
@@ -230,13 +236,15 @@ class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBas
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, name)
         self._attr_unique_id = f"{config_entry.entry_id}_learned_heating_slope"
-        self._slope = None
+        self._slope: float | None = None
 
     @property
     def native_value(self) -> float | None:
         """Return the state of the sensor."""
         # Prefer last event-driven value, fallback to coordinator cache
-        value = self._slope if self._slope is not None else self.coordinator.get_learned_heating_slope()
+        value = (
+            self._slope if self._slope is not None else self.coordinator.get_learned_heating_slope()
+        )
         # Round to 2 decimal places for cleaner display
         return round(value, 2) if value is not None else None
 
@@ -265,7 +273,9 @@ class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBas
                 if hasattr(self.coordinator, "refresh_caches"):
                     self.hass.async_create_task(self.coordinator.refresh_caches())
         except (TypeError, ValueError):
-            _LOGGER.debug("Invalid learned_heating_slope in event: %s", data.get(ATTR_LEARNED_HEATING_SLOPE))
+            _LOGGER.debug(
+                "Invalid learned_heating_slope in event: %s", data.get(ATTR_LEARNED_HEATING_SLOPE)
+            )
 
 
 class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBase):
@@ -273,14 +283,14 @@ class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBas
 
     _attr_name = "Next Schedule Time"
     _attr_icon = "mdi:calendar-clock"
-    _attr_device_class = SensorDeviceClass.TIMESTAMP  # type: ignore[assignment]
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
 
     def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, name)
         self._attr_unique_id = f"{config_entry.entry_id}_next_schedule_time"
-        self._next_schedule = None
-        self._attributes = {}
+        self._next_schedule: datetime | None = None
+        self._attributes: dict[str, Any] = {}
 
     @property
     def native_value(self) -> datetime | None:
@@ -305,7 +315,7 @@ class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBas
             self._attributes = {}
             _LOGGER.info("Next schedule time cleared (scheduler disabled or no timeslot)")
             return
-            
+
         next_schedule = data.get(ATTR_NEXT_SCHEDULE_TIME)
         if next_schedule:
             # Event carries ISO string; accept datetime too
@@ -357,7 +367,7 @@ class IntelligentHeatingPilotNextScheduleHmsSensor(IntelligentHeatingPilotSensor
             self._time_str = None
             self._attributes = {}
             return
-            
+
         value = data.get(ATTR_NEXT_SCHEDULE_TIME)
         dt_val: datetime | None = None
         if isinstance(value, str):
@@ -379,7 +389,7 @@ class IntelligentHeatingPilotNextScheduleHmsSensor(IntelligentHeatingPilotSensor
 
 class IntelligentHeatingPilotPredictionConfidenceSensor(IntelligentHeatingPilotSensorBase):
     """Sensor for prediction confidence level.
-    
+
     Phase 4: New sensor to display domain prediction confidence (0.0-1.0).
     This reflects the quality of the prediction based on learned data and
     available environmental sensors.
@@ -394,8 +404,8 @@ class IntelligentHeatingPilotPredictionConfidenceSensor(IntelligentHeatingPilotS
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, name)
         self._attr_unique_id = f"{config_entry.entry_id}_prediction_confidence"
-        self._confidence = None
-        self._attributes = {}
+        self._confidence: float | None = None
+        self._attributes: dict[str, Any] = {}
 
     @property
     def native_value(self) -> float | None:
@@ -422,7 +432,7 @@ class IntelligentHeatingPilotPredictionConfidenceSensor(IntelligentHeatingPilotS
             self._attributes = {}
             _LOGGER.info("Prediction confidence cleared (scheduler disabled or no timeslot)")
             return
-            
+
         confidence = data.get("confidence_level")
         if confidence is not None:
             self._confidence = float(confidence)

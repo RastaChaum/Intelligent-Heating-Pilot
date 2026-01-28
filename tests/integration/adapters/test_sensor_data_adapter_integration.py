@@ -3,23 +3,35 @@
 These tests use real HA state recording via hass.states.async_set + recorder,
 not manually constructed State objects, to ensure adapter behavior matches
 actual Home Assistant data structures.
+
+NOTE: These tests require SQLite >= 3.40.1 to run with Home Assistant recorder.
+If SQLite version is too old, tests will be skipped.
 """
+
+import sqlite3
 from datetime import timedelta
 
 import pytest
 from freezegun import freeze_time
-
-from homeassistant.util import dt as dt_util
 from homeassistant.components.recorder.history import get_significant_states
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
 )
 
+from custom_components.intelligent_heating_pilot.domain.value_objects import (
+    HistoricalDataKey,
+)
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.sensor_data_adapter import (
     SensorDataAdapter,
 )
-from custom_components.intelligent_heating_pilot.domain.value_objects import (
-    HistoricalDataKey,
+
+# Check SQLite version
+SQLITE_VERSION = tuple(map(int, sqlite3.sqlite_version.split(".")))
+REQUIRED_SQLITE = (3, 40, 1)
+pytestmark = pytest.mark.skipif(
+    SQLITE_VERSION < REQUIRED_SQLITE,
+    reason=f"SQLite {sqlite3.sqlite_version} < 3.40.1 required by HA recorder",
 )
 
 
@@ -29,7 +41,7 @@ async def test_sensor_adapter_fetch_real_sensor_value_history(hass):
     entity_id = "sensor.temperature_bedroom"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
-    
+
     # Record real states via hass.states.async_set
     # Change state value each time to ensure get_significant_states captures them
     with freeze_time(now - timedelta(minutes=10)) as freezer:
@@ -42,7 +54,7 @@ async def test_sensor_adapter_fetch_real_sensor_value_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now - timedelta(minutes=5))
         hass.states.async_set(
             entity_id,
@@ -53,7 +65,7 @@ async def test_sensor_adapter_fetch_real_sensor_value_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now)
         hass.states.async_set(
             entity_id,
@@ -98,7 +110,7 @@ async def test_sensor_adapter_fetch_real_battery_level_history(hass):
     entity_id = "sensor.temperature_sensor_battery"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
-    
+
     # Record states with changing battery attribute
     # Change state value each time for significance
     with freeze_time(now - timedelta(minutes=20)) as freezer:
@@ -112,7 +124,7 @@ async def test_sensor_adapter_fetch_real_battery_level_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now - timedelta(minutes=10))
         hass.states.async_set(
             entity_id,
@@ -124,7 +136,7 @@ async def test_sensor_adapter_fetch_real_battery_level_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now)
         hass.states.async_set(
             entity_id,
@@ -162,7 +174,7 @@ async def test_sensor_adapter_handles_non_numeric_states(hass):
     entity_id = "sensor.status_sensor"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
-    
+
     # Record states with some non-numeric values
     with freeze_time(now - timedelta(minutes=10)) as freezer:
         # Numeric state
@@ -174,7 +186,7 @@ async def test_sensor_adapter_handles_non_numeric_states(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now - timedelta(minutes=5))
         # Non-numeric state (should be filtered by adapter)
         hass.states.async_set(
@@ -185,7 +197,7 @@ async def test_sensor_adapter_handles_non_numeric_states(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now)
         # Numeric state again
         hass.states.async_set(

@@ -1,4 +1,4 @@
---- 
+---
 name: Tech-Lead-Agent
 description: An agent specialized in implementing clean, maintainable, DDD-compliant code that passes tests and follows best practices and architectural standards.
 tools: ['edit/createFile', 'edit/createDirectory', 'edit/editFiles', 'search', 'usages', 'changes', 'runTests', 'errors', 'github.vscode-pull-request-github/issue_fetch']
@@ -97,8 +97,8 @@ custom_components/intelligent_heating_pilot/
 2. ✅ **Use interfaces for external interactions**
    ```python
    # GOOD - domain/services/prediction_service.py
-   from domain.interfaces.scheduler_reader import ISchedulerReader
-   
+   from domain.interfaces.scheduler_reader_interface import ISchedulerReader
+
    class PredictionService:
        def __init__(self, scheduler: ISchedulerReader):
            self._scheduler = scheduler
@@ -108,7 +108,7 @@ custom_components/intelligent_heating_pilot/
    ```python
    # GOOD - domain/value_objects/environment_state.py
    from dataclasses import dataclass
-   
+
    @dataclass(frozen=True)
    class EnvironmentState:
        current_temp: float
@@ -120,7 +120,7 @@ custom_components/intelligent_heating_pilot/
    ```python
    # GOOD - all parameters and returns typed
    def calculate_preheat_time(
-       self, 
+       self,
        environment: EnvironmentState,
        target: float
    ) -> timedelta:
@@ -134,13 +134,13 @@ custom_components/intelligent_heating_pilot/
 1. ✅ **Implement domain interfaces**
    ```python
    # infrastructure/adapters/scheduler_reader.py
-   from domain.interfaces.scheduler_reader import ISchedulerReader
+   from domain.interfaces.scheduler_reader_interface import ISchedulerReader
    from homeassistant.core import HomeAssistant
-   
+
    class HASchedulerReader(ISchedulerReader):
        def __init__(self, hass: HomeAssistant):
            self._hass = hass
-       
+
        async def get_next_event(self) -> ScheduleEvent | None:
            # HA-specific implementation
            ...
@@ -168,22 +168,22 @@ def calculate_anticipation(
 ) -> Optional[timedelta]:
     """
     Calculate pre-heating anticipation time.
-    
+
     Args:
         current_temp: Current room temperature in °C
         target_temp: Desired temperature in °C
         learned_slope: Heating rate in °C/min
         schedule_time: When heating should complete
-    
+
     Returns:
         Anticipation time, or None if already too late
     """
     if learned_slope <= 0:
         return None
-    
+
     temp_diff = target_temp - current_temp
     duration_minutes = temp_diff / learned_slope
-    
+
     return timedelta(minutes=duration_minutes)
 ```
 
@@ -199,20 +199,20 @@ def predict_start_time(
 ) -> PredictionResult:
     """
     Predict when to start heating to reach target on time.
-    
+
     Uses learned heating slope (LHS) adjusted for environmental
     factors (humidity, outdoor temp) to calculate optimal start time.
-    
+
     Args:
         environment: Current environmental conditions
         target: Scheduled heating event with target time and temperature
-    
+
     Returns:
         Prediction result with start time, duration, and confidence
-    
+
     Raises:
         ValueError: If learned slope data is insufficient
-    
+
     Example:
         >>> env = EnvironmentState(current_temp=18.0, ...)
         >>> target = ScheduleEvent(target_time=..., target_temp=21.0)
@@ -263,7 +263,7 @@ def extract_target_temperature(state: State) -> float | None:
     """Extract temperature from Home Assistant state."""
     if not state:
         return None
-    
+
     try:
         return float(state.attributes.get("temperature"))
     except (ValueError, TypeError):
@@ -276,19 +276,19 @@ def process_everything(hass, entity_id):
     """Do multiple unrelated things."""
     # Read state
     state = hass.states.get(entity_id)
-    
+
     # Parse temperature
     temp = float(state.attributes["temperature"])
-    
+
     # Calculate something
     result = temp * 2 + 10
-    
+
     # Update another entity
     hass.states.set("sensor.other", result)
-    
+
     # Log stuff
     _LOGGER.info("Did things")
-    
+
     # Return multiple things
     return temp, result, state
 ```
@@ -345,7 +345,7 @@ When Testing Specialist hands off failing tests:
    ```python
    # domain/value_objects/new_feature.py
    from dataclasses import dataclass
-   
+
    @dataclass(frozen=True)
    class NewFeatureData:
        """Immutable data for new feature."""
@@ -357,7 +357,7 @@ When Testing Specialist hands off failing tests:
    ```python
    # domain/interfaces/new_reader.py
    from abc import ABC, abstractmethod
-   
+
    class INewReader(ABC):
        @abstractmethod
        async def read_data(self) -> NewFeatureData | None:
@@ -370,17 +370,17 @@ When Testing Specialist hands off failing tests:
    # domain/services/new_service.py
    from domain.interfaces.new_reader import INewReader
    from domain.value_objects.new_feature import NewFeatureData
-   
+
    class NewFeatureService:
        def __init__(self, reader: INewReader):
            self._reader = reader
-       
+
        async def process(self) -> Result:
            """Process new feature data."""
            data = await self._reader.read_data()
            if not data:
                return Result.empty()
-           
+
            # Business logic here
            return Result(...)
    ```
@@ -396,17 +396,17 @@ When Testing Specialist hands off failing tests:
    # infrastructure/adapters/new_reader.py
    from domain.interfaces.new_reader import INewReader
    from homeassistant.core import HomeAssistant
-   
+
    class HANewReader(INewReader):
        def __init__(self, hass: HomeAssistant, entity_id: str):
            self._hass = hass
            self._entity_id = entity_id
-       
+
        async def read_data(self) -> NewFeatureData | None:
            state = self._hass.states.get(self._entity_id)
            if not state:
                return None
-           
+
            # Transform HA state to domain object
            return NewFeatureData(...)
    ```
@@ -416,7 +416,7 @@ When Testing Specialist hands off failing tests:
    # application/__init__.py
    from domain.services.new_service import NewFeatureService
    from infrastructure.adapters.new_reader import HANewReader
-   
+
    # In setup:
    reader = HANewReader(hass, config[CONF_ENTITY_ID])
    service = NewFeatureService(reader=reader)
@@ -434,18 +434,18 @@ Once tests are green, improve code quality:
        if not data:
            return None
        return process(data)
-   
+
    def method_b():
        data = parse_data(raw)
        if not data:
            return None
        return transform(data)
-   
+
    # After: Extract common pattern
    def get_valid_data(raw) -> Data | None:
        data = parse_data(raw)
        return data if data else None
-   
+
    def method_a():
        data = get_valid_data(raw)
        return process(data) if data else None
@@ -458,7 +458,7 @@ Once tests are green, improve code quality:
        if condition_b:
            if condition_c:
                return result
-   
+
    # After: Early returns
    if not condition_a:
        return default
@@ -474,7 +474,7 @@ Once tests are green, improve code quality:
    # Before
    def calc(x, y):
        return x / y if y != 0 else None
-   
+
    # After
    def calculate_heating_slope(
        temperature_delta: float,
@@ -559,14 +559,14 @@ def calculate_slope(temp_delta: float, time_minutes: float) -> float:
         raise ValueError(
             f"Time must be positive, got {time_minutes} minutes"
         )
-    
+
     if temp_delta < 0:
         _LOGGER.warning(
             "Negative temperature delta: %s°C (cooling, not heating)",
             temp_delta
         )
         return 0.0
-    
+
     return temp_delta / time_minutes
 ```
 
@@ -622,10 +622,10 @@ async def read_next_schedule(self) -> ScheduleEvent | None:
     """Read next scheduled event."""
     # Async HA state read
     state = await self._hass.async_get_state(self._entity_id)
-    
+
     if not state:
         return None
-    
+
     return self._parse_schedule(state)
 ```
 
@@ -651,12 +651,12 @@ class HATemperatureReader(ITemperatureReader):
     def __init__(self, hass: HomeAssistant, entity_id: str):
         self._hass = hass
         self._entity_id = entity_id
-    
+
     async def get_current_temp(self) -> float | None:
         state = self._hass.states.get(self._entity_id)
         if not state:
             return None
-        
+
         try:
             return float(state.state)
         except ValueError:
@@ -668,7 +668,7 @@ class HATemperatureReader(ITemperatureReader):
 class TemperatureService:
     def __init__(self, reader: ITemperatureReader):
         self._reader = reader
-    
+
     async def is_heating_needed(self, target: float) -> bool:
         current = await self._reader.get_current_temp()
         return current < target if current else False
@@ -684,13 +684,13 @@ def from_ha_state(state: State) -> ScheduleEvent | None:
     """Create ScheduleEvent from Home Assistant state."""
     if not state:
         return None
-    
+
     try:
         target_time = datetime.fromisoformat(
             state.attributes["target_time"]
         )
         target_temp = float(state.attributes["temperature"])
-        
+
         return ScheduleEvent(
             target_time=target_time,
             target_temp=target_temp,
@@ -748,7 +748,7 @@ If domain imports HA:
    ```python
    # infrastructure/adapters/data_reader.py
    from homeassistant.core import HomeAssistant
-   
+
    class HADataReader(IDataReader):
        # HA-specific implementation
    ```
@@ -757,7 +757,7 @@ If domain imports HA:
    ```python
    # domain/services/service.py
    from domain.interfaces.data_reader import IDataReader
-   
+
    class Service:
        def __init__(self, reader: IDataReader):
            self._reader = reader
@@ -827,7 +827,7 @@ As a Tech Lead agent:
 
 ---
 
-**Last Updated**: November 2025  
-**Role**: Tech Lead (TDD Green + Refactor Phases)  
-**Previous Agent**: Testing Specialist  
+**Last Updated**: November 2025
+**Role**: Tech Lead (TDD Green + Refactor Phases)
+**Previous Agent**: Testing Specialist
 **Next Agent**: Documentation Specialist

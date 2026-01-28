@@ -8,7 +8,7 @@ This project uses **specialized GitHub Copilot agents** to ensure high-quality, 
 
 ## ⚡ Super Simple: Just Talk to the Project Manager!
 
-**You don't need to manage multiple agents!** 
+**You don't need to manage multiple agents!**
 
 Just invoke the **Project Manager** agent, and it will automatically coordinate all the other agents for you:
 
@@ -92,7 +92,7 @@ Example: **Issue #45** - "Pre-heating starts too early in humid weather"
 
 Please write tests for Issue #45: Pre-heating too early in humid weather.
 
-The problem: LHS calculation doesn't account for humidity, causing 
+The problem: LHS calculation doesn't account for humidity, causing
 pre-heating to start 30-45 minutes too early when humidity > 70%.
 
 Write tests to verify:
@@ -173,12 +173,12 @@ See [ARCHITECTURE.md](../ARCHITECTURE.md) for complete details.
 
 ## 🚨 Common Pitfalls
 
-❌ **Don't skip the Project Manager** - Let it orchestrate everything  
-❌ **Don't import HA in domain layer** - Use interfaces only  
+❌ **Don't skip the Project Manager** - Let it orchestrate everything
+❌ **Don't import HA in domain layer** - Use interfaces only
 ❌ **Don't skip documentation** - Project Manager handles this automatically
 
-✅ **Do trust the workflow** - It ensures quality  
-✅ **Do be specific** - Clear requirements = better results  
+✅ **Do trust the workflow** - It ensures quality
+✅ **Do be specific** - Clear requirements = better results
 ✅ **Do review carefully** - You approve before docs update
 
 ---
@@ -191,6 +191,6 @@ For deeper understanding, see [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md).
 
 ---
 
-**Last Updated**: November 2025  
-**Workflow Version**: 1.0  
+**Last Updated**: November 2025
+**Workflow Version**: 1.0
 **Questions?** Open a [Discussion](https://github.com/RastaChaum/Intelligent-Heating-Pilot/discussions)

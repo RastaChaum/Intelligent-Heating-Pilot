@@ -1,14 +1,15 @@
 """Heating decision value object."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from datetime import datetime
+from enum import Enum
 
 
 class HeatingAction(Enum):
     """Types of heating actions that can be taken."""
-    
+
     START_HEATING = "start_heating"
     STOP_HEATING = "stop_heating"
     SET_TEMPERATURE = "set_temperature"
@@ -18,19 +19,19 @@ class HeatingAction(Enum):
 @dataclass(frozen=True)
 class HeatingDecision:
     """Represents a decision about heating control.
-    
+
     This value object encapsulates what action should be taken and why.
-    
+
     Attributes:
         action: The type of action to take
         target_temp: Target temperature if starting heating (None otherwise)
         reason: Human-readable explanation for the decision
     """
-    
+
     action: HeatingAction
     target_temp: float | None = None
     reason: str = ""
-    
+
     def __post_init__(self) -> None:
         """Validate the heating decision data."""
         if self.action == HeatingAction.START_HEATING and self.target_temp is None:
@@ -43,6 +44,7 @@ class HeatingDecision:
 @dataclass(frozen=True)
 class TariffPeriodDetail:
     """Represents energy consumption and cost details for a specific tariff period."""
+
     tariff_price_eur_per_kwh: float
     energy_kwh: float
     heating_duration_minutes: float
@@ -52,10 +54,10 @@ class TariffPeriodDetail:
 @dataclass(frozen=True)
 class HeatingCycle:
     """Represents a single heating cycle, encapsulating all its relevant data.
-    
+
     This value object provides a complete and immutable snapshot of a heating period,
     including its duration, temperature changes, and energy consumption details.
-    
+
     Attributes:
         start_time: The exact datetime when the heating cycle started.
         end_time: The exact datetime when the heating cycle ended.
@@ -65,7 +67,7 @@ class HeatingCycle:
         tariff_details: A list of TariffDetail objects, breaking down energy, duration,
                         and cost by specific TariffPeriodDetail periods within the cycle.
     """
-    
+
     device_id: str
     start_time: datetime
     end_time: datetime
@@ -82,7 +84,7 @@ class HeatingCycle:
             return 0.0
         temp_increase = self.end_temp - self.start_temp
         return temp_increase / duration_hours
-    
+
     @property
     def duration_minutes(self) -> float:
         """Calculates the total duration of the heating cycle in minutes."""
