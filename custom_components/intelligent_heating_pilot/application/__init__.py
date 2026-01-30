@@ -33,6 +33,7 @@ if TYPE_CHECKING:
         HASchedulerCommander,
         HASchedulerReader,
     )
+    from ..domain.interfaces import ITimerScheduler
 
 _LOGGER = logging.getLogger(__name__)
 LHS_CACHE_TTL_HOURS = 24

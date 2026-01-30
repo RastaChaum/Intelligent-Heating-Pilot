@@ -340,6 +340,13 @@ class HeatingCycleService(IHeatingCycleService):
             history_data_set=history_data_set,
         )
 
+        # Calculate dead_time_cycle for this cycle
+        dead_time_cycle_minutes = self._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_indoor_temp,
+            history_data_set=history_data_set,
+        )
+
         # Build HeatingCycle with computed tariff details (may be empty)
         cycle = HeatingCycle(
             device_id=device_id,
@@ -427,6 +434,15 @@ class HeatingCycleService(IHeatingCycleService):
             sub_cycle_end_temp = current_sub_cycle_start_temp + (
                 temp_per_minute * split_duration_minutes
             )
+
+            # Calculate dead_time_cycle only for the first sub-cycle
+            dead_time_cycle_minutes = None
+            if i == 0:
+                dead_time_cycle_minutes = self._calculate_dead_time_cycle(
+                    start_time=current_sub_cycle_start_time,
+                    start_temp=current_sub_cycle_start_temp,
+                    history_data_set=history_data_set,
+                )
 
             # Calculate dead_time_cycle only for the first sub-cycle
             dead_time_cycle_minutes = None
