@@ -50,16 +50,16 @@ jobs:
         run: |
           # Extraction de la section Unreleased (entre ## [Unreleased] et la prochaine section ##)
           CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next}/^## \[/{flag=0}flag' CHANGELOG.md)
-          
+
           # Supprimer les lignes vides au début et à la fin
           CHANGELOG_CONTENT=$(echo "$CHANGELOG_CONTENT" | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
-          
+
           if [ -z "$CHANGELOG_CONTENT" ]; then
             echo "❌ Aucun changement dans la section Unreleased du CHANGELOG.md"
             echo "Veuillez d'abord documenter vos changements dans CHANGELOG.md"
             exit 1
           fi
-          
+
           # Sauvegarde dans un fichier
           echo "$CHANGELOG_CONTENT" > /tmp/release-notes.md
           echo "✅ Notes de version extraites du CHANGELOG"
@@ -73,13 +73,13 @@ jobs:
           Cette version est une **release candidate** destinée aux tests en production et aux beta-testeurs.
 
           EOF
-          
+
           # Ajouter le contenu du changelog
           cat /tmp/release-notes.md >> "GITHUB_RELEASE_v${{ inputs.version }}.md"
-          
+
           cat >> "GITHUB_RELEASE_v${{ inputs.version }}.md" << 'EOF'
           ---
-          
+
           ## ⚠️ Important
           Cette version est en phase de test. Veuillez remonter tout problème via les Issues GitHub.
           EOF
@@ -95,7 +95,7 @@ jobs:
       - name: Create RC tag
         run: |
           git tag -a "${{ steps.validate.outputs.rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc1" -m "Release candidate pour tests en production." -m "Changements prévus :" -m "$(cat /tmp/release-notes.md)"
-          
+
           git push origin "${{ steps.validate.outputs.rc_tag }}"
 
       - name: Create GitHub Pre-Release

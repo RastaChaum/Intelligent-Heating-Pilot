@@ -8,7 +8,6 @@ NOTE: These tests require SQLite >= 3.40.1 to run with Home Assistant recorder.
 If SQLite version is too old, tests will be skipped.
 """
 
-
 import sqlite3
 from datetime import timedelta
 

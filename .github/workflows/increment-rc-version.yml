@@ -35,24 +35,24 @@ jobs:
         id: rc-number
         run: |
           VERSION="${{ inputs.version }}"
-          
+
           # Trouver le dernier RC pour cette version
           LAST_RC=$(git tag -l "v${VERSION}-rc*" | sort -V | tail -1)
-          
+
           if [ -z "$LAST_RC" ]; then
             echo "❌ Aucun RC trouvé pour v${VERSION}"
             echo "Utilisez d'abord le workflow 'Prepare Release Candidate'"
             exit 1
           fi
-          
+
           # Extraire le numéro du dernier RC
           LAST_RC_NUM=$(echo "$LAST_RC" | grep -oP 'rc\K\d+')
           NEXT_RC_NUM=$((LAST_RC_NUM + 1))
-          
+
           echo "last_rc=$LAST_RC" >> $GITHUB_OUTPUT
           echo "next_rc_num=$NEXT_RC_NUM" >> $GITHUB_OUTPUT
           echo "next_rc_tag=v${VERSION}-rc${NEXT_RC_NUM}" >> $GITHUB_OUTPUT
-          
+
           echo "📊 Dernier RC: $LAST_RC"
           echo "📊 Prochain RC: v${VERSION}-rc${NEXT_RC_NUM}"
 
@@ -60,7 +60,7 @@ jobs:
         run: |
           VERSION="${{ inputs.version }}"
           RC_NUM="${{ steps.rc-number.outputs.next_rc_num }}"
-          
+
           # Ajouter les corrections au fichier de release notes
           cat >> "GITHUB_RELEASE_v${VERSION}.md" << EOF
 
@@ -81,7 +81,7 @@ jobs:
       - name: Create new RC tag
         run: |
           git tag -a "${{ steps.rc-number.outputs.next_rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc${{ steps.rc-number.outputs.next_rc_num }}" -m "Corrections apportées:" -m "${{ inputs.fix_description }}"
-          
+
           git push origin "${{ steps.rc-number.outputs.next_rc_tag }}"
 
       - name: Delete previous RC release
@@ -107,14 +107,14 @@ jobs:
         run: |
           VERSION="${{ inputs.version }}"
           RC_NUM="${{ steps.rc-number.outputs.next_rc_num }}"
-          
+
           # Chercher l'issue de tracking
           ISSUE_NUMBER=$(gh issue list \
             --label "release-candidate" \
             --search "RC Testing: v${VERSION}" \
             --json number \
             --jq '.[0].number')
-          
+
           if [ -n "$ISSUE_NUMBER" ]; then
             gh issue comment "$ISSUE_NUMBER" --body "## 🔄 Nouveau RC disponible: rc${RC_NUM}
 

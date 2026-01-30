@@ -1,4 +1,5 @@
 """Switch platform for Intelligent Heating Pilot."""
+
 from __future__ import annotations
 
 import logging
@@ -41,10 +42,7 @@ class IntelligentHeatingPilotEnableSwitch(SwitchEntity):
     _attr_icon = "mdi:home-thermometer"
 
     def __init__(
-        self, 
-        coordinator: IntelligentHeatingPilotCoordinator, 
-        config_entry: ConfigEntry, 
-        name: str
+        self, coordinator: IntelligentHeatingPilotCoordinator, config_entry: ConfigEntry, name: str
     ) -> None:
         """Initialize the switch."""
         self.coordinator = coordinator
@@ -79,6 +77,6 @@ class IntelligentHeatingPilotEnableSwitch(SwitchEntity):
         """Return additional state attributes."""
         return {
             "description": "Enable or disable IHP intelligent preheating. "
-                          "When disabled, IHP continues learning and calculating but does not "
-                          "trigger scheduler actions for preheating.",
+            "When disabled, IHP continues learning and calculating but does not "
+            "trigger scheduler actions for preheating.",
         }

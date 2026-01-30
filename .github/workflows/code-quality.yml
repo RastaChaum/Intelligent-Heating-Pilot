@@ -63,9 +63,9 @@ jobs:
           PYLINT_SCORE="${{ steps.pylint.outputs.score }}"
           COVERAGE_EXIT="${{ steps.coverage.outputs.exitcode }}"
           COVERAGE="${{ steps.coverage.outputs.coverage }}"
-          
+
           MESSAGE="## 📊 Code Quality Report\n\n"
-          
+
           # MyPy
           MESSAGE+="### Type Checking (mypy)\n"
           if [ "$MYPY_EXIT" == "0" ]; then
@@ -74,7 +74,7 @@ jobs:
             MESSAGE+="⚠️ **Issues found** - Review type hints\n"
             MESSAGE+="\`\`\`\n$(cat mypy-output.txt | head -20)\n\`\`\`\n\n"
           fi
-          
+
           # Pylint
           MESSAGE+="### Linting (pylint)\n"
           if [ "$PYLINT_EXIT" == "0" ]; then
@@ -83,7 +83,7 @@ jobs:
             MESSAGE+="⚠️ **Score below threshold** - Score: $PYLINT_SCORE/10 (minimum: 7.0)\n"
             MESSAGE+="\`\`\`\n$(cat pylint-output.txt | tail -30)\n\`\`\`\n\n"
           fi
-          
+
           # Coverage
           MESSAGE+="### Test Coverage\n"
           if [ "$COVERAGE_EXIT" == "0" ]; then
@@ -95,11 +95,11 @@ jobs:
           else
             MESSAGE+="⚠️ **Could not calculate coverage**\n\n"
           fi
-          
+
           MESSAGE+="---\n"
           MESSAGE+="*These checks are informational and do not block the PR.*\n"
           MESSAGE+="*Ensure code quality improvements are made before merging to integration.*\n"
-          
+
           echo -e "$MESSAGE" | gh pr comment ${{ github.event.pull_request.number }} --body-file -
 
       - name: Summary

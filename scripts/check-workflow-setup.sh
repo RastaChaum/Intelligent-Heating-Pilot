@@ -149,7 +149,7 @@ print_header "7. CHANGELOG"
 
 if [ -f "CHANGELOG.md" ]; then
     check_ok "CHANGELOG.md existe"
-    
+
     if grep -q "## \[Unreleased\]" CHANGELOG.md; then
         check_ok "Section [Unreleased] présente dans CHANGELOG"
     else
@@ -165,7 +165,7 @@ print_header "8. Versioning (manifest.json + hacs.json)"
 
 if [ -f "custom_components/intelligent_heating_pilot/manifest.json" ]; then
     check_ok "manifest.json existe"
-    
+
     MANIFEST_VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
     if [ -n "$MANIFEST_VERSION" ]; then
         check_ok "Version dans manifest.json: $MANIFEST_VERSION"
@@ -178,11 +178,11 @@ fi
 
 if [ -f "hacs.json" ]; then
     check_ok "hacs.json existe"
-    
+
     HACS_VERSION=$(jq -r '.version' hacs.json)
     if [ -n "$HACS_VERSION" ]; then
         check_ok "Version dans hacs.json: $HACS_VERSION"
-        
+
         if [ "$MANIFEST_VERSION" == "$HACS_VERSION" ]; then
             check_ok "Versions synchronisées (manifest.json = hacs.json)"
         else
@@ -201,7 +201,7 @@ print_header "9. Protection des branches (GitHub)"
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
 if [ -n "$REPO" ]; then
     check_info "Repository: $REPO"
-    
+
     # Vérifier protection de main
     if gh api "repos/$REPO/branches/main/protection" &> /dev/null; then
         check_ok "Branche 'main' est protégée"
@@ -210,7 +210,7 @@ if [ -n "$REPO" ]; then
         echo "   Configurez dans: Settings → Branches → Add branch protection rule"
         echo "   Voir: .github/BRANCH_PROTECTION_SETUP.md"
     fi
-    
+
     # Vérifier protection de integration
     if gh api "repos/$REPO/branches/integration/protection" &> /dev/null; then
         check_ok "Branche 'integration' est protégée"

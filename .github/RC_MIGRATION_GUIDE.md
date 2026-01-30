@@ -126,26 +126,26 @@ En cas de problème :
 
 ## Questions fréquentes
 
-**Q: Dois-je migrer mes releases en cours ?**  
+**Q: Dois-je migrer mes releases en cours ?**
 R: Non, finissez avec l'ancien workflow. Utilisez le nouveau pour les prochaines.
 
-**Q: Puis-je créer un tag vX.Y.Z directement sans RC ?**  
+**Q: Puis-je créer un tag vX.Y.Z directement sans RC ?**
 R: Oui, techniquement. Mais c'est déconseillé sauf pour des hotfixes critiques.
 
-**Q: Que faire si j'ai oublié de créer un RC ?**  
+**Q: Que faire si j'ai oublié de créer un RC ?**
 R: Créez un RC maintenant, même si vous pensez que c'est stable. Mieux vaut prévenir.
 
-**Q: Les RC comptent-ils comme des releases ?**  
+**Q: Les RC comptent-ils comme des releases ?**
 R: Non, ce sont des pre-releases. Seules les releases finales sont marquées "latest".
 
-**Q: Combien de RC puis-je créer ?**  
+**Q: Combien de RC puis-je créer ?**
 R: Autant que nécessaire (rc1, rc2, rc3...). Pas de limite.
 
-**Q: Faut-il supprimer les RC après la release finale ?**  
+**Q: Faut-il supprimer les RC après la release finale ?**
 R: Le workflow `promote-rc-to-release.yml` le fait automatiquement.
 
 ---
 
-**Date de migration** : Janvier 2025  
-**Version minimale supportée** : v0.5.0+  
+**Date de migration** : Janvier 2025
+**Version minimale supportée** : v0.5.0+
 **Compatibilité** : Rétrocompatible avec l'ancien workflow

@@ -11,17 +11,17 @@ The coordinator here is reduced to a thin setup/teardown manager.
 from __future__ import annotations
 
 import logging
-from typing import Any
 from datetime import datetime
+from typing import Any, cast
 
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
-from homeassistant.core import HomeAssistant, callback, ServiceCall
-from homeassistant.helpers.event import async_track_point_in_time
-from homeassistant.helpers import entity_registry as er
-from homeassistant.util import dt as dt_util
-import voluptuous as vol
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.util import dt as dt_util
 
 from .application import HeatingApplicationService
 from .const import (
@@ -57,7 +57,6 @@ from .infrastructure.adapters import (
     HAModelStorage,
     HASchedulerCommander,
     HASchedulerReader,
-    HACycleCache,
     HATimerScheduler,
 )
 from .infrastructure.event_bridge import HAEventBridge
@@ -125,14 +124,11 @@ class IntelligentHeatingPilotCoordinator:
             or DEFAULT_MAX_CYCLE_DURATION_MINUTES
         )
         self._dead_time_minutes = float(
-            self._get_config_value(CONF_DEAD_TIME_MINUTES)
-            or DEFAULT_DEAD_TIME_MINUTES
+            self._get_config_value(CONF_DEAD_TIME_MINUTES) or DEFAULT_DEAD_TIME_MINUTES
         )
         self._auto_learning = bool(
-            self._get_config_value(CONF_AUTO_LEARNING)
-            or DEFAULT_AUTO_LEARNING
+            self._get_config_value(CONF_AUTO_LEARNING) or DEFAULT_AUTO_LEARNING
         )
-
 
         # IHP enabled state (default to True for backward compatibility)
         ihp_enabled_value = self._get_config_value(CONF_IHP_ENABLED)
@@ -280,7 +276,9 @@ class IntelligentHeatingPilotCoordinator:
                     f"{DOMAIN}_anticipation_calculated",
                     {
                         "entry_id": self.config.entry_id,
-                        "anticipated_start_time": anticipation_data["anticipated_start_time"].isoformat(),
+                        "anticipated_start_time": anticipation_data[
+                            "anticipated_start_time"
+                        ].isoformat(),
                         "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
                         "next_target_temperature": anticipation_data["next_target_temperature"],
                         "anticipation_minutes": anticipation_data["anticipation_minutes"],
@@ -336,10 +334,7 @@ class IntelligentHeatingPilotCoordinator:
 
         # Update snapshot before and after so the options listener can short-circuit reloads
         self._options_snapshot = dict(self.config.options or {})
-        self.hass.config_entries.async_update_entry(
-            self.config,
-            options=new_options
-        )
+        self.hass.config_entries.async_update_entry(self.config, options=new_options)
         self._options_snapshot = dict(new_options)
 
         # Trigger a recalculation to apply the new state
@@ -468,7 +463,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Schedule initial update asynchronously to avoid blocking config flow
     # This prevents HA watchdog restart during device creation with scheduler
     if hass.is_running:
-        _LOGGER.debug("[%s] HA already running, scheduling non-blocking async update", entry.entry_id)
+        _LOGGER.debug(
+            "[%s] HA already running, scheduling non-blocking async update", entry.entry_id
+        )
         hass.async_create_task(coordinator.async_update())
     else:
         _LOGGER.debug("[%s] Waiting for HA start event before first update", entry.entry_id)
@@ -496,7 +493,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await coordinator._app_service.reset_learned_slopes()
             # Refresh LHS cache
             if coordinator._model_storage:
-                coordinator._lhs_cache = await coordinator._model_storage.get_learned_heating_slope()
+                coordinator._lhs_cache = (
+                    await coordinator._model_storage.get_learned_heating_slope()
+                )
 
     async def handle_calculate_anticipated_start_time(call: ServiceCall):
         """Handle calculate_anticipated_start_time service.
@@ -558,7 +557,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Get the coordinator for this device
         device_coordinator = hass.data[DOMAIN].get(entry_id_found)
-        if not device_coordinator or not isinstance(device_coordinator, IntelligentHeatingPilotCoordinator):
+        if not device_coordinator or not isinstance(
+            device_coordinator, IntelligentHeatingPilotCoordinator
+        ):
             _LOGGER.error("Invalid coordinator for entry_id: %s", entry_id_found)
             return
 
@@ -593,6 +594,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Calculate anticipated start time using prediction service
         from .domain.services import PredictionService
+
         prediction_service = PredictionService()
 
         prediction = prediction_service.predict_heating_time(
@@ -631,24 +633,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
 
     # Define service schema
-    calculate_anticipated_start_time_schema = vol.Schema({
-        vol.Required("entity_id"): cv.entity_id,
-        vol.Required("target_time"): cv.datetime,
-        vol.Optional("target_temp"): vol.Coerce(float),
-    })
-
-    hass.services.async_register(
-        DOMAIN,
-        "reset_learning",
-        handle_reset_learning
+    calculate_anticipated_start_time_schema = vol.Schema(
+        {
+            vol.Required("entity_id"): cv.entity_id,
+            vol.Required("target_time"): cv.datetime,
+            vol.Optional("target_temp"): vol.Coerce(float),
+        }
     )
+
+    hass.services.async_register(DOMAIN, "reset_learning", handle_reset_learning)
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_CALCULATE_ANTICIPATED_START_TIME,
         handle_calculate_anticipated_start_time,
         schema=calculate_anticipated_start_time_schema,
-        supports_response=True,
+        supports_response=SupportsResponse.ONLY,
     )
 
     # Forward setup to platforms
@@ -673,7 +673,9 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options and reload integration."""
     coordinator: IntelligentHeatingPilotCoordinator | None = hass.data[DOMAIN].get(entry.entry_id)
 
-    previous_options = dict(getattr(coordinator, "_options_snapshot", {}) or {}) if coordinator else {}
+    previous_options = (
+        dict(getattr(coordinator, "_options_snapshot", {}) or {}) if coordinator else {}
+    )
     previous_no_toggle = {k: v for k, v in previous_options.items() if k != CONF_IHP_ENABLED}
     current_no_toggle = {k: v for k, v in entry.options.items() if k != CONF_IHP_ENABLED}
     ihp_enabled = IntelligentHeatingPilotCoordinator._as_bool(

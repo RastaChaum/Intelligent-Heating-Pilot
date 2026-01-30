@@ -44,22 +44,22 @@ jobs:
         run: |
           # Extraction de la section Unreleased pour la transformer en release
           CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/,/## \[/' CHANGELOG.md | sed '1d;$d')
-          
+
           if [ -z "$CHANGELOG_CONTENT" ]; then
             echo "❌ Aucune entrée Unreleased dans CHANGELOG.md"
             exit 1
           fi
-          
+
           echo "$CHANGELOG_CONTENT" > /tmp/release-notes.md
 
       - name: Update CHANGELOG with version
         run: |
           TODAY=$(date +%Y-%m-%d)
           VERSION="${{ steps.version.outputs.version }}"
-          
+
           # Remplace [Unreleased] par la version actuelle
           sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [$VERSION] - $TODAY/" CHANGELOG.md
-          
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add CHANGELOG.md
@@ -81,7 +81,7 @@ jobs:
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           VERSION="${{ steps.version.outputs.version }}"
-          
+
           gh release create "$TAG" \
             --title "🚀 Release $VERSION" \
             --notes-file /tmp/release-notes.md \
@@ -93,9 +93,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr comment ${{ github.event.pull_request.number }} --body "🚀 **Release v${{ steps.version.outputs.version }} publiée !**
-          
+
           La release est maintenant disponible pour tous les utilisateurs.
-          
+
           **Prochaines étapes :**
           1. Créer une nouvelle branche à partir de \`integration\` pour la prochaine version
           2. Incrémenter la version dans \`manifest.json\` et \`hacs.json\`

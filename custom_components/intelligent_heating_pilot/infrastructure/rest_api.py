@@ -79,9 +79,8 @@ async def extract_heating_cycles_handler(request: Request) -> Response:
         cycle_split_duration_minutes = data.get("cycle_split_duration_minutes")
 
         # Get the coordinator from hass data
-        from homeassistant.core import HomeAssistant
-
         from const import DOMAIN
+        from homeassistant.core import HomeAssistant
 
         hass: HomeAssistant = request.app["hass"]
         coordinators = hass.data.get(DOMAIN, {})
@@ -96,13 +95,13 @@ async def extract_heating_cycles_handler(request: Request) -> Response:
             )
 
         # Create use case dynamically for this request
+        from application.extract_heating_cycles_use_case import (
+            ExtractHeatingCyclesUseCase,
+        )
         from domain.services.heating_cycle_service import (
             HeatingCycleService,
         )
 
-        from application.extract_heating_cycles_use_case import (
-            ExtractHeatingCyclesUseCase,
-        )
         from .adapters.device_config_reader import (
             HADeviceConfigReader,
         )
@@ -203,9 +202,8 @@ async def health_check_handler(request: Request) -> Response:
 
     Endpoint: GET /api/intelligent_heating_pilot/health
     """
-    from homeassistant.core import HomeAssistant
-
     from const import DOMAIN
+    from homeassistant.core import HomeAssistant
 
     hass: HomeAssistant = request.app.get("hass")
     coordinators = hass.data.get(DOMAIN, {}) if hass else {}
@@ -260,9 +258,8 @@ async def debug_heating_state_handler(request: Request) -> Response:
             )
 
         # Get coordinator
-        from homeassistant.core import HomeAssistant
-
         from const import DOMAIN
+        from homeassistant.core import HomeAssistant
 
         hass: HomeAssistant = request.app["hass"]
         coordinators = hass.data.get(DOMAIN, {})
@@ -278,6 +275,7 @@ async def debug_heating_state_handler(request: Request) -> Response:
         from domain.value_objects import (
             HistoricalDataKey,
         )
+
         from .adapters.climate_data_adapter import (
             ClimateDataAdapter,
         )

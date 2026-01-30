@@ -94,8 +94,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
 
         auto_learning_value = self._get_config_value(config, options, CONF_AUTO_LEARNING)
         auto_learning = bool(
-            auto_learning_value if auto_learning_value is not None 
-            else DEFAULT_AUTO_LEARNING
+            auto_learning_value if auto_learning_value is not None else DEFAULT_AUTO_LEARNING
         )
 
         device_config = DeviceConfig(

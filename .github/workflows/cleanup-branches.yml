@@ -17,13 +17,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           BRANCH="${{ github.event.pull_request.head.ref }}"
-          
+
           # Ne pas supprimer integration ou main
           if [[ "$BRANCH" == "integration" ]] || [[ "$BRANCH" == "main" ]]; then
             echo "⏭️  Branche protégée, pas de suppression"
             exit 0
           fi
-          
+
           # Supprimer la branche
           gh api \
             --method DELETE \

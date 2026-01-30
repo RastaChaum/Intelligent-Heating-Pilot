@@ -14,7 +14,7 @@ import pytest
 from custom_components.intelligent_heating_pilot.application import HeatingApplicationService
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     EnvironmentState,
-    ScheduledTimeslot
+    ScheduledTimeslot,
 )
 
 # Constant for patch target to avoid duplication
@@ -563,9 +563,7 @@ class TestIHPEnabledDisabled:
     """Test suite for IHP enable/disable functionality."""
 
     @pytest.mark.asyncio
-    async def test_ihp_disabled_skips_scheduler_commands(
-        self, app_service, mock_adapters
-    ):
+    async def test_ihp_disabled_skips_scheduler_commands(self, app_service, mock_adapters):
         """Test that when IHP is disabled, scheduler commands are skipped but calculations continue."""
         base_time = make_aware(datetime(2025, 1, 15, 6, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
@@ -605,9 +603,7 @@ class TestIHPEnabledDisabled:
         mock_adapters["scheduler_commander"].cancel_action.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_ihp_enabled_triggers_scheduler_commands(
-        self, app_service, mock_adapters
-    ):
+    async def test_ihp_enabled_triggers_scheduler_commands(self, app_service, mock_adapters):
         """Test that when IHP is enabled, scheduler commands are triggered normally."""
         base_time = make_aware(datetime(2025, 1, 15, 6, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
@@ -643,9 +639,7 @@ class TestIHPEnabledDisabled:
         mock_adapters["scheduler_commander"].run_action.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_ihp_disabled_mid_preheat_clears_state(
-        self, app_service, mock_adapters
-    ):
+    async def test_ihp_disabled_mid_preheat_clears_state(self, app_service, mock_adapters):
         """Test that disabling IHP while preheating is active reverts to current scheduled state."""
         base_time = make_aware(datetime(2025, 1, 15, 4, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 6, 30, 0))
@@ -705,14 +699,14 @@ class TestIHPEnabledDisabled:
         assert "anticipated_start_time" in result
 
         # Verify cancel_action was called to revert to current scheduled state
-        mock_adapters["scheduler_commander"].cancel_action.assert_called_once_with("schedule.heating")
+        mock_adapters["scheduler_commander"].cancel_action.assert_called_once_with(
+            "schedule.heating"
+        )
         # Verify run_action was NOT called
         mock_adapters["scheduler_commander"].run_action.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_disabling_ihp_cancels_active_timer(
-        self, app_service, mock_adapters
-    ):
+    async def test_disabling_ihp_cancels_active_timer(self, app_service, mock_adapters):
         """Test that disabling IHP cancels the active anticipation timer.
 
         This test verifies the fix for: when IHP is disabled while a timer
@@ -722,7 +716,6 @@ class TestIHPEnabledDisabled:
         """
         base_time = make_aware(datetime(2025, 1, 15, 18, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 19, 38, 0))
-        anticipated_start = make_aware(datetime(2025, 1, 15, 18, 29, 41))
 
         timeslot = ScheduledTimeslot(
             target_time=target_time,

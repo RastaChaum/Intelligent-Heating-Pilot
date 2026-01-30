@@ -1,7 +1,9 @@
 """Unit tests for IHP Enable Switch entity."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
 
 from custom_components.intelligent_heating_pilot.switch import (

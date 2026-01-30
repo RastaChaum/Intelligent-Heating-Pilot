@@ -4,11 +4,14 @@ Tests the timer-based anticipation triggering mechanism that ensures
 IHP triggers climate control at the anticipated start time, independent
 of climate entity state changes.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
+from homeassistant.util import dt as dt_util
 
 from custom_components.intelligent_heating_pilot.application import HeatingApplicationService
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
@@ -16,7 +19,6 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
     PredictionResult,
     ScheduledTimeslot,
 )
-from homeassistant.util import dt as dt_util
 
 
 def make_aware(dt: datetime) -> datetime:
@@ -42,7 +44,7 @@ def mock_adapters(mock_hass):
     scheduler_reader = Mock()
     scheduler_reader.get_next_timeslot = AsyncMock()
     scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
-    
+
     model_storage = Mock()
     model_storage.get_learned_heating_slope = AsyncMock(return_value=2.0)
     model_storage.get_all_slope_data = AsyncMock(return_value=[])
@@ -50,28 +52,28 @@ def mock_adapters(mock_hass):
     model_storage.set_cached_global_lhs = AsyncMock()
     model_storage.get_cached_contextual_lhs = AsyncMock(return_value=None)
     model_storage.set_cached_contextual_lhs = AsyncMock()
-    
+
     scheduler_commander = Mock()
     scheduler_commander.run_action = AsyncMock()
     scheduler_commander.cancel_action = AsyncMock()
-    
+
     climate_commander = Mock()
     climate_commander.turn_on_heat = AsyncMock()
     climate_commander.turn_off = AsyncMock()
     climate_commander.set_temperature = AsyncMock()
     climate_commander.set_hvac_mode = AsyncMock()
-    
+
     environment_reader = Mock()
     environment_reader.get_current_environment = AsyncMock()
     environment_reader.is_heating_active = AsyncMock(return_value=False)
     environment_reader.get_vtherm_slope = Mock(return_value=None)
     environment_reader.get_vtherm_entity_id = Mock(return_value="climate.test_vtherm")
     environment_reader.get_hass = Mock(return_value=mock_hass)
-    
+
     # Mock timer scheduler
     timer_scheduler = Mock()
     timer_scheduler.schedule_timer = Mock(return_value=Mock())  # Returns cancel function
-    
+
     return {
         "scheduler_reader": scheduler_reader,
         "model_storage": model_storage,
@@ -99,23 +101,21 @@ def app_service(mock_adapters):
 
 class TestAnticipationTimer:
     """Test suite for timer-based anticipation mechanism."""
-    
+
     @pytest.mark.asyncio
-    async def test_timer_scheduled_for_future_anticipation(
-        self, app_service, mock_adapters
-    ):
+    async def test_timer_scheduled_for_future_anticipation(self, app_service, mock_adapters):
         """Test that a timer is scheduled when anticipated start is in the future."""
         # Setup: Current time is 04:00, anticipated start is 06:00, target is 07:30
         now = make_aware(datetime(2025, 1, 15, 4, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 7, 30, 0))
-        
+
         timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="test_slot",
             scheduler_entity="switch.test_scheduler",
         )
-        
+
         environment = EnvironmentState(
             now,
             indoor_temperature=18.0,
@@ -123,18 +123,18 @@ class TestAnticipationTimer:
             indoor_humidity=50.0,
             cloud_coverage=0.5,
         )
-        
+
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        
+
         # Execute with mocked time
-        with patch.object(dt_util, 'now', return_value=now):
+        with patch.object(dt_util, "now", return_value=now):
             await app_service.calculate_and_schedule_anticipation()
-        
+
         # Verify: Timer should be scheduled (anticipation_timer_cancel should be set)
         assert app_service._anticipation_timer_cancel is not None
         assert app_service._active_scheduler_entity == "switch.test_scheduler"
-        
+
         # Verify: Action should NOT be triggered immediately
         mock_adapters["scheduler_commander"].run_action.assert_not_called()
 
@@ -199,23 +199,21 @@ class TestAnticipationTimer:
         assert cancel_first.called
         assert not cancel_second.called
         assert app_service._anticipation_timer_cancel is cancel_second
-    
+
     @pytest.mark.asyncio
-    async def test_immediate_trigger_when_anticipation_in_past(
-        self, app_service, mock_adapters
-    ):
+    async def test_immediate_trigger_when_anticipation_in_past(self, app_service, mock_adapters):
         """Test that action is triggered immediately when anticipated start is in the past."""
         # Setup: Current time is 06:30, anticipated start was 06:00, target is 07:30
         now = make_aware(datetime(2025, 1, 15, 6, 30, 0))
         target_time = make_aware(datetime(2025, 1, 15, 7, 30, 0))
-        
+
         timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="test_slot",
             scheduler_entity="switch.test_scheduler",
         )
-        
+
         environment = EnvironmentState(
             now,
             indoor_temperature=18.0,
@@ -223,24 +221,23 @@ class TestAnticipationTimer:
             indoor_humidity=50.0,
             cloud_coverage=0.5,
         )
-        
+
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        
+
         # Execute with mocked time
-        with patch.object(dt_util, 'now', return_value=now):
+        with patch.object(dt_util, "now", return_value=now):
             await app_service.calculate_and_schedule_anticipation()
-        
+
         # Verify: Action should be triggered immediately
         mock_adapters["scheduler_commander"].run_action.assert_called_once_with(
-            target_time,
-            "switch.test_scheduler"
+            target_time, "switch.test_scheduler"
         )
-        
+
         # Verify: Pre-heating should be marked as active
         assert app_service._is_preheating_active is True
         assert app_service._preheating_target_time == target_time
-    
+
     @pytest.mark.asyncio
     async def test_timer_cancelled_when_anticipation_state_cleared(
         self, app_service, mock_adapters
@@ -249,14 +246,14 @@ class TestAnticipationTimer:
         # Setup: Schedule a timer first
         now = make_aware(datetime(2025, 1, 15, 4, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 7, 30, 0))
-        
+
         timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="test_slot",
             scheduler_entity="switch.test_scheduler",
         )
-        
+
         environment = EnvironmentState(
             now,
             indoor_temperature=18.0,
@@ -264,41 +261,39 @@ class TestAnticipationTimer:
             indoor_humidity=50.0,
             cloud_coverage=0.5,
         )
-        
+
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        
+
         # Schedule timer
-        with patch.object(dt_util, 'now', return_value=now):
+        with patch.object(dt_util, "now", return_value=now):
             await app_service.calculate_and_schedule_anticipation()
-        
+
         # Verify timer is set
         assert app_service._anticipation_timer_cancel is not None
-        
+
         # Clear anticipation state
         await app_service._clear_anticipation_state()
-        
+
         # Verify timer was cancelled
         assert app_service._anticipation_timer_cancel is None
         # Note: We can't directly verify the callback was called without more complex mocking
         # but we verified it was reset to None
-    
+
     @pytest.mark.asyncio
-    async def test_timer_cancelled_when_scheduler_disabled(
-        self, app_service, mock_adapters
-    ):
+    async def test_timer_cancelled_when_scheduler_disabled(self, app_service, mock_adapters):
         """Test that timer is cancelled when scheduler is disabled."""
         # Setup: Schedule a timer first
         now = make_aware(datetime(2025, 1, 15, 4, 0, 0))
         target_time = make_aware(datetime(2025, 1, 15, 7, 30, 0))
-        
+
         timeslot = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
             timeslot_id="test_slot",
             scheduler_entity="switch.test_scheduler",
         )
-        
+
         environment = EnvironmentState(
             now,
             indoor_temperature=18.0,
@@ -306,24 +301,24 @@ class TestAnticipationTimer:
             indoor_humidity=50.0,
             cloud_coverage=0.5,
         )
-        
+
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        
+
         # Schedule timer
-        with patch.object(dt_util, 'now', return_value=now):
+        with patch.object(dt_util, "now", return_value=now):
             await app_service.calculate_and_schedule_anticipation()
-        
+
         # Verify timer is set
         assert app_service._anticipation_timer_cancel is not None
-        
+
         # Now simulate scheduler being disabled
         mock_adapters["scheduler_reader"].is_scheduler_enabled.return_value = False
-        
+
         # Call calculate_and_schedule_anticipation again
-        with patch.object(dt_util, 'now', return_value=now):
+        with patch.object(dt_util, "now", return_value=now):
             await app_service.calculate_and_schedule_anticipation()
-        
+
         # Verify timer was cancelled (state cleared)
         assert app_service._anticipation_timer_cancel is None
         assert app_service._active_scheduler_entity is None

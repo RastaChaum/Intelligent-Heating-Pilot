@@ -147,24 +147,21 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                     )
                 ),
                 vol.Optional(
-                    CONF_DEAD_TIME_MINUTES,
-                    default=DEFAULT_DEAD_TIME_MINUTES
+                    CONF_DEAD_TIME_MINUTES, default=DEFAULT_DEAD_TIME_MINUTES
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.0,
                         max=60.0,
                         step=1.0,
                         unit_of_measurement="minutes",
-                        mode=selector.NumberSelectorMode.BOX
+                        mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
                 vol.Optional(
-                    CONF_AUTO_LEARNING,
-                    default=DEFAULT_AUTO_LEARNING
+                    CONF_AUTO_LEARNING, default=DEFAULT_AUTO_LEARNING
                 ): selector.BooleanSelector(),
                 vol.Optional(
-                    CONF_TEMP_DELTA_THRESHOLD,
-                    default=DEFAULT_TEMP_DELTA_THRESHOLD
+                    CONF_TEMP_DELTA_THRESHOLD, default=DEFAULT_TEMP_DELTA_THRESHOLD
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.1,
@@ -390,26 +387,31 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 mode=selector.NumberSelectorMode.BOX,
             )
         )
-        schema_dict[vol.Optional(
-            CONF_DEAD_TIME_MINUTES,
-            default=_opt_or_data(CONF_DEAD_TIME_MINUTES, DEFAULT_DEAD_TIME_MINUTES)
-        )] = selector.NumberSelector(
+        schema_dict[
+            vol.Optional(
+                CONF_DEAD_TIME_MINUTES,
+                default=_opt_or_data(CONF_DEAD_TIME_MINUTES, DEFAULT_DEAD_TIME_MINUTES),
+            )
+        ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.0,
                 max=60.0,
                 step=1.0,
                 unit_of_measurement="minutes",
-                mode=selector.NumberSelectorMode.BOX
+                mode=selector.NumberSelectorMode.BOX,
             )
         )
-        schema_dict[vol.Optional(
-            CONF_AUTO_LEARNING,
-            default=_opt_or_data(CONF_AUTO_LEARNING, DEFAULT_AUTO_LEARNING)
-        )] = selector.BooleanSelector()
-        schema_dict[vol.Optional(
-            CONF_TEMP_DELTA_THRESHOLD,
-            default=_opt_or_data(CONF_TEMP_DELTA_THRESHOLD, DEFAULT_TEMP_DELTA_THRESHOLD)
-        )] = selector.NumberSelector(
+        schema_dict[
+            vol.Optional(
+                CONF_AUTO_LEARNING, default=_opt_or_data(CONF_AUTO_LEARNING, DEFAULT_AUTO_LEARNING)
+            )
+        ] = selector.BooleanSelector()
+        schema_dict[
+            vol.Optional(
+                CONF_TEMP_DELTA_THRESHOLD,
+                default=_opt_or_data(CONF_TEMP_DELTA_THRESHOLD, DEFAULT_TEMP_DELTA_THRESHOLD),
+            )
+        ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.1,
                 max=1.0,

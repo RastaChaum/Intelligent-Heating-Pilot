@@ -24,6 +24,7 @@ from ..domain.value_objects import (
 from ..infrastructure.decision_strategy_factory import DecisionStrategyFactory
 
 if TYPE_CHECKING:
+    from ..domain.interfaces import ITimerScheduler
     from ..infrastructure.adapters import (
         HAClimateCommander,
         HACycleCache,
@@ -32,7 +33,6 @@ if TYPE_CHECKING:
         HASchedulerCommander,
         HASchedulerReader,
     )
-    from ..domain.interfaces import ITimerScheduler
 
 _LOGGER = logging.getLogger(__name__)
 LHS_CACHE_TTL_HOURS = 24
@@ -51,13 +51,13 @@ class HeatingApplicationService:
 
     def __init__(
         self,
-        scheduler_reader: "HASchedulerReader",
-        model_storage: "HAModelStorage",
-        scheduler_commander: "HASchedulerCommander",
-        climate_commander: "HAClimateCommander",
-        environment_reader: "HAEnvironmentReader",
-        timer_scheduler: "ITimerScheduler",
-        cycle_cache: "HACycleCache | None" = None,
+        scheduler_reader: HASchedulerReader,
+        model_storage: HAModelStorage,
+        scheduler_commander: HASchedulerCommander,
+        climate_commander: HAClimateCommander,
+        environment_reader: HAEnvironmentReader,
+        timer_scheduler: ITimerScheduler,
+        cycle_cache: HACycleCache | None = None,
         lhs_window_hours: float = 6.0,
         history_lookback_days: int | None = None,
         decision_mode: str = DEFAULT_DECISION_MODE,
@@ -293,7 +293,6 @@ class HeatingApplicationService:
     # NOTE: process_slope_update() removed - we now extract slopes directly from
     # Home Assistant recorder via HeatingCycleService, so no disk-based persistence needed
 
-
     async def _get_cycles_and_calculate_parameters(
         self, target_time: datetime
     ) -> tuple[list[HeatingCycle], float, float]:
@@ -357,19 +356,21 @@ class HeatingApplicationService:
         # Calculate effective dead_time
         if self._auto_learning and heating_cycles:
             # Auto-learning enabled: calculate from cycles
-            avg_dead_time = self._lhs_calculation_service.calculate_average_dead_time(heating_cycles)
+            avg_dead_time = self._lhs_calculation_service.calculate_average_dead_time(
+                heating_cycles
+            )
             if avg_dead_time is not None and avg_dead_time > 0:
                 effective_dead_time = avg_dead_time
                 _LOGGER.info(
                     "Learned dead_time from %d cycles: %.1f minutes",
                     len(heating_cycles),
-                    effective_dead_time
+                    effective_dead_time,
                 )
             else:
                 effective_dead_time = self._dead_time_minutes
                 _LOGGER.debug(
                     "No valid learned dead_time, using configured value: %.1f minutes",
-                    effective_dead_time
+                    effective_dead_time,
                 )
         else:
             # Auto-learning disabled or no cycles: use configured value
@@ -377,7 +378,7 @@ class HeatingApplicationService:
             _LOGGER.debug(
                 "Using configured dead_time: %.1f minutes (auto_learning=%s)",
                 effective_dead_time,
-                self._auto_learning
+                self._auto_learning,
             )
 
         return heating_cycles, contextual_lhs, effective_dead_time
@@ -676,21 +677,26 @@ class HeatingApplicationService:
             return {"clear_values": True}
 
         # Check if the currently tracked scheduler has been disabled
-        if self._active_scheduler_entity:
-            if not await self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
-                _LOGGER.warning(
-                    "Active scheduler %s has been disabled. Clearing anticipation state.",
-                    self._active_scheduler_entity
-                )
-                await self._clear_anticipation_state()
-                # Return clear_values dict to reset sensors to unknown
-                return {"clear_values": True}
+        if self._active_scheduler_entity and await self._scheduler_reader.is_scheduler_enabled(
+            self._active_scheduler_entity
+        ):
+            _LOGGER.warning(
+                "Active scheduler %s has been disabled. Clearing anticipation state.",
+                self._active_scheduler_entity,
+            )
+            await self._clear_anticipation_state()
+            # Return clear_values dict to reset sensors to unknown
+            return {"clear_values": True}
 
         # No timeslot available (scheduler was configured but now disabled or no valid timeslot)
         if not timeslot:
             _LOGGER.debug("No scheduled timeslot found")
             # Clear all tracking state when no timeslot is available
-            if self._is_preheating_active or self._active_scheduler_entity or self._preheating_target_time:
+            if (
+                self._is_preheating_active
+                or self._active_scheduler_entity
+                or self._preheating_target_time
+            ):
                 _LOGGER.info("Clearing anticipation state (no timeslot available)")
                 await self._clear_anticipation_state()
             # Return clear_values dict to reset sensors to unknown
@@ -870,7 +876,7 @@ class HeatingApplicationService:
             if not self._is_preheating_active:
                 _LOGGER.info(
                     "Anticipated start %s is past, triggering pre-heating immediately",
-                    anticipated_start.isoformat()
+                    anticipated_start.isoformat(),
                 )
                 # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
                 # Respects scheduler conditions (skip_conditions=False in the adapter)
@@ -882,7 +888,7 @@ class HeatingApplicationService:
                 # Already preheating but anticipation is past - ensure we stay in preheating
                 _LOGGER.debug(
                     "Already preheating (started earlier), continuation through target time %s",
-                    target_time.isoformat()
+                    target_time.isoformat(),
                 )
             return
 

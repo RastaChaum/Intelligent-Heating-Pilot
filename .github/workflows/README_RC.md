@@ -5,8 +5,8 @@ Ce dossier contient les workflows GitHub Actions pour gérer les Release Candida
 ## Workflows
 
 ### 1. `prepare-release-candidate.yml`
-**Déclenchement**: Manuel (workflow_dispatch)  
-**Branche**: `integration`  
+**Déclenchement**: Manuel (workflow_dispatch)
+**Branche**: `integration`
 **Objectif**: Créer la première Release Candidate (rc1) pour une nouvelle version
 
 **Actions**:
@@ -22,8 +22,8 @@ Ce dossier contient les workflows GitHub Actions pour gérer les Release Candida
 - Via CLI: `./scripts/rc-helper.sh prepare`
 
 ### 2. `increment-rc-version.yml`
-**Déclenchement**: Manuel (workflow_dispatch)  
-**Branche**: `integration`  
+**Déclenchement**: Manuel (workflow_dispatch)
+**Branche**: `integration`
 **Objectif**: Incrémenter le numéro de RC après corrections (rc2, rc3, etc.)
 
 **Actions**:
@@ -40,8 +40,8 @@ Ce dossier contient les workflows GitHub Actions pour gérer les Release Candida
 - Via CLI: `./scripts/rc-helper.sh increment`
 
 ### 3. `promote-rc-to-release.yml`
-**Déclenchement**: Automatique (PR merge `integration` → `main`)  
-**Branche**: `main`  
+**Déclenchement**: Automatique (PR merge `integration` → `main`)
+**Branche**: `main`
 **Objectif**: Promouvoir un RC testé en release finale stable
 
 **Actions**:
