@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Timer-Based Anticipation Triggering** ([#84](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/84)) – Improved the reliability of the preheating system by replacing event-driven triggering with timer-based triggering, reducing unexpected triggers and enhancing the accuracy of heating predictions.
 
 ### Fixed
+- **No-scheduler KeyError spam** ([#81](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/81))
+  - Fixed `KeyError: 'anticipated_start_time'` when IHP runs without a scheduler configured
+  - Event bridge now distinguishes between clear-values signals and full data payloads
+  - Users without scheduler configuration no longer see repeated errors; sensors stay `unknown` as expected
 
 ## [0.5.0] - 2026-01-25
 

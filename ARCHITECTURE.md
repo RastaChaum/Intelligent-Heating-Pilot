@@ -62,6 +62,20 @@ Infrastructure Layer (HA-specific):
     └── model_storage.py            # Implements IModelStorage
 ```
 
+## 🔁 Event Bridge Signal Pattern
+
+The event bridge handles three response cases from the application layer to keep domain logic clean and infrastructure behavior explicit:
+
+1. **Clear values**: `{ "clear_values": True }`
+    - Sent when the app determines anticipation data should be cleared (e.g., no scheduler configured)
+    - Infrastructure translates this into `unknown` sensor states without raising errors
+2. **Full data payload**: `{ "anticipated_start_time": ..., "anticipation_duration_minutes": ..., ... }`
+    - Normal path when prediction data is available
+3. **No publish**: `None`
+    - Used when no update is needed
+
+This pattern keeps business decisions in the application layer while the infrastructure layer focuses on signal handling and Home Assistant state updates.
+
 ## 📦 Value Objects (Immutable Data Carriers)
 
 Value objects are **immutable** data structures that carry information between layers without containing logic.

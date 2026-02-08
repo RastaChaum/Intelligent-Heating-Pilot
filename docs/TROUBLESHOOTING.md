@@ -229,6 +229,20 @@
    - Click Intelligent Heating Pilot
    - Should show "1 device" with status
 
+### IHP configured without a scheduler
+
+**What you see:**
+- Anticipation-related sensors show `unknown`
+- No errors in logs (after the fix)
+
+**Expected behavior:**
+- Without a scheduler, IHP cannot compute upcoming targets, so sensors remain `unknown`
+- This is normal and does not indicate a failure
+
+**How to enable scheduler-based predictions:**
+- Configure a scheduler entity during setup or options flow
+- See [INSTALLATION.md](INSTALLATION.md) for scheduler installation and setup steps
+
 ### Sensors show data but it looks wrong
 
 **Symptoms:**
