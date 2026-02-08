@@ -99,35 +99,39 @@ class IntelligentHeatingPilotCoordinator:
         self._humidity_out = self._get_config_value(CONF_HUMIDITY_OUT_ENTITY)
         self._cloud_cover = self._get_config_value(CONF_CLOUD_COVER_ENTITY)
         # Support both old and new config keys for backward compatibility
-        self._data_retention_days = int(
-            self._get_config_value(CONF_DATA_RETENTION_DAYS)
-            or self._get_config_value(CONF_LHS_RETENTION_DAYS)
-            or DEFAULT_DATA_RETENTION_DAYS
-        )
+        data_retention = self._get_config_value(CONF_DATA_RETENTION_DAYS)
+        if data_retention is None:
+            data_retention = self._get_config_value(CONF_LHS_RETENTION_DAYS)
+        if data_retention is None:
+            data_retention = DEFAULT_DATA_RETENTION_DAYS
+        self._data_retention_days = int(data_retention)
         self._decision_mode = DECISION_MODE_SIMPLE
 
         # Heating cycle detection parameters
+        temp_delta = self._get_config_value(CONF_TEMP_DELTA_THRESHOLD)
         self._temp_delta_threshold = float(
-            self._get_config_value(CONF_TEMP_DELTA_THRESHOLD) or DEFAULT_TEMP_DELTA_THRESHOLD
-        )
-        self._cycle_split_duration_minutes = int(
-            self._get_config_value(CONF_CYCLE_SPLIT_DURATION_MINUTES)
-            or DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
+            temp_delta if temp_delta is not None else DEFAULT_TEMP_DELTA_THRESHOLD
         )
         # 0 means disabled (no splitting)
+        cycle_split = self._get_config_value(CONF_CYCLE_SPLIT_DURATION_MINUTES)
+        self._cycle_split_duration_minutes = int(
+            cycle_split if cycle_split is not None else DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
+        )
+        min_cycle = self._get_config_value(CONF_MIN_CYCLE_DURATION_MINUTES)
         self._min_cycle_duration_minutes = int(
-            self._get_config_value(CONF_MIN_CYCLE_DURATION_MINUTES)
-            or DEFAULT_MIN_CYCLE_DURATION_MINUTES
+            min_cycle if min_cycle is not None else DEFAULT_MIN_CYCLE_DURATION_MINUTES
         )
+        max_cycle = self._get_config_value(CONF_MAX_CYCLE_DURATION_MINUTES)
         self._max_cycle_duration_minutes = int(
-            self._get_config_value(CONF_MAX_CYCLE_DURATION_MINUTES)
-            or DEFAULT_MAX_CYCLE_DURATION_MINUTES
+            max_cycle if max_cycle is not None else DEFAULT_MAX_CYCLE_DURATION_MINUTES
         )
+        dead_time = self._get_config_value(CONF_DEAD_TIME_MINUTES)
         self._dead_time_minutes = float(
-            self._get_config_value(CONF_DEAD_TIME_MINUTES) or DEFAULT_DEAD_TIME_MINUTES
+            dead_time if dead_time is not None else DEFAULT_DEAD_TIME_MINUTES
         )
+        auto_learning_value = self._get_config_value(CONF_AUTO_LEARNING)
         self._auto_learning = bool(
-            self._get_config_value(CONF_AUTO_LEARNING) or DEFAULT_AUTO_LEARNING
+            auto_learning_value if auto_learning_value is not None else DEFAULT_AUTO_LEARNING
         )
 
         # IHP enabled state (default to True for backward compatibility)

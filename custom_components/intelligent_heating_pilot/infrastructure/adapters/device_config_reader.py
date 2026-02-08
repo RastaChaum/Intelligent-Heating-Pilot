@@ -82,14 +82,14 @@ class HADeviceConfigReader(IDeviceConfigReader):
         humidity_out = self._get_config_value(config, options, CONF_HUMIDITY_OUT_ENTITY)
         cloud_cover = self._get_config_value(config, options, CONF_CLOUD_COVER_ENTITY)
 
+        lhs_retention = self._get_config_value(config, options, CONF_LHS_RETENTION_DAYS)
         lhs_retention_days = int(
-            self._get_config_value(config, options, CONF_LHS_RETENTION_DAYS)
-            or DEFAULT_LHS_RETENTION_DAYS
+            lhs_retention if lhs_retention is not None else DEFAULT_LHS_RETENTION_DAYS
         )
 
+        dead_time = self._get_config_value(config, options, CONF_DEAD_TIME_MINUTES)
         dead_time_minutes = float(
-            self._get_config_value(config, options, CONF_DEAD_TIME_MINUTES)
-            or DEFAULT_DEAD_TIME_MINUTES
+            dead_time if dead_time is not None else DEFAULT_DEAD_TIME_MINUTES
         )
 
         auto_learning_value = self._get_config_value(config, options, CONF_AUTO_LEARNING)
