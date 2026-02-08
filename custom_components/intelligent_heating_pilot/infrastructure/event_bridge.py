@@ -7,7 +7,7 @@ to the application service.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -42,6 +42,7 @@ class HAEventBridge:
         scheduler_entity_ids: list[str],
         monitored_entity_ids: list[str] | None = None,
         entry_id: str | None = None,
+        get_ihp_enabled_func: Callable[[], bool] | None = None,
     ) -> None:
         """Initialize the event bridge.
 
@@ -52,12 +53,14 @@ class HAEventBridge:
             scheduler_entity_ids: Scheduler entities to monitor
             monitored_entity_ids: Additional entities to monitor (humidity, etc.)
             entry_id: Config entry ID for event filtering
+            get_ihp_enabled_func: Callback function to get current IHP enabled state
         """
         self._hass = hass
         self._app_service = application_service
         self._vtherm_entity_id = vtherm_entity_id
         self._scheduler_entity_ids = scheduler_entity_ids
         self._monitored_entity_ids = monitored_entity_ids or []
+        self._get_ihp_enabled = get_ihp_enabled_func or (lambda: True)
         self._entry_id = entry_id
 
         # Track all entities that should trigger updates
@@ -132,7 +135,9 @@ class HAEventBridge:
 
     async def _recalculate_and_publish(self) -> None:
         """Recalculate anticipation and publish event for sensors."""
-        anticipation_data = await self._app_service.calculate_and_schedule_anticipation()
+        anticipation_data = await self._app_service.calculate_and_schedule_anticipation(
+            ihp_enabled=self._get_ihp_enabled()
+        )
 
         if anticipation_data:
             # Publish event for sensors with data
