@@ -134,13 +134,34 @@ class HAEventBridge:
         self._hass.async_create_task(self._recalculate_and_publish())
 
     async def _recalculate_and_publish(self) -> None:
-        """Recalculate anticipation and publish event for sensors."""
+        """Recalculate anticipation and publish event for sensors.
+
+        Handles three response cases from application service:
+        1. None or empty dict: No data available, publish clear event
+        2. {"clear_values": True}: Signal to clear sensors, publish clear event
+        3. Full data dict: Publish complete anticipation data with all fields
+        """
+        _LOGGER.debug("Recalculating anticipation and publishing update")
+
         anticipation_data = await self._app_service.calculate_and_schedule_anticipation(
             ihp_enabled=self._get_ihp_enabled()
         )
 
-        if anticipation_data:
-            # Publish event for sensors with data
+        # Handle three distinct cases explicitly (bug #81 fix)
+        # Check: is data missing OR is this a clear_values signal?
+        if not anticipation_data or "clear_values" in anticipation_data:
+            # Case 1 & 2: No data (None or empty dict) OR clear signal
+            _LOGGER.debug("Publishing clear event (no data or clear signal)")
+            self._hass.bus.async_fire(
+                "intelligent_heating_pilot_anticipation_calculated",
+                {
+                    "entry_id": self._entry_id,
+                    "clear_values": True,
+                },
+            )
+        else:
+            # Case 3: Full anticipation data available
+            _LOGGER.debug("Publishing anticipation data with all fields")
             self._hass.bus.async_fire(
                 "intelligent_heating_pilot_anticipation_calculated",
                 {
@@ -157,17 +178,7 @@ class HAEventBridge:
                     "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
                 },
             )
-            _LOGGER.debug("Published anticipation event for sensors")
-        else:
-            # Publish event to clear sensor values (set to unknown)
-            self._hass.bus.async_fire(
-                "intelligent_heating_pilot_anticipation_calculated",
-                {
-                    "entry_id": self._entry_id,
-                    "clear_values": True,  # Signal to sensors to clear their values
-                },
-            )
-            _LOGGER.debug("Published clear event for sensors")
+            _LOGGER.debug("Published anticipation event with data")
 
     def ignore_vtherm_changes_for(self, seconds: int = 10) -> None:
         """Temporarily ignore VTherm changes (used after self-induced changes).
