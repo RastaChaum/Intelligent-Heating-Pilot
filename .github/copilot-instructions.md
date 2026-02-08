@@ -108,18 +108,18 @@ class ISchedulerReader(ABC):
 
 # tests/unit/domain/test_pilot_controller.py
 from unittest.mock import Mock
-from domain.interfaces.scheduler_reader import ISchedulerReader
+from domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from domain.entities.pilot_controller import PilotController
 
 def test_pilot_decides_to_preheat():
     # GIVEN: Mock scheduler reader
     mock_scheduler = Mock(spec=ISchedulerReader)
     mock_scheduler.get_next_event.return_value = ScheduleEvent(...)
-    
+
     # WHEN: Controller makes decision
     controller = PilotController(scheduler_reader=mock_scheduler)
     decision = controller.decide_action()
-    
+
     # THEN: Should preheat
     assert decision.action_type == "start_heating"
 ```
@@ -160,14 +160,14 @@ class PredictionResult:
 ### B. The Pilot Controller (Aggregate Root)
 
 ```python
-from domain.interfaces.scheduler_reader import ISchedulerReader
-from domain.interfaces.model_storage import IModelStorage
-from domain.interfaces.climate_commander import IClimateCommander
+from domain.interfaces.scheduler_reader_interface import ISchedulerReader
+from domain.interfaces.model_storage_interface import IModelStorage
+from domain.interfaces.climate_commander_interface import IClimateCommander
 from domain.value_objects import EnvironmentState, HeatingDecision
 
 class PilotController:
     """Coordinates heating decisions for a single VTherm."""
-    
+
     def __init__(
         self,
         scheduler_reader: ISchedulerReader,
@@ -177,9 +177,9 @@ class PilotController:
         self._scheduler = scheduler_reader
         self._storage = model_storage
         self._commander = climate_commander
-    
+
     async def decide_heating_action(
-        self, 
+        self,
         environment: EnvironmentState
     ) -> HeatingDecision:
         """Decide whether to start/stop heating based on predictions."""
@@ -192,45 +192,45 @@ class PilotController:
 Define clear contracts for all external interactions:
 
 ```python
-# domain/interfaces/scheduler_reader.py
+# domain/interfaces/scheduler_reader_interface.py
 from abc import ABC, abstractmethod
 from domain.value_objects import ScheduleEvent
 
 class ISchedulerReader(ABC):
     """Contract for reading scheduled events."""
-    
+
     @abstractmethod
     async def get_next_event(self) -> ScheduleEvent | None:
         """Read the next scheduled heating event."""
         pass
 
-# domain/interfaces/model_storage.py
+# domain/interfaces/model_storage_interface.py
 from abc import ABC, abstractmethod
 
 class IModelStorage(ABC):
     """Contract for persisting learning data."""
-    
+
     @abstractmethod
     async def save_learned_slope(self, slope: float) -> None:
         """Persist a learned heating slope."""
         pass
-    
+
     @abstractmethod
     async def get_learned_slopes(self) -> list[float]:
         """Retrieve historical learned slopes."""
         pass
 
-# domain/interfaces/climate_commander.py
+# domain/interfaces/climate_commander_interface.py
 from abc import ABC, abstractmethod
 
 class IClimateCommander(ABC):
     """Contract for climate control actions."""
-    
+
     @abstractmethod
     async def start_heating(self, target_temp: float) -> None:
         """Start heating to reach target temperature."""
         pass
-    
+
     @abstractmethod
     async def stop_heating(self) -> None:
         """Stop heating."""
@@ -280,7 +280,7 @@ class IClimateCommander(ABC):
    def calculate_preheat(self, hass: HomeAssistant):
        vtherm_state = hass.states.get("climate.vtherm")
    ```
-   
+
    ✅ **Good: Clean separation**
    ```python
    # GOOD: Domain receives value objects
@@ -297,7 +297,7 @@ class IClimateCommander(ABC):
            if event.temp > 20:  # Business rule!
                return None
    ```
-   
+
    ✅ **Good: Infrastructure only translates**
    ```python
    # GOOD: Adapter just translates
@@ -315,7 +315,7 @@ class IClimateCommander(ABC):
        if state.temperature < 20:
            hass.services.call("climate", "turn_on")
    ```
-   
+
    ✅ **Good: Testable with interfaces**
    ```python
    # GOOD: Easily mockable

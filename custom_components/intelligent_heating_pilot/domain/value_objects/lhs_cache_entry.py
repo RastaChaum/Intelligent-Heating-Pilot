@@ -3,6 +3,7 @@
 This immutable object carries a cached Learning Heating Slope (LHS) value
 along with its last update timestamp and optional contextual hour.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

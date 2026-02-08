@@ -1,37 +1,41 @@
 """Model storage interface."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
+
+from ..value_objects.lhs_cache_entry import LHSCacheEntry
 
 
 class IModelStorage(ABC):
     """Contract for persisting machine learning model data.
-    
+
     Implementations of this interface handle storage and retrieval
     of learned heating slopes and other model parameters.
-    
+
     NOTE: Direct slope data persistence (save_slope_*) has been removed.
     Slopes are now extracted directly from Home Assistant recorder via
     HeatingCycleService. This interface now only provides access to the
     global learned heating slope (LHS) and cleanup operations.
     """
-    
+
     @abstractmethod
     async def get_learned_heating_slope(self) -> float:
         """Get the current learned heating slope (LHS).
-        
+
         This represents the system's best estimate of the heating rate
         based on all historical data.
-        
+
         Returns:
             The learned heating slope in °C/hour.
         """
         pass
-    
+
     @abstractmethod
     async def clear_slope_history(self) -> None:
         """Clear all learned slope data from history.
-        
+
         This resets the learning system to its initial state.
         """
         pass

@@ -131,12 +131,12 @@ Read scheduled events from a scheduler:
 ```python
 class ISchedulerReader(ABC):
     """Contract for reading scheduled events."""
-    
+
     @abstractmethod
     async def get_next_timeslot(self) -> ScheduleTimeslot | None:
         """Get the next scheduled heating timeslot."""
         pass
-    
+
     @abstractmethod
     async def has_active_schedule(self) -> bool:
         """Check if any schedule is currently active."""
@@ -150,7 +150,7 @@ Control the scheduler to trigger heating:
 ```python
 class ISchedulerCommander(ABC):
     """Contract for commanding scheduler actions."""
-    
+
     @abstractmethod
     async def trigger_schedule_action(
         self,
@@ -168,12 +168,12 @@ Control the climate device (VTherm):
 ```python
 class IClimateCommander(ABC):
     """Contract for climate control actions."""
-    
+
     @abstractmethod
     async def set_temperature(self, temperature: float) -> None:
         """Set the target temperature."""
         pass
-    
+
     @abstractmethod
     async def set_hvac_mode(self, mode: str) -> None:
         """Set the HVAC mode (heat, off, etc.)."""
@@ -187,7 +187,7 @@ Read current environmental state:
 ```python
 class IEnvironmentReader(ABC):
     """Contract for reading environmental data."""
-    
+
     @abstractmethod
     async def get_current_state(self) -> EnvironmentState:
         """Get the current environmental state."""
@@ -201,12 +201,12 @@ Persist and retrieve learned heating slopes:
 ```python
 class IModelStorage(ABC):
     """Contract for persisting learning data."""
-    
+
     @abstractmethod
     async def save_slope(self, slope: SlopeData) -> None:
         """Save a single slope observation."""
         pass
-    
+
     @abstractmethod
     async def get_recent_slopes(
         self,
@@ -214,7 +214,7 @@ class IModelStorage(ABC):
     ) -> list[SlopeData]:
         """Retrieve recent slope observations."""
         pass
-    
+
     @abstractmethod
     async def clear_all_slopes(self) -> None:
         """Clear all stored slope data (reset learning)."""
@@ -232,7 +232,7 @@ Calculates when to start heating based on learned data:
 ```python
 class PredictionService:
     """Calculate heating anticipation predictions."""
-    
+
     def __init__(
         self,
         scheduler_reader: ISchedulerReader,
@@ -242,10 +242,10 @@ class PredictionService:
         self._scheduler = scheduler_reader
         self._environment = environment_reader
         self._storage = storage
-    
+
     async def calculate_anticipation(self) -> PredictionResult | None:
         """Calculate when to start heating for the next schedule.
-        
+
         Returns:
             PredictionResult with anticipated start time and details,
             or None if no valid prediction can be made.
@@ -254,41 +254,41 @@ class PredictionService:
         next_timeslot = await self._scheduler.get_next_timeslot()
         if not next_timeslot:
             return None
-        
+
         # Get current environmental state
         environment = await self._environment.get_current_state()
-        
+
         # Get learned heating slope (LHS)
         lhs_service = LHSCalculationService(self._storage)
         lhs = await lhs_service.calculate_lhs()
-        
+
         # Calculate base anticipation time
         delta_temp = next_timeslot.target_temp - environment.current_temp
         if delta_temp <= 0:
             return None  # Already at or above target
-        
+
         base_minutes = (delta_temp / lhs) * 60
-        
+
         # Apply environmental corrections
         correction_factor = 1.0
-        
+
         if environment.humidity and environment.humidity > 70:
             correction_factor *= 1.10  # +10% for high humidity
-        
+
         if environment.cloud_coverage and environment.cloud_coverage > 80:
             correction_factor *= 1.05  # +5% for heavy clouds
-        
+
         # Apply corrections and safety buffer
         adjusted_minutes = base_minutes * correction_factor + 5
-        
+
         # Constrain to reasonable limits
         final_minutes = max(10, min(180, adjusted_minutes))
-        
+
         # Calculate start time
         anticipated_start = next_timeslot.start_time - timedelta(
             minutes=final_minutes
         )
-        
+
         return PredictionResult(
             anticipated_start_time=anticipated_start,
             anticipation_duration_minutes=final_minutes,
@@ -304,38 +304,38 @@ Calculates the Learned Heating Slope using robust statistics:
 ```python
 class LHSCalculationService:
     """Calculate Learned Heating Slope (LHS) from observations."""
-    
+
     DEFAULT_LHS = 2.0  # °C/h (conservative cold start value)
-    
+
     def __init__(self, storage: IModelStorage) -> None:
         self._storage = storage
-    
+
     async def calculate_lhs(self) -> float:
         """Calculate LHS using trimmed mean (robust average).
-        
+
         Returns:
             Learned heating slope in °C/h
         """
         slopes = await self._storage.get_recent_slopes(max_count=100)
-        
+
         if not slopes:
             return self.DEFAULT_LHS
-        
+
         # Extract slope values
         values = [s.slope_value for s in slopes if s.slope_value > 0]
-        
+
         if len(values) < 3:
             return self.DEFAULT_LHS
-        
+
         # Sort and trim outliers (10% from each end)
         sorted_values = sorted(values)
         trim_count = int(len(sorted_values) * 0.1)
-        
+
         if trim_count > 0:
             trimmed = sorted_values[trim_count:-trim_count]
         else:
             trimmed = sorted_values
-        
+
         # Calculate trimmed mean
         return sum(trimmed) / len(trimmed)
 ```
@@ -351,7 +351,7 @@ Reads scheduler state from Home Assistant:
 ```python
 class HASchedulerReader(ISchedulerReader):
     """Home Assistant implementation of ISchedulerReader."""
-    
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -361,40 +361,40 @@ class HASchedulerReader(ISchedulerReader):
         self._hass = hass
         self._scheduler_ids = scheduler_entity_ids
         self._vtherm_id = vtherm_entity_id
-    
+
     async def get_next_timeslot(self) -> ScheduleTimeslot | None:
         """Read next timeslot from HA scheduler."""
         for entity_id in self._scheduler_ids:
             state = self._hass.states.get(entity_id)
             if not state:
                 continue
-            
+
             # Extract next_entries from attributes
             next_entries = state.attributes.get("next_entries", [])
             if not next_entries:
                 continue
-            
+
             # Get first entry
             entry = next_entries[0]
-            
+
             # Parse timestamp
             start_time = dt_util.parse_datetime(entry["time"])
             if not start_time:
                 continue
-            
+
             # Resolve target temperature from VTherm preset
             target_temp = await self._resolve_target_temp(
                 entry["actions"]
             )
-            
+
             return ScheduleTimeslot(
                 start_time=start_time,
                 target_temp=target_temp,
                 schedule_id=entity_id,
             )
-        
+
         return None
-    
+
     async def _resolve_target_temp(self, actions: list) -> float:
         """Resolve target temperature from scheduler actions."""
         # Implementation details...
@@ -408,27 +408,27 @@ Persists learned slopes in Home Assistant's storage:
 ```python
 class HAModelStorage(IModelStorage):
     """Home Assistant storage implementation."""
-    
+
     def __init__(self, store: Store) -> None:
         self._store = store
-    
+
     async def save_slope(self, slope: SlopeData) -> None:
         """Save slope to HA storage."""
         data = await self._store.async_load() or {"slopes": []}
-        
+
         slopes = data.get("slopes", [])
         slopes.append({
             "value": slope.slope_value,
             "timestamp": slope.timestamp.isoformat(),
         })
-        
+
         # Keep only last 100
         if len(slopes) > 100:
             slopes = slopes[-100:]
-        
+
         data["slopes"] = slopes
         await self._store.async_save(data)
-    
+
     async def get_recent_slopes(
         self,
         max_count: int = 100
@@ -437,7 +437,7 @@ class HAModelStorage(IModelStorage):
         data = await self._store.async_load()
         if not data:
             return []
-        
+
         slopes_data = data.get("slopes", [])
         return [
             SlopeData(
@@ -459,7 +459,7 @@ Main orchestration service:
 ```python
 class HeatingApplicationService:
     """Orchestrates heating pilot operations."""
-    
+
     def __init__(
         self,
         prediction_service: PredictionService,
@@ -471,27 +471,27 @@ class HeatingApplicationService:
         self._scheduler_cmd = scheduler_commander
         self._climate_cmd = climate_commander
         self._storage = storage
-    
+
     async def calculate_and_schedule_heating(self) -> PredictionResult | None:
         """Main use case: calculate anticipation and schedule heating."""
         # Calculate when to start
         prediction = await self._prediction.calculate_anticipation()
-        
+
         if not prediction:
             _LOGGER.debug("No valid prediction available")
             return None
-        
+
         _LOGGER.info(
             "Predicted anticipation: %s minutes, start at %s",
             prediction.anticipation_duration_minutes,
             prediction.anticipated_start_time,
         )
-        
+
         # Schedule heating action (handled by coordinator timer)
         # The coordinator will call trigger_heating() at the right time
-        
+
         return prediction
-    
+
     async def trigger_heating(
         self,
         schedule_id: str,
@@ -503,22 +503,22 @@ class HeatingApplicationService:
             schedule_id=schedule_id,
             target_temp=target_temp,
         )
-        
+
         # Ensure HVAC mode is heat
         await self._climate_cmd.set_hvac_mode("heat")
-        
+
         _LOGGER.info("Heating triggered: %s -> %.1f°C", schedule_id, target_temp)
-    
+
     async def record_slope_observation(self, slope_value: float) -> None:
         """Record a new heating slope observation."""
         if slope_value <= 0:
             return  # Ignore non-heating slopes
-        
+
         slope = SlopeData(
             slope_value=slope_value,
             timestamp=datetime.now(),
         )
-        
+
         await self._storage.save_slope(slope)
         _LOGGER.debug("Recorded slope: %.2f °C/h", slope_value)
 ```
@@ -533,7 +533,7 @@ Domain tests must be **fast** (<1 second) and require **no Home Assistant**:
 # tests/unit/domain/test_prediction_service.py
 from unittest.mock import AsyncMock, Mock
 from domain.services.prediction_service import PredictionService
-from domain.interfaces.scheduler_reader import ISchedulerReader
+from domain.interfaces.scheduler_reader_interface import ISchedulerReader
 
 def test_prediction_calculates_correct_anticipation():
     # GIVEN: Mocked dependencies
@@ -543,7 +543,7 @@ def test_prediction_calculates_correct_anticipation():
         target_temp=21.0,
         schedule_id="schedule.morning",
     )
-    
+
     mock_environment = AsyncMock(spec=IEnvironmentReader)
     mock_environment.get_current_state.return_value = EnvironmentState(
         current_temp=18.0,
@@ -552,21 +552,21 @@ def test_prediction_calculates_correct_anticipation():
         cloud_coverage=50.0,
         timestamp=datetime(2025, 1, 1, 5, 0),
     )
-    
+
     mock_storage = AsyncMock(spec=IModelStorage)
     mock_storage.get_recent_slopes.return_value = [
         SlopeData(slope_value=2.0, timestamp=datetime.now())
     ]
-    
+
     # WHEN: Service calculates anticipation
     service = PredictionService(
         scheduler_reader=mock_scheduler,
         environment_reader=mock_environment,
         storage=mock_storage,
     )
-    
+
     result = await service.calculate_anticipation()
-    
+
     # THEN: Result is accurate
     assert result is not None
     assert result.anticipation_duration_minutes == pytest.approx(95, rel=0.1)
@@ -597,16 +597,16 @@ async def test_ha_scheduler_reader_parses_next_timeslot():
         ]
     }
     mock_hass.states.get.return_value = mock_state
-    
+
     # WHEN: Adapter reads next timeslot
     adapter = HASchedulerReader(
         hass=mock_hass,
         scheduler_entity_ids=["switch.schedule_morning"],
         vtherm_entity_id="climate.vtherm",
     )
-    
+
     timeslot = await adapter.get_next_timeslot()
-    
+
     # THEN: Timeslot is correctly parsed
     assert timeslot is not None
     assert timeslot.start_time == datetime(2025, 1, 1, 7, 0, tzinfo=UTC)

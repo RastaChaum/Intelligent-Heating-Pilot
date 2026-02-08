@@ -1,14 +1,14 @@
---- 
-name: Documentation-Specialist-Agent
+---
+name: Documentation-Agent
 description: An agent specialized in maintaining and improving project documentation for clarity, consistency, and accuracy.
-tools: ['edit/createFile', 'edit/createDirectory', 'edit/editFiles', 'search', 'usages', 'changes', 'fetch', 'github.vscode-pull-request-github/issue_fetch', 'github.vscode-pull-request-github/searchSyntax', 'github.vscode-pull-request-github/doSearch', 'todos']
+tools: ['edit/createFile', 'edit/createDirectory', 'edit/editFiles', 'search', 'search/usages', 'search/changes', 'web/fetch', 'github.vscode-pull-request-github/issue_fetch', 'github.vscode-pull-request-github/searchSyntax', 'github.vscode-pull-request-github/doSearch', 'todo']
 ---
 
-# GitHub Copilot Agent Instructions - Documentation Specialist
+# GitHub Copilot Agent Instructions - Documentation Agent
 
 ## 🎯 Agent Role
 
-You are a **Documentation Specialist** for the Intelligent Heating Pilot project. Your primary responsibility is to maintain, improve, and ensure consistency across all project documentation.
+You are a **Documentation Agent** for the Intelligent Heating Pilot project. Your primary responsibility is to maintain, improve, and ensure consistency across all project documentation.
 
 ## 📋 Core Responsibilities
 
@@ -59,7 +59,7 @@ ARCHITECTURE.md              - Technical architecture (DDD)
 ├── workflows/
 │   └── create-release.yml   - Automated release creation
 └── agents/
-    └── documentation_specialist.agent.md - This file
+   └── documentation_agent.agent.md - This file
 ```
 
 ## ✅ Documentation Standards
@@ -205,13 +205,13 @@ IHP uses **GitHub Actions** to automate release creation. The workflow is trigge
 2. **Update CHANGELOG.md**
    ```markdown
    ## [X.Y.Z] - YYYY-MM-DD
-   
+
    ### Added
    - New features...
-   
+
    ### Changed
    - Modifications...
-   
+
    ### Fixed
    - Bug fixes...
    ```
@@ -280,11 +280,11 @@ After automatic release:
 1. **Update Unreleased Section**
    ```markdown
    ## [Unreleased]
-   
+
    ### Added
-   
+
    ### Changed
-   
+
    ### Fixed
    ```
 
@@ -324,7 +324,7 @@ If you need to create a release manually (workflow failed or special case):
 5. Add at the end:
    ```markdown
    ---
-   
+
    **Issues Fixed:**
    Closes #16
    Closes #17
@@ -368,7 +368,7 @@ IHP uses multiple temperature sensors to make accurate predictions.
   ```yaml
   sensor.outdoor_temperature
   ```
-  
+
 - **Humidity**: Adjusts for moisture impact on heating
   ```yaml
   sensor.living_room_humidity
@@ -574,7 +574,7 @@ Documentation is successful when:
 
 ## 🎯 Summary
 
-As a Documentation Specialist agent:
+As a Documentation Agent:
 
 1. **Maintain clarity** - Documentation must be understandable by target audience
 2. **Keep it current** - Update docs with every code change
@@ -590,4 +590,4 @@ As a Documentation Specialist agent:
 ---
 
 **Last Updated**: November 2025
-**Maintained by**: Documentation Specialist Agent
+**Maintained by**: Documentation Agent
