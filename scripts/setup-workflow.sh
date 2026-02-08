@@ -83,7 +83,7 @@ cat << 'EOF'
   ┌─────────────────────────────────────────────┐
   │  Configuration Branch Protection pour MAIN │
   └─────────────────────────────────────────────┘
-  
+
   1. Cliquez "Add branch protection rule"
   2. Branch name pattern: main
   3. ✅ Require a pull request before merging
@@ -96,7 +96,7 @@ cat << 'EOF'
   ┌────────────────────────────────────────────────────┐
   │  Configuration Branch Protection pour INTEGRATION │
   └────────────────────────────────────────────────────┘
-  
+
   1. Cliquez "Add branch protection rule"
   2. Branch name pattern: integration
   3. ✅ Require a pull request before merging

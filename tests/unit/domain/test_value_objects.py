@@ -1,42 +1,24 @@
 """Tests for domain value objects."""
+
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timezone
 
 import pytest
 
-# Add custom_components to path
-sys.path.insert(
-    0,
-    os.path.join(
-        os.path.dirname(__file__),
-        "../../../custom_components/intelligent_heating_pilot",
-    ),
-)
-
-from domain.value_objects import (
+from custom_components.intelligent_heating_pilot.domain.value_objects import (
     EnvironmentState,
-    ScheduledTimeslot,
-    PredictionResult,
-    HeatingDecision,
     HeatingAction,
+    HeatingDecision,
+    PredictionResult,
+    ScheduledTimeslot,
 )
-
-# Add current directory to path for fixtures (which is in the same directory)
-sys.path.insert(0, os.path.dirname(__file__))
-
-from fixtures import (
-    get_test_datetime,
+from tests.unit.domain.fixtures import (
     TEST_CURRENT_TEMP,
-    TEST_TARGET_TEMP,
-    TEST_OUTDOOR_TEMP,
     TEST_HUMIDITY,
-    TEST_LEARNED_SLOPE,
-    TEST_TIMESLOT_ID,
+    TEST_OUTDOOR_TEMP,
+    get_test_datetime,
 )
-
 
 # ============================================================================
 # EnvironmentState Tests
@@ -127,7 +109,6 @@ def test_scheduled_timeslot_requires_id() -> None:
             target_temp=21.0,
             timeslot_id="",
         )
-
 
 
 # ============================================================================
@@ -221,4 +202,3 @@ def test_heating_decision_no_action() -> None:
     assert decision.action == HeatingAction.NO_ACTION
     assert decision.target_temp is None
     assert decision.reason == "Already at target temperature"
-

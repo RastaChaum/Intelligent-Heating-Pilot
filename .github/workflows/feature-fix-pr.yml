@@ -22,13 +22,13 @@ jobs:
       - name: Validate branch naming
         run: |
           BRANCH="${{ github.head_ref }}"
-          
+
           if [[ ! "$BRANCH" =~ ^(copilot/)?(feature|fix)- ]]; then
             echo "❌ La branche doit commencer par 'feature-' ou 'fix-'"
             echo "Nom actuel : $BRANCH"
             exit 1
           fi
-          
+
           echo "✅ Nom de branche valide : $BRANCH"
 
       - name: Check CHANGELOG update
@@ -49,27 +49,27 @@ jobs:
         run: |
           BRANCH="${{ github.head_ref }}"
           TYPE="Added"
-          
+
           if [[ "$BRANCH" =~ ^fix- ]]; then
             TYPE="Fixed"
           fi
-          
+
           gh pr comment ${{ github.event.pull_request.number }} --body "⚠️ **CHANGELOG non mis à jour**
-          
+
           Veuillez ajouter une entrée dans la section \`[Unreleased]\` du CHANGELOG.md :
-          
+
           \`\`\`markdown
           ## [Unreleased]
-          
+
           ### $TYPE
           - [Description orientée utilisateur de votre changement]
           \`\`\`
-          
+
           **Bonnes pratiques :**
           - Utilisez un langage simple et compréhensible par l'utilisateur final
           - Évitez les détails techniques sauf si pertinent
           - Décrivez le bénéfice, pas l'implémentation
-          
+
           **Exemples :**
           - ✅ \`Amélioration du calcul du temps de préchauffage\`
           - ❌ \`Refactorisation de PilotController.calculate_preheat_duration()\`
@@ -81,14 +81,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DOCS_CHANGED=$(git diff origin/integration --name-only | grep -E '(README.md|docs/)' | wc -l)
-          
+
           if [ "$DOCS_CHANGED" -eq "0" ]; then
             gh pr comment ${{ github.event.pull_request.number }} --body "📚 **Rappel : Documentation utilisateur**
-            
+
             Cette PR ajoute une nouvelle fonctionnalité. N'oubliez pas de mettre à jour la documentation si nécessaire :
             - \`README.md\` : Guide utilisateur principal
             - \`docs/\` : Documentation technique détaillée
-            
+
             Si la fonctionnalité n'est pas visible par l'utilisateur final, vous pouvez ignorer ce message.
             "
           fi
@@ -118,6 +118,6 @@ jobs:
             gh pr comment ${{ github.event.pull_request.number }} --body "✅ **Tests unitaires réussis**"
           else
             gh pr comment ${{ github.event.pull_request.number }} --body "❌ **Tests unitaires échoués**
-            
+
             Veuillez corriger les tests avant de merger."
           fi

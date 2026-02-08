@@ -1,4 +1,5 @@
 """Device configuration reader interface."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -8,7 +9,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class DeviceConfig:
     """Configuration for an IHP device.
-    
+
     Attributes:
         device_id: Unique identifier for the device
         vtherm_entity_id: Entity ID of the virtual thermostat (climate entity)
@@ -20,6 +21,7 @@ class DeviceConfig:
         dead_time_minutes: Dead time in minutes (time before heating becomes effective)
         auto_learning: If True, learn parameters (dead_time, etc.) from heating cycles
     """
+
     device_id: str
     vtherm_entity_id: str
     scheduler_entities: list[str]
@@ -33,7 +35,7 @@ class DeviceConfig:
 
 class IDeviceConfigReader(ABC):
     """Contract for reading device configuration.
-    
+
     Implementations should retrieve configuration for a specific IHP device,
     including entity IDs for climate control, scheduling, and environmental sensors.
     """
@@ -41,13 +43,13 @@ class IDeviceConfigReader(ABC):
     @abstractmethod
     async def get_device_config(self, device_id: str) -> DeviceConfig:
         """Retrieve configuration for a specific device.
-        
+
         Args:
             device_id: The device identifier to retrieve configuration for
-            
+
         Returns:
             DeviceConfig with all necessary entity mappings
-            
+
         Raises:
             ValueError: If device_id is not found or configuration is invalid
         """
@@ -56,7 +58,7 @@ class IDeviceConfigReader(ABC):
     @abstractmethod
     async def get_all_device_ids(self) -> list[str]:
         """Retrieve list of all configured device IDs.
-        
+
         Returns:
             List of configured device IDs
         """

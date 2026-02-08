@@ -1,4 +1,5 @@
 """Home Assistant device configuration reader adapter."""
+
 from __future__ import annotations
 
 import logging
@@ -17,7 +18,7 @@ from ...const import (
     DEFAULT_DEAD_TIME_MINUTES,
     DEFAULT_LHS_RETENTION_DAYS,
 )
-from ...domain.interfaces.device_config_reader import DeviceConfig, IDeviceConfigReader
+from ...domain.interfaces.device_config_reader_interface import DeviceConfig, IDeviceConfigReader
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -28,7 +29,7 @@ _LOGGER = logging.getLogger(__name__)
 
 class HADeviceConfigReader(IDeviceConfigReader):
     """Home Assistant implementation of device configuration reader.
-    
+
     Reads configuration from Home Assistant config entries for IHP devices.
     Since IHP is a single-device integration per config entry, device_id
     corresponds to the config entry ID.
@@ -36,7 +37,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the device config reader.
-        
+
         Args:
             hass: Home Assistant instance
             config_entry: The config entry for this IHP integration instance
@@ -46,13 +47,13 @@ class HADeviceConfigReader(IDeviceConfigReader):
 
     async def get_device_config(self, device_id: str) -> DeviceConfig:
         """Retrieve configuration for a specific device.
-        
+
         Args:
             device_id: The device identifier (corresponds to config entry ID)
-            
+
         Returns:
             DeviceConfig with all necessary entity mappings
-            
+
         Raises:
             ValueError: If device_id doesn't match or configuration is invalid
         """
@@ -93,8 +94,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
 
         auto_learning_value = self._get_config_value(config, options, CONF_AUTO_LEARNING)
         auto_learning = bool(
-            auto_learning_value if auto_learning_value is not None 
-            else DEFAULT_AUTO_LEARNING
+            auto_learning_value if auto_learning_value is not None else DEFAULT_AUTO_LEARNING
         )
 
         device_config = DeviceConfig(
@@ -114,21 +114,19 @@ class HADeviceConfigReader(IDeviceConfigReader):
 
     async def get_all_device_ids(self) -> list[str]:
         """Retrieve list of all configured device IDs.
-        
+
         In IHP architecture, there's typically one device per config entry,
         so this returns a single-element list.
-        
+
         Returns:
             List containing the config entry ID
         """
         return [self._config_entry.entry_id]
 
     @staticmethod
-    def _get_config_value(
-        config: dict[str, Any], options: dict[str, Any], key: str
-    ) -> str | None:
+    def _get_config_value(config: dict[str, Any], options: dict[str, Any], key: str) -> str | None:
         """Get configuration value with options override support.
-        
+
         Options take precedence over config data.
         """
         return options.get(key) or config.get(key)
@@ -136,12 +134,10 @@ class HADeviceConfigReader(IDeviceConfigReader):
     @staticmethod
     def _get_scheduler_entities(config: dict[str, Any], options: dict[str, Any]) -> list[str]:
         """Extract scheduler entities from configuration.
-        
+
         Returns list of entity IDs, or empty list if not found.
         """
         scheduler_entities = (
-            options.get(CONF_SCHEDULER_ENTITIES)
-            or config.get(CONF_SCHEDULER_ENTITIES)
-            or []
+            options.get(CONF_SCHEDULER_ENTITIES) or config.get(CONF_SCHEDULER_ENTITIES) or []
         )
         return list(scheduler_entities) if scheduler_entities else []

@@ -1,22 +1,22 @@
 """Unit tests for HeatingCycleService helper methods extracted during refactoring."""
-import sys
+
 from datetime import datetime, timedelta
-from pathlib import Path
+
 import pytest
 
-# Add domain to path WITHOUT loading infrastructure layer
-DOMAIN_PATH = Path(__file__).parent.parent.parent.parent.parent / "custom_components" / "intelligent_heating_pilot" / "domain"
-sys.path.insert(0, str(DOMAIN_PATH.parent))
-
-from domain.services.heating_cycle_service import HeatingCycleService
-from domain.value_objects.historical_data import (
+from custom_components.intelligent_heating_pilot.domain.services.heating_cycle_service import (
+    HeatingCycleService,
+)
+from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
     HistoricalDataKey,
     HistoricalDataSet,
     HistoricalMeasurement,
 )
 
 
-def m(timestamp: datetime, value: float | str | bool, device_id: str = "test.device") -> HistoricalMeasurement:
+def m(
+    timestamp: datetime, value: float | str | bool, device_id: str = "test.device"
+) -> HistoricalMeasurement:
     """Helper to create HistoricalMeasurement with empty attributes."""
     return HistoricalMeasurement(timestamp, value, {}, device_id)
 
@@ -26,7 +26,7 @@ def service():
     """Create HeatingCycleService instance for testing."""
     return HeatingCycleService(
         temp_delta_threshold=0.5,
-        cycle_split_duration_minutes=None,
+        cycle_split_duration_minutes=0,
     )
 
 
@@ -92,13 +92,15 @@ class TestComputeRuntimeMinutes:
         data = {
             HistoricalDataKey.HEATING_RUNTIME_SECONDS: [
                 m(start_time, 120.0),  # 120 sec on_time at 10:00
-                m(mid1, 180.0),        # 180 sec on_time at 10:05
-                m(mid2, 240.0),        # 240 sec on_time at 10:10
-                m(end_time, 150.0),    # 150 sec on_time at 10:15 (reset happened)
+                m(mid1, 180.0),  # 180 sec on_time at 10:05
+                m(mid2, 240.0),  # 240 sec on_time at 10:10
+                m(end_time, 150.0),  # 150 sec on_time at 10:15 (reset happened)
             ]
         }
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=60.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=60.0
+        )
 
         # Sum of all on_time_sec in range: 120 + 180 + 240 + 150 = 690 sec
         assert result == pytest.approx(690.0 / 60.0)  # 11.5 minutes
@@ -114,7 +116,9 @@ class TestComputeRuntimeMinutes:
             ]
         }
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=45.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=45.0
+        )
 
         assert result == 45.0
 
@@ -132,7 +136,9 @@ class TestComputeRuntimeMinutes:
             ]
         }
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=60.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=60.0
+        )
 
         # Sum of values in range: 200 + 150 + 175 = 525 sec
         assert result == pytest.approx(525.0 / 60.0)
@@ -143,7 +149,9 @@ class TestComputeRuntimeMinutes:
         end_time = base_time + timedelta(hours=1)
         data = {}
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=45.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=45.0
+        )
 
         assert result == 45.0
 
@@ -157,7 +165,9 @@ class TestComputeRuntimeMinutes:
             ]
         }
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=60.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=60.0
+        )
 
         assert result == pytest.approx(600.0 / 60.0)  # 10 minutes
 
@@ -172,7 +182,9 @@ class TestComputeRuntimeMinutes:
             ]
         }
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=50.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=50.0
+        )
 
         assert result == 50.0
 
@@ -194,8 +206,12 @@ class TestComputeTariffBreakdown:
         runtime_history = []
 
         cost, details = service._compute_tariff_breakdown(
-            tariff_history, energy_history, runtime_history,
-            start_time, end_time, fallback_energy_kwh=0.0
+            tariff_history,
+            energy_history,
+            runtime_history,
+            start_time,
+            end_time,
+            fallback_energy_kwh=0.0,
         )
 
         assert cost == pytest.approx(0.30)  # 2 kWh * 0.15 EUR/kWh
@@ -209,10 +225,10 @@ class TestComputeTariffBreakdown:
         start_time = base_time
         mid_time = base_time + timedelta(minutes=30)
         end_time = base_time + timedelta(hours=1)
-        
+
         tariff_history = [
             m(start_time, 0.10),  # 0.10 EUR/kWh
-            m(mid_time, 0.20),   # Price change at 30min
+            m(mid_time, 0.20),  # Price change at 30min
         ]
         energy_history = [
             m(start_time, 10.0),
@@ -222,8 +238,12 @@ class TestComputeTariffBreakdown:
         runtime_history = []
 
         cost, details = service._compute_tariff_breakdown(
-            tariff_history, energy_history, runtime_history,
-            start_time, end_time, fallback_energy_kwh=0.0
+            tariff_history,
+            energy_history,
+            runtime_history,
+            start_time,
+            end_time,
+            fallback_energy_kwh=0.0,
         )
 
         assert len(details) == 2
@@ -248,17 +268,21 @@ class TestComputeTariffBreakdown:
         ]
         energy_history = [
             m(start_time, 10.0),
-            m(end_time, 12.0),    # 2 kWh total
+            m(end_time, 12.0),  # 2 kWh total
         ]
         runtime_history = [
-            m(start_time, 600.0),    # 600 sec on_time at start
-            m(mid_time, 800.0),      # 800 sec on_time at mid
-            m(end_time, 700.0),      # 700 sec on_time at end (not included in segment)
+            m(start_time, 600.0),  # 600 sec on_time at start
+            m(mid_time, 800.0),  # 800 sec on_time at mid
+            m(end_time, 700.0),  # 700 sec on_time at end (not included in segment)
         ]
 
         cost, details = service._compute_tariff_breakdown(
-            tariff_history, energy_history, runtime_history,
-            start_time, end_time, fallback_energy_kwh=0.0
+            tariff_history,
+            energy_history,
+            runtime_history,
+            start_time,
+            end_time,
+            fallback_energy_kwh=0.0,
         )
 
         assert len(details) == 1
@@ -273,16 +297,14 @@ class TestComputeTariffBreakdown:
 
         # Missing tariff
         cost1, details1 = service._compute_tariff_breakdown(
-            [], [m(start_time, 10.0)], [],
-            start_time, end_time, fallback_energy_kwh=0.0
+            [], [m(start_time, 10.0)], [], start_time, end_time, fallback_energy_kwh=0.0
         )
         assert cost1 == 0.0
         assert details1 == []
 
         # Missing energy
         cost2, details2 = service._compute_tariff_breakdown(
-            [m(start_time, 0.15)], [], [],
-            start_time, end_time, fallback_energy_kwh=0.0
+            [m(start_time, 0.15)], [], [], start_time, end_time, fallback_energy_kwh=0.0
         )
         assert cost2 == 0.0
         assert details2 == []
@@ -313,7 +335,9 @@ class TestValidateCriticalData:
             }
         )
 
-        with pytest.raises(ValueError, match="Missing critical historical data for key: indoor_temp"):
+        with pytest.raises(
+            ValueError, match="Missing critical historical data for key: indoor_temp"
+        ):
             service._validate_critical_data(dataset)
 
     def test_with_missing_heating_state_raises(self, service):
@@ -325,7 +349,9 @@ class TestValidateCriticalData:
             }
         )
 
-        with pytest.raises(ValueError, match="Missing critical historical data for key: heating_state"):
+        with pytest.raises(
+            ValueError, match="Missing critical historical data for key: heating_state"
+        ):
             service._validate_critical_data(dataset)
 
 
@@ -336,12 +362,8 @@ class TestGetTemperaturesAt:
         """Given both temperatures available, returns (indoor, target)."""
         dataset = HistoricalDataSet(
             data={
-                HistoricalDataKey.INDOOR_TEMP: [
-                    m(base_time, 19.5)
-                ],
-                HistoricalDataKey.TARGET_TEMP: [
-                    m(base_time, 21.0)
-                ],
+                HistoricalDataKey.INDOOR_TEMP: [m(base_time, 19.5)],
+                HistoricalDataKey.TARGET_TEMP: [m(base_time, 21.0)],
             }
         )
 
@@ -355,9 +377,7 @@ class TestGetTemperaturesAt:
         dataset = HistoricalDataSet(
             data={
                 HistoricalDataKey.INDOOR_TEMP: [],
-                HistoricalDataKey.TARGET_TEMP: [
-                    m(base_time, 21.0)
-                ],
+                HistoricalDataKey.TARGET_TEMP: [m(base_time, 21.0)],
             }
         )
 
@@ -370,9 +390,7 @@ class TestGetTemperaturesAt:
         """Given missing target temp, returns (indoor, None)."""
         dataset = HistoricalDataSet(
             data={
-                HistoricalDataKey.INDOOR_TEMP: [
-                    m(base_time, 19.5)
-                ],
+                HistoricalDataKey.INDOOR_TEMP: [m(base_time, 19.5)],
                 HistoricalDataKey.TARGET_TEMP: [],
             }
         )

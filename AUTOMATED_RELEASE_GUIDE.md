@@ -343,7 +343,7 @@ Use this before pushing the tag:
 5. Append:
    ```markdown
    ---
-   
+
    **Issues Fixed:**
    Closes #16
    Closes #17
@@ -423,14 +423,14 @@ git push origin main v0.4.0
 
 ---
 
-**Last Updated**: Janvier 2025  
-**Automation Files**: 
+**Last Updated**: Janvier 2025
+**Automation Files**:
 - `.github/workflows/prepare-release-candidate.yml` - Create initial RC
 - `.github/workflows/increment-rc-version.yml` - Increment RC version
 - `.github/workflows/promote-rc-to-release.yml` - Promote RC to final release
 - `scripts/rc-helper.sh` - CLI helper for RC management
 
-**Documentation**: `.github/agents/documentation_specialist.agent.md`
+**Documentation**: `.github/agents/documentation_agent.agent.md`
 
 ---
 

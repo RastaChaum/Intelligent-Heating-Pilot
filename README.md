@@ -14,7 +14,7 @@ A Home Assistant integration that learns your heating system and automatically s
 
 ```
 📅 Next heating: 18:00 (target 21°C)
-🧠 Learned slope: 2.3°C/hour  
+🧠 Learned slope: 2.3°C/hour
 ⏰ Start time: 16:42 (calculated automatically)
 ✅ Room reaches 21°C exactly at 18:00
 ```

@@ -27,46 +27,46 @@ function print_error() {
 
 function create_feature_branch() {
     print_header "Création d'une branche feature"
-    
+
     read -p "Nom de la feature (sans 'feature-'): " feature_name
-    
+
     # Assurez-vous d'être sur integration
     git checkout integration
     git pull origin integration
-    
+
     # Créez la branche
     git checkout -b "feature-$feature_name"
-    
+
     print_success "Branche feature-$feature_name créée à partir de integration"
     print_warning "N'oubliez pas de mettre à jour le CHANGELOG.md !"
 }
 
 function create_fix_branch() {
     print_header "Création d'une branche fix"
-    
+
     read -p "Nom du fix (sans 'fix-'): " fix_name
-    
+
     # Assurez-vous d'être sur integration
     git checkout integration
     git pull origin integration
-    
+
     # Créez la branche
     git checkout -b "fix-$fix_name"
-    
+
     print_success "Branche fix-$fix_name créée à partir de integration"
     print_warning "N'oubliez pas de mettre à jour le CHANGELOG.md !"
 }
 
 function prepare_release() {
     print_header "Préparation d'une RC (Release Candidate)"
-    
+
     # Vérifier qu'on est sur integration
     CURRENT_BRANCH=$(git branch --show-current)
     if [ "$CURRENT_BRANCH" != "integration" ]; then
         print_error "Vous devez être sur la branche integration"
         exit 1
     fi
-    
+
     print_warning "Utiliser le script dedié : ./scripts/rc-helper.sh"
     echo ""
     echo "Pour préparer une RC :"
@@ -90,7 +90,7 @@ function prepare_release() {
 
 function check_changelog() {
     print_header "Vérification du CHANGELOG"
-    
+
     if ! git diff --cached --name-only | grep -q "CHANGELOG.md"; then
         print_error "CHANGELOG.md n'a pas été modifié"
         echo ""
@@ -103,7 +103,7 @@ function check_changelog() {
         echo "- [Description du problème corrigé]"
         exit 1
     fi
-    
+
     print_success "CHANGELOG.md a été modifié"
 }
 
@@ -116,9 +116,9 @@ function show_workflow() {
 ┌─────────────────────────────────────────────────────────────┐
 │  1. NOUVELLE FONCTIONNALITÉ                                 │
 └─────────────────────────────────────────────────────────────┘
-   
+
    $ ./scripts/workflow-helper.sh feature
-   
+
    → Créez votre branche feature-* depuis integration
    → Développez avec TDD (tests d'abord!)
    → Mettez à jour CHANGELOG.md (section [Unreleased])
@@ -132,9 +132,9 @@ function show_workflow() {
 ┌─────────────────────────────────────────────────────────────┐
 │  2. CORRECTION DE BUG                                       │
 └─────────────────────────────────────────────────────────────┘
-   
+
    $ ./scripts/workflow-helper.sh fix
-   
+
    → Créez votre branche fix-* depuis integration
    → Corrigez avec TDD (tests de régression!)
    → Mettez à jour CHANGELOG.md (section [Unreleased])
@@ -144,26 +144,26 @@ function show_workflow() {
 ┌─────────────────────────────────────────────────────────────┐
 │  3. CYCLE DE RELEASE - PHASE RC (Release Candidate)        │
 └─────────────────────────────────────────────────────────────┘
-   
+
    a) PRÉPARER RC1
-   
+
       $ ./scripts/rc-helper.sh prepare
-      
+
       → Choisissez le type (major/minor/patch)
       → Version incrémentée (v0.4.4 → v0.5.0-rc1)
       → GITHUB_RELEASE_v0.5.0-rc1.md créé
       → Tag v0.5.0-rc1 créé
       → Pre-release GitHub créée
       → Issue de suivi créée
-   
+
    b) TESTER RC1
-   
+
       → Déployez sur votre instance Home Assistant
       → Testez toutes les nouvelles features
       → Signaler bugs sur l'issue de suivi
-   
+
    c) CORRECTIONS PENDANT LES RCs
-   
+
       $ git checkout integration
       $ ./scripts/workflow-helper.sh fix
       → Corrigez le bug
@@ -172,21 +172,21 @@ function show_workflow() {
       → Créez PR vide vers main (pour déclencher les checks)
       $ ./scripts/rc-helper.sh increment
       → Crée rc2, puis rc3, etc.
-   
+
    d) RETESTEZ
-   
+
       → Testez la nouvelle RC
       → Répétez jusqu'à satisfaction
 
 ┌─────────────────────────────────────────────────────────────┐
 │  4. PUBLIER LA RELEASE STABLE                               │
 └─────────────────────────────────────────────────────────────┘
-   
+
    Quand la RC est stable:
-   
+
       $ git checkout integration
       $ git pull origin integration
-   
+
       → Créez une PR: integration → main
       → Titre: "chore: release v0.5.0"
       → Les checks vérifient:
@@ -194,7 +194,7 @@ function show_workflow() {
         - CHANGELOG contient des entrées
         - RC pre-release existe
         - Tous les tests passent
-   
+
       → Mergez la PR (sans squash!)
       → AUTOMATIQUEMENT:
         - Version finale créée (v0.5.0)
@@ -206,23 +206,23 @@ function show_workflow() {
 ┌─────────────────────────────────────────────────────────────┐
 │  5. COMMANDES UTILES                                        │
 └─────────────────────────────────────────────────────────────┘
-   
+
    Voir l'état de la RC actuelle :
       $ ./scripts/rc-helper.sh status
-   
+
    Voir les versions disponibles :
       $ git tag | grep -v rc | tail -5
-   
+
    Préparer une nouvelle RC :
       $ ./scripts/rc-helper.sh prepare
-   
+
    Incrémenter RC après corrections :
       $ ./scripts/rc-helper.sh increment
 
 ┌─────────────────────────────────────────────────────────────┐
 │  📚 DOCUMENTATION COMPLÈTE                                  │
 └─────────────────────────────────────────────────────────────┘
-   
+
    Workflow RC :     ./scripts/rc-helper.sh (version interactive)
    Workflow Dev :    ./scripts/workflow-helper.sh workflow
    Vérif Setup :     ./scripts/check-workflow-setup.sh

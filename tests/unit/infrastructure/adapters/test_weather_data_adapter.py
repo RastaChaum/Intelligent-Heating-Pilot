@@ -1,23 +1,25 @@
 """Unit tests for Home Assistant weather data adapter (TDD)."""
+
 from __future__ import annotations
 
-import pytest
 from datetime import datetime
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
-    HistoricalDataSet,
     HistoricalDataKey,
+    HistoricalDataSet,
     HistoricalMeasurement,
 )
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.weather_data_adapter import (
     WeatherDataAdapter,
 )
 from tests.unit.domain.fixtures import (
-    get_test_datetime,
-    get_future_datetime,
-    TEST_ENTITY_ID,
     MOCK_WEATHER_HISTORY_RESPONSE,
+    TEST_ENTITY_ID,
+    get_future_datetime,
+    get_test_datetime,
 )
 
 
@@ -42,7 +44,9 @@ class TestWeatherDataAdapter:
 
         adapter._fetch_history = AsyncMock(return_value=MOCK_WEATHER_HISTORY_RESPONSE[0])
 
-        result = await adapter.fetch_historical_data(TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time)
+        result = await adapter.fetch_historical_data(
+            TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
+        )
 
         assert isinstance(result, HistoricalDataSet)
         assert isinstance(result.data, dict)
@@ -55,7 +59,9 @@ class TestWeatherDataAdapter:
 
         adapter._fetch_history = AsyncMock(return_value=MOCK_WEATHER_HISTORY_RESPONSE[0])
 
-        result = await adapter.fetch_historical_data("weather.home", HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time)
+        result = await adapter.fetch_historical_data(
+            "weather.home", HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
+        )
 
         assert HistoricalDataKey.OUTDOOR_TEMP in result.data
         outdoor_temps = result.data[HistoricalDataKey.OUTDOOR_TEMP]
@@ -70,7 +76,7 @@ class TestWeatherDataAdapter:
         # Verify second measurement
         assert outdoor_temps[1].value == 6.0
         assert outdoor_temps[1].entity_id == "weather.home"
-        
+
         # Verify third measurement
         assert outdoor_temps[2].value == 7.0
 
@@ -82,7 +88,9 @@ class TestWeatherDataAdapter:
 
         adapter._fetch_history = AsyncMock(return_value=MOCK_WEATHER_HISTORY_RESPONSE[0])
 
-        result = await adapter.fetch_historical_data(TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_HUMIDITY, start_time, end_time)
+        result = await adapter.fetch_historical_data(
+            TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_HUMIDITY, start_time, end_time
+        )
 
         assert HistoricalDataKey.OUTDOOR_HUMIDITY in result.data
         outdoor_humidity = result.data[HistoricalDataKey.OUTDOOR_HUMIDITY]
@@ -101,7 +109,9 @@ class TestWeatherDataAdapter:
 
         adapter._fetch_history = AsyncMock(return_value=MOCK_WEATHER_HISTORY_RESPONSE[0])
 
-        result = await adapter.fetch_historical_data(TEST_ENTITY_ID, HistoricalDataKey.CLOUD_COVERAGE, start_time, end_time)
+        result = await adapter.fetch_historical_data(
+            TEST_ENTITY_ID, HistoricalDataKey.CLOUD_COVERAGE, start_time, end_time
+        )
 
         assert HistoricalDataKey.CLOUD_COVERAGE in result.data
         cloud_coverage = result.data[HistoricalDataKey.CLOUD_COVERAGE]
@@ -120,10 +130,12 @@ class TestWeatherDataAdapter:
 
         adapter._fetch_history = AsyncMock(return_value=MOCK_WEATHER_HISTORY_RESPONSE[0])
 
-        result = await adapter.fetch_historical_data(TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time)
+        result = await adapter.fetch_historical_data(
+            TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
+        )
 
         outdoor_temps = result.data[HistoricalDataKey.OUTDOOR_TEMP]
-        
+
         # Verify weather state is preserved in attributes
         assert outdoor_temps[0].attributes["weather_state"] == "rainy"
         assert outdoor_temps[1].attributes["weather_state"] == "cloudy"
@@ -137,10 +149,12 @@ class TestWeatherDataAdapter:
 
         adapter._fetch_history = AsyncMock(return_value=MOCK_WEATHER_HISTORY_RESPONSE[0])
 
-        result = await adapter.fetch_historical_data(TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time)
+        result = await adapter.fetch_historical_data(
+            TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
+        )
 
         outdoor_temps = result.data[HistoricalDataKey.OUTDOOR_TEMP]
-        
+
         # Verify attributes are preserved
         first_measurement = outdoor_temps[0]
         assert "weather_state" in first_measurement.attributes
@@ -156,7 +170,9 @@ class TestWeatherDataAdapter:
         adapter._fetch_history = AsyncMock(side_effect=ValueError("Entity not found"))
 
         with pytest.raises(ValueError, match="Cannot fetch history for entity"):
-            await adapter.fetch_historical_data("invalid.entity", HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time)
+            await adapter.fetch_historical_data(
+                "invalid.entity", HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
+            )
 
     @pytest.mark.asyncio
     async def test_fetch_historical_data_with_empty_history(self, adapter):
@@ -166,7 +182,9 @@ class TestWeatherDataAdapter:
 
         adapter._fetch_history = AsyncMock(return_value=[])
 
-        result = await adapter.fetch_historical_data(TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time)
+        result = await adapter.fetch_historical_data(
+            TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
+        )
 
         assert isinstance(result, HistoricalDataSet)
 
@@ -178,10 +196,12 @@ class TestWeatherDataAdapter:
 
         adapter._fetch_history = AsyncMock(return_value=MOCK_WEATHER_HISTORY_RESPONSE[0])
 
-        result = await adapter.fetch_historical_data(TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time)
+        result = await adapter.fetch_historical_data(
+            TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
+        )
 
         outdoor_temps = result.data[HistoricalDataKey.OUTDOOR_TEMP]
-        
+
         # Verify all timestamps are datetime objects, not strings
         for measurement in outdoor_temps:
             assert isinstance(measurement.timestamp, datetime)

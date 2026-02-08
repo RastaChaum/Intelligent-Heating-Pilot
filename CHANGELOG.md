@@ -90,7 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Incremental Cycle Cache for LHS Calculation** - New cache system to store heating cycles incrementally, drastically reducing Home Assistant recorder queries and enabling longer retention periods than HA's native history
   - New `CycleCacheData` value object to store cycles with metadata
-  - New `ICycleCache` interface for cache operations  
+  - New `ICycleCache` interface for cache operations
   - New `HACycleCache` adapter using HA Store for JSON persistence
   - Automatic deduplication and retention-based pruning
   - Graceful degradation to direct recorder queries if cache unavailable

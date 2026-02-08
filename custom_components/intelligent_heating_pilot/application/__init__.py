@@ -3,6 +3,7 @@
 This service coordinates between the domain layer (HeatingPilot, PredictionService)
 and infrastructure adapters, implementing use cases.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,6 +24,7 @@ from ..domain.value_objects import (
 from ..infrastructure.decision_strategy_factory import DecisionStrategyFactory
 
 if TYPE_CHECKING:
+    from ..domain.interfaces import ITimerScheduler
     from ..infrastructure.adapters import (
         HAClimateCommander,
         HACycleCache,
@@ -31,7 +33,6 @@ if TYPE_CHECKING:
         HASchedulerCommander,
         HASchedulerReader,
     )
-    from ..domain.interfaces import ITimerScheduler
 
 _LOGGER = logging.getLogger(__name__)
 LHS_CACHE_TTL_HOURS = 24
@@ -39,24 +40,24 @@ LHS_CACHE_TTL_HOURS = 24
 
 class HeatingApplicationService:
     """Application service orchestrating heating control use cases.
-    
+
     This service is the main entry point for heating logic, coordinating:
     - Domain aggregates (HeatingPilot)
     - Domain services (PredictionService)
     - Infrastructure adapters (HA*)
-    
+
     NO Home Assistant dependencies - only uses adapter interfaces.
     """
-    
+
     def __init__(
         self,
-        scheduler_reader: "HASchedulerReader",
-        model_storage: "HAModelStorage",
-        scheduler_commander: "HASchedulerCommander",
-        climate_commander: "HAClimateCommander",
-        environment_reader: "HAEnvironmentReader",
-        timer_scheduler: "ITimerScheduler",
-        cycle_cache: "HACycleCache | None" = None,
+        scheduler_reader: HASchedulerReader,
+        model_storage: HAModelStorage,
+        scheduler_commander: HASchedulerCommander,
+        climate_commander: HAClimateCommander,
+        environment_reader: HAEnvironmentReader,
+        timer_scheduler: ITimerScheduler,
+        cycle_cache: HACycleCache | None = None,
         lhs_window_hours: float = 6.0,
         history_lookback_days: int | None = None,
         decision_mode: str = DEFAULT_DECISION_MODE,
@@ -68,7 +69,7 @@ class HeatingApplicationService:
         auto_learning: bool = True,
     ) -> None:
         """Initialize the application service.
-        
+
         Args:
             scheduler_reader: Reads scheduled timeslots
             model_storage: Persists learned slopes
@@ -97,7 +98,7 @@ class HeatingApplicationService:
         self._cycle_cache = cycle_cache
         self._prediction_service = PredictionService()
         self._lhs_calculation_service = LHSCalculationService()
-        
+
         # Create HeatingCycleService with configured parameters
         from ..const import (
             DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
@@ -105,13 +106,17 @@ class HeatingApplicationService:
             DEFAULT_MIN_CYCLE_DURATION_MINUTES,
             DEFAULT_TEMP_DELTA_THRESHOLD,
         )
+
         self._heating_cycle_service = HeatingCycleService(
             temp_delta_threshold=temp_delta_threshold or DEFAULT_TEMP_DELTA_THRESHOLD,
-            cycle_split_duration_minutes=cycle_split_duration_minutes or DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
-            min_cycle_duration_minutes=min_cycle_duration_minutes or DEFAULT_MIN_CYCLE_DURATION_MINUTES,
-            max_cycle_duration_minutes=max_cycle_duration_minutes or DEFAULT_MAX_CYCLE_DURATION_MINUTES,
+            cycle_split_duration_minutes=cycle_split_duration_minutes
+            or DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
+            min_cycle_duration_minutes=min_cycle_duration_minutes
+            or DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+            max_cycle_duration_minutes=max_cycle_duration_minutes
+            or DEFAULT_MAX_CYCLE_DURATION_MINUTES,
         )
-        
+
         self._lhs_window_hours = lhs_window_hours
         self._history_lookback_days = (
             int(history_lookback_days)
@@ -120,35 +125,35 @@ class HeatingApplicationService:
         )
         self._dead_time_minutes = dead_time_minutes
         self._auto_learning = auto_learning
-        
+
         # Create decision strategy based on mode
         decision_strategy = DecisionStrategyFactory.create_strategy(
             mode=decision_mode,
             scheduler_reader=scheduler_reader,
             model_storage=model_storage,
         )
-        
+
         # Create HeatingPilot with strategy
         self._heating_pilot = HeatingPilot(
             decision_strategy=decision_strategy,
             scheduler_commander=scheduler_commander,
         )
-        
+
         _LOGGER.info(f"HeatingApplicationService initialized with decision mode: {decision_mode}")
-        
+
         # Runtime state for anticipation scheduling
         self._last_scheduled_time: datetime | None = None
         self._last_scheduled_lhs: float | None = None
         self._is_preheating_active: bool = False
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None  # Track which scheduler is being used
-        
+
         # Cancel function returned by timer scheduler for active timer
         self._anticipation_timer_cancel: Callable[[], None] | None = None
-        
+
         # Lock to protect timer state transitions from race conditions
         self._timer_lock = asyncio.Lock()
-    
+
     async def _clear_anticipation_state(self) -> None:
         """Clear all anticipation tracking state."""
         await self._cancel_anticipation_timer()
@@ -158,22 +163,22 @@ class HeatingApplicationService:
         self._last_scheduled_lhs = None
         self._active_scheduler_entity = None
         _LOGGER.debug("Anticipation state cleared")
-    
+
     async def _cancel_anticipation_timer(self) -> None:
         """Cancel any active anticipation timer.
-        
+
         Protected by lock to prevent race conditions during cancellation.
         """
         async with self._timer_lock:
             self._cancel_anticipation_timer_internal()
-    
+
     def _cancel_anticipation_timer_internal(self) -> None:
         """Cancel timer without lock protection (for internal use within lock)."""
         if self._anticipation_timer_cancel is not None:
             _LOGGER.debug("Cancelling active anticipation timer")
             self._anticipation_timer_cancel()
             self._anticipation_timer_cancel = None
-    
+
     async def _schedule_anticipation_timer(
         self,
         anticipated_start: datetime,
@@ -182,9 +187,9 @@ class HeatingApplicationService:
         scheduler_entity_id: str,
     ) -> None:
         """Schedule a timer to trigger anticipation at the specified time.
-        
+
         Protected by lock to prevent race conditions during timer scheduling.
-        
+
         Args:
             anticipated_start: When to trigger the anticipation
             target_time: Target schedule time
@@ -196,7 +201,7 @@ class HeatingApplicationService:
             anticipated_start.isoformat(),
             scheduler_entity_id,
         )
-        
+
         # Create callback for timer (outside lock - will execute later when timer fires)
         async def _trigger_callback() -> None:
             """Callback to trigger anticipation when timer fires."""
@@ -206,32 +211,31 @@ class HeatingApplicationService:
                 target_time.isoformat(),
                 target_temp,
             )
-            
+
             # Use lock to protect timer state transitions
             async with self._timer_lock:
                 # Clear the timer reference since it has fired
                 self._anticipation_timer_cancel = None
-                
+
                 # Trigger the action
                 await self._trigger_anticipation_action(
                     target_time,
                     target_temp,
                     scheduler_entity_id,
                 )
-        
+
         async with self._timer_lock:
             # Cancel any existing timer first
             self._cancel_anticipation_timer_internal()
-            
+
             # Track which scheduler we're anticipating for
             self._active_scheduler_entity = scheduler_entity_id
-            
             # Schedule the timer using the interface
             self._anticipation_timer_cancel = self._timer_scheduler.schedule_timer(
                 anticipated_start,
                 _trigger_callback,
             )
-            
+
             now = dt_util.now()
             wait_minutes = (anticipated_start - now).total_seconds() / 60.0
             _LOGGER.info(
@@ -239,9 +243,9 @@ class HeatingApplicationService:
                 anticipated_start.isoformat(),
                 wait_minutes,
             )
-        
+
         _LOGGER.debug("Exiting _schedule_anticipation_timer")
-    
+
     async def _trigger_anticipation_action(
         self,
         target_time: datetime,
@@ -249,7 +253,7 @@ class HeatingApplicationService:
         scheduler_entity_id: str,
     ) -> None:
         """Trigger the anticipation action (run scheduler action).
-        
+
         Args:
             target_time: Target schedule time
             target_temp: Target temperature
@@ -266,7 +270,7 @@ class HeatingApplicationService:
             target_time.isoformat(),
             target_temp,
         )
-        
+
         # Check if scheduler is still enabled
         if not await self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
             _LOGGER.warning(
@@ -275,103 +279,30 @@ class HeatingApplicationService:
             )
             await self._clear_anticipation_state()
             return
-        
+
         # Use scheduler's run_action to trigger the action
         await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
-        
+
         # Mark pre-heating as active
         self._is_preheating_active = True
         self._preheating_target_time = target_time
         self._active_scheduler_entity = scheduler_entity_id
-        
+
         _LOGGER.debug("Exiting _trigger_anticipation_action")
-    
+
     # NOTE: process_slope_update() removed - we now extract slopes directly from
     # Home Assistant recorder via HeatingCycleService, so no disk-based persistence needed
-    
-    async def _get_contextual_lhs(self, target_time: datetime) -> float:
-        """Get contextual LHS using detected HeatingCycles with optional cache.
-        
-        When cycle_cache is available, this method:
-        1. Retrieves cached cycles within retention period
-        2. Determines the incremental search period (last_search_time to target_time)
-        3. Extracts only new cycles from recorder
-        4. Appends new cycles to cache
-        5. Prunes old cycles beyond retention
-        6. Calculates LHS from all cached cycles
-        
-        Without cache, falls back to direct recorder extraction.
-        
-        Args:
-            target_time: Target schedule time
-            
-        Returns:
-            Contextual LHS in °C/h or global LHS as fallback
-        """
-        target_hour = target_time.hour
-        _LOGGER.debug(
-            "Computing contextual LHS for hour %02d using HeatingCycles%s",
-            target_hour,
-            " (with cache)" if self._cycle_cache else "",
-        )
-        
-        # Get device ID for cache lookup
-        vtherm_id = self._environment_reader.get_vtherm_entity_id()
-        
-        # Try to use cycle cache if available
-        if self._cycle_cache:
-            try:
-                heating_cycles = await self._get_cycles_with_cache(vtherm_id, target_time)
-            except Exception as exc:
-                _LOGGER.warning(
-                    "Failed to use cycle cache, falling back to direct extraction: %s",
-                    exc,
-                )
-                heating_cycles = await self._extract_cycles_from_recorder(
-                    vtherm_id,
-                    target_time - timedelta(days=self._history_lookback_days),
-                    target_time,
-                )
-        else:
-            # No cache available, extract directly from recorder
-            heating_cycles = await self._extract_cycles_from_recorder(
-                vtherm_id,
-                target_time - timedelta(days=self._history_lookback_days),
-                target_time,
-            )
-        
-        # If we have extracted cycles, compute contextual LHS (by hour)
-        if heating_cycles:
-            contextual_lhs = self._lhs_calculation_service.calculate_contextual_lhs(
-                heating_cycles=heating_cycles,
-                target_hour=target_hour,
-            )
-            _LOGGER.info(
-                "Contextual LHS for hour %02d from %d cycles: %.2f°C/h",
-                target_hour,
-                len(heating_cycles),
-                contextual_lhs,
-            )
-            return contextual_lhs
 
-        # Fallback: if adapters unavailable or cycles empty, use global learned LHS
-        global_lhs = await self._model_storage.get_learned_heating_slope()
-        _LOGGER.warning(
-            "No HeatingCycles available, using global LHS: %.2f°C/h",
-            global_lhs,
-        )
-        return global_lhs
-    
     async def _get_cycles_and_calculate_parameters(
         self, target_time: datetime
     ) -> tuple[list[HeatingCycle], float, float]:
         """Get heating cycles and calculate both LHS and dead_time from them.
-        
+
         This consolidates cycle extraction to avoid duplicate calls to cache/recorder.
-        
+
         Args:
             target_time: Target schedule time
-            
+
         Returns:
             Tuple of (heating_cycles, contextual_lhs, effective_dead_time)
         """
@@ -381,10 +312,10 @@ class HeatingApplicationService:
             target_hour,
             " (with cache)" if self._cycle_cache else "",
         )
-        
+
         # Get device ID
         vtherm_id = self._environment_reader.get_vtherm_entity_id()
-        
+
         # Extract heating cycles (with cache if available)
         try:
             if self._cycle_cache:
@@ -401,7 +332,7 @@ class HeatingApplicationService:
                 exc,
             )
             heating_cycles = []
-        
+
         # Calculate contextual LHS from cycles
         if heating_cycles:
             contextual_lhs = self._lhs_calculation_service.calculate_contextual_lhs(
@@ -421,23 +352,25 @@ class HeatingApplicationService:
                 "No HeatingCycles available, using global LHS: %.2f°C/h",
                 contextual_lhs,
             )
-        
+
         # Calculate effective dead_time
         if self._auto_learning and heating_cycles:
             # Auto-learning enabled: calculate from cycles
-            avg_dead_time = self._lhs_calculation_service.calculate_average_dead_time(heating_cycles)
+            avg_dead_time = self._lhs_calculation_service.calculate_average_dead_time(
+                heating_cycles
+            )
             if avg_dead_time is not None and avg_dead_time > 0:
                 effective_dead_time = avg_dead_time
                 _LOGGER.info(
                     "Learned dead_time from %d cycles: %.1f minutes",
                     len(heating_cycles),
-                    effective_dead_time
+                    effective_dead_time,
                 )
             else:
                 effective_dead_time = self._dead_time_minutes
                 _LOGGER.debug(
                     "No valid learned dead_time, using configured value: %.1f minutes",
-                    effective_dead_time
+                    effective_dead_time,
                 )
         else:
             # Auto-learning disabled or no cycles: use configured value
@@ -445,52 +378,52 @@ class HeatingApplicationService:
             _LOGGER.debug(
                 "Using configured dead_time: %.1f minutes (auto_learning=%s)",
                 effective_dead_time,
-                self._auto_learning
+                self._auto_learning,
             )
-        
+
         return heating_cycles, contextual_lhs, effective_dead_time
-    
+
     async def _get_contextual_lhs(self, target_time: datetime) -> float:
         """Get contextual LHS using detected HeatingCycles with optional cache.
-        
+
         DEPRECATED: Use _get_cycles_and_calculate_parameters instead to avoid duplicate extraction.
         This method is kept for backward compatibility but now delegates to the consolidated method.
-        
+
         Args:
             target_time: Target schedule time
-            
+
         Returns:
             Contextual LHS in °C/h or global LHS as fallback
         """
         _, lhs, _ = await self._get_cycles_and_calculate_parameters(target_time)
         return lhs
-    
+
     async def _get_effective_dead_time(self, target_time: datetime) -> float:
         """Get effective dead_time (learned or configured).
-        
+
         DEPRECATED: Use _get_cycles_and_calculate_parameters instead to avoid duplicate extraction.
         This method is kept for backward compatibility but now delegates to the consolidated method.
-        
+
         Args:
             target_time: Target schedule time
-            
+
         Returns:
             Dead time in minutes
         """
         _, _, dead_time = await self._get_cycles_and_calculate_parameters(target_time)
         return dead_time
-    
+
     async def _get_cycles_with_cache(
         self,
         device_id: str,
         target_time: datetime,
     ) -> list[HeatingCycle]:
         """Get heating cycles using cache with incremental updates.
-        
+
         Args:
             device_id: Device identifier
             target_time: Current target time
-            
+
         Returns:
             List of heating cycles within retention period
         """
@@ -500,21 +433,21 @@ class HeatingApplicationService:
             device_id,
             target_time,
         )
-        
+
         # Get existing cache data
         cache_data = await self._cycle_cache.get_cache_data(device_id)  # type: ignore[union-attr]
-        
+
         if cache_data:
             _LOGGER.debug(
                 "Found cache with %d cycles, last_search_time=%s",
                 cache_data.cycle_count,
                 cache_data.last_search_time,
             )
-            
+
             # Only search for new cycles if last search was more than 24 hours ago
             time_since_last_search = target_time - cache_data.last_search_time
             hours_since_last_search = time_since_last_search.total_seconds() / 3600
-            
+
             if hours_since_last_search < 24:
                 _LOGGER.debug(
                     "Last search was %.1f hours ago (< 24h), using cached cycles without new search",
@@ -529,29 +462,29 @@ class HeatingApplicationService:
                     _LOGGER.debug("Exiting _get_cycles_with_cache")
                     return cycles
                 return []
-            
+
             _LOGGER.info(
                 "Last search was %.1f hours ago (>= 24h), searching for new cycles",
                 hours_since_last_search,
             )
-            
+
             # Determine incremental search period from last_search_time to now
             search_start = cache_data.last_search_time
             search_end = target_time
-            
+
             _LOGGER.debug(
                 "Extracting new cycles from %s to %s",
                 search_start,
                 search_end,
             )
-            
+
             # Extract new cycles from recorder
             new_cycles = await self._extract_cycles_from_recorder(
                 device_id,
                 search_start,
                 search_end,
             )
-            
+
             # Append new cycles to cache
             if new_cycles:
                 _LOGGER.debug("Appending %d new cycles to cache", len(new_cycles))
@@ -560,10 +493,10 @@ class HeatingApplicationService:
                 new_cycles,
                 search_end,
             )
-            
+
             # Prune old cycles
             await self._cycle_cache.prune_old_cycles(device_id, target_time)  # type: ignore[union-attr]
-            
+
             # Get updated cache data
             updated_cache = await self._cycle_cache.get_cache_data(device_id)  # type: ignore[union-attr]
             if updated_cache:
@@ -574,17 +507,17 @@ class HeatingApplicationService:
             return []
         else:
             _LOGGER.info("No cache found, performing initial extraction")
-            
+
             # No cache exists, perform full extraction
             search_start = target_time - timedelta(days=self._history_lookback_days)
             search_end = target_time
-            
+
             cycles = await self._extract_cycles_from_recorder(
                 device_id,
                 search_start,
                 search_end,
             )
-            
+
             # Initialize cache with extracted cycles
             if cycles:
                 _LOGGER.debug("Initializing cache with %d cycles", len(cycles))
@@ -593,10 +526,10 @@ class HeatingApplicationService:
                 cycles,
                 search_end,
             )
-            
+
             _LOGGER.debug("Exiting _get_cycles_with_cache")
             return cycles
-    
+
     async def _extract_cycles_from_recorder(
         self,
         device_id: str,
@@ -604,12 +537,12 @@ class HeatingApplicationService:
         end_time: datetime,
     ) -> list[HeatingCycle]:
         """Extract heating cycles directly from Home Assistant recorder.
-        
+
         Args:
             device_id: Device identifier
             start_time: Start of search period
             end_time: End of search period
-            
+
         Returns:
             List of extracted heating cycles
         """
@@ -620,7 +553,7 @@ class HeatingApplicationService:
             start_time,
             end_time,
         )
-        
+
         # Try to build a HistoricalDataSet from HA adapters (climate/sensors)
         # so we can extract HeatingCycles in the specified period.
         try:
@@ -709,7 +642,7 @@ class HeatingApplicationService:
                 device_id=device_id,
                 history_data_set=historical_data_set,
                 start_time=start_time,
-                end_time=end_time
+                end_time=end_time,
             )
         except ValueError as exc:
             _LOGGER.warning(
@@ -717,18 +650,18 @@ class HeatingApplicationService:
                 exc,
             )
             heating_cycles = []
-        
+
         _LOGGER.debug("Extracted %d cycles from recorder", len(heating_cycles))
         _LOGGER.debug("Exiting _extract_cycles_from_recorder")
         return heating_cycles
-    
+
     async def calculate_and_schedule_anticipation(self, ihp_enabled: bool = True) -> dict | None:
         """Calculate anticipation and schedule heating start.
-        
+
         Args:
             ihp_enabled: Whether IHP preheating is enabled. When False, calculations
                         continue but scheduler commands are skipped.
-        
+
         Returns:
             Dict with anticipation data for sensors, or None if not applicable.
             When scheduler is not configured or no timeslot is available,
@@ -736,49 +669,54 @@ class HeatingApplicationService:
         """
         # Get next timeslot first to check if any scheduler is configured
         timeslot = await self._scheduler_reader.get_next_timeslot()
-        
+
         # If no timeslot and no active scheduler, it means no scheduler was ever configured
         if not timeslot and not self._active_scheduler_entity:
             _LOGGER.debug("No scheduler configured for this device")
             # Return clear_values dict to reset sensors to unknown
             return {"clear_values": True}
-        
+
         # Check if the currently tracked scheduler has been disabled
-        if self._active_scheduler_entity:
-            if not await self._scheduler_reader.is_scheduler_enabled(self._active_scheduler_entity):
-                _LOGGER.warning(
-                    "Active scheduler %s has been disabled. Clearing anticipation state.",
-                    self._active_scheduler_entity
-                )
-                await self._clear_anticipation_state()
-                # Return clear_values dict to reset sensors to unknown
-                return {"clear_values": True}
-        
+        if self._active_scheduler_entity and not await self._scheduler_reader.is_scheduler_enabled(
+            self._active_scheduler_entity
+        ):
+            _LOGGER.warning(
+                "Active scheduler %s has been disabled. Clearing anticipation state.",
+                self._active_scheduler_entity,
+            )
+            await self._clear_anticipation_state()
+            # Return clear_values dict to reset sensors to unknown
+            return {"clear_values": True}
+
         # No timeslot available (scheduler was configured but now disabled or no valid timeslot)
         if not timeslot:
             _LOGGER.debug("No scheduled timeslot found")
             # Clear all tracking state when no timeslot is available
-            if self._is_preheating_active or self._active_scheduler_entity or self._preheating_target_time:
+            if (
+                self._is_preheating_active
+                or self._active_scheduler_entity
+                or self._preheating_target_time
+            ):
                 _LOGGER.info("Clearing anticipation state (no timeslot available)")
                 await self._clear_anticipation_state()
             # Return clear_values dict to reset sensors to unknown
             return {"clear_values": True}
-        
+
         # Get current environment
         environment = await self._environment_reader.get_current_environment()
         if not environment:
             _LOGGER.warning("Cannot read current environment")
             return None
-              
+
         # Get contextual LHS and effective dead_time (consolidated to avoid duplicate extraction)
         _, lhs, dead_time = await self._get_cycles_and_calculate_parameters(timeslot.target_time)
-        
+
         # Check if already at target
         if environment.indoor_temperature >= timeslot.target_temp:
             _LOGGER.debug(
                 "Already at target (%.1f°C >= %.1f°C)",
                 environment.indoor_temperature,
-                timeslot.target_temp
+                timeslot.target_temp,
             )
             self._is_preheating_active = False
             self._preheating_target_time = None
@@ -805,7 +743,7 @@ class HeatingApplicationService:
             cloud_coverage=environment.cloud_coverage,
             dead_time_minutes=dead_time,
         )
-        
+
         _LOGGER.info(
             "Anticipation: start at %s (%.1f min) for target %.1f°C at %s (LHS: %.2f°C/h, confidence: %.2f)",
             prediction.anticipated_start_time.isoformat(),
@@ -815,14 +753,14 @@ class HeatingApplicationService:
             prediction.learned_heating_slope,
             prediction.confidence_level,
         )
-        
+
         # Track the active scheduler entity (for later disable detection)
         # This must be set BEFORE calling _schedule_anticipation so that
         # subsequent disable events can be properly detected
         if self._active_scheduler_entity != timeslot.scheduler_entity:
             _LOGGER.debug("Tracking scheduler entity: %s", timeslot.scheduler_entity)
             self._active_scheduler_entity = timeslot.scheduler_entity
-        
+
         # Schedule if needed (only if IHP is enabled)
         if ihp_enabled:
             await self._schedule_anticipation(
@@ -842,10 +780,10 @@ class HeatingApplicationService:
                 await self._scheduler_commander.cancel_action(timeslot.scheduler_entity)
             else:
                 _LOGGER.debug("IHP disabled - no active preheating to revert")
-            
+
             # Clear anticipation state (MUST await to cancel active timer immediately)
             await self._clear_anticipation_state()
-        
+
         # Return data for sensors
         return {
             "anticipated_start_time": prediction.anticipated_start_time,
@@ -858,7 +796,7 @@ class HeatingApplicationService:
             "timeslot_id": timeslot.timeslot_id,
             "scheduler_entity": timeslot.scheduler_entity,
         }
-    
+
     async def _schedule_anticipation(
         self,
         anticipated_start: datetime,
@@ -868,11 +806,11 @@ class HeatingApplicationService:
         lhs: float,
     ) -> None:
         """Schedule anticipated heating start using timer and handle revert logic.
-        
+
         This method uses a timer to trigger anticipation at the exact anticipated start time,
         independent of climate entity state changes. It also handles reverting to the current
         scheduled state when conditions change (e.g., anticipated start time moves later).
-        
+
         Args:
             anticipated_start: When to start heating
             target_time: Target schedule time
@@ -881,18 +819,17 @@ class HeatingApplicationService:
             lhs: Learned heating slope used
         """
         now = dt_util.now()
-        
+
         # Check if scheduler is enabled before proceeding
         if not await self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
             _LOGGER.warning(
-                "Scheduler %s is disabled. Skipping anticipation scheduling.",
-                scheduler_entity_id
+                "Scheduler %s is disabled. Skipping anticipation scheduling.", scheduler_entity_id
             )
             # If we were tracking this scheduler, clear the state
             if self._active_scheduler_entity == scheduler_entity_id:
                 await self._clear_anticipation_state()
             return
-        
+
         # Only if scheduler is enabled, check if we're currently pre-heating and should revert
         if self._is_preheating_active:
             # If anticipated start moved to the future (after now), we should stop pre-heating
@@ -903,7 +840,7 @@ class HeatingApplicationService:
                     now.isoformat(),
                     anticipated_start.isoformat(),
                     self._last_scheduled_lhs or 0.0,
-                    lhs
+                    lhs,
                 )
 
                 await self._scheduler_commander.cancel_action(scheduler_entity_id)
@@ -913,7 +850,7 @@ class HeatingApplicationService:
                 self._last_scheduled_lhs = lhs
                 self._is_preheating_active = False
                 self._preheating_target_time = None
-                
+
                 # Schedule timer for the new anticipated time
                 await self._schedule_anticipation_timer(
                     anticipated_start,
@@ -922,24 +859,24 @@ class HeatingApplicationService:
                     scheduler_entity_id,
                 )
                 return
-            
+
             # If we've reached the target time, mark pre-heating as complete
             if now >= target_time:
                 _LOGGER.info("Target time reached, pre-heating complete")
                 await self._clear_anticipation_state()
                 return
-       
+
         # Update tracking
         self._last_scheduled_time = anticipated_start
         self._last_scheduled_lhs = lhs
-        
+
         # If anticipated start is in past but target is future, trigger now
         # This handles both: not yet preheating OR already preheating but with past anticipation
         if anticipated_start <= now < target_time:
             if not self._is_preheating_active:
                 _LOGGER.info(
                     "Anticipated start %s is past, triggering pre-heating immediately",
-                    anticipated_start.isoformat()
+                    anticipated_start.isoformat(),
                 )
                 # Use ONLY the scheduler's run_action - it will handle VTherm state correctly
                 # Respects scheduler conditions (skip_conditions=False in the adapter)
@@ -951,10 +888,10 @@ class HeatingApplicationService:
                 # Already preheating but anticipation is past - ensure we stay in preheating
                 _LOGGER.debug(
                     "Already preheating (started earlier), continuation through target time %s",
-                    target_time.isoformat()
+                    target_time.isoformat(),
                 )
             return
-        
+
         # If both are in past, skip
         if anticipated_start <= now and target_time <= now:
             _LOGGER.debug("Both times are past, skipping")
@@ -969,40 +906,40 @@ class HeatingApplicationService:
             target_temp,
             scheduler_entity_id,
         )
-    
+
     async def check_overshoot_risk(self, scheduler_entity_id: str) -> None:
         """Check if heating should stop to prevent overshoot."""
         # Get next timeslot
         timeslot = await self._scheduler_reader.get_next_timeslot()
         if not timeslot:
             return
-        
+
         # Get current environment and slope
         environment = await self._environment_reader.get_current_environment()
         if not environment:
             return
-        
+
         current_slope = self._environment_reader.get_vtherm_slope()
         if current_slope is None or current_slope <= 0.0:
             return
-        
+
         # Calculate estimated temperature at target time
         now = dt_util.now()
         if now >= timeslot.target_time:
             return
-        
+
         time_to_target = (timeslot.target_time - now).total_seconds() / 3600.0
         estimated_temp = environment.indoor_temperature + (current_slope * time_to_target)
-        
+
         # Check overshoot threshold
         overshoot_threshold = timeslot.target_temp + 0.5
-        
+
         if estimated_temp >= overshoot_threshold and self._is_preheating_active:
             _LOGGER.info(
                 "Overshoot risk! Current: %.1f°C, estimated: %.1f°C, target: %.1f°C - reverting to current schedule",
                 environment.indoor_temperature,
                 estimated_temp,
-                timeslot.target_temp
+                timeslot.target_temp,
             )
             # Check scheduler is enabled before calling cancel_action
             if await self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
@@ -1012,10 +949,10 @@ class HeatingApplicationService:
             else:
                 _LOGGER.warning(
                     "Scheduler %s is disabled. Cannot cancel action for overshoot prevention.",
-                    scheduler_entity_id
+                    scheduler_entity_id,
                 )
             await self._clear_anticipation_state()
-    
+
     async def reset_learned_slopes(self) -> None:
         """Reset all learned slope history."""
         _LOGGER.info("Resetting learned heating slope history")

@@ -1,12 +1,13 @@
 """Use case for extracting heating cycles via REST API."""
+
 from __future__ import annotations
 
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from ..domain.interfaces.device_config_reader import IDeviceConfigReader
-from ..domain.interfaces.heating_cycle_service import IHeatingCycleService
+from ..domain.interfaces.device_config_reader_interface import IDeviceConfigReader
+from ..domain.interfaces.heating_cycle_service_interface import IHeatingCycleService
 from ..domain.value_objects import HistoricalDataKey, HistoricalDataSet
 from ..domain.value_objects.heating import HeatingCycle
 
@@ -18,7 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 
 class ExtractHeatingCyclesUseCase:
     """Use case for extracting heating cycles from historical data.
-    
+
     This orchestrates the process of:
     1. Retrieving device configuration
     2. Fetching historical data for the device's entities
@@ -33,7 +34,7 @@ class ExtractHeatingCyclesUseCase:
         hass: HomeAssistant,
     ) -> None:
         """Initialize the use case.
-        
+
         Args:
             device_config_reader: Reader for device configuration
             heating_cycle_service: Domain service for cycle extraction
@@ -51,16 +52,16 @@ class ExtractHeatingCyclesUseCase:
         cycle_split_duration_minutes: int | None = None,
     ) -> list[HeatingCycle]:
         """Execute the heating cycle extraction use case.
-        
+
         Args:
             device_id: The device ID to extract cycles for
             start_time: Start of the time range for extraction
             end_time: End of the time range for extraction
             cycle_split_duration_minutes: Duration to split long cycles (0=disabled)
-            
+
         Returns:
             List of extracted HeatingCycle value objects
-            
+
         Raises:
             ValueError: If device not found or data cannot be fetched
         """
@@ -76,9 +77,7 @@ class ExtractHeatingCyclesUseCase:
         _LOGGER.debug("Retrieved device configuration: %s", device_config)
 
         # Step 2: Fetch historical data from all relevant entities
-        historical_data_set = await self._fetch_historical_data(
-            device_config, start_time, end_time
-        )
+        historical_data_set = await self._fetch_historical_data(device_config, start_time, end_time)
         _LOGGER.debug("Fetched historical data with %d data keys", len(historical_data_set.data))
 
         # Step 3: Extract heating cycles
@@ -97,15 +96,15 @@ class ExtractHeatingCyclesUseCase:
         self, device_config, start_time: datetime, end_time: datetime
     ) -> HistoricalDataSet:
         """Fetch historical data for all device entities.
-        
+
         Args:
             device_config: Device configuration with entity IDs
             start_time: Start of historical period
             end_time: End of historical period
-            
+
         Returns:
             HistoricalDataSet combining data from all entities
-            
+
         Raises:
             ValueError: If critical data cannot be fetched
         """
@@ -156,14 +155,18 @@ class ExtractHeatingCyclesUseCase:
                 device_config.vtherm_entity_id,
                 exc,
             )
-            raise ValueError(f"Cannot fetch climate data from {device_config.vtherm_entity_id}") from exc
+            raise ValueError(
+                f"Cannot fetch climate data from {device_config.vtherm_entity_id}"
+            ) from exc
 
         # Fetch optional sensor data
         sensor_adapter = SensorDataAdapter(self._hass)
 
         if device_config.humidity_in_entity_id:
             try:
-                _LOGGER.debug("Fetching indoor humidity from %s", device_config.humidity_in_entity_id)
+                _LOGGER.debug(
+                    "Fetching indoor humidity from %s", device_config.humidity_in_entity_id
+                )
                 humidity_in = await sensor_adapter.fetch_historical_data(
                     device_config.humidity_in_entity_id,
                     HistoricalDataKey.INDOOR_HUMIDITY,
@@ -176,7 +179,9 @@ class ExtractHeatingCyclesUseCase:
 
         if device_config.humidity_out_entity_id:
             try:
-                _LOGGER.debug("Fetching outdoor humidity from %s", device_config.humidity_out_entity_id)
+                _LOGGER.debug(
+                    "Fetching outdoor humidity from %s", device_config.humidity_out_entity_id
+                )
                 humidity_out = await sensor_adapter.fetch_historical_data(
                     device_config.humidity_out_entity_id,
                     HistoricalDataKey.OUTDOOR_HUMIDITY,
@@ -190,7 +195,9 @@ class ExtractHeatingCyclesUseCase:
         # Fetch optional weather data (cloud coverage, outdoor temp)
         if device_config.cloud_cover_entity_id:
             try:
-                _LOGGER.debug("Fetching cloud coverage from %s", device_config.cloud_cover_entity_id)
+                _LOGGER.debug(
+                    "Fetching cloud coverage from %s", device_config.cloud_cover_entity_id
+                )
                 weather_adapter = WeatherDataAdapter(self._hass)
                 cloud_data = await weather_adapter.fetch_historical_data(
                     device_config.cloud_cover_entity_id,
@@ -202,5 +209,7 @@ class ExtractHeatingCyclesUseCase:
             except Exception as exc:
                 _LOGGER.warning("Failed to fetch cloud coverage: %s", exc)
 
-        _LOGGER.debug("Successfully fetched historical data with keys: %s", list(combined_data.keys()))
+        _LOGGER.debug(
+            "Successfully fetched historical data with keys: %s", list(combined_data.keys())
+        )
         return HistoricalDataSet(data=combined_data)

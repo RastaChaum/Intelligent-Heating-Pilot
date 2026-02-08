@@ -2,16 +2,17 @@
 
 Converts Home Assistant climate entity history into HistoricalDataSet.
 """
+
 from __future__ import annotations
 
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from ...domain.interfaces.historical_data_adapter import IHistoricalDataAdapter
+from ...domain.interfaces.historical_data_adapter_interface import IHistoricalDataAdapter
 from ...domain.value_objects import (
-    HistoricalDataSet,
     HistoricalDataKey,
+    HistoricalDataSet,
     HistoricalMeasurement,
 )
 
@@ -23,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 
 class ClimateDataAdapter(IHistoricalDataAdapter):
     """Adapter for converting Home Assistant climate entity history to HistoricalDataSet.
-    
+
     Climate entities contain:
     - state: current climate mode (off, heat, cool, etc.)
     - current_temperature: The current measured temperature
@@ -33,7 +34,7 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the climate data adapter.
-        
+
         Args:
             hass: Home Assistant instance
         """
@@ -48,16 +49,16 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
         end_time: datetime,
     ) -> HistoricalDataSet:
         """Fetch historical data for a climate entity.
-        
+
         Args:
             entity_id: The climate entity ID (e.g., "climate.living_room")
             data_key: The HistoricalDataKey to use (typically INDOOR_TEMP, TARGET_TEMP, or HEATING_STATE)
             start_time: Start of historical period
             end_time: End of historical period
-            
+
         Returns:
             HistoricalDataSet with extracted climate data
-            
+
         Raises:
             ValueError: If entity_id is invalid or history cannot be retrieved
         """
@@ -82,7 +83,7 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
         if not historical_records:
             _LOGGER.warning("No history found for %s", entity_id)
             return HistoricalDataSet(data={})
-        
+
         measurements: list[HistoricalMeasurement] = []
 
         for record in historical_records:
@@ -96,7 +97,7 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
                 # Extract current (indoor) temperature
                 if "current_temperature" in attributes:
                     value = self._safe_float(attributes["current_temperature"])
-            
+
             elif data_key == HistoricalDataKey.TARGET_TEMP:
                 # Extract target temperature
                 # Try standard climate attribute first, then VTherm specific one
@@ -104,12 +105,12 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
                     value = self._safe_float(attributes["temperature"])
                 elif "target_temperature" in attributes:
                     value = self._safe_float(attributes["target_temperature"])
-            
+
             elif data_key == HistoricalDataKey.HEATING_STATE:
                 # Extract heating state (hvac_action)
                 if "hvac_action" in attributes:
                     value = attributes["hvac_action"]
-            
+
             else:
                 _LOGGER.warning(
                     "Climate adapter does not support data_key %s for entity %s",
@@ -146,16 +147,16 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
     @staticmethod
     def _parse_timestamp(record: dict[str, Any]) -> datetime:
         """Parse timestamp from history record.
-        
+
         Args:
             record: Historical record from Home Assistant
-            
+
         Returns:
             Parsed datetime object
         """
         # Home Assistant provides ISO format string timestamps
         timestamp_str = record.get("last_changed", record.get("last_updated"))
-        
+
         if isinstance(timestamp_str, str):
             # Parse ISO format string (e.g., "2024-01-15T12:00:00+00:00")
             # Remove timezone info for simplicity
@@ -163,23 +164,23 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
                 timestamp_str = timestamp_str.split("+")[0]
             elif "Z" in timestamp_str:
                 timestamp_str = timestamp_str.replace("Z", "")
-            
+
             return datetime.fromisoformat(timestamp_str)
-        
+
         # If already a datetime, return as-is
         if isinstance(timestamp_str, datetime):
             return timestamp_str
-        
+
         # Fallback: return current time if no timestamp found
         return datetime.now()
 
     @staticmethod
     def _safe_float(value: Any) -> float | None:
         """Safely convert value to float.
-        
+
         Args:
             value: Value to convert
-            
+
         Returns:
             Float value or None if conversion fails
         """
@@ -195,20 +196,21 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
         end_time: datetime,
     ) -> list[dict[str, Any]]:
         """Fetch historical data from Home Assistant.
-        
+
         This is a separate method to make it easily mockable in tests.
-        
+
         Args:
             entity_id: The entity ID
             start_time: Start of historical period
             end_time: End of historical period
-            
+
         Returns:
             List of historical records from Home Assistant
         """
-        from homeassistant.components.recorder import get_instance, history
         from functools import partial
-        
+
+        from homeassistant.components.recorder import get_instance, history
+
         # Use Home Assistant's get_significant_states function from recorder
         # Must run in recorder executor to avoid blocking and comply with HA best practices
         # Use partial to properly pass keyword arguments
@@ -220,10 +222,10 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
             entity_ids=[entity_id],
         )
         history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
-        
+
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])
-        
+
         # Convert State objects to dicts for consistent interface
         result = []
         for state in state_list:
@@ -232,11 +234,13 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
                 result.append(state)
             else:
                 # State object - convert to dict
-                result.append({
-                    "entity_id": state.entity_id,
-                    "state": state.state,
-                    "attributes": state.attributes,
-                    "last_changed": state.last_changed,
-                    "last_updated": state.last_updated,
-                })
+                result.append(
+                    {
+                        "entity_id": state.entity_id,
+                        "state": state.state,
+                        "attributes": state.attributes,
+                        "last_changed": state.last_changed,
+                        "last_updated": state.last_updated,
+                    }
+                )
         return result
