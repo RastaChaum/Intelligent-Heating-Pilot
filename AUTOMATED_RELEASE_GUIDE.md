@@ -430,7 +430,7 @@ git push origin main v0.4.0
 - `.github/workflows/promote-rc-to-release.yml` - Promote RC to final release
 - `scripts/rc-helper.sh` - CLI helper for RC management
 
-**Documentation**: `.github/agents/documentation_specialist.agent.md`
+**Documentation**: `.github/agents/documentation_agent.agent.md`
 
 ---
 
