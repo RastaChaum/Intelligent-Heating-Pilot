@@ -355,3 +355,108 @@ Before submitting any AI-generated code, verify:
 > "The domain is our valuable intellectual property. It must be protected from infrastructure concerns, testable in isolation, and clear in its intent. When Home Assistant changes, our domain logic remains stable. When we change our domain logic, tests catch regressions immediately."
 
 **Focus on defining clear boundaries and interfaces first.** The quality of abstractions determines the quality of the entire system.
+
+---
+
+## 🧪 QA Engineer Guidelines - Test Coverage Excellence
+
+### Critical Rule: Insufficient Coverage Detection
+
+**⚠️ MUST READ:** When all tests pass but a bug is discovered in production/integration testing, this indicates **insufficient test coverage**, not test quality failure.
+
+#### Required Response Protocol
+
+When a bug is discovered despite passing test suites:
+
+1. **Immediately Write Regression Tests**
+   - Create new test cases that would have caught the bug
+   - These tests MUST use the pattern: "Test FAILS with buggy code, PASSES with fix"
+
+2. **Test Design Requirements**
+   - Tests should comprehensively cover all code paths that the bug exposed
+   - Include all relevant state transitions (enabled→disabled→enabled, etc.)
+   - Test both normal and edge case scenarios
+   - Document in test docstrings which bug they prevent
+
+3. **Coverage Improvement Metrics**
+   - Count tests added for the specific bug
+   - Verify each test independently validates one aspect of the fix
+   - Ensure new tests integrate seamlessly with existing test suite
+
+#### Example Pattern
+
+```python
+class TestHAEventBridgeIHPEnabled:
+    """Regression tests for HAEventBridge race condition bug.
+
+    Bug: When IHP disabled via switch, event-driven updates did not pass
+    ihp_enabled=False, causing preheating to continue.
+
+    These tests would have caught this bug and prevent regression.
+    """
+
+    @pytest.mark.asyncio
+    async def test_event_driven_recalc_respects_ihp_disabled(self):
+        """Test that event-driven recalc passes ihp_enabled=False when disabled.
+
+        FAILS with buggy code (ihp_enabled parameter missing)
+        PASSES with fix (ihp_enabled parameter correctly passed)
+        """
+        # Setup: IHP disabled
+        get_ihp_enabled_mock.return_value = False
+
+        # Trigger: Event that calls _recalculate_and_publish()
+        hass.states.async_set("switch.scheduler", "on")
+        await hass.async_block_till_done()
+
+        # Verify: ihp_enabled=False was passed
+        app_service.calculate_and_schedule_anticipation.assert_called_once()
+        call_kwargs = app_service.calculate_and_schedule_anticipation.call_args[1]
+        assert call_kwargs["ihp_enabled"] is False
+```
+
+### Test-Driven Bug Investigation
+
+When investigating a reported bug:
+
+1. **Don't just replay existing tests** - Verify they pass/fail to understand coverage
+2. **Write tests that expose the bug** - The test should FAIL before applying the fix
+3. **Verify fix makes tests pass** - Then confirm existing tests still pass
+4. **Document the coverage gap** - Record which tests were missing
+
+### Standards for QA Investigation
+
+When reporting on test coverage status:
+
+```markdown
+## Coverage Analysis
+
+### Existing Test Status
+- ✓ All 208 existing tests pass
+- ⚠️ Bug discovered despite passing tests = Coverage gap identified
+
+### New Tests Written
+- Count: 14 new tests added
+- Classes: TestEventBridgeIHPEnabled, TestEventBridgeStateTransitions, etc.
+- Validation: Tests FAIL with buggy code, PASS with fix
+
+### Coverage Improvement
+- Before: HAEventBridge had no direct unit tests
+- After: 14 comprehensive tests covering event-driven scenarios
+- Scoped: All event types, state transitions, edge cases, race conditions
+```
+
+### Prevention of False Confidence
+
+✓ **DO:** Report test suite status as "Comprehensive with recent improvements"
+✗ **DON'T:** Say "All tests pass" without mentioning coverage gaps
+✓ **DO:** Add regression tests when bugs are found
+✗ **DON'T:** Simply re-run existing tests to validate fixes
+
+### Metrics to Track
+
+For each bug-driven test addition, record:
+- Number of new test cases added
+- Coverage categories (state transitions, edge cases, race conditions, etc.)
+- Verification: Bug-triggered tests FAIL on original, PASS on fix
+- Integration: New tests work seamlessly with existing suite
