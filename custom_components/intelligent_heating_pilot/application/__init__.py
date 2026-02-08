@@ -33,7 +33,6 @@ if TYPE_CHECKING:
         HASchedulerCommander,
         HASchedulerReader,
     )
-    from ..domain.interfaces import ITimerScheduler
 
 _LOGGER = logging.getLogger(__name__)
 LHS_CACHE_TTL_HOURS = 24
@@ -678,7 +677,7 @@ class HeatingApplicationService:
             return {"clear_values": True}
 
         # Check if the currently tracked scheduler has been disabled
-        if self._active_scheduler_entity and await self._scheduler_reader.is_scheduler_enabled(
+        if self._active_scheduler_entity and not await self._scheduler_reader.is_scheduler_enabled(
             self._active_scheduler_entity
         ):
             _LOGGER.warning(
