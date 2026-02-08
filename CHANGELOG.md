@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Dead time calculation in heating time prediction ([#62](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/62)): Formula now includes dead time constant: `time_needed = dead_time + (temperature_delta / learned_slope) * 60`. Dead time is automatically learned from historical heating cycles.
 
 ### Changed
 - **Timer-Based Anticipation Triggering** ([#84](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/84)) – Improved the reliability of the preheating system by replacing event-driven triggering with timer-based triggering, reducing unexpected triggers and enhancing the accuracy of heating predictions.

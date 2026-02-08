@@ -651,16 +651,17 @@ class HeatingCycleService(IHeatingCycleService):
     ) -> float | None:
         """Calculate the dead time for a specific cycle.
 
-        Dead time is the period from cycle start to the first measurable temperature change.
+        Dead time is the period from cycle start to the first measurable temperature rise.
+        Only positive temperature changes (heating) are considered; decreases return None.
 
         Args:
             start_time: When the heating cycle started
             start_temp: Initial temperature at cycle start
             history_data_set: Historical temperature data
-            temp_change_threshold: Minimum temperature change to detect (default: 0.1°C)
+            temp_change_threshold: Minimum temperature rise to detect (default: 0.1°C, must be positive)
 
         Returns:
-            Dead time in minutes, or None if cannot be determined
+            Dead time in minutes, or None if temperature never rises by threshold or no data available
         """
         indoor_temp_history = history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, [])
 
@@ -677,8 +678,10 @@ class HeatingCycleService(IHeatingCycleService):
 
             try:
                 current_temp = float(measurement.value)
-                # Check if temperature has changed by at least the threshold
-                if abs(current_temp - start_temp) >= temp_change_threshold:
+                # Check if temperature has risen by at least the threshold
+                # (only positive changes indicate heating; threshold only applies to increases)
+                temp_change = current_temp - start_temp
+                if temp_change >= temp_change_threshold:
                     dead_time_minutes = (measurement.timestamp - start_time).total_seconds() / 60.0
                     _LOGGER.debug(
                         "Dead time calculated: %.1f minutes (temp change from %.1f to %.1f°C)",

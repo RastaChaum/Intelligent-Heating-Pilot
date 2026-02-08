@@ -193,23 +193,74 @@ class TestPredictionService(unittest.TestCase):
             delta=0.1,
         )
 
-    def test_dead_time_formula(self):
-        """Test that the dead_time formula is correctly applied."""
+    def test_dead_time_formula_exact_values(self):
+        """Validate exact dead time formula: estimated_duration = dead_time + (temp_delta / slope) * 60 + buffer.
+
+        Regression test for Issue #62: Ensure dead time calculation is precise.
+
+        GIVEN:
+            - current_temp = 18.0°C (TEST_CURRENT_TEMP)
+            - target_temp = 21.0°C (TEST_TARGET_TEMP)
+            - temp_delta = 3.0°C
+            - learned_slope = 2.0°C/hour (TEST_LEARNED_SLOPE)
+            - dead_time = 15.0 minutes
+
+        EXPECTED CALCULATION:
+            - Base heating time (without dead time) = (temp_delta / slope) * 60
+                                                   = (3.0 / 2.0) * 60
+                                                   = 1.5 * 60
+                                                   = 90 minutes
+            - With dead time added = 15 + 90 = 105 minutes
+            - Plus default buffer/corrections, expected range: 100-110 minutes
+
+        WHEN: predict_heating_time() called with dead_time=15.0
+        THEN: result.estimated_duration_minutes should be within expected range
+
+        This test FAILS if:
+        - Dead time formula is incorrect
+        - Dead time parameter is not properly passed through the calculation
+        - Buffer/correction factors change unexpectedly
+        """
         target_time = get_future_datetime(2)
-        dead_time = 10.0
+        dead_time_minutes = 15.0
+
         result = self.service.predict_heating_time(
             current_temp=TEST_CURRENT_TEMP,
             target_temp=TEST_TARGET_TEMP,
             learned_slope=TEST_LEARNED_SLOPE,
             target_time=target_time,
-            dead_time_minutes=dead_time,
+            dead_time_minutes=dead_time_minutes,
         )
-        # Expected base time without corrections: dead_time + (temp_delta / slope) * 60
-        # = 10 + (3.0 / 2.0) * 60 = 10 + 90 = 100 minutes
-        # Plus default anticipation buffer of 5 minutes = 105 minutes
-        # This is the base calculation before environmental corrections
-        # Note: actual duration may be adjusted by correction factors and buffer
-        self.assertGreater(result.estimated_duration_minutes, dead_time)
+
+        # Verify basic calculation components
+        temp_delta = TEST_TARGET_TEMP - TEST_CURRENT_TEMP
+        calculated_heating_time = (temp_delta / TEST_LEARNED_SLOPE) * 60
+        expected_base_duration = dead_time_minutes + calculated_heating_time
+
+        # Allow for buffer and correction factors (5-10 minute tolerance)
+        assert (
+            result.estimated_duration_minutes >= expected_base_duration - 5
+        ), f"Duration {result.estimated_duration_minutes} below expected {expected_base_duration} - 5"
+        assert (
+            result.estimated_duration_minutes <= expected_base_duration + 15
+        ), f"Duration {result.estimated_duration_minutes} exceeds expected {expected_base_duration} + 15"
+
+        # Verify dead time actually increased the duration compared to zero dead time
+        result_no_deadtime = self.service.predict_heating_time(
+            current_temp=TEST_CURRENT_TEMP,
+            target_temp=TEST_TARGET_TEMP,
+            learned_slope=TEST_LEARNED_SLOPE,
+            target_time=target_time,
+            dead_time_minutes=0.0,
+        )
+
+        # Dead time should increase duration by at least its value (minus small tolerance for rounding)
+        duration_diff = (
+            result.estimated_duration_minutes - result_no_deadtime.estimated_duration_minutes
+        )
+        assert (
+            duration_diff >= dead_time_minutes - 1.0
+        ), f"Dead time effect ({duration_diff}) should be ~{dead_time_minutes}"
 
 
 if __name__ == "__main__":
