@@ -63,6 +63,15 @@ At minimum:
 - Infrastructure implements domain interfaces
 - Value objects are immutable (`@dataclass(frozen=True)`)
 
+## Test Reporting
+
+**CRITICAL**: Maintain ONE SINGLE test report representing current code state. Do NOT create multiple obsolete reports or markdown files per test run.
+
+- Update existing test report file if it exists
+- Keep report concise and factual
+- Report only current coverage metrics and actionable gaps
+- No historical comparisons unless explicitly requested
+
 ## Hand-off to Developer
 
 Provide a concise summary:
