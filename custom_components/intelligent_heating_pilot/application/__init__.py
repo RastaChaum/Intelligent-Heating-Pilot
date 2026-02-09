@@ -316,22 +316,30 @@ class HeatingApplicationService:
         # Get device ID
         vtherm_id = self._environment_reader.get_vtherm_entity_id()
 
-        # Extract heating cycles (with cache if available)
-        try:
-            if self._cycle_cache:
-                heating_cycles = await self._get_cycles_with_cache(vtherm_id, target_time)
-            else:
-                heating_cycles = await self._extract_cycles_from_recorder(
-                    vtherm_id,
-                    target_time - timedelta(days=self._history_lookback_days),
-                    target_time,
-                )
-        except Exception as exc:
-            _LOGGER.warning(
-                "Failed to extract cycles: %s, using defaults",
-                exc,
+        # Skip cycle extraction if retention is disabled (history_lookback_days <= 0)
+        if self._history_lookback_days <= 0:
+            _LOGGER.debug(
+                "History retention disabled (history_lookback_days=%d), skipping cycle extraction",
+                self._history_lookback_days,
             )
             heating_cycles = []
+        else:
+            # Extract heating cycles (with cache if available)
+            try:
+                if self._cycle_cache:
+                    heating_cycles = await self._get_cycles_with_cache(vtherm_id, target_time)
+                else:
+                    heating_cycles = await self._extract_cycles_from_recorder(
+                        vtherm_id,
+                        target_time - timedelta(days=self._history_lookback_days),
+                        target_time,
+                    )
+            except Exception as exc:
+                _LOGGER.warning(
+                    "Failed to extract cycles: %s, using defaults",
+                    exc,
+                )
+                heating_cycles = []
 
         # Calculate contextual LHS from cycles
         if heating_cycles:

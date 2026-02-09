@@ -46,20 +46,28 @@ class HAModelStorage(IModelStorage):
         self,
         hass: HomeAssistant,
         entry_id: str,
-        retention_days: int = 30,  # Kept for backward compatibility
+        retention_days: int = 30,
     ) -> None:
         """Initialize the model storage adapter.
 
         Args:
             hass: Home Assistant instance
             entry_id: Config entry ID for scoped storage
-            retention_days: Deprecated - kept for backward compatibility
+            retention_days: Number of days to retain LHS cache data.
+                When 0, caching is disabled and default LHS is always used.
         """
         self._hass = hass
         self._entry_id = entry_id
+        self._retention_days = retention_days
         self._store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}_{entry_id}")
         self._data: dict[str, Any] = {}
         self._loaded = False
+
+        if retention_days == 0:
+            _LOGGER.debug(
+                "Model storage initialized with retention_days=0 (caching disabled for %s)",
+                entry_id,
+            )
 
     async def _ensure_loaded(self) -> None:
         """Ensure storage data is loaded."""
@@ -83,11 +91,21 @@ class HAModelStorage(IModelStorage):
         """Get the current learned heating slope (LHS).
 
         Returns the global learned heating slope, or the default value if not available.
+        When retention_days=0, caching is disabled and default value is always returned.
         This is now primarily used as a fallback when contextual LHS cannot be computed.
 
         Returns:
             The learned heating slope in °C/hour.
         """
+        # When retention is disabled, return default immediately without loading
+        if self._retention_days <= 0:
+            _LOGGER.debug(
+                "Retention disabled (retention_days=%d), returning default LHS: %.2f°C/h",
+                self._retention_days,
+                DEFAULT_HEATING_SLOPE,
+            )
+            return DEFAULT_HEATING_SLOPE
+
         await self._ensure_loaded()
 
         from typing import cast
@@ -115,7 +133,16 @@ class HAModelStorage(IModelStorage):
         await self._store.async_save(self._data)
 
     async def get_cached_global_lhs(self) -> LHSCacheEntry | None:
-        """Return cached global LHS if available."""
+        """Return cached global LHS if available.
+
+        When retention_days=0 (caching disabled), always returns None.
+        This forces the use of default LHS values.
+        """
+        if self._retention_days == 0:
+            _LOGGER.debug(
+                "Caching disabled (retention_days=0), returning None for cached global LHS"
+            )
+            return None
 
         await self._ensure_loaded()
         return self._deserialize_cached_entry(self._data.get("cached_global_lhs"))
