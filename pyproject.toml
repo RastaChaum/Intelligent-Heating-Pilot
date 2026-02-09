@@ -56,7 +56,30 @@ mypy_path = "$MYPY_CONFIG_FILE_DIR/custom_components"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts = "-q"
+addopts = "-q --cov=custom_components/intelligent_heating_pilot --cov-report=html --cov-report=lcov --cov-report=term-missing:skip-covered"
+
+[tool.coverage.run]
+source = ["custom_components/intelligent_heating_pilot"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+branch = true
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]

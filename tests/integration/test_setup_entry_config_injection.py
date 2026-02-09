@@ -25,6 +25,7 @@ from custom_components.intelligent_heating_pilot.const import (
     CONF_LHS_RETENTION_DAYS,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
+    DOMAIN,
 )
 from custom_components.intelligent_heating_pilot.domain.interfaces.device_config_reader_interface import (
     DeviceConfig,
@@ -39,8 +40,16 @@ def mock_hass() -> Mock:
     hass.states = MagicMock()
     hass.bus = MagicMock()
     hass.bus.async_fire = MagicMock()
+    hass.services = MagicMock()
+    hass.config = MagicMock()
+    hass.config.config_dir = "/tmp"
     hass.config_entries = MagicMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
+    hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+    hass.async_create_task = MagicMock()
+    hass.loop = MagicMock()
+    hass.loop.time = MagicMock(return_value=0.0)
+    hass.loop.call_at = MagicMock(return_value=MagicMock())
     return hass
 
 
@@ -211,9 +220,11 @@ class TestAsyncSetupEntryInjectsDeviceConfigIntoCoordinator:
 
                 # THEN: Coordinator should be called with DeviceConfig
                 mock_coordinator_class.assert_called_once()
-                call_kwargs = mock_coordinator_class.call_args[1]
-                assert "device_config" in call_kwargs
-                assert call_kwargs["device_config"] == expected_device_config
+                call_args, call_kwargs = mock_coordinator_class.call_args
+                device_config = call_kwargs.get("device_config")
+                if device_config is None and len(call_args) > 1:
+                    device_config = call_args[1]
+                assert device_config == expected_device_config
 
 
 class TestEndToEndConfigInjectionFlow:
@@ -268,11 +279,13 @@ class TestEndToEndConfigInjectionFlow:
 
             # THEN: Coordinator should receive DeviceConfig with correct values
             mock_coordinator_class.assert_called_once()
-            call_kwargs = mock_coordinator_class.call_args[1]
+            call_args, call_kwargs = mock_coordinator_class.call_args
 
             # Verify DeviceConfig was passed
-            assert "device_config" in call_kwargs
-            device_config = call_kwargs["device_config"]
+            device_config = call_kwargs.get("device_config")
+            if device_config is None and len(call_args) > 1:
+                device_config = call_args[1]
+            assert device_config is not None
 
             # Verify all values are correct
             assert device_config.device_id == mock_config_entry.entry_id
@@ -307,13 +320,14 @@ class TestEndToEndConfigInjectionFlow:
         # WHEN: Setting up entry and loading coordinator
         # We'll partially mock to verify adapter creation
         with patch(
-            "custom_components.intelligent_heating_pilot.infrastructure.adapters.HAModelStorage"
+            "custom_components.intelligent_heating_pilot.coordinator.HAModelStorage"
         ) as mock_storage_class:
             mock_storage = MagicMock()
+            mock_storage.get_learned_heating_slope = AsyncMock(return_value=2.0)
             mock_storage_class.return_value = mock_storage
 
             with patch(
-                "custom_components.intelligent_heating_pilot.infrastructure.adapters.HASchedulerReader"
+                "custom_components.intelligent_heating_pilot.coordinator.HASchedulerReader"
             ) as mock_scheduler_class:
                 mock_scheduler = MagicMock()
                 mock_scheduler_class.return_value = mock_scheduler
@@ -337,9 +351,7 @@ class TestEndToEndConfigInjectionFlow:
                     await async_setup_entry(mock_hass, mock_config_entry)
 
                     # Get the coordinator from hass.data
-                    coordinator = mock_hass.data[
-                        f"intelligent_heating_pilot_{mock_config_entry.entry_id}"
-                    ]
+                    coordinator = mock_hass.data[DOMAIN][mock_config_entry.entry_id]
 
                     # Trigger async_load explicitly if not done by setup
                     if hasattr(coordinator, "async_load"):
@@ -397,7 +409,10 @@ class TestConfigurationUpdateFlow:
 
             # Initial setup
             await async_setup_entry(mock_hass, mock_config_entry)
-            initial_device_config = mock_coordinator_class.call_args[1]["device_config"]
+            call_args, call_kwargs = mock_coordinator_class.call_args
+            initial_device_config = call_kwargs.get("device_config")
+            if initial_device_config is None and len(call_args) > 1:
+                initial_device_config = call_args[1]
             assert initial_device_config.lhs_retention_days == 30
 
             # WHEN: User changes options
@@ -408,5 +423,8 @@ class TestConfigurationUpdateFlow:
             await async_setup_entry(mock_hass, mock_config_entry)
 
             # THEN: New DeviceConfig should reflect updated options
-            updated_device_config = mock_coordinator_class.call_args[1]["device_config"]
+            call_args, call_kwargs = mock_coordinator_class.call_args
+            updated_device_config = call_kwargs.get("device_config")
+            if updated_device_config is None and len(call_args) > 1:
+                updated_device_config = call_args[1]
             assert updated_device_config.lhs_retention_days == 90

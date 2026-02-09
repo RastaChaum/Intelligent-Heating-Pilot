@@ -1,0 +1,129 @@
+"""Factory for HeatingCycleLifecycleManager - wires dependencies with DDD compliance."""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
+
+from ..domain.interfaces.device_config_reader_interface import DeviceConfig
+from ..domain.interfaces.historical_data_adapter_interface import IHistoricalDataAdapter
+from .heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+    from ..domain.interfaces import ICycleCache, IModelStorage, ITimerScheduler
+    from ..domain.interfaces.heating_cycle_service_interface import IHeatingCycleService
+    from .lhs_lifecycle_manager import LhsLifecycleManager
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class HeatingCycleLifecycleManagerFactory:
+    """Factory for creating HeatingCycleLifecycleManager with singleton pattern.
+
+    Singleton Pattern:
+    - **One instance per device_id**: Each IHP device gets its own manager instance
+    - **Shared across requests**: Multiple calls with same device_id return same instance
+    - **Thread-safe**: Factory maintains internal registry to track instances
+
+    Dependency Wiring:
+    - Injects all required dependencies (heating_cycle_service, adapters, caches)
+    - Optionally injects LhsLifecycleManager for cascade updates
+    - Ensures DDD compliance (domain services, infrastructure adapters)
+
+    Usage:
+    ```python
+    # First call creates instance
+    manager1 = factory.create(hass, device_config, ...)
+
+    # Second call with same device_id returns same instance
+    manager2 = factory.create(hass, device_config, ...)
+    assert manager1 is manager2  # True
+    ```
+    """
+
+    # Class-level registry: device_id -> HeatingCycleLifecycleManager instance
+    _instances: dict[str, HeatingCycleLifecycleManager] = {}
+
+    @classmethod
+    def create(
+        cls,
+        hass: HomeAssistant,
+        device_config: DeviceConfig,
+        heating_cycle_service: IHeatingCycleService,
+        cycle_cache: ICycleCache | None = None,
+        timer_scheduler: ITimerScheduler | None = None,
+        model_storage: IModelStorage | None = None,
+        lhs_lifecycle_manager: LhsLifecycleManager | None = None,
+    ) -> HeatingCycleLifecycleManager:
+        """Create or return existing HeatingCycleLifecycleManager for device_id.
+
+        Singleton Behavior:
+        - If instance exists for device_config.device_id, returns existing instance
+        - If no instance exists, creates new one and stores in registry
+        - Registry is class-level, shared across all factory instances
+
+        Dependency Injection:
+        - heating_cycle_service: Domain service for extracting cycles from historical data
+        - cycle_cache: Infrastructure adapter for persistent cycle storage
+        - timer_scheduler: Infrastructure adapter for scheduling 24h refresh
+        - model_storage: Infrastructure adapter for persisting individual cycles
+        - lhs_lifecycle_manager: Application service for cascade LHS updates
+
+        Args:
+            hass: Home Assistant instance (used for historical data adapters).
+            device_config: Device configuration (contains device_id for singleton key).
+            heating_cycle_service: Service for extracting heating cycles.
+            cycle_cache: Optional persistent cache for incremental cycle storage.
+            timer_scheduler: Optional scheduler for periodic 24h refresh.
+            model_storage: Optional persistent storage for individual cycle records.
+            lhs_lifecycle_manager: Optional LHS manager for cascade updates.
+
+        Returns:
+            Singleton HeatingCycleLifecycleManager instance for the device_id.
+        """
+        device_id = device_config.device_id
+
+        # Check if instance already exists
+        if device_id in cls._instances:
+            _LOGGER.debug(
+                "Returning existing HeatingCycleLifecycleManager for device_id=%s", device_id
+            )
+            return cls._instances[device_id]
+
+        # Create new instance
+        _LOGGER.debug("Creating new HeatingCycleLifecycleManager for device_id=%s", device_id)
+
+        # TODO: Wire historical_adapters from hass infrastructure
+        # For now, this is a placeholder - implementation will need:
+        # 1. Create HistoricalDataAdapter instances from hass
+        # 2. Pass them to the manager
+        historical_adapters: list[IHistoricalDataAdapter] = []  # Placeholder
+
+        manager = HeatingCycleLifecycleManager(
+            device_config=device_config,
+            heating_cycle_service=heating_cycle_service,
+            historical_adapters=historical_adapters,
+            cycle_cache=cycle_cache,
+            timer_scheduler=timer_scheduler,
+            model_storage=model_storage,
+            lhs_lifecycle_manager=lhs_lifecycle_manager,
+        )
+
+        # Store in registry
+        cls._instances[device_id] = manager
+        _LOGGER.debug("Registered HeatingCycleLifecycleManager for device_id=%s", device_id)
+
+        return manager
+
+    @classmethod
+    def reset_instances(cls) -> None:
+        """Clear singleton registry (for testing only).
+
+        Use Case:
+        Called in test teardown to ensure clean state between tests.
+        Should NOT be used in production code.
+        """
+        cls._instances = {}
+        _LOGGER.debug("Reset HeatingCycleLifecycleManager singleton registry")

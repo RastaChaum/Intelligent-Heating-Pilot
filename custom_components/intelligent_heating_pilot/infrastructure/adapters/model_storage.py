@@ -169,6 +169,12 @@ class HAModelStorage(IModelStorage):
     async def get_cached_contextual_lhs(self, hour: int) -> LHSCacheEntry | None:
         """Return cached contextual LHS for the given hour if available."""
 
+        if self._retention_days == 0:
+            _LOGGER.debug(
+                "Caching disabled (retention_days=0), returning None for cached contextual LHS"
+            )
+            return None
+
         await self._ensure_loaded()
         contextual_cache = self._data.get("cached_contextual_lhs") or {}
         entry = contextual_cache.get(str(hour))
@@ -177,9 +183,20 @@ class HAModelStorage(IModelStorage):
     async def set_cached_contextual_lhs(self, hour: int, lhs: float, updated_at: datetime) -> None:
         """Persist contextual LHS cache for the given hour with timestamp."""
 
+        if self._retention_days == 0:
+            _LOGGER.debug("Caching disabled (retention_days=0), skipping contextual LHS cache set")
+            return
+
         await self._ensure_loaded()
         contextual_cache = self._data.setdefault("cached_contextual_lhs", {})
         contextual_cache[str(hour)] = self._serialize_cached_entry(lhs, updated_at)
+        await self._store.async_save(self._data)
+
+    async def clear_contextual_cache(self) -> None:
+        """Clear all cached contextual LHS entries."""
+
+        await self._ensure_loaded()
+        self._data["cached_contextual_lhs"] = {}
         await self._store.async_save(self._data)
 
     def _serialize_cached_entry(self, lhs: float, updated_at: datetime) -> dict[str, Any]:

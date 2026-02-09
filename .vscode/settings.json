@@ -38,5 +38,11 @@
   "editor.rulers": [100],
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
-  "git.autoStash": false
+  "git.autoStash": false,
+  "coverage-gutters.coverageFileNames": [
+    "coverage.lcov"
+  ],
+  "coverage-gutters.coverageFilePaths": [
+    "${workspaceFolder}/coverage.lcov"
+  ]
 }

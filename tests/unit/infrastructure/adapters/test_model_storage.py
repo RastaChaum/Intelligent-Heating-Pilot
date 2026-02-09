@@ -1,5 +1,6 @@
 """Tests for HAModelStorage adapter (simplified after removing slope persistence)."""
 
+import inspect
 from datetime import datetime
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -54,6 +55,11 @@ def test_init(mock_hass: Mock, entry_id: str) -> None:
         assert storage._hass == mock_hass
         assert storage._entry_id == entry_id
         mock_store_class.assert_called_once()
+
+
+def test_model_storage_is_concrete() -> None:
+    """Test HAModelStorage is not abstract (implements all interface methods)."""
+    assert inspect.isabstract(HAModelStorage) is False
 
 
 @pytest.mark.asyncio
@@ -176,6 +182,37 @@ async def test_set_and_get_cached_contextual_lhs(storage: HAModelStorage, mock_s
     assert cached.value == lhs_value
     assert cached.hour == hour
     assert abs((cached.updated_at - now).total_seconds()) < 1
+
+
+@pytest.mark.asyncio
+async def test_clear_contextual_cache(storage: HAModelStorage, mock_store: Mock) -> None:
+    """Test clearing contextual LHS cache."""
+    await storage.set_cached_contextual_lhs(8, 2.6, datetime.now())
+    await storage.set_cached_contextual_lhs(12, 3.1, datetime.now())
+
+    await storage.clear_contextual_cache()
+
+    assert await storage.get_cached_contextual_lhs(8) is None
+    assert await storage.get_cached_contextual_lhs(12) is None
+    mock_store.async_save.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_contextual_cache_retention_disabled_noop(
+    mock_hass: Mock, entry_id: str, mock_store: Mock
+) -> None:
+    """Test contextual cache operations are no-ops when retention is disabled."""
+    with patch(
+        "custom_components.intelligent_heating_pilot.infrastructure.adapters.model_storage.Store",
+        return_value=mock_store,
+    ):
+        storage = HAModelStorage(mock_hass, entry_id, retention_days=0)
+
+        await storage.set_cached_contextual_lhs(6, 2.9, datetime.now())
+        result = await storage.get_cached_contextual_lhs(6)
+
+        assert result is None
+        mock_store.async_save.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -55,3 +55,7 @@ class IModelStorage(ABC):
     @abstractmethod
     async def set_cached_contextual_lhs(self, hour: int, lhs: float, updated_at: datetime) -> None:
         """Persist contextual LHS cache for the given hour with timestamp."""
+
+    @abstractmethod
+    async def clear_contextual_cache(self) -> None:
+        """Clear all cached contextual LHS entries."""
