@@ -268,7 +268,7 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
 
     _attr_name = "Contextual Learned Heating Slope"
     _attr_native_unit_of_measurement = "°C/h"
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    # Note: No state_class because value can be string ("unknown")
     _attr_icon = "mdi:chart-line"
 
     def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
