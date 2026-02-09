@@ -181,7 +181,9 @@ class ExtractHeatingCyclesUseCase:
         combined_data: dict[HistoricalDataKey, list] = {}
 
         # Fetch climate data (indoor temp, target temp, heating state)
-        # These use the device_id which maps to the vtherm entity
+        # Use vtherm_entity_id to query Home Assistant history
+        vtherm_entity_id = self._device_config.vtherm_entity_id
+
         for key in [
             HistoricalDataKey.INDOOR_TEMP,
             HistoricalDataKey.TARGET_TEMP,
@@ -193,7 +195,7 @@ class ExtractHeatingCyclesUseCase:
                 adapter = self._adapters[0]
 
                 result = await adapter.fetch_historical_data(
-                    device_id,
+                    vtherm_entity_id,  # Use climate entity_id, not entry_id
                     key,
                     start_time,
                     end_time,
