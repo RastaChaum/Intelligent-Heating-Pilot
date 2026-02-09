@@ -94,6 +94,7 @@ class HeatingCycleService(IHeatingCycleService):
 
         # Validate critical data availability
         self._validate_critical_data(history_data_set)
+        _LOGGER.debug("Critical data validation passed - proceeding with cycle extraction")
 
         # Use provided cycle_split_duration_minutes if specified (>0), otherwise use instance default
         split_duration = (
@@ -115,6 +116,11 @@ class HeatingCycleService(IHeatingCycleService):
 
         cycles: list[HeatingCycle] = []
 
+        measurements_processed = 0
+        measurements_skipped_no_temp = 0
+        samples_logged = 0
+        max_debug_samples = 10  # Log first 10 measurements for debugging
+
         for measurement in heating_state_history:
             timestamp = measurement.timestamp
             # Separate concerns: mode_on (system enabled) vs action_active (actually heating)
@@ -125,9 +131,35 @@ class HeatingCycleService(IHeatingCycleService):
                 history_data_set, timestamp
             )
 
+            measurements_processed += 1
+
             if current_indoor_temp is None or current_target_temp is None:
-                _LOGGER.debug("Skipping measurement at %s due to missing temp data", timestamp)
+                measurements_skipped_no_temp += 1
+                if samples_logged < max_debug_samples:
+                    _LOGGER.debug(
+                        "Skipping measurement #%d at %s: missing temps (indoor=%s, target=%s)",
+                        measurements_processed,
+                        timestamp,
+                        current_indoor_temp,
+                        current_target_temp,
+                    )
+                    samples_logged += 1
                 continue
+
+            # Log first few measurements to understand the data
+            if samples_logged < max_debug_samples:
+                _LOGGER.debug(
+                    "Measurement #%d: mode_on=%s, action_active=%s, indoor=%.1f, target=%.1f, "
+                    "hvac_action=%s, hvac_mode=%s",
+                    measurements_processed,
+                    mode_on,
+                    action_active,
+                    current_indoor_temp,
+                    current_target_temp,
+                    (measurement.attributes or {}).get("hvac_action") if measurement else None,
+                    (measurement.attributes or {}).get("hvac_mode") if measurement else None,
+                )
+                samples_logged += 1
 
             if heating_start is None:
                 # Check for cycle START condition
@@ -193,6 +225,13 @@ class HeatingCycleService(IHeatingCycleService):
             if created:
                 cycles.extend(created)
 
+        _LOGGER.debug(
+            "Cycle extraction complete: processed=%d measurements, skipped=%d (no temp data), "
+            "extracted=%d cycles",
+            measurements_processed,
+            measurements_skipped_no_temp,
+            len(cycles),
+        )
         _LOGGER.info("Extracted %d heating cycles", len(cycles))
         return cycles
 
@@ -710,9 +749,18 @@ class HeatingCycleService(IHeatingCycleService):
             HistoricalDataKey.TARGET_TEMP,
             HistoricalDataKey.HEATING_STATE,
         ]
-        for key in required_keys:
-            if not history_data_set.data.get(key):
-                raise ValueError(f"Missing critical historical data for key: {key.value}")
+        missing_keys = [k for k in required_keys if not history_data_set.data.get(k)]
+
+        if missing_keys:
+            missing_values = [k.value for k in missing_keys]
+            _LOGGER.error(
+                "Cannot extract cycles: missing REQUIRED keys: %s",
+                missing_values,
+            )
+            raise ValueError(
+                f"Missing critical historical data keys: {missing_values}. "
+                f"VTherm entity may not have these attributes in Home Assistant history."
+            )
 
     def _get_temperatures_at(
         self,

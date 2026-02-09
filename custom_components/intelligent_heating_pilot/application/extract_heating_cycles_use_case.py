@@ -148,10 +148,11 @@ class ExtractHeatingCyclesUseCase:
             return cycles
 
         except Exception as exc:
-            _LOGGER.warning(
-                "Failed to extract cycles for device=%s: %s",
+            _LOGGER.error(
+                "Failed to extract cycles for device=%s: %s (type: %s)",
                 device_id,
                 exc,
+                type(exc).__name__,
             )
             return []
 
@@ -184,11 +185,13 @@ class ExtractHeatingCyclesUseCase:
         # Use vtherm_entity_id to query Home Assistant history
         vtherm_entity_id = self._device_config.vtherm_entity_id
 
-        for key in [
+        required_keys = [
             HistoricalDataKey.INDOOR_TEMP,
             HistoricalDataKey.TARGET_TEMP,
             HistoricalDataKey.HEATING_STATE,
-        ]:
+        ]
+
+        for key in required_keys:
             try:
                 # Find adapter that can handle climate data
                 # (assume first adapter is ClimateDataAdapter by convention)
@@ -201,13 +204,18 @@ class ExtractHeatingCyclesUseCase:
                     end_time,
                 )
                 combined_data.update(result.data)
+                _LOGGER.debug(
+                    "Successfully fetched %s: %d measurements",
+                    key.value,
+                    len(result.data.get(key, [])),
+                )
 
                 await asyncio.sleep(0.1)  # Yield to event loop
 
             except Exception as exc:
                 _LOGGER.warning(
-                    "Failed to fetch %s: %s",
-                    key,
+                    "Failed to fetch REQUIRED key %s: %s",
+                    key.value,
                     exc,
                 )
 
@@ -247,6 +255,27 @@ class ExtractHeatingCyclesUseCase:
             "Successfully fetched combined historical data with %d keys",
             len(combined_data),
         )
+
+        # Log which REQUIRED keys are present vs missing
+        required_keys = [
+            HistoricalDataKey.INDOOR_TEMP,
+            HistoricalDataKey.TARGET_TEMP,
+            HistoricalDataKey.HEATING_STATE,
+        ]
+        present_keys = [k for k in required_keys if k in combined_data]
+        missing_keys = [k for k in required_keys if k not in combined_data]
+
+        if present_keys:
+            _LOGGER.debug(
+                "Present REQUIRED keys: %s",
+                [k.value for k in present_keys],
+            )
+        if missing_keys:
+            _LOGGER.warning(
+                "Missing REQUIRED keys: %s (cycles extraction will FAIL)",
+                [k.value for k in missing_keys],
+            )
+
         return HistoricalDataSet(data=combined_data)
 
     async def _schedule_periodic_refresh(self) -> None:
