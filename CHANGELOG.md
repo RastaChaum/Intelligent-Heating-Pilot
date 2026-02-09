@@ -8,11 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Zero-Retention Mode for Learning History** – New configuration option to disable LHS (Learning Heating Slope) data retention
+  - Set `lhs_retention_days=0` to disable historical data storage (useful for testing or minimal deployments)
+  - When disabled, system uses default LHS value (2.0°C/h) without attempting to persist or retrieve learning data
+  - No storage overhead when retention is disabled
 
 ### Changed
+- **Coordinator Architecture Refactoring** – Improved code organization and DDD compliance
+  - Extracted `IntelligentHeatingPilotCoordinator` from `__init__.py` into dedicated `coordinator.py` module for better maintainability
+  - Consolidated `_as_bool()` utility function into `utils/config_helpers.py` to eliminate code duplication
+  - Added explicit type annotations for better IDE support and type safety
+  - Improved separation of concerns between domain, infrastructure, and application layers
 - **Timer-Based Anticipation Triggering** ([#84](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/84)) – Improved the reliability of the preheating system by replacing event-driven triggering with timer-based triggering, reducing unexpected triggers and enhancing the accuracy of heating predictions.
 
 ### Fixed
+- **Fixed Configuration Values Being Ignored When Falsy** – Configuration values like `0` (false/disabled) are now properly read and applied
+  - `lhs_retention_days=0`, `cycle_split_duration_minutes=0`, `auto_learning=False` now correctly persist and are respected by the system
+  - Centralized boolean parsing ensures consistent handling of stringified config values across the integration
 - **No-scheduler KeyError spam** ([#81](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/81))
   - Fixed `KeyError: 'anticipated_start_time'` when IHP runs without a scheduler configured
   - Event bridge now distinguishes between clear-values signals and full data payloads
