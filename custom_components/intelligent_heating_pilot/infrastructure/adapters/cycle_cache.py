@@ -137,6 +137,7 @@ class HACycleCache(ICycleCache):
         device_id: str,
         new_cycles: list[HeatingCycle],
         search_end_time: datetime,
+        retention_days: int | None = None,
     ) -> None:
         """Append new cycles to the cache and update search timestamp.
 
@@ -144,13 +145,15 @@ class HACycleCache(ICycleCache):
             device_id: The device identifier
             new_cycles: List of new cycles to append
             search_end_time: Timestamp marking the end of this search period
+            retention_days: Optional retention days to store with cache metadata
         """
         _LOGGER.debug("Entering HACycleCache.append_cycles")
         _LOGGER.debug(
-            "Appending %d cycles for device_id=%s, search_end_time=%s",
+            "Appending %d cycles for device_id=%s, search_end_time=%s, retention_days=%s",
             len(new_cycles),
             device_id,
             search_end_time,
+            retention_days,
         )
 
         await self._ensure_loaded()
@@ -174,11 +177,16 @@ class HACycleCache(ICycleCache):
         all_cycles = existing_cycles + unique_new_cycles
         all_cycles.sort(key=lambda c: c.start_time)
 
+        # Use provided retention_days or fall back to instance default
+        stored_retention_days = (
+            retention_days if retention_days is not None else self._retention_days
+        )
+
         # Update storage
         self._data[device_id] = {
             "cycles": self._serialize_cycles(all_cycles),
             "last_search_time": search_end_time.isoformat(),
-            "retention_days": self._retention_days,
+            "retention_days": stored_retention_days,
         }
 
         await self._store.async_save(self._data)

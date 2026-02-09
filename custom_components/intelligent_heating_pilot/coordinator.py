@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from .application import HeatingApplicationService
+from .application.extract_heating_cycles_factory import ExtractHeatingCyclesUseCaseFactory
+from .application.extract_heating_cycles_use_case import ExtractHeatingCyclesUseCase
 from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN
 from .domain.interfaces.device_config_reader_interface import DeviceConfig
 from .infrastructure.adapters import (
@@ -93,6 +97,9 @@ class IntelligentHeatingPilotCoordinator:
 
         # Application service
         self._app_service: HeatingApplicationService | None = None
+
+        # Cycle extraction use case (lifecycle management)
+        self._extract_cycles_use_case: ExtractHeatingCyclesUseCase | None = None
 
         # Event bridge
         self._event_bridge: HAEventBridge | None = None
@@ -179,6 +186,15 @@ class IntelligentHeatingPilotCoordinator:
         # Load initial data
         self._lhs_cache = await self._model_storage.get_learned_heating_slope()
 
+        # Initialize cycle refresh (extraction + 24h periodic)
+        if self._data_retention_days > 0:
+            await self._initialize_cycle_refresh()
+        else:
+            _LOGGER.debug(
+                "Cycle extraction disabled (history_lookback_days=%d)",
+                self._data_retention_days,
+            )
+
         _LOGGER.info(
             "[%s] Coordinator initialized (VTherm: %s, Schedulers: %d)",
             self._entry_id,
@@ -205,6 +221,100 @@ class IntelligentHeatingPilotCoordinator:
         """Setup event listeners via event bridge."""
         if self._event_bridge:
             self._event_bridge.setup_listeners()
+
+    async def _initialize_cycle_refresh(self) -> None:
+        """Initialize cycle extraction and schedule 24h periodic refresh.
+
+        This method:
+        - Creates ExtractHeatingCyclesUseCase via factory
+        - Performs initial extraction over retention window
+        - Schedules 24h periodic refresh timer
+        - Logs initialization with retention days
+        """
+        _LOGGER.debug("Entering _initialize_cycle_refresh for device=%s", self._entry_id)
+
+        try:
+            # Sanity checks
+            if not self._device_config:
+                _LOGGER.warning("Cannot initialize cycle refresh: device_config not available")
+                return
+
+            if not self._app_service:
+                _LOGGER.warning(
+                    "Cannot initialize cycle refresh: application service not available"
+                )
+                return
+
+            # Create use case via factory (wires all dependencies including adapters)
+            self._extract_cycles_use_case = ExtractHeatingCyclesUseCaseFactory.create(
+                hass=self.hass,
+                app_service=self._app_service,
+                device_config=self._device_config,
+                cycle_cache=self._cycle_cache,
+                timer_scheduler=self._timer_scheduler,
+            )
+
+            _LOGGER.debug(
+                "ExtractHeatingCyclesUseCase created via factory for device=%s",
+                self._entry_id,
+            )
+
+            # Calculate initial extraction window
+            now = dt_util.utcnow()
+            start_time = now - timedelta(days=self._data_retention_days)
+
+            _LOGGER.debug(
+                "Initializing cycle extraction: device_id=%s, window=%s to %s, retention=%d days",
+                self._device_config.device_id,
+                start_time,
+                now,
+                self._data_retention_days,
+            )
+
+            # Execute initial extraction + schedule 24h timer
+            await self._extract_cycles_use_case.execute(
+                device_id=self._device_config.device_id,
+                start_time=start_time,
+                end_time=now,
+            )
+
+            _LOGGER.info(
+                "Cycle extraction initialized: device=%s, retention=%d days",
+                self._device_config.device_id,
+                self._data_retention_days,
+            )
+
+            _LOGGER.debug("Exiting _initialize_cycle_refresh for device=%s", self._entry_id)
+
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.warning("Failed to initialize cycle extraction: %s", err, exc_info=True)
+
+    async def async_notify_retention_change(self, new_retention_days: int) -> None:
+        """Handle configuration change for retention/history lookback.
+
+        Called from config flow when history_lookback_days changes.
+
+        Args:
+            new_retention_days: New retention window in days
+        """
+        _LOGGER.debug(
+            "Retention change notification: old=%d, new=%d",
+            self._data_retention_days,
+            new_retention_days,
+        )
+
+        try:
+            # Update stored retention days
+            self._data_retention_days = new_retention_days
+
+            # Delegate to use case for reconfiguration handling
+            if self._extract_cycles_use_case:
+                await self._extract_cycles_use_case.on_retention_changed(new_retention_days)
+            else:
+                _LOGGER.debug("No active use case; cannot propagate retention change")
+
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.warning("Error handling retention change: %s", err, exc_info=True)
 
     async def async_update(self) -> None:
         """Trigger anticipation calculation and cache results for sensors."""
@@ -254,11 +364,6 @@ class IntelligentHeatingPilotCoordinator:
                     },
                 )
 
-    async def async_cleanup(self) -> None:
-        """Cleanup resources."""
-        if self._event_bridge:
-            self._event_bridge.cleanup()
-
     async def refresh_caches(self) -> None:
         """Refresh cached LHS value used by sensors.
 
@@ -307,3 +412,20 @@ class IntelligentHeatingPilotCoordinator:
     def get_scheduler_entities(self) -> list[str]:
         """Get scheduler entity IDs."""
         return self._scheduler_entities[:]
+
+    async def async_cleanup(self) -> None:
+        """Cleanup coordinator resources.
+
+        Cancels timers and stops cycle extraction.
+        Called when coordinator is being unloaded.
+        """
+        _LOGGER.debug("Cleaning up coordinator: device_id=%s", self._device_config.device_id)
+
+        try:
+            # Stop cycle extraction and cancel timer
+            if self._extract_cycles_use_case:
+                await self._extract_cycles_use_case.cancel()
+                _LOGGER.debug("Cycle extraction cancelled")
+
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.warning("Error during cleanup: %s", err, exc_info=True)

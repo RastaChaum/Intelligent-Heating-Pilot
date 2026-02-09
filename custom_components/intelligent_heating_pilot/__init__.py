@@ -325,6 +325,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options and reload integration."""
+    from .const import CONF_DATA_RETENTION_DAYS
+
     coordinator: IntelligentHeatingPilotCoordinator | None = hass.data[DOMAIN].get(entry.entry_id)
 
     previous_options = (
@@ -333,6 +335,29 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     previous_no_toggle = {k: v for k, v in previous_options.items() if k != CONF_IHP_ENABLED}
     current_no_toggle = {k: v for k, v in entry.options.items() if k != CONF_IHP_ENABLED}
     ihp_enabled = as_bool(entry.options.get(CONF_IHP_ENABLED), default=True)
+
+    # Check if only retention days changed (reconfiguration of cycle refresh)
+    retention_only_changed = (
+        coordinator is not None
+        and previous_no_toggle != current_no_toggle
+        and len(set(previous_no_toggle.keys()) ^ set(current_no_toggle.keys())) == 1
+        and CONF_DATA_RETENTION_DAYS
+        in (set(previous_no_toggle.keys()) ^ set(current_no_toggle.keys()))
+    )
+
+    if retention_only_changed:
+        # Handle retention change without reload
+        new_retention_days = int(entry.options.get(CONF_DATA_RETENTION_DAYS, 10))
+        _LOGGER.info(
+            "[%s] Data retention changed to %d days, updating cycle refresh",
+            entry.entry_id,
+            new_retention_days,
+        )
+        if coordinator:
+            coordinator._options_snapshot = dict(entry.options)
+            coordinator._ihp_enabled = ihp_enabled
+            await coordinator.async_notify_retention_change(new_retention_days)
+        return
 
     # If only the ihp_enabled flag changed, skip full reload
     if coordinator and previous_no_toggle == current_no_toggle:

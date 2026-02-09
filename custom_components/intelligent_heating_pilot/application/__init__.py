@@ -965,3 +965,15 @@ class HeatingApplicationService:
         """Reset all learned slope history."""
         _LOGGER.info("Resetting learned heating slope history")
         await self._model_storage.clear_slope_history()
+
+    def get_heating_cycle_service(self) -> HeatingCycleService:
+        """Get the heating cycle service for use case instantiation.
+
+        This exposes the private heating_cycle_service to allow external
+        code (particularly factories) to access the configured domain service.
+
+        Returns:
+            IHeatingCycleService implementation
+        """
+        _LOGGER.debug("Exporting heating_cycle_service to external consumer")
+        return self._heating_cycle_service

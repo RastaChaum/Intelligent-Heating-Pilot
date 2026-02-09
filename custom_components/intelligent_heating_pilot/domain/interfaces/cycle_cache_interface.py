@@ -38,6 +38,7 @@ class ICycleCache(ABC):
         device_id: str,
         new_cycles: list[HeatingCycle],
         search_end_time: datetime,
+        retention_days: int | None = None,
     ) -> None:
         """Append new cycles to the cache and update search timestamp.
 
@@ -49,6 +50,7 @@ class ICycleCache(ABC):
             device_id: The device identifier
             new_cycles: List of new cycles to append
             search_end_time: Timestamp marking the end of this search period
+            retention_days: Optional retention days to store with cache metadata
         """
         pass
 
