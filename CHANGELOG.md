@@ -8,10 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+<<<<<<< copilot/fix-ignored-config-values
 - **Zero-Retention Mode for Learning History** – New configuration option to disable LHS (Learning Heating Slope) data retention
   - Set `lhs_retention_days=0` to disable historical data storage (useful for testing or minimal deployments)
   - When disabled, system uses default LHS value (2.0°C/h) without attempting to persist or retrieve learning data
   - No storage overhead when retention is disabled
+=======
+- Dead time calculation in heating time prediction ([#62](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/62)): Formula now includes dead time constant: `time_needed = dead_time + (temperature_delta / learned_slope) * 60`. Dead time is automatically learned from historical heating cycles.
+>>>>>>> integration
 
 ### Changed
 - **Coordinator Architecture Refactoring** – Improved code organization and DDD compliance
