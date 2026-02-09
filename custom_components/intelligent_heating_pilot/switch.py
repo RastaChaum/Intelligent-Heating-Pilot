@@ -13,7 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import CONF_NAME, DOMAIN
 
 if TYPE_CHECKING:
-    from . import IntelligentHeatingPilotCoordinator
+    from .coordinator import IntelligentHeatingPilotCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
