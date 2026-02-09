@@ -272,22 +272,64 @@ class IntelligentHeatingPilotCoordinator:
             )
 
             # Execute initial extraction + schedule 24h timer
-            await self._extract_cycles_use_case.execute(
+            extracted_cycles = await self._extract_cycles_use_case.execute(
                 device_id=self._device_config.device_id,
                 start_time=start_time,
                 end_time=now,
             )
 
+            # Update global LHS from extracted cycles (if any)
+            if extracted_cycles and self._app_service:
+                await self._update_global_lhs_from_cycles(extracted_cycles)
+
             _LOGGER.info(
-                "Cycle extraction initialized: device=%s, retention=%d days",
+                "Cycle extraction initialized: device=%s, retention=%d days, cycles=%d",
                 self._device_config.device_id,
                 self._data_retention_days,
+                len(extracted_cycles),
             )
 
             _LOGGER.debug("Exiting _initialize_cycle_refresh for device=%s", self._entry_id)
 
         except Exception as err:  # pylint: disable=broad-except
             _LOGGER.warning("Failed to initialize cycle extraction: %s", err, exc_info=True)
+
+    async def _update_global_lhs_from_cycles(self, cycles: list) -> None:
+        """Update global LHS in model storage from extracted cycles.
+
+        This method calculates the global learned heating slope (LHS) from
+        all extracted cycles and persists it to model storage for later use
+        as a fallback when no contextual data is available.
+
+        Args:
+            cycles: List of HeatingCycle objects
+        """
+        if not cycles or not self._app_service or not self._model_storage:
+            return
+
+        try:
+            # Get LHS calculation service from application service
+            lhs_service = self._app_service._lhs_calculation_service
+
+            # Calculate global LHS from all cycles
+            global_lhs = lhs_service.calculate_global_lhs(cycles)
+
+            # Persist to storage with current timestamp
+            now = dt_util.utcnow()
+            await self._model_storage.set_cached_global_lhs(global_lhs, now)
+
+            _LOGGER.info(
+                "Updated global LHS from %d cycles: %.2f°C/h",
+                len(cycles),
+                global_lhs,
+            )
+
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.warning(
+                "Failed to update global LHS from cycles: %s",
+                exc,
+                exc_info=True,
+            )
 
     async def async_notify_retention_change(self, new_retention_days: int) -> None:
         """Handle configuration change for retention/history lookback.
