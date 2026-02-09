@@ -252,6 +252,7 @@ class IntelligentHeatingPilotCoordinator:
                 device_config=self._device_config,
                 cycle_cache=self._cycle_cache,
                 timer_scheduler=self._timer_scheduler,
+                model_storage=self._model_storage,
             )
 
             _LOGGER.debug(
@@ -317,6 +318,9 @@ class IntelligentHeatingPilotCoordinator:
             # Persist to storage with current timestamp
             now = dt_util.utcnow()
             await self._model_storage.set_cached_global_lhs(global_lhs, now)
+
+            # Refresh cache so sensors reflect updated value
+            await self.refresh_caches()
 
             _LOGGER.info(
                 "Updated global LHS from %d cycles: %.2f°C/h",
@@ -422,8 +426,29 @@ class IntelligentHeatingPilotCoordinator:
     # Sensor accessors (synchronous for sensor entities)
 
     def get_learned_heating_slope(self) -> float:
-        """Get cached LHS for sensors."""
+        """Get cached global LHS for sensors."""
         return self._lhs_cache
+
+    def get_contextual_learned_heating_slope(self, hour: int) -> float | None:
+        """Get contextual LHS for a specific hour (synchronous fallback).
+
+        Since _get_contextual_lhs is async and sensors need sync accessors,
+        this returns the global LHS as fallback. In production, this should be
+        enhanced with a cached contextual LHS lookup.
+
+        Args:
+            hour: Hour of day (0-23)
+
+        Returns:
+            Global LHS (contextual not available synchronously)
+        """
+        try:
+            # For now, return global LHS as fallback
+            # In future: implement LHS_BY_HOUR cache for proper contextual values
+            return self.get_learned_heating_slope()
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to get LHS for hour %d", hour, exc_info=True)
+            return None
 
     def is_ihp_enabled(self) -> bool:
         """Get IHP enabled state."""

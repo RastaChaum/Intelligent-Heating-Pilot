@@ -25,10 +25,14 @@ from custom_components.intelligent_heating_pilot.domain.interfaces import (
     IDeviceConfigReader,
     IHeatingCycleService,
     IHistoricalDataAdapter,
+    IModelStorage,
     ITimerScheduler,
 )
 from custom_components.intelligent_heating_pilot.domain.interfaces.device_config_reader_interface import (
     DeviceConfig,
+)
+from custom_components.intelligent_heating_pilot.domain.services.lhs_calculation_service import (
+    LHSCalculationService,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     HeatingCycle,
@@ -108,6 +112,20 @@ def mock_timer_scheduler() -> Mock:
     mock = Mock(spec=ITimerScheduler)
     mock.schedule_timer = Mock(return_value=Mock())  # Return cancel func
     return mock
+
+
+@pytest.fixture
+def mock_model_storage() -> AsyncMock:
+    """Mock model storage for LHS persistence."""
+    mock = AsyncMock(spec=IModelStorage)
+    mock.set_cached_global_lhs = AsyncMock()
+    return mock
+
+
+@pytest.fixture
+def mock_lhs_calculation_service() -> LHSCalculationService:
+    """Mock LHS calculation service."""
+    return LHSCalculationService()
 
 
 @pytest.fixture
@@ -762,3 +780,259 @@ class TestFullCycleExtractionFlow:
         await use_case.cancel()
 
         assert use_case._refresh_cancel is None
+
+
+# ===== REGRESSION: GLOBAL LHS UPDATE BUG =====
+
+
+class TestGlobalLHSUpdateAfterExtraction:
+    """Regression tests for Global LHS update bug.
+
+    Bug: Global LHS is NEVER automatically updated after cycle extraction,
+    despite cycles being correctly extracted and stored.
+
+    Root Cause:
+    - set_cached_global_lhs() is never called in production code
+    - LHS calculation service CAN calculate LHS from cycles
+    - But no code path updates the stored global LHS value after extraction
+
+    These tests would have caught this bug and prevent regression.
+    """
+
+    @pytest.fixture
+    def use_case_with_lhs_deps(
+        self,
+        mock_device_config: DeviceConfig,
+        mock_cycle_service: AsyncMock,
+        mock_adapters: list[AsyncMock],
+        mock_cache: AsyncMock,
+        mock_timer_scheduler: Mock,
+        mock_model_storage: AsyncMock,
+        mock_lhs_calculation_service: LHSCalculationService,
+    ) -> ExtractHeatingCyclesUseCase:
+        """Create use case with LHS dependencies injected.
+
+        NOTE: This fixture will FAIL until the developer adds these
+        dependencies to the constructor signature.
+        """
+        return ExtractHeatingCyclesUseCase(
+            device_config=mock_device_config,
+            heating_cycle_service=mock_cycle_service,
+            historical_adapters=mock_adapters,  # type: ignore
+            cycle_cache=mock_cache,
+            timer_scheduler=mock_timer_scheduler,
+            model_storage=mock_model_storage,  # NEW: Will fail - not in constructor yet
+            lhs_calculation_service=mock_lhs_calculation_service,  # NEW: Will fail
+        )
+
+    @pytest.mark.asyncio
+    async def test_execute_updates_global_lhs_after_extraction(
+        self,
+        mock_device_config: DeviceConfig,
+        mock_cycle_service: AsyncMock,
+        mock_adapters: list[AsyncMock],
+        mock_cache: AsyncMock,
+        mock_timer_scheduler: Mock,
+        mock_model_storage: AsyncMock,
+        mock_lhs_calculation_service: LHSCalculationService,
+    ) -> None:
+        """Test that execute() updates global LHS after extracting cycles.
+
+        GIVEN: 2+ cycles extracted successfully with valid heating slopes
+        WHEN: execute() completes
+        THEN: model_storage.set_cached_global_lhs() MUST be called with calculated LHS
+
+        FAILS with buggy code (set_cached_global_lhs never called)
+        PASSES with fix (LHS calculated and persisted)
+        """
+        # Setup: Create cycles with known slopes
+        now = dt_util.utcnow()
+        cycle1 = HeatingCycle(
+            device_id="climate.vtherm",
+            start_time=now - timedelta(days=5, hours=2),
+            end_time=now - timedelta(days=5, hours=1),
+            target_temp=21.0,
+            start_temp=19.0,
+            end_temp=20.5,
+        )
+        cycle2 = HeatingCycle(
+            device_id="climate.vtherm",
+            start_time=now - timedelta(days=3, hours=2),
+            end_time=now - timedelta(days=3, hours=1),
+            target_temp=22.0,
+            start_temp=20.0,
+            end_temp=21.5,
+        )
+
+        mock_cycle_service.extract_heating_cycles.return_value = [cycle1, cycle2]
+
+        # Calculate expected LHS (should be average of slopes)
+        expected_lhs = mock_lhs_calculation_service.calculate_global_lhs([cycle1, cycle2])
+
+        # Create use case with LHS dependencies
+        # NOTE: This will FAIL because constructor doesn't have these params yet
+        try:
+            use_case = ExtractHeatingCyclesUseCase(
+                device_config=mock_device_config,
+                heating_cycle_service=mock_cycle_service,
+                historical_adapters=mock_adapters,  # type: ignore
+                cycle_cache=mock_cache,
+                timer_scheduler=mock_timer_scheduler,
+                model_storage=mock_model_storage,  # type: ignore  # Will fail - not in constructor
+                lhs_calculation_service=mock_lhs_calculation_service,  # type: ignore  # Will fail
+            )
+        except TypeError as e:
+            # Expected failure: constructor doesn't accept these params yet
+            pytest.fail(
+                f"Constructor missing LHS dependencies (expected for RED test): {e}\n"
+                "Developer must add model_storage and lhs_calculation_service parameters"
+            )
+
+        # Execute extraction
+        _cycles = await use_case.execute(
+            device_id="climate.vtherm",
+            start_time=now - timedelta(days=30),
+            end_time=now,
+        )
+
+        # Verify: set_cached_global_lhs was called with calculated LHS
+        mock_model_storage.set_cached_global_lhs.assert_called_once()
+        call_kwargs = mock_model_storage.set_cached_global_lhs.call_args.kwargs
+
+        assert call_kwargs["lhs"] == pytest.approx(expected_lhs, abs=0.01), (
+            f"Expected LHS {expected_lhs:.2f}°C/h not persisted. "
+            f"This indicates calculate_global_lhs() or set_cached_global_lhs() not called."
+        )
+
+    @pytest.mark.asyncio
+    async def test_execute_updates_global_lhs_only_when_cycles_exist(
+        self,
+        mock_device_config: DeviceConfig,
+        mock_cycle_service: AsyncMock,
+        mock_adapters: list[AsyncMock],
+        mock_cache: AsyncMock,
+        mock_timer_scheduler: Mock,
+        mock_model_storage: AsyncMock,
+        mock_lhs_calculation_service: LHSCalculationService,
+    ) -> None:
+        """Test that execute() does NOT update LHS when no cycles extracted.
+
+        GIVEN: 0 cycles extracted (empty history)
+        WHEN: execute() completes
+        THEN: model_storage.set_cached_global_lhs() NOT called
+
+        FAILS with buggy code (method doesn't exist in flow)
+        PASSES with fix (conditional LHS update only when cycles exist)
+        """
+        # Setup: No cycles extracted
+        mock_cycle_service.extract_heating_cycles.return_value = []
+
+        # Create use case with LHS dependencies
+        try:
+            use_case = ExtractHeatingCyclesUseCase(
+                device_config=mock_device_config,
+                heating_cycle_service=mock_cycle_service,
+                historical_adapters=mock_adapters,  # type: ignore
+                cycle_cache=mock_cache,
+                timer_scheduler=mock_timer_scheduler,
+                model_storage=mock_model_storage,  # type: ignore  # Will fail
+                lhs_calculation_service=mock_lhs_calculation_service,  # type: ignore  # Will fail
+            )
+        except TypeError as e:
+            pytest.fail(
+                f"Constructor missing LHS dependencies (expected for RED test): {e}\n"
+                "Developer must add model_storage and lhs_calculation_service parameters"
+            )
+
+        # Execute extraction
+        now = dt_util.utcnow()
+        _cycles = await use_case.execute(
+            device_id="climate.vtherm",
+            start_time=now - timedelta(days=30),
+            end_time=now,
+        )
+
+        # Verify: set_cached_global_lhs NOT called (no cycles to learn from)
+        mock_model_storage.set_cached_global_lhs.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_calculates_lhs_from_fresh_cycles(
+        self,
+        mock_device_config: DeviceConfig,
+        mock_cycle_service: AsyncMock,
+        mock_adapters: list[AsyncMock],
+        mock_cache: AsyncMock,
+        mock_timer_scheduler: Mock,
+        mock_model_storage: AsyncMock,
+        mock_lhs_calculation_service: LHSCalculationService,
+    ) -> None:
+        """Test that LHS is calculated from freshly extracted cycles.
+
+        GIVEN: Cycles with known slopes (1.5°C/h, 2.5°C/h)
+        WHEN: execute() completes
+        THEN: set_cached_global_lhs() called with avg=2.0°C/h
+
+        FAILS with buggy code (LHS calculation not integrated into flow)
+        PASSES with fix (LHS calculated and value matches expected average)
+        """
+        # Setup: Create cycles with specific slopes
+        now = dt_util.utcnow()
+
+        # Cycle 1: 1.5°C rise over 1 hour = 1.5°C/h
+        cycle1 = HeatingCycle(
+            device_id="climate.vtherm",
+            start_time=now - timedelta(days=10, hours=2),
+            end_time=now - timedelta(days=10, hours=1),
+            target_temp=21.0,
+            start_temp=19.0,
+            end_temp=20.5,  # 1.5°C rise
+        )
+
+        # Cycle 2: 2.5°C rise over 1 hour = 2.5°C/h
+        cycle2 = HeatingCycle(
+            device_id="climate.vtherm",
+            start_time=now - timedelta(days=8, hours=2),
+            end_time=now - timedelta(days=8, hours=1),
+            target_temp=22.0,
+            start_temp=19.0,
+            end_temp=21.5,  # 2.5°C rise
+        )
+
+        mock_cycle_service.extract_heating_cycles.return_value = [cycle1, cycle2]
+
+        # Expected LHS: (1.5 + 2.5) / 2 = 2.0°C/h
+        expected_lhs = 2.0
+
+        # Create use case with LHS dependencies
+        try:
+            use_case = ExtractHeatingCyclesUseCase(
+                device_config=mock_device_config,
+                heating_cycle_service=mock_cycle_service,
+                historical_adapters=mock_adapters,  # type: ignore
+                cycle_cache=mock_cache,
+                timer_scheduler=mock_timer_scheduler,
+                model_storage=mock_model_storage,  # type: ignore  # Will fail
+                lhs_calculation_service=mock_lhs_calculation_service,  # type: ignore  # Will fail
+            )
+        except TypeError as e:
+            pytest.fail(
+                f"Constructor missing LHS dependencies (expected for RED test): {e}\n"
+                "Developer must add model_storage and lhs_calculation_service parameters"
+            )
+
+        # Execute extraction
+        _cycles = await use_case.execute(
+            device_id="climate.vtherm",
+            start_time=now - timedelta(days=30),
+            end_time=now,
+        )
+
+        # Verify: set_cached_global_lhs called with correct average
+        mock_model_storage.set_cached_global_lhs.assert_called_once()
+        call_kwargs = mock_model_storage.set_cached_global_lhs.call_args.kwargs
+        persisted_lhs = call_kwargs["lhs"]
+
+        assert persisted_lhs == pytest.approx(expected_lhs, abs=0.01), (
+            f"Expected LHS {expected_lhs:.2f}°C/h, but got {persisted_lhs:.2f}°C/h. "
+            f"Verify calculate_global_lhs() returns average of cycle slopes."
+        )

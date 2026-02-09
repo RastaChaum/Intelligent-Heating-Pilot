@@ -43,8 +43,9 @@ async def async_setup_entry(
         # HMS-only display companions
         IntelligentHeatingPilotAnticipationTimeHmsSensor(coordinator, config_entry, name),
         IntelligentHeatingPilotNextScheduleHmsSensor(coordinator, config_entry, name),
-        # Metrics
-        IntelligentHeatingPilotLearnedSlopeSensor(coordinator, config_entry, name),
+        # Metrics - LHS sensors (Global + Contextual)
+        IntelligentHeatingPilotGlobalLearnedSlopeSensor(coordinator, config_entry, name),
+        IntelligentHeatingPilotContextualLearnedSlopeSensor(coordinator, config_entry, name),
         IntelligentHeatingPilotPredictionConfidenceSensor(
             coordinator, config_entry, name
         ),  # Phase 4: New
@@ -224,10 +225,10 @@ class IntelligentHeatingPilotAnticipationTimeHmsSensor(IntelligentHeatingPilotSe
             }
 
 
-class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBase):
-    """Sensor for learned heating slope (LHS)."""
+class IntelligentHeatingPilotGlobalLearnedSlopeSensor(IntelligentHeatingPilotSensorBase):
+    """Sensor for global learned heating slope (LHS)."""
 
-    _attr_name = "Learned Heating Slope"
+    _attr_name = "Global Learned Heating Slope"
     _attr_native_unit_of_measurement = "°C/h"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:chart-line"
@@ -235,16 +236,12 @@ class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBas
     def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, name)
-        self._attr_unique_id = f"{config_entry.entry_id}_learned_heating_slope"
-        self._slope: float | None = None
+        self._attr_unique_id = f"{config_entry.entry_id}_global_learned_heating_slope"
 
     @property
     def native_value(self) -> float | None:
-        """Return the state of the sensor."""
-        # Prefer last event-driven value, fallback to coordinator cache
-        value = (
-            self._slope if self._slope is not None else self.coordinator.get_learned_heating_slope()
-        )
+        """Return the global LHS from coordinator cache."""
+        value = self.coordinator.get_learned_heating_slope()
         # Round to 2 decimal places for cleaner display
         return round(value, 2) if value is not None else None
 
@@ -256,26 +253,62 @@ class IntelligentHeatingPilotLearnedSlopeSensor(IntelligentHeatingPilotSensorBas
     @property
     def extra_state_attributes(self) -> dict:
         """Return additional attributes."""
-        # Historical slopes persistence has been removed. We only expose
-        # the current learned heating slope (LHS) as an attribute.
-        current_lhs = self.native_value
         return {
-            ATTR_LEARNED_HEATING_SLOPE: current_lhs,
+            "description": "Average heating slope across all extracted cycles",
         }
 
     def _handle_anticipation_result(self, data: dict) -> None:
-        """Consume learned slope from anticipation event and refresh caches."""
-        try:
-            lhs = data.get(ATTR_LEARNED_HEATING_SLOPE)
-            if lhs is not None:
-                self._slope = float(lhs)
-                # Ask coordinator to refresh caches (history, lhs) asynchronously
-                if hasattr(self.coordinator, "refresh_caches"):
-                    self.hass.async_create_task(self.coordinator.refresh_caches())
-        except (TypeError, ValueError):
-            _LOGGER.debug(
-                "Invalid learned_heating_slope in event: %s", data.get(ATTR_LEARNED_HEATING_SLOPE)
-            )
+        """Refresh state when anticipation event received."""
+        # Force state update on anticipation event
+        self.async_write_ha_state()
+
+
+class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilotSensorBase):
+    """Sensor for contextual learned heating slope (for current hour)."""
+
+    _attr_name = "Contextual Learned Heating Slope"
+    _attr_native_unit_of_measurement = "°C/h"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:chart-line"
+
+    def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, config_entry, name)
+        self._attr_unique_id = f"{config_entry.entry_id}_contextual_learned_heating_slope"
+
+    @property
+    def native_value(self) -> float | str | None:
+        """Return the contextual LHS for current hour."""
+        # Get current hour
+        current_hour = dt_util.utcnow().hour
+
+        # Try to get contextual LHS from coordinator cache
+        contextual_lhs = self.coordinator.get_contextual_learned_heating_slope(current_hour)
+
+        if contextual_lhs is None or contextual_lhs == 2.0:  # Default value means no data
+            return "unknown"
+
+        # Round to 2 decimal places for cleaner display and return as float
+        return float(round(contextual_lhs, 2))
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return additional attributes."""
+        current_hour = dt_util.utcnow().hour
+        return {
+            "description": "Average heating slope for cycles active during current hour",
+            "current_hour": f"{current_hour:02d}:00",
+        }
+
+    def _handle_anticipation_result(self, data: dict) -> None:
+        """Refresh state when anticipation event received."""
+        # Force state update on anticipation event
+        self.async_write_ha_state()
 
 
 class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBase):

@@ -13,6 +13,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from ..domain.interfaces.device_config_reader_interface import DeviceConfig
+from ..domain.services.lhs_calculation_service import LHSCalculationService
 from ..infrastructure.adapters import (
     ClimateDataAdapter,
     SensorDataAdapter,
@@ -23,7 +24,7 @@ from .extract_heating_cycles_use_case import ExtractHeatingCyclesUseCase
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-    from ..domain.interfaces import ICycleCache, ITimerScheduler
+    from ..domain.interfaces import ICycleCache, IModelStorage, ITimerScheduler
     from . import HeatingApplicationService
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class ExtractHeatingCyclesUseCaseFactory:
         device_config: DeviceConfig,
         cycle_cache: ICycleCache | None = None,
         timer_scheduler: ITimerScheduler | None = None,
+        model_storage: IModelStorage | None = None,
     ) -> ExtractHeatingCyclesUseCase:
         """Create and wire ExtractHeatingCyclesUseCase with all dependencies.
 
@@ -57,6 +59,7 @@ class ExtractHeatingCyclesUseCaseFactory:
             device_config: Device configuration value object
             cycle_cache: Optional cache for incremental updates
             timer_scheduler: Optional timer for periodic refresh
+            model_storage: Optional storage for persisting LHS updates
 
         Returns:
             Fully configured ExtractHeatingCyclesUseCase instance
@@ -86,6 +89,9 @@ class ExtractHeatingCyclesUseCaseFactory:
             "Extracted heating_cycle_service from application service",
         )
 
+        # Create LHS calculation service (domain service, stateless)
+        lhs_calculation_service = LHSCalculationService()
+
         # Create use case with all wired dependencies
         # Arguments match the ExtractHeatingCyclesUseCase.__init__ signature
         use_case = ExtractHeatingCyclesUseCase(
@@ -94,6 +100,8 @@ class ExtractHeatingCyclesUseCaseFactory:
             historical_adapters=historical_adapters,
             cycle_cache=cycle_cache,
             timer_scheduler=timer_scheduler,
+            model_storage=model_storage,
+            lhs_calculation_service=lhs_calculation_service,
         )
 
         _LOGGER.debug(

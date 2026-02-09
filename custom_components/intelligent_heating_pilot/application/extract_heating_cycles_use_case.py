@@ -25,8 +25,10 @@ if TYPE_CHECKING:
     from ..domain.interfaces import (
         ICycleCache,
         IHistoricalDataAdapter,
+        IModelStorage,
         ITimerScheduler,
     )
+    from ..domain.services.lhs_calculation_service import LHSCalculationService
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +55,8 @@ class ExtractHeatingCyclesUseCase:
         historical_adapters: list[IHistoricalDataAdapter],
         cycle_cache: ICycleCache | None = None,
         timer_scheduler: ITimerScheduler | None = None,
+        model_storage: IModelStorage | None = None,
+        lhs_calculation_service: LHSCalculationService | None = None,
     ) -> None:
         """Initialize with injected dependencies.
 
@@ -63,6 +67,8 @@ class ExtractHeatingCyclesUseCase:
               implementing IHistoricalDataAdapter
             cycle_cache: Optional cache for incremental updates
             timer_scheduler: Optional timer for 24h refresh scheduling
+            model_storage: Optional storage for persisting LHS updates
+            lhs_calculation_service: Optional service for calculating global LHS
         """
         _LOGGER.debug("Initializing ExtractHeatingCyclesUseCase")
 
@@ -71,6 +77,8 @@ class ExtractHeatingCyclesUseCase:
         self._adapters = historical_adapters
         self._cache = cycle_cache
         self._timer_scheduler = timer_scheduler
+        self._model_storage = model_storage
+        self._lhs_calculation_service = lhs_calculation_service
 
         self._refresh_cancel: Callable[[], None] | None = None
         self._device_id: str | None = None
@@ -130,6 +138,19 @@ class ExtractHeatingCyclesUseCase:
                 device_id,
                 self._current_retention_days,
             )
+
+            # STEP 2b: Update global LHS if cycles were extracted
+            if cycles and self._model_storage and self._lhs_calculation_service:
+                global_lhs = self._lhs_calculation_service.calculate_global_lhs(cycles)
+                await self._model_storage.set_cached_global_lhs(
+                    lhs=global_lhs,
+                    updated_at=dt_util.utcnow(),
+                )
+                _LOGGER.info(
+                    "Updated global LHS: %.2f°C/h from %d cycles",
+                    global_lhs,
+                    len(cycles),
+                )
 
             # STEP 3: Append to cache with retention metadata
             if self._cache:
