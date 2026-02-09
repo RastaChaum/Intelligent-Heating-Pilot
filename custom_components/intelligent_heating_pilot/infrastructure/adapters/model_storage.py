@@ -110,6 +110,18 @@ class HAModelStorage(IModelStorage):
 
         from typing import cast
 
+        # First, try to get the cached global LHS (set by extract_heating_cycles_use_case)
+        cached_entry_data = self._data.get("cached_global_lhs")
+        if cached_entry_data and isinstance(cached_entry_data, dict):
+            cached_lhs = cached_entry_data.get("value")
+            if cached_lhs is not None and cached_lhs > 0:
+                _LOGGER.debug(
+                    "Returning cached global LHS: %.2f°C/h",
+                    cached_lhs,
+                )
+                return cast(float, cached_lhs)
+
+        # Fallback to legacy learned_heating_slope (for backward compatibility)
         lhs = self._data.get("learned_heating_slope")
         if lhs is None or lhs <= 0:
             _LOGGER.debug(
