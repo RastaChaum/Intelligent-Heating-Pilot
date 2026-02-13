@@ -14,7 +14,7 @@ from .heating import HeatingCycle
 
 
 @dataclass(frozen=True)
-class CycleCacheData:
+class HeatingCycleCacheData:
     """Immutable record of cached heating cycles with metadata.
 
     This value object stores a collection of heating cycles along with

@@ -268,25 +268,32 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
 
     _attr_name = "Contextual Learned Heating Slope"
     _attr_native_unit_of_measurement = "°C/h"
-    # Note: No state_class because value can be string ("unknown")
+
     _attr_icon = "mdi:chart-line"
 
     def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, name)
         self._attr_unique_id = f"{config_entry.entry_id}_contextual_learned_heating_slope"
+        self._next_schedule_time: datetime | None = None
 
     @property
-    def native_value(self) -> float | str | None:
-        """Return the contextual LHS for current hour."""
-        # Get current hour
-        current_hour = dt_util.utcnow().hour
+    def native_value(self) -> float | None:
+        """Return the contextual LHS for next scheduled event hour."""
+        # If no next schedule time, cannot provide contextual LHS
+        if not self._next_schedule_time:
+            return None
 
-        # Try to get contextual LHS from coordinator cache
-        contextual_lhs = self.coordinator.get_contextual_learned_heating_slope(current_hour)
+        try:
+            schedule_hour = self._next_schedule_time.hour
+        except AttributeError:
+            return None
+
+        # Try to get contextual LHS from coordinator cache for scheduled hour
+        contextual_lhs = self.coordinator.get_contextual_learned_heating_slope(schedule_hour)
 
         if contextual_lhs is None or contextual_lhs == 2.0:  # Default value means no data
-            return "unknown"
+            return None
 
         # Round to 2 decimal places for cleaner display and return as float
         return float(round(contextual_lhs, 2))
@@ -299,15 +306,46 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
     @property
     def extra_state_attributes(self) -> dict:
         """Return additional attributes."""
-        current_hour = dt_util.utcnow().hour
+        if not self._next_schedule_time:
+            return {
+                "description": "Average heating slope for scheduled event hour (no event scheduled)",
+                "scheduled_hour": "–",
+            }
+
+        try:
+            scheduled_hour = self._next_schedule_time.hour
+        except AttributeError:
+            return {
+                "description": "Average heating slope for scheduled event hour (parse error)",
+                "scheduled_hour": "–",
+            }
+
         return {
-            "description": "Average heating slope for cycles active during current hour",
-            "current_hour": f"{current_hour:02d}:00",
+            "description": "Average heating slope for scheduled event hour",
+            "scheduled_hour": f"{scheduled_hour:02d}:00",
         }
 
     def _handle_anticipation_result(self, data: dict) -> None:
         """Refresh state when anticipation event received."""
-        # Force state update on anticipation event
+        # Update next_schedule_time from event
+        if data.get("clear_values"):
+            self._next_schedule_time = None
+        else:
+            next_schedule = data.get(ATTR_NEXT_SCHEDULE_TIME)
+            if next_schedule:
+                # Event carries ISO string; accept datetime too
+                if isinstance(next_schedule, str):
+                    parsed = dt_util.parse_datetime(next_schedule)
+                    if parsed is None:
+                        try:
+                            parsed = datetime.fromisoformat(next_schedule)
+                        except ValueError:
+                            parsed = None
+                    self._next_schedule_time = parsed
+                else:
+                    self._next_schedule_time = next_schedule
+
+        # Force state update
         self.async_write_ha_state()
 
 

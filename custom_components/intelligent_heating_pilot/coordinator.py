@@ -11,15 +11,19 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .application import HeatingApplicationService
-from .application.extract_heating_cycles_factory import ExtractHeatingCyclesUseCaseFactory
-from .application.extract_heating_cycles_use_case import ExtractHeatingCyclesUseCase
+from .application.heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
+from .application.heating_cycle_lifecycle_manager_factory import (
+    HeatingCycleLifecycleManagerFactory,
+)
+from .application.lhs_lifecycle_manager import LhsLifecycleManager
+from .application.lhs_lifecycle_manager_factory import LhsLifecycleManagerFactory
 from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN
 from .domain.interfaces.device_config_reader_interface import DeviceConfig
 from .infrastructure.adapters import (
     HAClimateCommander,
-    HACycleCache,
     HAEnvironmentReader,
-    HAModelStorage,
+    HAHeatingCycleStorage,
+    HALhsStorage,
     HASchedulerCommander,
     HASchedulerReader,
     HATimerScheduler,
@@ -87,8 +91,8 @@ class IntelligentHeatingPilotCoordinator:
         self._ihp_enabled = device_config.ihp_enabled
 
         # Infrastructure adapters
-        self._model_storage: HAModelStorage | None = None
-        self._cycle_cache: HACycleCache | None = None
+        self._model_storage: HALhsStorage | None = None
+        self._cycle_cache: HAHeatingCycleStorage | None = None
         self._scheduler_reader: HASchedulerReader | None = None
         self._scheduler_commander: HASchedulerCommander | None = None
         self._climate_commander: HAClimateCommander | None = None
@@ -98,8 +102,9 @@ class IntelligentHeatingPilotCoordinator:
         # Application service
         self._app_service: HeatingApplicationService | None = None
 
-        # Cycle extraction use case (lifecycle management)
-        self._extract_cycles_use_case: ExtractHeatingCyclesUseCase | None = None
+        # Lifecycle managers
+        self._heating_cycle_manager: HeatingCycleLifecycleManager | None = None
+        self._lhs_manager: LhsLifecycleManager | None = None
 
         # Event bridge
         self._event_bridge: HAEventBridge | None = None
@@ -115,12 +120,12 @@ class IntelligentHeatingPilotCoordinator:
     async def async_load(self) -> None:
         """Load and initialize all components."""
         # Create infrastructure adapters
-        self._model_storage = HAModelStorage(
+        self._model_storage = HALhsStorage(
             self.hass, self._entry_id, retention_days=self._data_retention_days
         )
 
         # Create cycle cache for incremental cycle extraction
-        self._cycle_cache = HACycleCache(
+        self._cycle_cache = HAHeatingCycleStorage(
             self.hass, self._entry_id, retention_days=self._data_retention_days
         )
 
@@ -162,7 +167,28 @@ class IntelligentHeatingPilotCoordinator:
             max_cycle_duration_minutes=self._max_cycle_duration_minutes,
             dead_time_minutes=self._dead_time_minutes,
             auto_learning=self._auto_learning,
+            on_lhs_changed=self.refresh_caches,
         )
+
+        # Create lifecycle managers
+        self._heating_cycle_manager = HeatingCycleLifecycleManagerFactory.create(
+            hass=self.hass,
+            device_config=self._device_config,
+            heating_cycle_service=self._app_service.get_heating_cycle_service(),
+            cycle_cache=self._cycle_cache,
+            timer_scheduler=self._timer_scheduler,
+            model_storage=self._model_storage,
+        )
+
+        self._lhs_manager = LhsLifecycleManagerFactory.create(
+            model_storage=self._model_storage,
+            global_lhs_calculator=self._app_service.get_global_lhs_calculator(),
+            contextual_lhs_calculator=self._app_service.get_contextual_lhs_calculator(),
+            timer_scheduler=self._timer_scheduler,
+        )
+
+        self._app_service.set_heating_cycle_lifecycle_manager(self._heating_cycle_manager)
+        self._app_service.set_lhs_lifecycle_manager(self._lhs_manager)
 
         # Create event bridge
         monitored_entities = []
@@ -184,7 +210,8 @@ class IntelligentHeatingPilotCoordinator:
         )
 
         # Load initial data
-        self._lhs_cache = await self._model_storage.get_learned_heating_slope()
+        if self._lhs_manager:
+            self._lhs_cache = await self._lhs_manager.get_global_lhs()
 
         # Initialize cycle refresh (extraction + 24h periodic)
         if self._data_retention_days > 0:
@@ -245,20 +272,9 @@ class IntelligentHeatingPilotCoordinator:
                 )
                 return
 
-            # Create use case via factory (wires all dependencies including adapters)
-            self._extract_cycles_use_case = ExtractHeatingCyclesUseCaseFactory.create(
-                hass=self.hass,
-                app_service=self._app_service,
-                device_config=self._device_config,
-                cycle_cache=self._cycle_cache,
-                timer_scheduler=self._timer_scheduler,
-                model_storage=self._model_storage,
-            )
-
-            _LOGGER.debug(
-                "ExtractHeatingCyclesUseCase created via factory for device=%s",
-                self._entry_id,
-            )
+            if not self._heating_cycle_manager:
+                _LOGGER.warning("Cannot initialize cycle refresh: manager not available")
+                return
 
             # Calculate initial extraction window
             now = dt_util.utcnow()
@@ -273,15 +289,15 @@ class IntelligentHeatingPilotCoordinator:
             )
 
             # Execute initial extraction + schedule 24h timer
-            extracted_cycles = await self._extract_cycles_use_case.execute(
+            extracted_cycles = await self._heating_cycle_manager.startup(
                 device_id=self._device_config.device_id,
                 start_time=start_time,
                 end_time=now,
             )
 
             # Update global LHS from extracted cycles (if any)
-            if extracted_cycles and self._app_service:
-                await self._update_global_lhs_from_cycles(extracted_cycles)
+            if extracted_cycles and self._lhs_manager:
+                await self._lhs_manager.update_global_lhs_from_cycles(extracted_cycles)
 
             _LOGGER.info(
                 "Cycle extraction initialized: device=%s, retention=%d days, cycles=%d",
@@ -305,19 +321,11 @@ class IntelligentHeatingPilotCoordinator:
         Args:
             cycles: List of HeatingCycle objects
         """
-        if not cycles or not self._app_service or not self._model_storage:
+        if not cycles or not self._lhs_manager:
             return
 
         try:
-            # Get LHS calculation service from application service
-            lhs_service = self._app_service._lhs_calculation_service
-
-            # Calculate global LHS from all cycles
-            global_lhs = lhs_service.calculate_global_lhs(cycles)
-
-            # Persist to storage with current timestamp
-            now = dt_util.utcnow()
-            await self._model_storage.set_cached_global_lhs(global_lhs, now)
+            global_lhs = await self._lhs_manager.update_global_lhs_from_cycles(cycles)
 
             # Refresh cache so sensors reflect updated value
             await self.refresh_caches()
@@ -354,10 +362,13 @@ class IntelligentHeatingPilotCoordinator:
             self._data_retention_days = new_retention_days
 
             # Delegate to use case for reconfiguration handling
-            if self._extract_cycles_use_case:
-                await self._extract_cycles_use_case.on_retention_changed(new_retention_days)
+            if self._heating_cycle_manager:
+                await self._heating_cycle_manager.on_retention_change(new_retention_days)
             else:
-                _LOGGER.debug("No active use case; cannot propagate retention change")
+                _LOGGER.debug("No active cycle manager; cannot propagate retention change")
+
+            # Note: LhsLifecycleManager receives cycles from HeatingCycleLifecycleManager
+            # No need to call on_retention_change directly since cascade handles it
 
         except Exception as err:  # pylint: disable=broad-except
             _LOGGER.warning("Error handling retention change: %s", err, exc_info=True)
@@ -376,8 +387,8 @@ class IntelligentHeatingPilotCoordinator:
         self._last_anticipation_data = anticipation_data
 
         # Refresh LHS cache
-        if self._model_storage:
-            self._lhs_cache = await self._model_storage.get_learned_heating_slope()
+        if self._lhs_manager:
+            self._lhs_cache = await self._lhs_manager.get_global_lhs()
 
         # Fire event for sensors
         if anticipation_data:
@@ -416,10 +427,11 @@ class IntelligentHeatingPilotCoordinator:
         Called by sensors after an anticipation event to keep LHS in sync
         when the event publication bypasses the coordinator's async_update path.
         """
-        if self._model_storage is None:
+        if self._lhs_manager is None:
             return
         try:
-            self._lhs_cache = await self._model_storage.get_learned_heating_slope()
+            # Reload cached global LHS value
+            self._lhs_cache = await self._lhs_manager.get_global_lhs()
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to refresh LHS cache", exc_info=True)
 
@@ -490,8 +502,8 @@ class IntelligentHeatingPilotCoordinator:
 
         try:
             # Stop cycle extraction and cancel timer
-            if self._extract_cycles_use_case:
-                await self._extract_cycles_use_case.cancel()
+            if self._heating_cycle_manager:
+                await self._heating_cycle_manager.cancel()
                 _LOGGER.debug("Cycle extraction cancelled")
 
         except Exception as err:  # pylint: disable=broad-except

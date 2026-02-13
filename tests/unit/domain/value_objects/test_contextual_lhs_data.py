@@ -6,6 +6,7 @@ including validation and display logic.
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from datetime import datetime
 
 import pytest
@@ -71,7 +72,10 @@ class TestContextualLHSData:
             calculated_at=base_datetime,
         )
 
-        with pytest.raises((AttributeError, TypeError), match="frozen|cannot set attribute"):
+        with pytest.raises(
+            (AttributeError, TypeError, FrozenInstanceError),
+            match="frozen|cannot set attribute|cannot assign to field",
+        ):
             data.lhs = 15.0  # type: ignore
 
     def test_contextual_lhs_data_cannot_modify_hour(self, base_datetime: datetime) -> None:
@@ -86,7 +90,10 @@ class TestContextualLHSData:
             calculated_at=base_datetime,
         )
 
-        with pytest.raises((AttributeError, TypeError), match="frozen|cannot set attribute"):
+        with pytest.raises(
+            (AttributeError, TypeError, FrozenInstanceError),
+            match="frozen|cannot set attribute|cannot assign to field",
+        ):
             data.hour = 7  # type: ignore
 
     # ===== Test: Field Validation =====

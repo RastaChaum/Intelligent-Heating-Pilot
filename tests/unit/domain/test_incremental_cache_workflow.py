@@ -24,7 +24,9 @@ def device_id() -> str:
 @pytest.mark.asyncio
 async def test_incremental_append_logic(base_time: datetime, device_id: str) -> None:
     """Test the incremental append logic with cache."""
-    from custom_components.intelligent_heating_pilot.domain.value_objects import CycleCacheData
+    from custom_components.intelligent_heating_pilot.domain.value_objects import (
+        HeatingCycleCacheData,
+    )
 
     # Simulate initial cache
     initial_cycles = [
@@ -32,7 +34,7 @@ async def test_incremental_append_logic(base_time: datetime, device_id: str) -> 
         create_test_heating_cycle(device_id, base_time - timedelta(days=3)),
     ]
 
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(initial_cycles),
         last_search_time=base_time - timedelta(days=2),
@@ -49,7 +51,7 @@ async def test_incremental_append_logic(base_time: datetime, device_id: str) -> 
 
     # Combine cycles (simulating append operation)
     all_cycles = list(cache_data.cycles) + new_cycles
-    updated_cache = CycleCacheData(
+    updated_cache = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(all_cycles),
         last_search_time=base_time + timedelta(hours=1),
@@ -62,13 +64,15 @@ async def test_incremental_append_logic(base_time: datetime, device_id: str) -> 
 @pytest.mark.asyncio
 async def test_deduplication_logic(base_time: datetime, device_id: str) -> None:
     """Test that duplicate cycles are filtered."""
-    from custom_components.intelligent_heating_pilot.domain.value_objects import CycleCacheData
+    from custom_components.intelligent_heating_pilot.domain.value_objects import (
+        HeatingCycleCacheData,
+    )
 
     # Create a cycle
     cycle1 = create_test_heating_cycle(device_id, base_time)
 
     # Create initial cache
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple([cycle1]),
         last_search_time=base_time + timedelta(hours=1),
@@ -89,11 +93,13 @@ async def test_deduplication_logic(base_time: datetime, device_id: str) -> None:
 @pytest.mark.asyncio
 async def test_empty_period_handling(base_time: datetime, device_id: str) -> None:
     """Test that empty periods (no cycles) update last_search_time."""
-    from custom_components.intelligent_heating_pilot.domain.value_objects import CycleCacheData
+    from custom_components.intelligent_heating_pilot.domain.value_objects import (
+        HeatingCycleCacheData,
+    )
 
     # Initial data
     initial_cycles = [create_test_heating_cycle(device_id, base_time)]
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(initial_cycles),
         last_search_time=base_time + timedelta(hours=1),
@@ -102,7 +108,7 @@ async def test_empty_period_handling(base_time: datetime, device_id: str) -> Non
 
     # Search period with no cycles (empty list)
     # Update cache with new search time but no new cycles
-    updated_cache = CycleCacheData(
+    updated_cache = HeatingCycleCacheData(
         device_id=device_id,
         cycles=cache_data.cycles,  # No new cycles
         last_search_time=base_time + timedelta(days=1),  # Updated search time
@@ -119,7 +125,9 @@ async def test_empty_period_handling(base_time: datetime, device_id: str) -> Non
 @pytest.mark.asyncio
 async def test_retention_filtering(base_time: datetime, device_id: str) -> None:
     """Test filtering cycles by retention period."""
-    from custom_components.intelligent_heating_pilot.domain.value_objects import CycleCacheData
+    from custom_components.intelligent_heating_pilot.domain.value_objects import (
+        HeatingCycleCacheData,
+    )
 
     # Create cycles at different ages
     cycles = [
@@ -128,7 +136,7 @@ async def test_retention_filtering(base_time: datetime, device_id: str) -> None:
         create_test_heating_cycle(device_id, base_time),  # Recent
     ]
 
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(cycles),
         last_search_time=base_time,

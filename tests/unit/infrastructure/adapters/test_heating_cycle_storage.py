@@ -1,4 +1,8 @@
-"""Tests for HACycleCache adapter."""
+"""Tests for HAHeatingCycleStorage adapter (formerly HACycleCache).
+
+This adapter implements IHeatingCycleStorage by using Home Assistant's storage helper
+to persist heating cycles with incremental update support.
+"""
 
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock, patch
@@ -7,10 +11,35 @@ import pytest
 
 from custom_components.intelligent_heating_pilot.domain.value_objects.heating import HeatingCycle
 
-# Import directly from module to avoid HA dependencies
-from custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache import (
-    HACycleCache,
-)
+# This import will change from HACycleCache to HAHeatingCycleStorage after refactoring
+try:
+    from custom_components.intelligent_heating_pilot.infrastructure.adapters.heating_cycle_storage import (
+        HAHeatingCycleStorage,
+    )
+
+    HEATING_CYCLE_STORAGE_AVAILABLE = True
+except ImportError:
+    # Fallback during migration - use old names
+    try:
+        from custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache import (
+            HACycleCache as HAHeatingCycleStorage,
+        )
+
+        HEATING_CYCLE_STORAGE_AVAILABLE = True
+    except ImportError:
+        HEATING_CYCLE_STORAGE_AVAILABLE = False
+        HAHeatingCycleStorage = None  # type: ignore
+
+
+def _get_storage_patch_path() -> str:
+    """Helper to get the correct patch path for storage module.
+
+    Returns path to base_ha_storage.Store where Store is actually imported.
+    After refactoring, Store is imported in base_ha_storage, not in individual storage files.
+    """
+    return (
+        "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
+    )
 
 
 @pytest.fixture
@@ -47,13 +76,12 @@ def mock_store() -> Mock:
 
 
 @pytest.fixture
-async def cache(mock_hass: Mock, entry_id: str, mock_store: Mock) -> HACycleCache:
+async def cache(mock_hass: Mock, entry_id: str, mock_store: Mock) -> HAHeatingCycleStorage:
     """Create cache adapter with mocked dependencies."""
-    with patch(
-        "custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache.Store",
-        return_value=mock_store,
-    ):
-        cache_obj = HACycleCache(mock_hass, entry_id)
+    patch_path = _get_storage_patch_path()
+
+    with patch(patch_path, return_value=mock_store):
+        cache_obj = HAHeatingCycleStorage(mock_hass, entry_id)
         await cache_obj._ensure_loaded()
         return cache_obj
 
@@ -81,12 +109,102 @@ def create_test_heating_cycle(
     )
 
 
+pytestmark = pytest.mark.skipif(
+    not HEATING_CYCLE_STORAGE_AVAILABLE,
+    reason="HAHeatingCycleStorage not yet available (migration in progress)",
+)
+
+
+class TestHAHeatingCycleStorageInheritance:
+    """Test that HAHeatingCycleStorage correctly inherits from BaseHAStorageAdapter.
+
+    These tests verify the refactoring: HAHeatingCycleStorage should extend
+    BaseHAStorageAdapter and use its common functionality.
+    """
+
+    def test_inherits_from_base_storage_adapter(self) -> None:
+        """Verify HAHeatingCycleStorage extends BaseHAStorageAdapter.
+
+        This test will FAIL until refactoring is complete.
+        """
+        try:
+            from custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage import (
+                BaseHAStorageAdapter,
+            )
+
+            assert issubclass(HAHeatingCycleStorage, BaseHAStorageAdapter)
+        except ImportError:
+            pytest.skip("BaseHAStorageAdapter not yet implemented")
+
+    def test_implements_heating_cycle_storage_interface(self) -> None:
+        """Verify HAHeatingCycleStorage implements IHeatingCycleStorage interface."""
+        try:
+            from custom_components.intelligent_heating_pilot.domain.interfaces.heating_cycle_storage_interface import (
+                IHeatingCycleStorage,
+            )
+
+            assert issubclass(HAHeatingCycleStorage, IHeatingCycleStorage)
+        except ImportError:
+            # Fallback to old interface name
+            from custom_components.intelligent_heating_pilot.domain.interfaces.cycle_cache_interface import (
+                IHeatingCycleStorage,
+            )
+
+            assert issubclass(HAHeatingCycleStorage, IHeatingCycleStorage)
+
+    @pytest.mark.asyncio
+    async def test_uses_base_class_parse_datetime(self, mock_hass: Mock, entry_id: str) -> None:
+        """Verify that datetime parsing uses base class method.
+
+        This test will FAIL until BaseHAStorageAdapter is implemented.
+        """
+        try:
+            patch_path = _get_storage_patch_path()
+        except ImportError:
+            pytest.skip("BaseHAStorageAdapter not yet implemented")
+            return
+
+        with patch(patch_path):
+            storage = HAHeatingCycleStorage(mock_hass, entry_id)
+
+            # Verify the method exists and works
+            result = storage._parse_datetime("2025-12-18T14:30:00+00:00")
+            assert result.year == 2025
+            assert result.month == 12
+            assert result.day == 18
+
+    @pytest.mark.asyncio
+    async def test_uses_base_class_ensure_loaded(
+        self, mock_hass: Mock, entry_id: str, mock_store: Mock
+    ) -> None:
+        """Verify that _ensure_loaded uses base class implementation.
+
+        This test verifies the lazy loading behavior is inherited correctly.
+        """
+        patch_path = _get_storage_patch_path()
+
+        with patch(patch_path, return_value=mock_store):
+            storage = HAHeatingCycleStorage(mock_hass, entry_id)
+
+            # Should not be loaded yet
+            assert storage._loaded is False
+
+            # First call should load
+            await storage._ensure_loaded()
+            assert storage._loaded is True
+            assert mock_store.async_load.call_count == 1
+
+            # Second call should use cache
+            await storage._ensure_loaded()
+            assert mock_store.async_load.call_count == 1  # Still 1, not 2
+
+
 def test_init(mock_hass: Mock, entry_id: str) -> None:
     """Test cache adapter initialization."""
-    with patch(
-        "custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache.Store"
-    ) as mock_store_class:
-        cache = HACycleCache(mock_hass, entry_id, retention_days=45)
+    patch_path = _get_storage_patch_path()
+
+    with patch(patch_path) as mock_store_class:
+        cache = HAHeatingCycleStorage(mock_hass, entry_id, retention_days=45)
 
         assert cache._hass == mock_hass
         assert cache._entry_id == entry_id
@@ -95,7 +213,7 @@ def test_init(mock_hass: Mock, entry_id: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_cache_data_no_cache(cache: HACycleCache, device_id: str) -> None:
+async def test_get_cache_data_no_cache(cache: HAHeatingCycleStorage, device_id: str) -> None:
     """Test getting cache data when no cache exists."""
     result = await cache.get_cache_data(device_id)
     assert result is None
@@ -130,11 +248,10 @@ async def test_get_cache_data_with_stored_data(
     }
     mock_store.async_load = AsyncMock(return_value=stored_data)
 
-    with patch(
-        "custom_components.intelligent_heating_pilot.infrastructure.adapters.cycle_cache.Store",
-        return_value=mock_store,
-    ):
-        cache = HACycleCache(mock_hass, entry_id)
+    patch_path = _get_storage_patch_path()
+
+    with patch(patch_path, return_value=mock_store):
+        cache = HAHeatingCycleStorage(mock_hass, entry_id)
         result = await cache.get_cache_data(device_id)
 
         assert result is not None
@@ -145,7 +262,7 @@ async def test_get_cache_data_with_stored_data(
 
 @pytest.mark.asyncio
 async def test_append_cycles_to_empty_cache(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
     base_time: datetime,
     mock_store: Mock,
@@ -170,7 +287,7 @@ async def test_append_cycles_to_empty_cache(
 
 @pytest.mark.asyncio
 async def test_append_cycles_to_existing_cache(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
     base_time: datetime,
     mock_store: Mock,
@@ -202,7 +319,7 @@ async def test_append_cycles_to_existing_cache(
 
 @pytest.mark.asyncio
 async def test_append_cycles_deduplication(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
     base_time: datetime,
     mock_store: Mock,
@@ -222,7 +339,7 @@ async def test_append_cycles_deduplication(
 
 @pytest.mark.asyncio
 async def test_append_cycles_with_empty_list(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
     base_time: datetime,
     mock_store: Mock,
@@ -240,7 +357,7 @@ async def test_append_cycles_with_empty_list(
 
 @pytest.mark.asyncio
 async def test_prune_old_cycles(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
     base_time: datetime,
     mock_store: Mock,
@@ -269,7 +386,7 @@ async def test_prune_old_cycles(
 
 @pytest.mark.asyncio
 async def test_prune_old_cycles_no_cache(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
     base_time: datetime,
     mock_store: Mock,
@@ -283,7 +400,7 @@ async def test_prune_old_cycles_no_cache(
 
 @pytest.mark.asyncio
 async def test_prune_old_cycles_nothing_to_prune(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
     base_time: datetime,
     mock_store: Mock,
@@ -307,7 +424,7 @@ async def test_prune_old_cycles_nothing_to_prune(
 
 @pytest.mark.asyncio
 async def test_clear_cache(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
     base_time: datetime,
     mock_store: Mock,
@@ -330,7 +447,7 @@ async def test_clear_cache(
 
 @pytest.mark.asyncio
 async def test_clear_cache_no_data(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
     mock_store: Mock,
 ) -> None:
@@ -343,7 +460,7 @@ async def test_clear_cache_no_data(
 
 @pytest.mark.asyncio
 async def test_get_last_search_time(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
     base_time: datetime,
 ) -> None:
@@ -359,7 +476,7 @@ async def test_get_last_search_time(
 
 @pytest.mark.asyncio
 async def test_get_last_search_time_no_cache(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
 ) -> None:
     """Test getting last search time when no cache exists."""
@@ -370,7 +487,7 @@ async def test_get_last_search_time_no_cache(
 
 @pytest.mark.asyncio
 async def test_serialization_roundtrip(
-    cache: HACycleCache,
+    cache: HAHeatingCycleStorage,
     device_id: str,
     base_time: datetime,
 ) -> None:

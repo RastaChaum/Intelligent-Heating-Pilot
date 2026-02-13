@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from custom_components.intelligent_heating_pilot.domain.interfaces import (
-    IModelStorage,
+    ILhsStorage,
     ISchedulerReader,
 )
 from custom_components.intelligent_heating_pilot.domain.services.simple_decision_strategy import (
@@ -30,7 +30,7 @@ def mock_scheduler_reader():
 @pytest.fixture
 def mock_model_storage():
     """Create a mock model storage."""
-    storage = AsyncMock(spec=IModelStorage)
+    storage = AsyncMock(spec=ILhsStorage)
     storage.get_learned_heating_slope.return_value = 2.0  # 2°C/hour
     return storage
 

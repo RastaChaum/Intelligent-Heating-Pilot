@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from ..const import DECISION_MODE_ML, DECISION_MODE_SIMPLE
-from ..domain.interfaces import IModelStorage, ISchedulerReader
+from ..domain.interfaces import ILhsStorage, ISchedulerReader
 from ..domain.interfaces.decision_strategy_interface import IDecisionStrategy
 from ..domain.services.ml_decision_strategy import MLDecisionStrategy
 from ..domain.services.simple_decision_strategy import SimpleDecisionStrategy
@@ -31,7 +31,7 @@ class DecisionStrategyFactory:
     def create_strategy(
         mode: str,
         scheduler_reader: ISchedulerReader,
-        model_storage: IModelStorage,
+        model_storage: ILhsStorage,
         # hass: HomeAssistant,  # TODO: Add when implementing ML client
     ) -> IDecisionStrategy:
         """Create the appropriate decision strategy based on mode.

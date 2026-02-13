@@ -5,9 +5,9 @@ Value objects are immutable data carriers that represent concepts in the domain.
 
 from __future__ import annotations
 
-from .cycle_cache_data import CycleCacheData
 from .environment_state import EnvironmentState
 from .heating import HeatingAction, HeatingCycle, HeatingDecision, TariffPeriodDetail
+from .heating_cycle_cache_data import HeatingCycleCacheData
 from .historical_data import HistoricalDataKey, HistoricalDataSet, HistoricalMeasurement
 from .prediction_result import PredictionResult
 from .scheduled_timeslot import ScheduledTimeslot
@@ -25,5 +25,5 @@ __all__ = [
     "HistoricalDataKey",
     "HistoricalDataSet",
     "HistoricalMeasurement",
-    "CycleCacheData",
+    "HeatingCycleCacheData",
 ]

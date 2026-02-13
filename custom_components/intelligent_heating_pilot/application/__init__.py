@@ -9,13 +9,19 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from homeassistant.util import dt as dt_util
 
 from ..const import DEFAULT_DATA_RETENTION_DAYS, DEFAULT_DECISION_MODE
 from ..domain.entities import HeatingPilot
-from ..domain.services import HeatingCycleService, LHSCalculationService, PredictionService
+from ..domain.services import (
+    ContextualLHSCalculatorService,
+    DeadTimeCalculationService,
+    GlobalLHSCalculatorService,
+    HeatingCycleService,
+    PredictionService,
+)
 from ..domain.value_objects import (
     HeatingCycle,
     HistoricalDataKey,
@@ -27,12 +33,14 @@ if TYPE_CHECKING:
     from ..domain.interfaces import ITimerScheduler
     from ..infrastructure.adapters import (
         HAClimateCommander,
-        HACycleCache,
         HAEnvironmentReader,
-        HAModelStorage,
+        HAHeatingCycleStorage,
+        HALhsStorage,
         HASchedulerCommander,
         HASchedulerReader,
     )
+    from .heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
+    from .lhs_lifecycle_manager import LhsLifecycleManager
 
 _LOGGER = logging.getLogger(__name__)
 LHS_CACHE_TTL_HOURS = 24
@@ -52,12 +60,12 @@ class HeatingApplicationService:
     def __init__(
         self,
         scheduler_reader: HASchedulerReader,
-        model_storage: HAModelStorage,
+        model_storage: HALhsStorage,
         scheduler_commander: HASchedulerCommander,
         climate_commander: HAClimateCommander,
         environment_reader: HAEnvironmentReader,
         timer_scheduler: ITimerScheduler,
-        cycle_cache: HACycleCache | None = None,
+        cycle_cache: HAHeatingCycleStorage | None = None,
         lhs_window_hours: float = 6.0,
         history_lookback_days: int | None = None,
         decision_mode: str = DEFAULT_DECISION_MODE,
@@ -67,6 +75,9 @@ class HeatingApplicationService:
         max_cycle_duration_minutes: int | None = None,
         dead_time_minutes: float = 0.0,
         auto_learning: bool = True,
+        heating_cycle_lifecycle_manager: HeatingCycleLifecycleManager | None = None,
+        lhs_lifecycle_manager: LhsLifecycleManager | None = None,
+        on_lhs_changed: Callable[[], Any] | None = None,
     ) -> None:
         """Initialize the application service.
 
@@ -88,6 +99,9 @@ class HeatingApplicationService:
             max_cycle_duration_minutes: Maximum cycle duration (minutes)
             dead_time_minutes: Dead time in minutes (initial heating delay)
             auto_learning: If True, learn parameters from heating cycles
+            heating_cycle_lifecycle_manager: Manager for cycle lifecycle orchestration
+            lhs_lifecycle_manager: Manager for LHS lifecycle orchestration
+            on_lhs_changed: Callback invoked when global LHS is recalculated
         """
         self._scheduler_reader = scheduler_reader
         self._model_storage = model_storage
@@ -97,7 +111,9 @@ class HeatingApplicationService:
         self._timer_scheduler = timer_scheduler
         self._cycle_cache = cycle_cache
         self._prediction_service = PredictionService()
-        self._lhs_calculation_service = LHSCalculationService()
+        self._global_lhs_calculator = GlobalLHSCalculatorService()
+        self._contextual_lhs_calculator = ContextualLHSCalculatorService()
+        self._dead_time_calculator = DeadTimeCalculationService()
 
         # Create HeatingCycleService with configured parameters
         from ..const import (
@@ -125,6 +141,9 @@ class HeatingApplicationService:
         )
         self._dead_time_minutes = dead_time_minutes
         self._auto_learning = auto_learning
+        self._heating_cycle_lifecycle_manager = heating_cycle_lifecycle_manager
+        self._lhs_lifecycle_manager = lhs_lifecycle_manager
+        self._on_lhs_changed = on_lhs_changed
 
         # Create decision strategy based on mode
         decision_strategy = DecisionStrategyFactory.create_strategy(
@@ -251,6 +270,7 @@ class HeatingApplicationService:
         target_time: datetime,
         target_temp: float,
         scheduler_entity_id: str,
+        on_lhs_changed: Callable[[], Any] | None = None,
     ) -> None:
         """Trigger the anticipation action (run scheduler action).
 
@@ -258,6 +278,7 @@ class HeatingApplicationService:
             target_time: Target schedule time
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity to trigger
+            on_lhs_changed: Optional callback when LHS changes
         """
         _LOGGER.debug(
             "Entering _trigger_anticipation_action: target_time=%s, temp=%.1f°C, scheduler=%s",
@@ -313,60 +334,26 @@ class HeatingApplicationService:
             " (with cache)" if self._cycle_cache else "",
         )
 
+        if not self._heating_cycle_lifecycle_manager or not self._lhs_lifecycle_manager:
+            raise NotImplementedError
+
         # Get device ID
         vtherm_id = self._environment_reader.get_vtherm_entity_id()
 
-        # Skip cycle extraction if retention is disabled (history_lookback_days <= 0)
-        if self._history_lookback_days <= 0:
-            _LOGGER.debug(
-                "History retention disabled (history_lookback_days=%d), skipping cycle extraction",
-                self._history_lookback_days,
-            )
-            heating_cycles = []
-        else:
-            # Extract heating cycles (with cache if available)
-            try:
-                if self._cycle_cache:
-                    heating_cycles = await self._get_cycles_with_cache(vtherm_id, target_time)
-                else:
-                    heating_cycles = await self._extract_cycles_from_recorder(
-                        vtherm_id,
-                        target_time - timedelta(days=self._history_lookback_days),
-                        target_time,
-                    )
-            except Exception as exc:
-                _LOGGER.warning(
-                    "Failed to extract cycles: %s, using defaults",
-                    exc,
-                )
-                heating_cycles = []
+        heating_cycles = await self._heating_cycle_lifecycle_manager.get_cycles_for_target_time(
+            device_id=vtherm_id,
+            target_time=target_time,
+        )
 
-        # Calculate contextual LHS from cycles
-        if heating_cycles:
-            contextual_lhs = self._lhs_calculation_service.calculate_contextual_lhs(
-                heating_cycles=heating_cycles,
-                target_hour=target_hour,
-            )
-            _LOGGER.info(
-                "Contextual LHS for hour %02d from %d cycles: %.2f°C/h",
-                target_hour,
-                len(heating_cycles),
-                contextual_lhs,
-            )
-        else:
-            # Fallback: if cycles empty, use global learned LHS
-            contextual_lhs = await self._model_storage.get_learned_heating_slope()
-            _LOGGER.warning(
-                "No HeatingCycles available, using global LHS: %.2f°C/h",
-                contextual_lhs,
-            )
+        contextual_lhs = await self._lhs_lifecycle_manager.get_contextual_lhs(
+            target_time=target_time,
+            cycles=heating_cycles,
+        )
 
         # Calculate effective dead_time
         if self._auto_learning and heating_cycles:
             # Auto-learning enabled: calculate from cycles
-            avg_dead_time = self._lhs_calculation_service.calculate_average_dead_time(
-                heating_cycles
-            )
+            avg_dead_time = self._dead_time_calculator.calculate_average_dead_time(heating_cycles)
             if avg_dead_time is not None and avg_dead_time > 0:
                 effective_dead_time = avg_dead_time
                 _LOGGER.info(
@@ -977,3 +964,24 @@ class HeatingApplicationService:
         """
         _LOGGER.debug("Exporting heating_cycle_service to external consumer")
         return self._heating_cycle_service
+
+    def get_global_lhs_calculator(self) -> GlobalLHSCalculatorService:
+        """Get the global LHS calculator for lifecycle wiring."""
+        _LOGGER.debug("Exporting global_lhs_calculator to external consumer")
+        return self._global_lhs_calculator
+
+    def get_contextual_lhs_calculator(self) -> ContextualLHSCalculatorService:
+        """Get the contextual LHS calculator for lifecycle wiring."""
+        _LOGGER.debug("Exporting contextual_lhs_calculator to external consumer")
+        return self._contextual_lhs_calculator
+
+    def set_heating_cycle_lifecycle_manager(
+        self,
+        manager: HeatingCycleLifecycleManager,
+    ) -> None:
+        """Attach the heating cycle lifecycle manager."""
+        self._heating_cycle_lifecycle_manager = manager
+
+    def set_lhs_lifecycle_manager(self, manager: LhsLifecycleManager) -> None:
+        """Attach the LHS lifecycle manager."""
+        self._lhs_lifecycle_manager = manager

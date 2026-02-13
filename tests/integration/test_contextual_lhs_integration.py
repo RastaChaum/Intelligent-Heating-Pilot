@@ -118,7 +118,7 @@ class TestContextualLHSIntegration:
             end_time=base_datetime.replace(day=7, hour=6, minute=30) + timedelta(hours=0.2),
             target_temp=21.0,
             end_temp=20.7,
-            start_temp=18.0,  # 2.9°C / 0.2h = 14.5°C/h
+            start_temp=18.0,  # 2.9°C / 0.2h = 13.5°C/h
         )
 
         cycles = [cycle1_custom, cycle2_custom]
@@ -128,7 +128,7 @@ class TestContextualLHSIntegration:
 
         # Hour 6 should have data
         assert contextual_result[6] is not None
-        assert contextual_result[6] == pytest.approx(14.75, abs=0.1)
+        assert contextual_result[6] == pytest.approx(14.25, abs=0.1)
 
     def test_scenario_a_sensor_displays_numeric_value_and_count(
         self, base_datetime: datetime
@@ -222,14 +222,14 @@ class TestContextualLHSIntegration:
         """
         # Create data with None lhs (no scheduler to determine which hour)
         data = ContextualLHSData(
-            hour=-1,  # Invalid hour when no scheduler
+            hour=0,
             lhs=None,
             cycle_count=0,
             calculated_at=datetime.now(),
             reason="no_scheduler_configured",
         )
 
-        # Cannot be available without valid hour
+        # Cannot be available without valid LHS data
         display_value = data.get_display_value()
         assert display_value == "unknown"
 

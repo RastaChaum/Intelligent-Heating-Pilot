@@ -22,6 +22,7 @@ pytest = "^8.2"
 # pytest-asyncio 1.2 is required by HA test plugin
 pytest-asyncio = "^1.2.0"
 pytest-homeassistant-custom-component = "^0.13.0"
+pytest-bdd = "^7.2"  # BDD support with Gherkin
 ruff = "^0.6.0"
 mypy = "^1.10"
 types-setuptools = "^68.0.0"
@@ -32,6 +33,7 @@ pbr = "^6.0"
 
 [tool.poetry.group.test.dependencies]
 coverage = "^7.6"
+pytest-cov = "^7.0.0"
 
 [tool.poetry.scripts]
 # Optional helper scripts
@@ -50,13 +52,36 @@ warn_unused_ignores = true
 warn_return_any = true
 warn_redundant_casts = true
 warn_unused_configs = true
+namespace_packages = true
 explicit_package_bases = true
-namespace_packages = false
 mypy_path = "$MYPY_CONFIG_FILE_DIR/custom_components"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts = "-q"
+addopts = "-q --cov=custom_components/intelligent_heating_pilot --cov-report=xml:coverage.xml --cov-report=lcov:lcov.info --cov-report=term-missing:skip-covered"
+
+[tool.coverage.run]
+source = ["custom_components/intelligent_heating_pilot"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+branch = true
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]

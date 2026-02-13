@@ -1,5 +1,12 @@
 # GitHub Copilot Instructions - Intelligent Heating Pilot (IHP)
 
+## 📖 Using These Instructions
+
+**This document is for direct Copilot interactions.** For team-based development:
+
+- **See [`.github/agents/`](./agents/README.md)** for specialized agent roles and orchestration workflow
+- **See [`.github/CONTRIBUTOR_STANDARDS.md`](./CONTRIBUTOR_STANDARDS.md)** for practical development standards
+
 ## 🎯 Project Overview
 
 The Intelligent Heating Pilot (IHP) is a Home Assistant integration that intelligently preheats homes using predictive algorithms and machine learning. This document defines the architectural principles and development practices that **must** be followed by all AI-assisted code generation.
@@ -42,11 +49,44 @@ The **infrastructure layer** bridges the domain to Home Assistant:
 3. **Thin adapters** - Minimal logic, just translation between HA and domain
 4. **No business logic** - Delegate all decisions to domain layer
 
-## 🧪 Test-Driven Development (TDD) Standard
+## 🧪 Test-Driven Development (TDD) + Behavior-Driven Development (BDD)
 
-All new features must be developed using TDD:
+All new features must be developed using **Hybrid BDD/TDD strategy** to avoid redundancy and maximize clarity.
 
-### Unit Testing Requirements
+**⚠️ MANDATORY**: Agents MUST follow the comprehensive testing strategy defined in [`.github/agents/TESTING_STRATEGY.md`](.github/agents/TESTING_STRATEGY.md)
+
+### Quick Decision Guide
+
+**Use Pytest-BDD (Gherkin)** for:
+- Business-observable behavior (Black Box)
+- Happy paths and user scenarios
+- Features a Product Owner can understand
+- High-level interaction validation
+
+**Use Pytest Unitaires (TDD)** for:
+- Edge cases (None, empty, overflow)
+- Exception handling (errors, timeouts, failures)
+- Algorithmic correctness (calculations, FIFO, sorting)
+- Technical robustness (type validation, memory limits)
+
+**❌ DO NOT DUPLICATE**: If a happy path is covered by BDD, do NOT create equivalent unit test (unless type/performance validation is required).
+
+### BDD: Gherkin Feature Files
+
+Write business scenarios in `tests/features/*.feature`:
+
+```gherkin
+Feature: Heating Cycle Cache Management
+  Scenario: Cache stores LHS slope after heating cycle
+    Given a heating cycle is running
+    When the cycle completes
+    Then cache stores the measured LHS slope
+    And next preheating uses the cached slope
+```
+
+Convert to pytest using **pytest-bdd** fixtures and step definitions.
+
+### TDD: Unit Testing Requirements
 
 1. **Domain-first testing** - Write domain layer tests BEFORE implementation
 2. **Mock external dependencies** - Use mocks for all infrastructure interactions
@@ -54,8 +94,25 @@ All new features must be developed using TDD:
 4. **Centralized fixtures** - Use a centralized `fixtures.py` file for test data (DRY principle)
 5. **High coverage** - Aim for >80% coverage of domain logic
 6. **Fast tests** - Domain tests should run in milliseconds (no HA, no I/O)
+7. **Non-redundancy** - Do NOT create unit tests for scenarios already covered by BDD
 
-### Logging Standards
+### Testing Structure
+
+```python
+tests/
+├── features/            # BDD acceptance criteria (Gherkin)
+│   ├── heating_cache.feature
+│   └── conftest.py      # pytest-bdd fixtures and step definitions
+├── unit/
+│   ├── domain/          # Pure domain logic tests (no mocks needed for value objects)
+│   │   ├── test_value_objects.py
+│   │   ├── test_pilot_controller.py
+│   │   └── test_domain_services.py
+│   └── infrastructure/  # Adapter tests (with mocked HA)
+│       ├── test_scheduler_reader.py
+│       └── test_climate_commander.py
+└── integration/         # End-to-end tests (optional, slower)
+```
 
 1. **Method Entry/Exit Logging** - All public methods in the domain and application layers must log at `DEBUG` level on entry and exit.
 2. **State Changes and Results** - Use `INFO` level ONLY for:
@@ -77,21 +134,7 @@ All new features must be developed using TDD:
 1. **No unsolicited documentation** - Do NOT create markdown files to document changes, summarize work, or write reports UNLESS explicitly requested by the user.
 2. **Code-level documentation required** - Docstrings and inline comments are mandatory and should be maintained.
 3. **PR descriptions only** - Summaries of work belong in pull request descriptions or conversation responses, not in repository markdown files.
-
-### Testing Structure
-
-```python
-tests/
-├── unit/
-│   ├── domain/          # Pure domain logic tests (no mocks needed for value objects)
-│   │   ├── test_value_objects.py
-│   │   ├── test_pilot_controller.py
-│   │   └── test_domain_services.py
-│   └── infrastructure/  # Adapter tests (with mocked HA)
-│       ├── test_scheduler_reader.py
-│       └── test_climate_commander.py
-└── integration/         # End-to-end tests (optional, slower)
-```
+4. **CONTRIBUTOR_STANDARDS.md** - This is the single source of truth for development standards (see `.github/CONTRIBUTOR_STANDARDS.md`). Keep it updated with team learnings.
 
 ### Example: Testing with Interfaces
 

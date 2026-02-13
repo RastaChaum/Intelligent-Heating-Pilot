@@ -6,13 +6,14 @@ cache behavior with retention settings.
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from custom_components.intelligent_heating_pilot.domain.interfaces.model_storage_interface import (
-    IModelStorage,
+from custom_components.intelligent_heating_pilot.domain.interfaces.lhs_storage_interface import (
+    ILhsStorage,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects.lhs_cache_entry import (
     LHSCacheEntry,
@@ -30,7 +31,7 @@ class TestModelStorageContextualCache:
     @pytest.fixture
     def mock_storage(self) -> Mock:
         """Create a mock model storage implementation."""
-        storage = AsyncMock(spec=IModelStorage)
+        storage = AsyncMock(spec=ILhsStorage)
         return storage
 
     # ===== Test: Store and Retrieve Contextual LHS =====
@@ -248,7 +249,10 @@ class TestModelStorageContextualCache:
         """
         entry = LHSCacheEntry(value=14.75, updated_at=base_datetime, hour=6)
 
-        with pytest.raises((AttributeError, TypeError), match="frozen|cannot set attribute"):
+        with pytest.raises(
+            (AttributeError, TypeError, FrozenInstanceError),
+            match="frozen|cannot set attribute|cannot assign to field",
+        ):
             entry.value = 15.0  # type: ignore
 
     def test_cached_lhs_entry_hour_is_immutable(self, base_datetime: datetime) -> None:
@@ -258,7 +262,10 @@ class TestModelStorageContextualCache:
         """
         entry = LHSCacheEntry(value=14.75, updated_at=base_datetime, hour=6)
 
-        with pytest.raises((AttributeError, TypeError), match="frozen|cannot set attribute"):
+        with pytest.raises(
+            (AttributeError, TypeError, FrozenInstanceError),
+            match="frozen|cannot set attribute|cannot assign to field",
+        ):
             entry.hour = 7  # type: ignore
 
     # ===== Test: Hour Boundaries (0-23) =====

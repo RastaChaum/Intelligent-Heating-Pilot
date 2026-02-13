@@ -30,7 +30,9 @@ class TestContextualLHSEndToEnd:
     @pytest.fixture
     def base_datetime(self) -> datetime:
         """Base datetime for testing."""
-        return dt_util.parse_datetime("2025-02-09T00:00:00+00:00")
+        result = dt_util.parse_datetime("2025-02-09T00:00:00+00:00")
+        assert result is not None
+        return result
 
     @pytest.fixture
     def calculator_service(self) -> ContextualLHSCalculatorService:
@@ -246,6 +248,7 @@ class TestContextualLHSEndToEnd:
         )
 
         result_first = calculator_service.calculate_all_contextual_lhs([cycle1_first])
+        assert result_first[6] is not None
         assert abs(result_first[6] - 15.0) < 0.01
 
         # Second extraction (simulating 24h refresh)
@@ -266,6 +269,7 @@ class TestContextualLHSEndToEnd:
         result_second = calculator_service.calculate_all_contextual_lhs(all_cycles)
 
         # Average should be (15.0 + 14.5 + 15.5) / 3 = 15.0
+        assert result_second[6] is not None
         assert abs(result_second[6] - 15.0) < 0.01
 
     # ===== Helper Methods =====

@@ -1,4 +1,4 @@
-"""Tests for CycleCacheData value object."""
+"""Tests for HeatingCycleCacheData value object."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from custom_components.intelligent_heating_pilot.domain.value_objects import CycleCacheData
+from custom_components.intelligent_heating_pilot.domain.value_objects import HeatingCycleCacheData
 
 from .fixtures import TEST_DEVICE_ID, create_test_heating_cycle
 
@@ -24,13 +24,13 @@ def device_id() -> str:
 
 
 def test_creation_with_valid_data(base_time: datetime, device_id: str) -> None:
-    """Test creating CycleCacheData with valid data."""
+    """Test creating HeatingCycleCacheData with valid data."""
     cycles = [
         create_test_heating_cycle(device_id, base_time),
         create_test_heating_cycle(device_id, base_time + timedelta(hours=2)),
     ]
 
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(cycles),
         last_search_time=base_time + timedelta(hours=4),
@@ -44,10 +44,10 @@ def test_creation_with_valid_data(base_time: datetime, device_id: str) -> None:
 
 
 def test_immutability(base_time: datetime, device_id: str) -> None:
-    """Test that CycleCacheData is immutable."""
+    """Test that HeatingCycleCacheData is immutable."""
     cycles = [create_test_heating_cycle(device_id, base_time)]
 
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(cycles),
         last_search_time=base_time,
@@ -67,7 +67,7 @@ def test_empty_device_id_raises_error(base_time: datetime) -> None:
     cycles = [create_test_heating_cycle("test", base_time)]
 
     with pytest.raises(ValueError, match="device_id"):
-        CycleCacheData(
+        HeatingCycleCacheData(
             device_id="",
             cycles=tuple(cycles),
             last_search_time=base_time,
@@ -80,7 +80,7 @@ def test_negative_retention_days_raises_error(base_time: datetime, device_id: st
     cycles = [create_test_heating_cycle(device_id, base_time)]
 
     with pytest.raises(ValueError, match="retention_days"):
-        CycleCacheData(
+        HeatingCycleCacheData(
             device_id=device_id,
             cycles=tuple(cycles),
             last_search_time=base_time,
@@ -93,7 +93,7 @@ def test_zero_retention_days_raises_error(base_time: datetime, device_id: str) -
     cycles = [create_test_heating_cycle(device_id, base_time)]
 
     with pytest.raises(ValueError, match="retention_days"):
-        CycleCacheData(
+        HeatingCycleCacheData(
             device_id=device_id,
             cycles=tuple(cycles),
             last_search_time=base_time,
@@ -109,7 +109,7 @@ def test_naive_timestamp_raises_error(device_id: str) -> None:
     naive_time = datetime(2025, 12, 18, 14, 0, 0)  # No timezone
 
     with pytest.raises(ValueError, match="timezone-aware"):
-        CycleCacheData(
+        HeatingCycleCacheData(
             device_id=device_id,
             cycles=tuple(cycles),
             last_search_time=naive_time,
@@ -125,7 +125,7 @@ def test_cycle_count_property(base_time: datetime, device_id: str) -> None:
         create_test_heating_cycle(device_id, base_time + timedelta(hours=4)),
     ]
 
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(cycles),
         last_search_time=base_time + timedelta(hours=6),
@@ -137,7 +137,7 @@ def test_cycle_count_property(base_time: datetime, device_id: str) -> None:
 
 def test_cycle_count_empty(base_time: datetime, device_id: str) -> None:
     """Test cycle_count with empty cycles."""
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(),
         last_search_time=base_time,
@@ -155,7 +155,7 @@ def test_get_cycles_since(base_time: datetime, device_id: str) -> None:
         create_test_heating_cycle(device_id, base_time + timedelta(hours=4)),  # 18:00
     ]
 
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(cycles),
         last_search_time=base_time + timedelta(hours=6),
@@ -178,7 +178,7 @@ def test_get_cycles_since_none_match(base_time: datetime, device_id: str) -> Non
         create_test_heating_cycle(device_id, base_time + timedelta(hours=2)),
     ]
 
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(cycles),
         last_search_time=base_time + timedelta(hours=4),
@@ -202,7 +202,7 @@ def test_get_cycles_within_retention(base_time: datetime, device_id: str) -> Non
         create_test_heating_cycle(device_id, base_time),  # Recent
     ]
 
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(cycles),
         last_search_time=base_time,
@@ -223,7 +223,7 @@ def test_get_cycles_within_retention_all_old(base_time: datetime, device_id: str
         create_test_heating_cycle(device_id, base_time - timedelta(days=35)),
     ]
 
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(cycles),
         last_search_time=base_time,
@@ -243,7 +243,7 @@ def test_get_cycles_within_retention_all_recent(base_time: datetime, device_id: 
         create_test_heating_cycle(device_id, base_time - timedelta(days=1)),
     ]
 
-    cache_data = CycleCacheData(
+    cache_data = HeatingCycleCacheData(
         device_id=device_id,
         cycles=tuple(cycles),
         last_search_time=base_time,

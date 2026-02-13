@@ -336,7 +336,7 @@ class TestValidateCriticalData:
         )
 
         with pytest.raises(
-            ValueError, match="Missing critical historical data for key: indoor_temp"
+            ValueError, match=r"Missing critical historical data keys: \['indoor_temp'\]"
         ):
             service._validate_critical_data(dataset)
 
@@ -350,7 +350,7 @@ class TestValidateCriticalData:
         )
 
         with pytest.raises(
-            ValueError, match="Missing critical historical data for key: heating_state"
+            ValueError, match=r"Missing critical historical data keys: \['heating_state'\]"
         ):
             service._validate_critical_data(dataset)
 
