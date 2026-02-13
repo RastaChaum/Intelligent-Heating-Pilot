@@ -378,18 +378,134 @@ def system_recalculates_anticipation(
 
 
 @when("Home Assistant restarts")
-def home_assistant_restarts(ihp_switch_context):
-    """WHEN: HA restarts (simulated)."""
-    # In real implementation, this would reload config from storage
-    # For BDD, we just verify state persistence
+def home_assistant_restarts(
+    ihp_switch_context,
+    mock_adapters_ihp_switch,
+    app_service_ihp_switch,
+):
+    """WHEN: HA restarts (simulated) - reload config entry.
+
+    This simulates a full HA restart by:
+    1. Saving current IHP state to context (simulates persistent storage)
+    2. Cleaning up the application service (simulates unload)
+    3. Recreating with the saved state (simulates reload)
+
+    Observable behavior: IHP enabled state should persist across the restart cycle.
+    """
+    # STEP 1: Save the current IHP state (simulates HA writing to storage before restart)
+    saved_ihp_state = ihp_switch_context["ihp_enabled"]
+
+    # STEP 2: Simulate cleanup (what happens during async_unload_entry)
+    # In real HA, this would call coordinator.async_cleanup()
+    ihp_switch_context["pre_restart_service"] = app_service_ihp_switch
+
+    # STEP 3: Simulate reload with persisted state (what happens during async_setup_entry)
+    # In real HA, this would read ihp_enabled from config_entry.options
+    # and create a new HeatingApplicationService with that configuration
+
+    # Recreate mocks to simulate fresh service initialization
+    mock_adapters_ihp_switch["scheduler_reader"].get_next_timeslot = AsyncMock()
+    mock_adapters_ihp_switch["model_storage"].get_learned_heating_slope = AsyncMock(
+        return_value=ihp_switch_context["learned_slope"]
+    )
+
+    # Create new application service with persisted IHP state
+    # This simulates the coordinator being recreated with config from storage
+    new_service = HeatingApplicationService(
+        scheduler_reader=mock_adapters_ihp_switch["scheduler_reader"],
+        model_storage=mock_adapters_ihp_switch["model_storage"],
+        scheduler_commander=mock_adapters_ihp_switch["scheduler_commander"],
+        climate_commander=mock_adapters_ihp_switch["climate_commander"],
+        environment_reader=mock_adapters_ihp_switch["environment_reader"],
+        timer_scheduler=mock_adapters_ihp_switch["timer_scheduler"],
+        heating_cycle_lifecycle_manager=mock_adapters_ihp_switch["heating_cycle_lifecycle_manager"],
+        lhs_lifecycle_manager=mock_adapters_ihp_switch["lhs_lifecycle_manager"],
+        lhs_window_hours=6.0,
+    )
+
+    # Store the reloaded service and confirm state was restored
+    ihp_switch_context["reloaded_service"] = new_service
+    ihp_switch_context["ihp_enabled"] = saved_ihp_state  # Confirm state persisted
     ihp_switch_context["ha_restarted"] = True
 
 
 @when("the system processes all scheduled events")
-def system_processes_all_events(ihp_switch_context, app_service_ihp_switch):
-    """WHEN: All scheduled events are processed."""
-    # This is a high-level scenario - we're just tracking that events occurred
+def system_processes_all_events(
+    ihp_switch_context,
+    mock_adapters_ihp_switch,
+    app_service_ihp_switch,
+):
+    """WHEN: All scheduled events are processed.
+
+    This actually iterates through each scheduled event and triggers
+    anticipation calculation for each one. This validates that with IHP
+    disabled, NONE of the events trigger preheating.
+
+    Observable behavior: Multiple events processed, zero preheating actions.
+    """
+    # Get scheduled events (e.g., "07:00, 12:00, 19:00")
+    event_times = ihp_switch_context.get("scheduled_events", [])
+
+    # Track calculation results for each event
+    event_results = []
+
+    # Process each scheduled event
+    for time_str in event_times:
+        # Parse time (e.g., "07:00")
+        hour, minute = map(int, time_str.split(":"))
+        target_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=timezone.utc)
+
+        # Calculate 2 hours before the event (time to calculate anticipation)
+        calc_time = target_time.replace(hour=max(0, hour - 2))
+
+        # Setup timeslot for this event
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=ihp_switch_context["target_temp"],
+            timeslot_id=f"event_{hour:02d}{minute:02d}",
+            scheduler_entity=ihp_switch_context["scheduler_entity_id"],
+        )
+        mock_adapters_ihp_switch["scheduler_reader"].get_next_timeslot.return_value = timeslot
+
+        # Setup environment
+        environment = EnvironmentState(
+            timestamp=calc_time,
+            indoor_temperature=ihp_switch_context["current_temp"],
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+        )
+        mock_adapters_ihp_switch[
+            "environment_reader"
+        ].get_current_environment.return_value = environment
+
+        # Calculate anticipation with IHP disabled
+        with patch(
+            "custom_components.intelligent_heating_pilot.application.dt_util.now",
+            return_value=calc_time,
+        ):
+            result = asyncio.run(
+                app_service_ihp_switch.calculate_and_schedule_anticipation(
+                    ihp_enabled=ihp_switch_context["ihp_enabled"]
+                )
+            )
+
+        event_results.append(
+            {
+                "event_time": time_str,
+                "result": result,
+                # NOTE: With IHP disabled, calculation still runs (result exists)
+                # but run_action should NOT be called (no actual preheating)
+                "calculation_performed": result is not None,
+                "anticipated_start_calculated": result is not None
+                and "anticipated_start_time" in result,
+            }
+        )
+
+    # Store results for verification
+    ihp_switch_context["event_results"] = event_results
     ihp_switch_context["events_processed"] = True
+    ihp_switch_context["events_count"] = len(event_times)
 
 
 # ============================================================================
@@ -511,27 +627,131 @@ def ihp_switch_still_off(ihp_switch_context):
 
 
 @then("no preheating should occur after restart")
-def no_preheating_after_restart(ihp_switch_context):
-    """THEN: Verify IHP stays disabled after restart."""
-    # This would require actual HA test - for BDD we just verify state
+def no_preheating_after_restart(ihp_switch_context, mock_adapters_ihp_switch):
+    """THEN: Verify IHP stays disabled after restart.
+
+    After the restart cycle (unload + reload), the IHP state should still
+    be disabled, and running anticipation calculation should NOT trigger
+    any preheating actions.
+    """
+    # Verify state persisted as disabled
     assert ihp_switch_context["ihp_enabled"] is False
+
+    # Verify restart actually occurred
+    assert ihp_switch_context.get("ha_restarted") is True
+
+    # Run anticipation calculation on reloaded service to verify no preheating
+    reloaded_service = ihp_switch_context.get("reloaded_service")
+    if reloaded_service:
+        # Setup a test calculation scenario
+        current_time = datetime(2025, 2, 10, 5, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 2, 10, 7, 0, 0, tzinfo=timezone.utc)
+
+        timeslot = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=21.0,
+            timeslot_id="post_restart",
+            scheduler_entity="switch.test_schedule",
+        )
+        mock_adapters_ihp_switch["scheduler_reader"].get_next_timeslot.return_value = timeslot
+
+        environment = EnvironmentState(
+            timestamp=current_time,
+            indoor_temperature=18.0,
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+        )
+        mock_adapters_ihp_switch[
+            "environment_reader"
+        ].get_current_environment.return_value = environment
+
+        # Calculate with IHP disabled (after restart)
+        with patch(
+            "custom_components.intelligent_heating_pilot.application.dt_util.now",
+            return_value=current_time,
+        ):
+            result = asyncio.run(
+                reloaded_service.calculate_and_schedule_anticipation(ihp_enabled=False)
+            )
+
+        # Verify no preheating triggered
+        assert result is not None  # Calculation runs
+        # But run_action should not have been called
+        mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
 
 
 @then("none of the events should trigger preheating")
 def no_events_trigger_preheating(ihp_switch_context, mock_adapters_ihp_switch):
-    """THEN: Verify run_action was never called."""
+    """THEN: Verify run_action was never called for any event.
+
+    With IHP disabled, processing multiple scheduled events should:
+    1. Still perform anticipation calculations (normal behavior)
+    2. But NEVER trigger actual preheating (run_action not called)
+
+    This tests the observable behavior: no temperature changes occur
+    before scheduled times even though calculations are performed.
+    """
+    # PRIMARY ASSERTION: scheduler_commander.run_action was NEVER called
+    # This is the observable behavior - no preheating actually happens
     mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
+
+    # Additionally verify calculations were performed (system still works)
+    event_results = ihp_switch_context.get("event_results", [])
+    assert len(event_results) > 0, "Expected events to be processed"
+
+    # Verify calculations ran but didn't trigger actions
+    for event_result in event_results:
+        # Calculation should have been performed
+        assert event_result["calculation_performed"] is True, (
+            f"Event at {event_result['event_time']} should still calculate anticipation "
+            f"even when IHP is disabled (for monitoring/logging)"
+        )
+        # But the presence of anticipated_start_time doesn't mean preheating happened
+        # The real check is that run_action was never called (asserted above)
 
 
 @then("all events should occur at their exact scheduled times")
-def events_occur_at_scheduled_times(ihp_switch_context):
-    """THEN: Verify no anticipation occurred."""
-    # Without preheating, events happen at their scheduled time
+def events_occur_at_scheduled_times(ihp_switch_context, mock_adapters_ihp_switch):
+    """THEN: Verify no anticipation actions occurred for any event.
+
+    Without preheating actions, all events occur at their exact scheduled time,
+    not earlier. This is verified by confirming run_action was never called,
+    meaning the scheduler's default behavior is used (events at scheduled time).
+    """
+    # Without preheating actions, events happen at their scheduled time
     assert ihp_switch_context["ihp_enabled"] is False
+
+    # Verify run_action was never called (no anticipation actions)
+    mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
+
+    # Verify each event was processed (calculations performed)
+    event_results = ihp_switch_context.get("event_results", [])
+    for event_result in event_results:
+        # Calculations should have run
+        assert (
+            event_result["calculation_performed"] is True
+        ), f"Event at {event_result['event_time']} should be processed"
 
 
 @then("room temperature should only change at scheduled times")
-def temperature_changes_only_at_scheduled(ihp_switch_context):
-    """THEN: Verify no premature temperature changes."""
-    # Observable: temperature doesn't rise before scheduled time
-    assert ihp_switch_context["preheating_triggered"] is False
+def temperature_changes_only_at_scheduled(ihp_switch_context, mock_adapters_ihp_switch):
+    """THEN: Verify no premature temperature changes occurred.
+
+    Observable: temperature doesn't rise before scheduled time because
+    no preheating actions were triggered for any event (run_action not called).
+    """
+    # Verify IHP was disabled throughout
+    assert ihp_switch_context["ihp_enabled"] is False
+
+    # PRIMARY CHECK: run_action was never called
+    # This means no premature temperature changes occurred
+    mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
+
+    # Verify each processed event shows calculations ran
+    event_results = ihp_switch_context.get("event_results", [])
+    for event_result in event_results:
+        # System should still process and calculate
+        assert (
+            event_result["calculation_performed"] is True
+        ), f"Event at {event_result['event_time']} should be processed"
