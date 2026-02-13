@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Callable
 
 from ..domain.value_objects.heating import HeatingCycle
@@ -149,6 +149,23 @@ class LhsLifecycleManager:
         except Exception as exc:
             _LOGGER.error("Error during startup: %s", exc)
             # Don't re-raise - continue with defaults
+
+        # Schedule 24h timer for automatic refresh
+        if self._timer_scheduler is not None:
+            if dt_util is not None:
+                next_refresh = dt_util.now() + timedelta(hours=24)
+            else:
+                next_refresh = datetime.now() + timedelta(hours=24)
+
+            # Timer callback: no-op placeholder (cycles provided by HeatingCycleLifecycleManager)
+            async def noop_callback() -> None:
+                """Placeholder timer callback - actual update comes from HCLM."""
+                pass
+
+            self._timer_cancel_func = self._timer_scheduler.schedule_timer(
+                next_refresh, noop_callback
+            )
+            _LOGGER.debug("Scheduled 24h LHS refresh timer for %s", next_refresh.isoformat())
 
         _LOGGER.debug("Exiting LhsLifecycleManager.startup")
 

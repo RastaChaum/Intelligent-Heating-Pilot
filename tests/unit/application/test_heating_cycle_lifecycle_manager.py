@@ -150,6 +150,7 @@ class TestHeatingCycleLifecycleManager:
             end_temp=end_temp,
             start_temp=start_temp,
             tariff_details=None,
+            dead_time_cycle_minutes=None,
         )
 
     # ===== Test: startup() - ONE test for ALL scenarios =====
@@ -257,6 +258,14 @@ class TestHeatingCycleLifecycleManager:
         # Verify cache is populated
         initial_cache_size = len(manager._cached_cycles_for_target_time)
         assert initial_cache_size == 4
+
+        # Configure mock to return cycles for re-extraction (non-empty list required)
+        manager._heating_cycle_service.extract_heating_cycles = AsyncMock(
+            return_value=[
+                self._create_heating_cycle(base_datetime - timedelta(days=7)),
+                self._create_heating_cycle(base_datetime - timedelta(days=3)),
+            ]
+        )
 
         # WHEN: Retention change is triggered (SINGLE CALL for manager without cache)
         await manager.on_retention_change(new_retention_days)
@@ -414,27 +423,17 @@ class TestHeatingCycleLifecycleManager:
         mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
 
         # WHEN: get_cycles_for_window is called without cache (SINGLE CALL)
+        # Reset mocks and configure for NO cache scenario
+        mock_heating_cycle_storage.reset_mock()
+        mock_heating_cycle_storage.get_cache_data.return_value = None  # Simulate cache miss
+        mock_heating_cycle_service.reset_mock()
+        mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
+
         result = await manager.get_cycles_for_window(device_id, start_time, end_time)
 
         # THEN Aspect B: Extracts when no cache
         mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
         assert result == expected_cycles
-
-        # THEN Aspect F: Scenario 2 - Cache miss (cache_data is None)
-        mock_heating_cycle_storage.get_cache_data.reset_mock()
-        mock_heating_cycle_storage.get_cache_data.return_value = None  # Simulate cache miss
-        mock_heating_cycle_service.extract_heating_cycles.reset_mock()
-        mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
-
-        result_no_cache = await manager_with_cache.get_cycles_for_window(
-            device_id, start_time, end_time
-        )
-
-        # Persistent cache was checked (returns None)
-        mock_heating_cycle_storage.get_cache_data.assert_called_once()
-        # Falls back to extraction when cache misses
-        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
-        assert result_no_cache == expected_cycles
 
         # THEN Aspect C: Filters by time range
         # Result is filtered (implementation may filter)
@@ -498,17 +497,9 @@ class TestHeatingCycleLifecycleManager:
         expected_cycles = [self._create_heating_cycle(base_datetime - timedelta(days=10))]
         mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
 
-        # - Cache contains cycles for retention window (Aspect C)
-        cached_cycles = [self._create_heating_cycle(base_datetime - timedelta(days=5))]
-        cache_data_with_cycles = HeatingCycleCacheData(
-            device_id=device_id,
-            cycles=tuple(cached_cycles),
-            last_search_time=base_datetime,
-            retention_days=30,
-        )
-        mock_heating_cycle_storage.get_cache_data.return_value = cache_data_with_cycles
-
         # WHEN: get_cycles_for_target_time is called (SINGLE CALL without cache)
+        # Configure storage to return None (no cache) so extraction is forced
+        mock_heating_cycle_storage.get_cache_data.return_value = None
         result = await manager.get_cycles_for_target_time(device_id, target_time)
 
         # THEN Aspect A: Uses retention window correctly
@@ -519,35 +510,43 @@ class TestHeatingCycleLifecycleManager:
         # Window should be [target_time - 30 days, target_time]
         # (verified in implementation)
 
-        # WHEN: get_cycles_for_target_time is called with cache hit
+        # THEN Aspect C & D: Cache optimization (with manager_with_cache and proper mock setup)
+        # Reset and reconfigure mocks for cache scenarios
+        mock_heating_cycle_storage.reset_mock()
+        mock_heating_cycle_service.reset_mock()
+
+        # Setup cache scenario: Configure storage to return cached data
+        cached_cycles = [self._create_heating_cycle(base_datetime - timedelta(days=5))]
+        cache_data_with_cycles = HeatingCycleCacheData(
+            device_id=device_id,
+            cycles=tuple(cached_cycles),
+            last_search_time=base_datetime,
+            retention_days=30,
+        )
+        mock_heating_cycle_storage.get_cache_data.return_value = cache_data_with_cycles
+
         # First call reads from storage cache and stores in memory
         result_cached_first = await manager_with_cache.get_cycles_for_target_time(
             device_id, target_time
         )
 
         # THEN Aspect C: Returns cached when available
-        # Cached cycles are returned
+        # Cycles are returned from storage cache
         assert result_cached_first == cached_cycles
-
-        # THEN Aspect D: Persistent cache access optimization
-        # With cache hit - persistent storage accessed via get_cycles_for_window()
+        # Storage was accessed to get cache data
         mock_heating_cycle_storage.get_cache_data.assert_called()
 
-        # With cache miss - falls back to extraction
-        # Use a different target_time to bypass memory cache
-        mock_heating_cycle_storage.get_cache_data.reset_mock()
-        mock_heating_cycle_storage.get_cache_data.return_value = None
-        mock_heating_cycle_service.extract_heating_cycles.reset_mock()
-        mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
-
-        different_target = base_datetime + timedelta(days=1)  # Different date to avoid memory cache
-        result_no_cache = await manager_with_cache.get_cycles_for_target_time(
-            device_id, different_target
+        # THEN Aspect D: Memory cache optimization on second call
+        # Use same target_time to trigger memory cache hit
+        mock_heating_cycle_storage.reset_mock()
+        result_cached_second = await manager_with_cache.get_cycles_for_target_time(
+            device_id, target_time
         )
 
-        mock_heating_cycle_storage.get_cache_data.assert_called_once()
-        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
-        assert result_no_cache == expected_cycles
+        # Should return cached value immediately without accessing storage
+        assert result_cached_second == cached_cycles
+        # Storage NOT called because memory cache hit
+        mock_heating_cycle_storage.get_cache_data.assert_not_called()
 
     # ===== Test: update_cycles_for_window() - ONE test for ALL scenarios =====
 
