@@ -58,7 +58,7 @@ mypy_path = "$MYPY_CONFIG_FILE_DIR/custom_components"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts = "-q --cov=custom_components/intelligent_heating_pilot --cov-report=xml:coverage.xml --cov-report=lcov:lcov.info --cov-report=term-missing:skip-covered"
+addopts = "-q --cov=custom_components/intelligent_heating_pilot --cov-report=xml:coverage.xml --cov-report=lcov:lcov.info --cov-report=html:htmlcov --cov-report=term-missing:skip-covered"
 
 [tool.coverage.run]
 source = ["custom_components/intelligent_heating_pilot"]

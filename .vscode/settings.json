@@ -40,9 +40,9 @@
   "files.insertFinalNewline": true,
   "git.autoStash": false,
   "coverage-gutters.coverageFileNames": [
-    "coverage.lcov"
+    "lcov.info"
   ],
   "coverage-gutters.coverageFilePaths": [
-    "${workspaceFolder}/coverage.lcov"
+    "${workspaceFolder}/lcov.info"
   ]
 }
