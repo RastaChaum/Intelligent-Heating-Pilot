@@ -445,7 +445,6 @@ def system_processes_all_events(
     """
     # Get scheduled events (e.g., "07:00, 12:00, 19:00")
     event_times = ihp_switch_context.get("scheduled_events", [])
-    current_date = datetime(2025, 2, 10, tzinfo=timezone.utc)
 
     # Track calculation results for each event
     event_results = []
@@ -491,11 +490,17 @@ def system_processes_all_events(
                 )
             )
 
-        event_results.append({
-            "event_time": time_str,
-            "result": result,
-            "preheating_triggered": result is not None and "anticipated_start_time" in result,
-        })
+        event_results.append(
+            {
+                "event_time": time_str,
+                "result": result,
+                # NOTE: With IHP disabled, calculation still runs (result exists)
+                # but run_action should NOT be called (no actual preheating)
+                "calculation_performed": result is not None,
+                "anticipated_start_calculated": result is not None
+                and "anticipated_start_time" in result,
+            }
+        )
 
     # Store results for verification
     ihp_switch_context["event_results"] = event_results
@@ -680,58 +685,73 @@ def no_preheating_after_restart(ihp_switch_context, mock_adapters_ihp_switch):
 def no_events_trigger_preheating(ihp_switch_context, mock_adapters_ihp_switch):
     """THEN: Verify run_action was never called for any event.
 
-    With IHP disabled, processing multiple scheduled events should NOT
-    trigger any preheating actions. This is verified by:
-    1. Checking that run_action was never called
-    2. Verifying each event result shows no preheating triggered
+    With IHP disabled, processing multiple scheduled events should:
+    1. Still perform anticipation calculations (normal behavior)
+    2. But NEVER trigger actual preheating (run_action not called)
+
+    This tests the observable behavior: no temperature changes occur
+    before scheduled times even though calculations are performed.
     """
-    # Verify scheduler_commander.run_action was NEVER called
+    # PRIMARY ASSERTION: scheduler_commander.run_action was NEVER called
+    # This is the observable behavior - no preheating actually happens
     mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
 
-    # Additionally verify each processed event
+    # Additionally verify calculations were performed (system still works)
     event_results = ihp_switch_context.get("event_results", [])
     assert len(event_results) > 0, "Expected events to be processed"
 
+    # Verify calculations ran but didn't trigger actions
     for event_result in event_results:
-        assert event_result["preheating_triggered"] is False, (
-            f"Event at {event_result['event_time']} should NOT trigger preheating "
-            f"when IHP is disabled"
+        # Calculation should have been performed
+        assert event_result["calculation_performed"] is True, (
+            f"Event at {event_result['event_time']} should still calculate anticipation "
+            f"even when IHP is disabled (for monitoring/logging)"
         )
+        # But the presence of anticipated_start_time doesn't mean preheating happened
+        # The real check is that run_action was never called (asserted above)
 
 
 @then("all events should occur at their exact scheduled times")
-def events_occur_at_scheduled_times(ihp_switch_context):
-    """THEN: Verify no anticipation occurred for any event.
+def events_occur_at_scheduled_times(ihp_switch_context, mock_adapters_ihp_switch):
+    """THEN: Verify no anticipation actions occurred for any event.
 
-    Without preheating, all events occur at their exact scheduled time,
-    not earlier. This is verified by confirming each processed event did
-    not calculate an anticipated start time.
+    Without preheating actions, all events occur at their exact scheduled time,
+    not earlier. This is verified by confirming run_action was never called,
+    meaning the scheduler's default behavior is used (events at scheduled time).
     """
-    # Without preheating, events happen at their scheduled time
+    # Without preheating actions, events happen at their scheduled time
     assert ihp_switch_context["ihp_enabled"] is False
 
-    # Verify each event processed shows no anticipation
+    # Verify run_action was never called (no anticipation actions)
+    mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
+
+    # Verify each event was processed (calculations performed)
     event_results = ihp_switch_context.get("event_results", [])
     for event_result in event_results:
-        assert event_result["preheating_triggered"] is False, (
-            f"Event at {event_result['event_time']} should occur at scheduled time, "
-            f"not be anticipated"
-        )
+        # Calculations should have run
+        assert (
+            event_result["calculation_performed"] is True
+        ), f"Event at {event_result['event_time']} should be processed"
 
 
 @then("room temperature should only change at scheduled times")
-def temperature_changes_only_at_scheduled(ihp_switch_context):
+def temperature_changes_only_at_scheduled(ihp_switch_context, mock_adapters_ihp_switch):
     """THEN: Verify no premature temperature changes occurred.
 
     Observable: temperature doesn't rise before scheduled time because
-    no preheating was triggered for any event.
+    no preheating actions were triggered for any event (run_action not called).
     """
-    # Verify no preheating was triggered
-    assert ihp_switch_context["preheating_triggered"] is False
+    # Verify IHP was disabled throughout
+    assert ihp_switch_context["ihp_enabled"] is False
 
-    # Verify each processed event shows no premature heating
+    # PRIMARY CHECK: run_action was never called
+    # This means no premature temperature changes occurred
+    mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
+
+    # Verify each processed event shows calculations ran
     event_results = ihp_switch_context.get("event_results", [])
     for event_result in event_results:
-        assert event_result["preheating_triggered"] is False, (
-            f"Event at {event_result['event_time']} should NOT have premature heating"
-        )
+        # System should still process and calculate
+        assert (
+            event_result["calculation_performed"] is True
+        ), f"Event at {event_result['event_time']} should be processed"
