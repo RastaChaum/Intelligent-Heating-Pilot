@@ -51,7 +51,25 @@ The **infrastructure layer** bridges the domain to Home Assistant:
 
 ## 🧪 Test-Driven Development (TDD) + Behavior-Driven Development (BDD)
 
-All new features must be developed using **TDD** (unit tests) and **BDD** (acceptance criteria).
+All new features must be developed using **Hybrid BDD/TDD strategy** to avoid redundancy and maximize clarity.
+
+**⚠️ MANDATORY**: Agents MUST follow the comprehensive testing strategy defined in [`.github/agents/TESTING_STRATEGY.md`](.github/agents/TESTING_STRATEGY.md)
+
+### Quick Decision Guide
+
+**Use Pytest-BDD (Gherkin)** for:
+- Business-observable behavior (Black Box)
+- Happy paths and user scenarios
+- Features a Product Owner can understand
+- High-level interaction validation
+
+**Use Pytest Unitaires (TDD)** for:
+- Edge cases (None, empty, overflow)
+- Exception handling (errors, timeouts, failures)
+- Algorithmic correctness (calculations, FIFO, sorting)
+- Technical robustness (type validation, memory limits)
+
+**❌ DO NOT DUPLICATE**: If a happy path is covered by BDD, do NOT create equivalent unit test (unless type/performance validation is required).
 
 ### BDD: Gherkin Feature Files
 
@@ -76,6 +94,7 @@ Convert to pytest using **pytest-bdd** fixtures and step definitions.
 4. **Centralized fixtures** - Use a centralized `fixtures.py` file for test data (DRY principle)
 5. **High coverage** - Aim for >80% coverage of domain logic
 6. **Fast tests** - Domain tests should run in milliseconds (no HA, no I/O)
+7. **Non-redundancy** - Do NOT create unit tests for scenarios already covered by BDD
 
 ### Testing Structure
 
