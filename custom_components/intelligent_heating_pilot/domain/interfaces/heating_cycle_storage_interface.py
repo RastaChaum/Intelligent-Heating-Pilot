@@ -1,16 +1,16 @@
-"""Interface for heating cycle cache storage."""
+"""Interface for heating cycle storage."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from ..value_objects.cycle_cache_data import CycleCacheData
 from ..value_objects.heating import HeatingCycle
+from ..value_objects.heating_cycle_cache_data import HeatingCycleCacheData
 
 
-class ICycleCache(ABC):
-    """Contract for persisting and retrieving heating cycle cache data.
+class IHeatingCycleStorage(ABC):
+    """Contract for persisting and retrieving heating cycle data.
 
     Implementations of this interface handle storage and retrieval of
     heating cycles with incremental update support to avoid repeatedly
@@ -18,7 +18,7 @@ class ICycleCache(ABC):
     """
 
     @abstractmethod
-    async def get_cache_data(self, device_id: str) -> CycleCacheData | None:
+    async def get_cache_data(self, device_id: str) -> HeatingCycleCacheData | None:
         """Get cached cycle data for a device.
 
         Returns the complete cache data including cycles and metadata.
@@ -28,7 +28,7 @@ class ICycleCache(ABC):
             device_id: The device identifier
 
         Returns:
-            CycleCacheData if cache exists, None otherwise
+            HeatingCycleCacheData if cache exists, None otherwise
         """
         pass
 

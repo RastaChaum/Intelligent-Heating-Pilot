@@ -37,7 +37,7 @@ class TestLhsLifecycleManager:
 
     @pytest.fixture
     def mock_model_storage(self) -> Mock:
-        """Create mock IModelStorage."""
+        """Create mock ILhsStorage."""
         storage = Mock()
         storage.get_cached_global_lhs = AsyncMock(return_value=None)
         storage.set_cached_global_lhs = AsyncMock()
@@ -344,9 +344,11 @@ class TestLhsLifecycleManager:
 
         # Both calls return same value
         assert result == result2 == 3.2
-        # Second call did NOT hit storage (memory cache used)
-        assert storage_calls_first == 1
-        assert storage_calls_second == 1, "Second call should NOT hit storage"
+
+        # THEN: Storage access optimization
+        # First call read from storage, second call used memory cache
+        assert storage_calls_first == 1, "First call should read from storage"
+        assert storage_calls_second == 1, "Second call should NOT hit storage (memory cache used)"
 
         # THEN Aspect B: Returns default when no cache exists
         # (Tested with fresh manager instance to avoid memory cache interference)
@@ -485,8 +487,13 @@ class TestLhsLifecycleManager:
 
         # Both calls return same value
         assert result1 == result2 == 3.2
-        # Second call did NOT hit storage (memory cache used)
-        assert storage_calls_second == storage_calls_first, "Second call should NOT hit storage"
+
+        # THEN: Storage access optimization
+        # First call read from storage, second call used memory cache
+        assert storage_calls_first >= 1, "First call should read from storage"
+        assert (
+            storage_calls_second == storage_calls_first
+        ), "Second call should NOT hit storage (memory cache used)"
 
     # ===== Test: update_global_lhs_from_cycles() - ONE test for ALL scenarios =====
 

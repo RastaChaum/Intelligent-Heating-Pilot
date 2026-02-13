@@ -79,30 +79,38 @@ def mock_heating_cycle_service() -> Mock:
 def mock_historical_adapter() -> Mock:
     """Create mock IHistoricalDataAdapter.
 
-    Provides load_historical_data() for fetching historical sensor data.
+    Provides fetch_historical_data() for fetching historical sensor data.
     """
+    from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
+        HistoricalDataKey,
+        HistoricalDataSet,
+    )
+
     adapter = Mock()
-    adapter.load_historical_data = AsyncMock(return_value=[])
+    # Return empty HistoricalDataSet with all keys initialized
+    adapter.fetch_historical_data = AsyncMock(
+        return_value=HistoricalDataSet(data={key: [] for key in HistoricalDataKey})
+    )
     return adapter
 
 
 @pytest.fixture
 def mock_cycle_cache() -> Mock:
-    """Create mock ICycleCache.
+    """Create mock IHeatingCycleStorage (formerly IHeatingCycleStorage).
 
     Provides persistent cache operations:
-    - get_cached_cycles()
-    - set_cached_cycles()
-    - update_cycle_window()
-    - delete_cycles_before()
+    - get_cache_data()
+    - append_cycles()
+    - prune_old_cycles()
+    - clear_cache()
+    - get_last_search_time()
     """
     cache = Mock()
-    cache.get_cached_cycles = AsyncMock(return_value=None)
-    cache.set_cached_cycles = AsyncMock()
-    cache.update_cycle_window = AsyncMock()
-    cache.delete_cycles_before = AsyncMock()
-    cache.get_cache_data = Mock()
+    cache.get_cache_data = AsyncMock(return_value=None)
     cache.append_cycles = AsyncMock()
+    cache.prune_old_cycles = AsyncMock()
+    cache.clear_cache = AsyncMock()
+    cache.get_last_search_time = AsyncMock(return_value=None)
     return cache
 
 
@@ -120,7 +128,7 @@ def mock_timer_scheduler() -> Mock:
 
 @pytest.fixture
 def mock_model_storage() -> Mock:
-    """Create mock IModelStorage.
+    """Create mock ILhsStorage (formerly ILhsStorage).
 
     Provides operations for storing and retrieving individual cycles,
     global LHS, and contextual LHS values.
@@ -241,9 +249,9 @@ def heating_cycle_manager_minimal(
         device_config=device_config,
         heating_cycle_service=mock_heating_cycle_service,
         historical_adapters=[mock_historical_adapter],
-        cycle_cache=None,
+        heating_cycle_storage=None,
         timer_scheduler=None,
-        model_storage=None,
+        lhs_storage=None,
         lhs_lifecycle_manager=None,
     )
 
@@ -260,9 +268,9 @@ def heating_cycle_manager_with_cache(
         device_config=device_config,
         heating_cycle_service=mock_heating_cycle_service,
         historical_adapters=[mock_historical_adapter],
-        cycle_cache=mock_cycle_cache,
+        heating_cycle_storage=mock_cycle_cache,
         timer_scheduler=None,
-        model_storage=None,
+        lhs_storage=None,
         lhs_lifecycle_manager=None,
     )
 
@@ -281,9 +289,9 @@ def heating_cycle_manager_full(
         device_config=device_config,
         heating_cycle_service=mock_heating_cycle_service,
         historical_adapters=[mock_historical_adapter],
-        cycle_cache=mock_cycle_cache,
+        heating_cycle_storage=mock_cycle_cache,
         timer_scheduler=mock_timer_scheduler,
-        model_storage=mock_model_storage,
+        lhs_storage=mock_model_storage,
         lhs_lifecycle_manager=None,
     )
 
@@ -306,9 +314,9 @@ def heating_cycle_manager_with_lhs_cascade(
         device_config=device_config,
         heating_cycle_service=mock_heating_cycle_service,
         historical_adapters=[mock_historical_adapter],
-        cycle_cache=mock_cycle_cache,
+        heating_cycle_storage=mock_cycle_cache,
         timer_scheduler=mock_timer_scheduler,
-        model_storage=mock_model_storage,
+        lhs_storage=mock_model_storage,
         lhs_lifecycle_manager=mock_lhs_manager,
     )
 

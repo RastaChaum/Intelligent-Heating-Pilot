@@ -241,9 +241,9 @@ class TestHeatingCycleLifecycleManagerFactory:
         # THEN: All dependencies injected
         assert manager._device_config is device_config_1
         assert manager._heating_cycle_service is heating_cycle_service
-        assert manager._cycle_cache is cycle_cache
+        assert manager._heating_cycle_storage is cycle_cache
         assert manager._timer_scheduler is timer_scheduler
-        assert manager._model_storage is model_storage
+        assert manager._lhs_storage is model_storage
         assert manager._lhs_lifecycle_manager is lhs_lifecycle_manager
 
     def test_factory_optional_dependencies(
@@ -267,9 +267,9 @@ class TestHeatingCycleLifecycleManagerFactory:
         )
 
         # THEN: Manager created with None for optional deps
-        assert manager._cycle_cache is None
+        assert manager._heating_cycle_storage is None
         assert manager._timer_scheduler is None
-        assert manager._model_storage is None
+        assert manager._lhs_storage is None
         assert manager._lhs_lifecycle_manager is None
 
     def test_factory_config_device_id_used_as_singleton_key(

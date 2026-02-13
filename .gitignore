@@ -206,3 +206,6 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 examples/config/
+coverage.lcov
+coverage.lcov
+lcov.info

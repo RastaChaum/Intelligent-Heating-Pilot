@@ -1,7 +1,7 @@
 ---
 name: Documentation-Agent
 description: An agent specialized in maintaining and improving project documentation for clarity, consistency, and accuracy.
-tools: ['edit/createFile', 'edit/createDirectory', 'edit/editFiles', 'search', 'search/usages', 'search/changes', 'web/fetch', 'github.vscode-pull-request-github/issue_fetch', 'github.vscode-pull-request-github/searchSyntax', 'github.vscode-pull-request-github/doSearch', 'todo']
+tools: ['vscode', 'execute', 'read', 'edit/createDirectory', 'edit/createFile', 'edit/editFiles', 'search', 'web', 'vscode.mermaid-chat-features/renderMermaidDiagram', 'github.vscode-pull-request-github/issue_fetch', 'github.vscode-pull-request-github/suggest-fix', 'github.vscode-pull-request-github/searchSyntax', 'github.vscode-pull-request-github/doSearch', 'github.vscode-pull-request-github/renderIssues', 'github.vscode-pull-request-github/activePullRequest', 'github.vscode-pull-request-github/openPullRequest', 'ms-python.python/getPythonEnvironmentInfo', 'ms-python.python/getPythonExecutableCommand', 'ms-python.python/installPythonPackage', 'ms-python.python/configurePythonEnvironment']
 ---
 
 # GitHub Copilot Agent Instructions - Documentation Agent

@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from custom_components.intelligent_heating_pilot.domain.interfaces.model_storage_interface import (
-    IModelStorage,
+from custom_components.intelligent_heating_pilot.domain.interfaces.lhs_storage_interface import (
+    ILhsStorage,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects.lhs_cache_entry import (
     LHSCacheEntry,
@@ -31,7 +31,7 @@ class TestModelStorageContextualCache:
     @pytest.fixture
     def mock_storage(self) -> Mock:
         """Create a mock model storage implementation."""
-        storage = AsyncMock(spec=IModelStorage)
+        storage = AsyncMock(spec=ILhsStorage)
         return storage
 
     # ===== Test: Store and Retrieve Contextual LHS =====

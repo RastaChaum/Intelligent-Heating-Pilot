@@ -12,7 +12,7 @@ from .heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-    from ..domain.interfaces import ICycleCache, IModelStorage, ITimerScheduler
+    from ..domain.interfaces import IHeatingCycleStorage, ILhsStorage, ITimerScheduler
     from ..domain.interfaces.heating_cycle_service_interface import IHeatingCycleService
     from .lhs_lifecycle_manager import LhsLifecycleManager
 
@@ -52,9 +52,9 @@ class HeatingCycleLifecycleManagerFactory:
         hass: HomeAssistant,
         device_config: DeviceConfig,
         heating_cycle_service: IHeatingCycleService,
-        cycle_cache: ICycleCache | None = None,
+        cycle_cache: IHeatingCycleStorage | None = None,
         timer_scheduler: ITimerScheduler | None = None,
-        model_storage: IModelStorage | None = None,
+        model_storage: ILhsStorage | None = None,
         lhs_lifecycle_manager: LhsLifecycleManager | None = None,
     ) -> HeatingCycleLifecycleManager:
         """Create or return existing HeatingCycleLifecycleManager for device_id.
@@ -105,9 +105,9 @@ class HeatingCycleLifecycleManagerFactory:
             device_config=device_config,
             heating_cycle_service=heating_cycle_service,
             historical_adapters=historical_adapters,
-            cycle_cache=cycle_cache,
+            heating_cycle_storage=cycle_cache,
             timer_scheduler=timer_scheduler,
-            model_storage=model_storage,
+            lhs_storage=model_storage,
             lhs_lifecycle_manager=lhs_lifecycle_manager,
         )
 

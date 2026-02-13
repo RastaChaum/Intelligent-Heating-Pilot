@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Callable
 
 from ..domain.interfaces.device_config_reader_interface import DeviceConfig
@@ -13,14 +13,17 @@ from ..domain.value_objects.historical_data import HistoricalDataKey, Historical
 
 if TYPE_CHECKING:
     from ..domain.interfaces import (
-        ICycleCache,
+        IHeatingCycleStorage,
         IHistoricalDataAdapter,
-        IModelStorage,
+        ILhsStorage,
         ITimerScheduler,
     )
     from .lhs_lifecycle_manager import LhsLifecycleManager
 
 _LOGGER = logging.getLogger(__name__)
+
+# Maximum number of entries in in-memory cycle cache before eviction
+MAX_MEMORY_CACHE_ENTRIES = 50
 
 try:
     from homeassistant.util import dt as dt_util
@@ -34,14 +37,14 @@ class HeatingCycleLifecycleManager:
     This manager is a singleton per IHP device (identified by device_id).
     It orchestrates:
     1. In-memory cache management (_cached_cycles_for_target_time)
-    2. Persistent storage via ICycleCache and IModelStorage
+    2. Persistent storage via IHeatingCycleStorage and ILhsStorage
     3. Periodic refresh scheduling (24h timer)
     4. Cascade updates to LhsLifecycleManager when cycles change
 
     Architecture:
     - **In-memory cache**: Fast lookups for repeated queries (same device/date)
-    - **Storage cache (ICycleCache)**: Persistent incremental cycle storage
-    - **Model storage (IModelStorage)**: Long-term persistence of individual cycles
+    - **Storage cache (IHeatingCycleStorage)**: Persistent incremental cycle storage
+    - **Model storage (ILhsStorage)**: Long-term persistence of individual cycles
     - **Cascade to LHS**: When cycles update, triggers LHS recalculation
 
     Lifecycle Events:
@@ -56,10 +59,10 @@ class HeatingCycleLifecycleManager:
         device_config: DeviceConfig,
         heating_cycle_service: IHeatingCycleService,
         historical_adapters: list[IHistoricalDataAdapter],
-        cycle_cache: ICycleCache | None = None,
-        timer_scheduler: ITimerScheduler | None = None,
-        model_storage: IModelStorage | None = None,
-        lhs_lifecycle_manager: LhsLifecycleManager | None = None,
+        heating_cycle_storage: IHeatingCycleStorage | None,
+        timer_scheduler: ITimerScheduler | None,
+        lhs_storage: ILhsStorage | None,
+        lhs_lifecycle_manager: LhsLifecycleManager | None,
     ) -> None:
         """Initialize the lifecycle manager.
 
@@ -70,23 +73,23 @@ class HeatingCycleLifecycleManager:
             device_config: Device configuration data (includes retention settings).
             heating_cycle_service: Domain service for extracting heating cycles.
             historical_adapters: Infrastructure adapters for loading historical sensor data.
-            cycle_cache: Optional persistent cache for incremental cycle storage.
+            heating_cycle_storage: Optional persistent cache for incremental cycle storage.
             timer_scheduler: Optional scheduler for periodic 24h refresh tasks.
-            model_storage: Optional persistent storage for individual cycle records.
+            lhs_storage: Optional persistent storage for individual cycle records.
             lhs_lifecycle_manager: Optional LHS manager for cascade updates when cycles change.
         """
         self._device_config = device_config
         self._heating_cycle_service = heating_cycle_service
         self._historical_adapters = historical_adapters
-        self._cycle_cache = cycle_cache
+        self._heating_cycle_storage = heating_cycle_storage
         self._timer_scheduler = timer_scheduler
-        self._model_storage = model_storage
+        self._lhs_storage = lhs_storage
         self._lhs_lifecycle_manager = lhs_lifecycle_manager
 
         # In-memory cache for fast repeated lookups
-        # Key: (device_id, target_datetime.date()) → list[HeatingCycle]
+        # Key: (device_id, target_date) → list[HeatingCycle]
         # This avoids re-extracting cycles from storage/history for the same device/date
-        self._cached_cycles_for_target_time: dict[tuple[str, object], list[HeatingCycle]] = {}
+        self._cached_cycles_for_target_time: dict[tuple[str, date], list[HeatingCycle]] = {}
         self._timer_cancel_func: Callable[[], None] | None = None
 
     async def startup(
@@ -99,7 +102,7 @@ class HeatingCycleLifecycleManager:
 
         Lifecycle Event Flow:
         1. Extract cycles from historical data for [start_time, end_time]
-        2. Save cycles to persistent storage (ICycleCache + IModelStorage)
+        2. Save cycles to persistent storage (IHeatingCycleStorage + ILhsStorage)
         3. Load cycles into in-memory cache for fast access
         4. Cascade to LhsLifecycleManager to update LHS values
         5. Schedule 24h timer for automatic refresh
@@ -128,10 +131,7 @@ class HeatingCycleLifecycleManager:
             cycles = await self.update_cycles_for_window(device_id, start_time, end_time)
 
             # Step 2: Cascade to LHS lifecycle manager to update LHS caches
-            if self._lhs_lifecycle_manager is not None:
-                await self._lhs_lifecycle_manager.update_global_lhs_from_cycles(cycles)
-                await self._lhs_lifecycle_manager.update_contextual_lhs_from_cycles(cycles)
-                _LOGGER.debug("Cascaded LHS update with %d cycles", len(cycles))
+            await self._trigger_lhs_cascade(cycles)
 
             # Step 3: Schedule 24h timer if scheduler provided
             if self._timer_scheduler is not None:
@@ -158,7 +158,7 @@ class HeatingCycleLifecycleManager:
         Lifecycle Event Flow:
         1. Update device_config with new retention period
         2. Clear in-memory cache (invalidated by retention change)
-        3. Clear persistent storage cache (ICycleCache)
+        3. Clear persistent storage cache (IHeatingCycleStorage)
         4. Re-extract cycles for new retention window
         5. Save new cycles to persistent storage
         6. Cascade to LhsLifecycleManager to recalculate LHS with new window
@@ -192,9 +192,11 @@ class HeatingCycleLifecycleManager:
         _LOGGER.debug("Invalidated cycles in-memory cache due to retention change")
 
         # Step 3: Clear persistent storage cache
-        if self._cycle_cache is not None and hasattr(self._cycle_cache, "clear_cache"):
+        if self._heating_cycle_storage is not None and hasattr(
+            self._heating_cycle_storage, "clear_cache"
+        ):
             try:
-                await self._cycle_cache.clear_cache(self._device_config.device_id)
+                await self._heating_cycle_storage.clear_cache(self._device_config.device_id)
                 _LOGGER.debug("Cleared storage cycle cache due to retention change")
             except (AttributeError, TypeError):
                 pass
@@ -211,10 +213,7 @@ class HeatingCycleLifecycleManager:
         _LOGGER.debug("Re-extracted %d cycles for new retention window", len(cycles))
 
         # Step 5: Cascade to LHS lifecycle manager to recalculate with new window
-        if self._lhs_lifecycle_manager is not None:
-            await self._lhs_lifecycle_manager.update_global_lhs_from_cycles(cycles)
-            await self._lhs_lifecycle_manager.update_contextual_lhs_from_cycles(cycles)
-            _LOGGER.debug("Cascaded LHS update with %d cycles after retention change", len(cycles))
+        await self._trigger_lhs_cascade(cycles)
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.on_retention_change")
 
@@ -256,15 +255,14 @@ class HeatingCycleLifecycleManager:
             _LOGGER.info("24h refresh complete: extracted %d cycles", len(cycles))
 
             # Step 3: Prune old cycles from storage cache
-            if self._cycle_cache is not None:
-                await self._cycle_cache.prune_old_cycles(self._device_config.device_id, end_time)
+            if self._heating_cycle_storage is not None:
+                await self._heating_cycle_storage.prune_old_cycles(
+                    self._device_config.device_id, end_time
+                )
                 _LOGGER.debug("Pruned old cycles from storage cache")
 
             # Step 4: Cascade to LHS lifecycle manager to recalculate with fresh data
-            if self._lhs_lifecycle_manager is not None:
-                await self._lhs_lifecycle_manager.update_global_lhs_from_cycles(cycles)
-                await self._lhs_lifecycle_manager.update_contextual_lhs_from_cycles(cycles)
-                _LOGGER.debug("Cascaded LHS update with %d cycles from 24h refresh", len(cycles))
+            await self._trigger_lhs_cascade(cycles)
 
         except Exception as exc:
             _LOGGER.error("Error during 24h cycle refresh: %s", exc)
@@ -302,32 +300,18 @@ class HeatingCycleLifecycleManager:
             raise ValueError("start_time must be before or equal to end_time")
 
         # Try to get from cache first
-        if self._cycle_cache is not None:
-            # Try get_cached_cycles first (test mock compatibility)
-            if hasattr(self._cycle_cache, "get_cached_cycles"):
-                cached_cycles = await self._cycle_cache.get_cached_cycles(device_id)
-                if cached_cycles is not None:
-                    cycles = [
-                        cycle
-                        for cycle in cached_cycles
-                        if start_time <= cycle.start_time <= end_time
-                    ]
-                    _LOGGER.debug("Returning %d cycles from cache (get_cached_cycles)", len(cycles))
-                    _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_window")
-                    return cycles
-            # Fall back to get_cache_data
-            else:
-                cache_data = await self._cycle_cache.get_cache_data(device_id)
-                if cache_data is not None:
-                    # Filter cycles within the requested window
-                    cycles = [
-                        cycle
-                        for cycle in cache_data.cycles
-                        if start_time <= cycle.start_time <= end_time
-                    ]
-                    _LOGGER.debug("Returning %d cycles from cache", len(cycles))
-                    _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_window")
-                    return cycles
+        if self._heating_cycle_storage is not None:
+            cache_data = await self._heating_cycle_storage.get_cache_data(device_id)
+            if cache_data is not None:
+                # Filter cycles within the requested window
+                cycles = [
+                    cycle
+                    for cycle in cache_data.cycles
+                    if start_time <= cycle.start_time <= end_time
+                ]
+                _LOGGER.debug("Returning %d cycles from cache", len(cycles))
+                _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_window")
+                return cycles
 
         # No cache, extract cycles
         cycles = await self._extract_cycles(device_id, start_time, end_time)
@@ -394,6 +378,9 @@ class HeatingCycleLifecycleManager:
             target_time.date(),
         )
 
+        # Evict old entries if cache size exceeds limit
+        await self._evict_old_memory_cache_entries()
+
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_target_time")
         return cycles
 
@@ -435,40 +422,19 @@ class HeatingCycleLifecycleManager:
         cycles = await self._extract_cycles(device_id, start_time, end_time)
 
         # Update cache if available
-        if self._cycle_cache is not None and cycles:
-            # Try set_cached_cycles first (for compatibility with test mocks)
-            if hasattr(self._cycle_cache, "set_cached_cycles"):
-                try:
-                    await self._cycle_cache.set_cached_cycles(device_id, cycles)
-                    _LOGGER.debug("Updated cache with %d cycles via set_cached_cycles", len(cycles))
-                except (AttributeError, TypeError):
-                    # Fall back to append_cycles if available
-                    if hasattr(self._cycle_cache, "append_cycles"):
-                        try:
-                            await self._cycle_cache.append_cycles(
-                                device_id,
-                                cycles,
-                                end_time,
-                                self._device_config.lhs_retention_days,
-                            )
-                            _LOGGER.debug(
-                                "Updated cache with %d cycles via append_cycles", len(cycles)
-                            )
-                        except (AttributeError, TypeError):
-                            pass
-            elif hasattr(self._cycle_cache, "append_cycles"):
-                try:
-                    await self._cycle_cache.append_cycles(
-                        device_id,
-                        cycles,
-                        end_time,
-                        self._device_config.lhs_retention_days,
-                    )
-                    _LOGGER.debug("Updated cache with %d cycles via append_cycles", len(cycles))
-                except (AttributeError, TypeError):
-                    pass
+        if self._heating_cycle_storage is not None and cycles:
+            try:
+                await self._heating_cycle_storage.append_cycles(
+                    device_id,
+                    cycles,
+                    end_time,
+                    self._device_config.lhs_retention_days,
+                )
+                _LOGGER.debug("Updated cache with %d cycles", len(cycles))
+            except Exception as exc:
+                _LOGGER.error("Error updating cycle cache: %s", exc)
 
-        # Note: IModelStorage interface does not include save_heating_cycle()
+        # Note: ILhsStorage interface does not include save_heating_cycle()
         # Cycles are extracted from Home Assistant recorder, not persisted via this interface
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.update_cycles_for_window")
@@ -503,6 +469,107 @@ class HeatingCycleLifecycleManager:
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.cancel")
 
+    async def _trigger_lhs_cascade(self, cycles: list[HeatingCycle]) -> None:
+        """Trigger cascade update to LHS lifecycle manager with error isolation.
+
+        This method isolates errors between global and contextual LHS updates.
+        If global LHS fails, contextual LHS will still be attempted.
+        If contextual LHS fails, startup/refresh continues without crashing.
+
+        Error Isolation Strategy:
+        - Global LHS failure logs error but does not raise exception
+        - Contextual LHS failure logs error but does not raise exception
+        - Partial updates are better than complete failure
+
+        Args:
+            cycles: Heating cycles to use for LHS recalculation.
+
+        Returns:
+            None.
+        """
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager._trigger_lhs_cascade")
+
+        if self._lhs_lifecycle_manager is None:
+            _LOGGER.debug("No LHS lifecycle manager configured, skipping cascade")
+            _LOGGER.debug("Exiting HeatingCycleLifecycleManager._trigger_lhs_cascade")
+            return
+
+        # Attempt global LHS update (isolated error handling)
+        try:
+            await self._lhs_lifecycle_manager.update_global_lhs_from_cycles(cycles)
+            _LOGGER.debug("Successfully updated global LHS with %d cycles", len(cycles))
+        except Exception as exc:
+            _LOGGER.error(
+                "Error updating global LHS (continuing with contextual): %s",
+                exc,
+                exc_info=True,
+            )
+
+        # Attempt contextual LHS update (isolated error handling)
+        try:
+            await self._lhs_lifecycle_manager.update_contextual_lhs_from_cycles(cycles)
+            _LOGGER.debug("Successfully updated contextual LHS with %d cycles", len(cycles))
+        except Exception as exc:
+            _LOGGER.error(
+                "Error updating contextual LHS: %s",
+                exc,
+                exc_info=True,
+            )
+
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager._trigger_lhs_cascade")
+
+    async def _evict_old_memory_cache_entries(self) -> None:
+        """Evict oldest entries from memory cache if limit exceeded.
+
+        Memory Eviction Strategy:
+        - Prevents unbounded memory growth in long-running IHP instances
+        - Uses LRU (Least Recently Used) based on date
+        - Evicts oldest 50% of entries when MAX_MEMORY_CACHE_ENTRIES exceeded
+        - Storage cache (Tier 2) preserves data, eviction only affects Tier 1
+
+        Cache Strategy:
+        - **Reads from**: _cached_cycles_for_target_time (Tier 1 memory)
+        - **Evicts**: Oldest entries by date when cache size > MAX_MEMORY_CACHE_ENTRIES
+        - **Does NOT affect**: Tier 2 (IHeatingCycleStorage) or Tier 4 (ILhsStorage)
+        - **Lazy reload**: Evicted entries will be reloaded from Tier 2 on next access
+
+        Eviction Algorithm:
+        1. Check if cache size exceeds MAX_MEMORY_CACHE_ENTRIES (50)
+        2. Sort cache keys by date (oldest first)
+        3. Remove oldest 50% of entries (25 entries when at limit)
+        4. Log eviction count for monitoring
+
+        Returns:
+            None.
+        """
+        if len(self._cached_cycles_for_target_time) <= MAX_MEMORY_CACHE_ENTRIES:
+            return  # No eviction needed
+
+        _LOGGER.debug(
+            "Memory cache size %d exceeds limit %d, triggering eviction",
+            len(self._cached_cycles_for_target_time),
+            MAX_MEMORY_CACHE_ENTRIES,
+        )
+
+        # Sort cache keys by date (oldest first)
+        # Key format: (device_id, date)
+        sorted_keys = sorted(
+            self._cached_cycles_for_target_time.keys(),
+            key=lambda k: k[1],  # k[1] is the date
+        )
+
+        # Evict oldest 50% of entries
+        num_to_evict = MAX_MEMORY_CACHE_ENTRIES // 2
+        keys_to_remove = sorted_keys[:num_to_evict]
+
+        for key in keys_to_remove:
+            del self._cached_cycles_for_target_time[key]
+
+        _LOGGER.debug(
+            "Evicted %d old memory cache entries (oldest dates removed)",
+            len(keys_to_remove),
+        )
+
     async def _extract_cycles(
         self,
         device_id: str,
@@ -522,35 +589,29 @@ class HeatingCycleLifecycleManager:
         _LOGGER.debug("Entering HeatingCycleLifecycleManager._extract_cycles")
 
         # Load historical data from all adapters
-        combined_data: dict[HistoricalDataKey, list] = {}
+        combined_data: HistoricalDataSet = HistoricalDataSet(data={})
 
         for adapter in self._historical_adapters:
             try:
-                # Check if adapter has load_historical_data method (for tests/old adapters)
-                if hasattr(adapter, "load_historical_data"):
-                    adapter_data = await adapter.load_historical_data(
-                        device_id, start_time, end_time
+                # Call the interface method to fetch historical data for each data key
+                for data_key in HistoricalDataKey:
+                    adapter_data = await adapter.fetch_historical_data(
+                        entity_id=device_id,
+                        data_key=data_key,
+                        start_time=start_time,
+                        end_time=end_time,
                     )
-                    # If it's a dict, merge it
-                    if isinstance(adapter_data, dict):
-                        for key, measurements in adapter_data.items():
-                            if key not in combined_data:
-                                combined_data[key] = []
-                            combined_data[key].extend(measurements)
-                    # If it's a list (old test format), skip it
-                    else:
-                        _LOGGER.debug("Adapter returned list instead of dict, skipping")
-                else:
-                    # Use fetch_historical_data from interface
-                    # This would require multiple calls for different data keys
-                    # For now, just skip adapters without load_historical_data
-                    _LOGGER.debug("Adapter has no load_historical_data method, skipping")
+                    # Merge adapter data into combined_data
+                    if adapter_data is not None:
+                        if data_key not in combined_data.data:
+                            combined_data.data[data_key] = []
+                        combined_data.data[data_key].extend(adapter_data.data[data_key])
             except Exception as exc:
                 _LOGGER.error("Error loading data from adapter: %s", exc)
                 raise
 
         # Create historical dataset
-        historical_data_set = HistoricalDataSet(data=combined_data)
+        historical_data_set = HistoricalDataSet(data=combined_data.data)
 
         # Extract cycles using domain service
         cycles = await self._heating_cycle_service.extract_heating_cycles(

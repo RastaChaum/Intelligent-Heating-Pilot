@@ -477,9 +477,9 @@ class TestLifecycleCascadeFlow:
             device_config=device_config_1,
             heating_cycle_service=mock_heating_cycle_service,
             historical_adapters=[mock_historical_adapter],
-            cycle_cache=mock_cycle_cache,
+            heating_cycle_storage=mock_cycle_cache,
             timer_scheduler=mock_timer_scheduler,
-            model_storage=mock_model_storage,
+            lhs_storage=mock_model_storage,
             lhs_lifecycle_manager=mock_lhs_manager_1,
         )
 
@@ -488,9 +488,9 @@ class TestLifecycleCascadeFlow:
             device_config=device_config_2,
             heating_cycle_service=Mock(),
             historical_adapters=[mock_historical_adapter],
-            cycle_cache=Mock(),
+            heating_cycle_storage=Mock(),
             timer_scheduler=Mock(),
-            model_storage=Mock(),
+            lhs_storage=Mock(),
             lhs_lifecycle_manager=mock_lhs_manager_2,
         )
 

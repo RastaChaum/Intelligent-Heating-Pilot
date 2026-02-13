@@ -1,4 +1,4 @@
-"""Model storage interface."""
+"""LHS (Learned Heating Slope) storage interface."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from datetime import datetime
 from ..value_objects.lhs_cache_entry import LHSCacheEntry
 
 
-class IModelStorage(ABC):
-    """Contract for persisting machine learning model data.
+class ILhsStorage(ABC):
+    """Contract for persisting learned heating slope (LHS) data.
 
     Implementations of this interface handle storage and retrieval
-    of learned heating slopes and other model parameters.
+    of learned heating slopes (both global and contextual).
 
     NOTE: Direct slope data persistence (save_slope_*) has been removed.
     Slopes are now extracted directly from Home Assistant recorder via
@@ -42,19 +42,45 @@ class IModelStorage(ABC):
 
     @abstractmethod
     async def get_cached_global_lhs(self) -> LHSCacheEntry | None:
-        """Return cached global LHS if available."""
+        """Return cached global LHS if available.
+
+        Returns:
+            LHSCacheEntry with global LHS value and timestamp, or None if not cached.
+        """
+        pass
 
     @abstractmethod
     async def set_cached_global_lhs(self, lhs: float, updated_at: datetime) -> None:
-        """Persist global LHS cache with timestamp."""
+        """Persist global LHS cache with timestamp.
+
+        Args:
+            lhs: The learned heating slope value in °C/hour.
+            updated_at: Timestamp when the LHS was calculated.
+        """
+        pass
 
     @abstractmethod
     async def get_cached_contextual_lhs(self, hour: int) -> LHSCacheEntry | None:
-        """Return cached contextual LHS for the given hour if available."""
+        """Return cached contextual LHS for the given hour if available.
+
+        Args:
+            hour: Hour of day (0-23) for which to retrieve contextual LHS.
+
+        Returns:
+            LHSCacheEntry with contextual LHS value and timestamp, or None if not cached.
+        """
+        pass
 
     @abstractmethod
     async def set_cached_contextual_lhs(self, hour: int, lhs: float, updated_at: datetime) -> None:
-        """Persist contextual LHS cache for the given hour with timestamp."""
+        """Persist contextual LHS cache for the given hour with timestamp.
+
+        Args:
+            hour: Hour of day (0-23) for which to cache the LHS.
+            lhs: The learned heating slope value in °C/hour for this hour.
+            updated_at: Timestamp when the LHS was calculated.
+        """
+        pass
 
     @abstractmethod
     async def clear_contextual_cache(self) -> None:

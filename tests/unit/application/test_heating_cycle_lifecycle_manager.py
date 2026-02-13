@@ -8,7 +8,7 @@ Purpose: Comprehensive test coverage for heating cycle lifecycle management
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -22,6 +22,12 @@ from custom_components.intelligent_heating_pilot.domain.interfaces.device_config
 from custom_components.intelligent_heating_pilot.domain.value_objects.heating import (
     HeatingCycle,
 )
+from custom_components.intelligent_heating_pilot.domain.value_objects.heating_cycle_cache_data import (
+    HeatingCycleCacheData,
+)
+from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
+    HistoricalDataSet,
+)
 
 
 class TestHeatingCycleLifecycleManager:
@@ -30,7 +36,7 @@ class TestHeatingCycleLifecycleManager:
     @pytest.fixture
     def base_datetime(self) -> datetime:
         """Provide base datetime for testing."""
-        return datetime(2025, 2, 10, 12, 0, 0)
+        return datetime(2025, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
 
     @pytest.fixture
     def device_config(self) -> DeviceConfig:
@@ -52,17 +58,29 @@ class TestHeatingCycleLifecycleManager:
     @pytest.fixture
     def mock_historical_adapter(self) -> Mock:
         """Create mock IHistoricalDataAdapter."""
+        from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
+            HistoricalDataKey,
+        )
+
         adapter = Mock()
-        adapter.load_historical_data = AsyncMock(return_value=[])
+
+        # Create HistoricalDataSet with all keys initialized to empty lists
+        def create_empty_dataset(*args, **kwargs):
+            return HistoricalDataSet(data={key: [] for key in HistoricalDataKey})
+
+        adapter.fetch_historical_data = AsyncMock(side_effect=create_empty_dataset)
         return adapter
 
     @pytest.fixture
-    def mock_cycle_cache(self) -> Mock:
-        """Create mock ICycleCache."""
+    def mock_heating_cycle_storage(self) -> Mock:
+        """Create mock IHeatingCycleStorage."""
         cache = Mock()
-        cache.get_cached_cycles = AsyncMock(return_value=None)
+        cache.get_cache_data = AsyncMock(return_value=None)
         cache.set_cached_cycles = AsyncMock()
         cache.update_cycle_window = AsyncMock()
+        cache.clear_cache = AsyncMock()
+        cache.prune_old_cycles = AsyncMock()
+        cache.append_cycles = AsyncMock()
         return cache
 
     @pytest.fixture
@@ -73,12 +91,21 @@ class TestHeatingCycleLifecycleManager:
         return scheduler
 
     @pytest.fixture
-    def mock_model_storage(self) -> Mock:
-        """Create mock IModelStorage."""
+    def mock_lhs_storage(self) -> Mock:
+        """Create mock ILhsStorage."""
         storage = Mock()
         storage.save_heating_cycle = AsyncMock()
         storage.get_heating_cycles = AsyncMock(return_value=[])
         return storage
+
+    @pytest.fixture
+    def mock_lhs_lifecycle_manager(self) -> Mock:
+        """Create mock ILhsLifecycleManager."""
+        manager = Mock()
+        manager.on_cycles_updated = AsyncMock()
+        manager.update_global_lhs_from_cycles = AsyncMock()
+        manager.update_contextual_lhs_from_cycles = AsyncMock()
+        return manager
 
     @pytest.fixture
     def manager(
@@ -86,56 +113,20 @@ class TestHeatingCycleLifecycleManager:
         device_config: DeviceConfig,
         mock_heating_cycle_service: Mock,
         mock_historical_adapter: Mock,
-    ) -> HeatingCycleLifecycleManager:
-        """Create HeatingCycleLifecycleManager instance without optional dependencies."""
-        return HeatingCycleLifecycleManager(
-            device_config=device_config,
-            heating_cycle_service=mock_heating_cycle_service,
-            historical_adapters=[mock_historical_adapter],
-            cycle_cache=None,
-            timer_scheduler=None,
-            model_storage=None,
-            lhs_lifecycle_manager=None,
-        )
-
-    @pytest.fixture
-    def manager_with_cache(
-        self,
-        device_config: DeviceConfig,
-        mock_heating_cycle_service: Mock,
-        mock_historical_adapter: Mock,
-        mock_cycle_cache: Mock,
-    ) -> HeatingCycleLifecycleManager:
-        """Create HeatingCycleLifecycleManager instance with cache."""
-        return HeatingCycleLifecycleManager(
-            device_config=device_config,
-            heating_cycle_service=mock_heating_cycle_service,
-            historical_adapters=[mock_historical_adapter],
-            cycle_cache=mock_cycle_cache,
-            timer_scheduler=None,
-            model_storage=None,
-            lhs_lifecycle_manager=None,
-        )
-
-    @pytest.fixture
-    def manager_full(
-        self,
-        device_config: DeviceConfig,
-        mock_heating_cycle_service: Mock,
-        mock_historical_adapter: Mock,
-        mock_cycle_cache: Mock,
+        mock_heating_cycle_storage: Mock,
         mock_timer_scheduler: Mock,
-        mock_model_storage: Mock,
+        mock_lhs_storage: Mock,
+        mock_lhs_lifecycle_manager: Mock,
     ) -> HeatingCycleLifecycleManager:
         """Create fully-configured HeatingCycleLifecycleManager instance."""
         return HeatingCycleLifecycleManager(
             device_config=device_config,
             heating_cycle_service=mock_heating_cycle_service,
             historical_adapters=[mock_historical_adapter],
-            cycle_cache=mock_cycle_cache,
+            heating_cycle_storage=mock_heating_cycle_storage,
             timer_scheduler=mock_timer_scheduler,
-            model_storage=mock_model_storage,
-            lhs_lifecycle_manager=None,
+            lhs_storage=mock_lhs_storage,
+            lhs_lifecycle_manager=mock_lhs_lifecycle_manager,
         )
 
     def _create_heating_cycle(
@@ -167,29 +158,25 @@ class TestHeatingCycleLifecycleManager:
     async def test_startup(
         self,
         manager: HeatingCycleLifecycleManager,
-        manager_with_cache: HeatingCycleLifecycleManager,
-        manager_full: HeatingCycleLifecycleManager,
         mock_heating_cycle_service: Mock,
-        mock_cycle_cache: Mock,
+        mock_heating_cycle_storage: Mock,
         mock_timer_scheduler: Mock,
-        device_config: DeviceConfig,
         base_datetime: datetime,
     ) -> None:
         """Test startup lifecycle event.
 
         Method documentation summary:
         - Extract cycles from historical data for [start_time, end_time]
-        - Save cycles to persistent storage (ICycleCache + IModelStorage)
+        - Save cycles to persistent storage (IHeatingCycleStorage + ILhsStorage)
         - Load cycles into in-memory cache for fast access
         - Cascade to LhsLifecycleManager to update LHS values
         - Schedule 24h timer for automatic refresh
 
         Verified aspects:
         - Aspect A: Extracts cycles for initial window
-        - Aspect B: Returns extracted cycles
+        - Aspect B: Store cycles on disk and Returns extracted cycles
         - Aspect C: Schedules 24h timer when scheduler provided
-        - Aspect D: Caches cycles when cache provided
-        - Aspect E: Works without optional dependencies
+        - Aspect D: Caches cycles in memory
         """
         # GIVEN: Setup for ALL aspects
         device_id = "climate.test_vtherm"
@@ -209,27 +196,16 @@ class TestHeatingCycleLifecycleManager:
         # THEN Aspect A: Extracts cycles for initial window
         mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
 
-        # THEN Aspect B: Returns extracted cycles
+        # THEN Aspect B: Store cycles on disk and Returns extracted cycles
+        mock_heating_cycle_storage.append_cycles.assert_called_once()  # Stored to disk
         assert result == expected_cycles
         assert len(result) == 2
 
-        # THEN Aspect E: Works without optional dependencies
-        # No exception was raised, confirming manager without timer works correctly
-
-        # WHEN: Startup is called with cache (separate call for cache aspect)
-        cycles_cached = [self._create_heating_cycle(base_datetime)]
-        mock_heating_cycle_service.extract_heating_cycles.return_value = cycles_cached
-
-        await manager_with_cache.startup(device_id, start_time, end_time)
-
-        # THEN Aspect D: Caches cycles when cache provided
-        assert mock_cycle_cache.set_cached_cycles.call_count >= 1
-
-        # WHEN: Startup is called with timer scheduler (separate manager instance)
-        await manager_full.startup(device_id, start_time, end_time)
-
         # THEN Aspect C: Schedules 24h timer when scheduler provided
         mock_timer_scheduler.schedule_timer.assert_called_once()
+
+        # THEN Aspect D: Caches cycles in memory
+        assert manager._cached_cycles_for_target_time == expected_cycles
 
     # ===== Test: on_retention_change() - ONE test for ALL scenarios =====
 
@@ -237,44 +213,56 @@ class TestHeatingCycleLifecycleManager:
     async def test_on_retention_change(
         self,
         manager: HeatingCycleLifecycleManager,
-        manager_with_cache: HeatingCycleLifecycleManager,
-        mock_heating_cycle_service: Mock,
-        mock_cycle_cache: Mock,
+        mock_heating_cycle_storage: Mock,
+        mock_lhs_lifecycle_manager: AsyncMock,
         device_config: DeviceConfig,
+        base_datetime: datetime,
     ) -> None:
         """Test on_retention_change lifecycle event.
 
         Method documentation summary:
         - Update device config with new retention days
-        - Clear existing caches (memory and persistent)
-        - Re-extract cycles for new retention window
+        - Update existing caches
+        - Persist cycle
         - Cascade to LhsLifecycleManager with new cycles
 
         Verified aspects:
-        - Aspect A: Triggers recalculation with new retention
-        - Aspect B: Updates device config
-        - Aspect C: Works with and without cache
+        - Aspect A: Update caches with new retention (triggers recalculation)
+        - Aspect B: Store new cache on disk (IHeatingCycleStorage)
+        - Aspect C: Call LhsLifecycleManager to cascade updates (if present)
         """
         # GIVEN: Setup for ALL aspects
         # - New retention days
         new_retention_days = 14
+
         # - Original retention is 30 days
         assert device_config.lhs_retention_days == 30
+
+        cached_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(days=25)),
+            self._create_heating_cycle(base_datetime - timedelta(days=14)),
+            self._create_heating_cycle(base_datetime - timedelta(days=5)),
+            self._create_heating_cycle(base_datetime - timedelta(days=3)),
+        ]
+        manager._cached_cycles_for_target_time = (
+            cached_cycles  # Pre-populate cache to test clearing
+        )
 
         # WHEN: Retention change is triggered (SINGLE CALL for manager without cache)
         await manager.on_retention_change(new_retention_days)
 
-        # THEN Aspect A: Triggers recalculation with new retention
-        # Cycles recalculation was triggered (verified in implementation)
+        # THEN Aspect A: Update caches with new retention (triggers recalculation)
+        assert len(manager._cached_cycles_for_target_time) == 3
 
-        # THEN Aspect B: Updates device config
-        # Device config updated (implementation stores state)
+        # THEN Aspect B: Store new cache on disk (IHeatingCycleStorage)
+        mock_heating_cycle_storage.append_cycles.assert_called_once()  # Persists updated cycles to disk
+        call_args = mock_heating_cycle_storage.append_cycles.call_args
+        assert call_args is not None
+        assert call_args[0][1] == cached_cycles[0:3]
 
-        # WHEN: Retention change with cache (separate call for cache aspect)
-        await manager_with_cache.on_retention_change(14)
-
-        # THEN Aspect C: Works with and without cache
-        # Cache operations may be called (implementation-specific)
+        # THEN Aspect C: Call LhsLifecycleManager to cascade updates (if present)
+        mock_lhs_lifecycle_manager.update_global_lhs_from_cycles.assert_called_once()
+        mock_lhs_lifecycle_manager.update_contextual_lhs_from_cycles.assert_called_once()
 
     # ===== Test: on_24h_timer() - ONE test for ALL scenarios =====
 
@@ -282,9 +270,8 @@ class TestHeatingCycleLifecycleManager:
     async def test_on_24h_timer(
         self,
         manager: HeatingCycleLifecycleManager,
-        manager_with_cache: HeatingCycleLifecycleManager,
         mock_heating_cycle_service: Mock,
-        mock_cycle_cache: Mock,
+        mock_heating_cycle_storage: Mock,
         base_datetime: datetime,
     ) -> None:
         """Test on_24h_timer lifecycle event.
@@ -299,6 +286,7 @@ class TestHeatingCycleLifecycleManager:
         - Aspect A: Extracts latest cycles
         - Aspect B: Updates cache when present
         - Aspect C: Works with and without cache
+        - Aspect D: Writes new cycles to persistent cache
         """
         # GIVEN: Setup for ALL aspects
         # - New cycles extracted
@@ -315,13 +303,24 @@ class TestHeatingCycleLifecycleManager:
         # No exception was raised
 
         # WHEN: 24h timer fires with cache (separate call for cache aspect)
-        await manager_with_cache.on_24h_timer()
+        await manager.on_24h_timer()
 
         # THEN Aspect B: Updates cache when present
         # Cache was updated
-        assert (
-            mock_cycle_cache.set_cached_cycles.called or mock_cycle_cache.update_cycle_window.called
-        )
+        assert mock_heating_cycle_storage.append_cycles.called
+
+        # WHEN: 24h timer fires with full manager (persistent cache aspect)
+        new_cycles_storage = [
+            self._create_heating_cycle(base_datetime - timedelta(hours=12)),
+            self._create_heating_cycle(base_datetime - timedelta(hours=6)),
+        ]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = new_cycles_storage
+        mock_heating_cycle_storage.append_cycles.reset_mock()
+
+        await manager.on_24h_timer()
+
+        # THEN Aspect D: Writes new cycles to persistent cache
+        assert mock_heating_cycle_storage.append_cycles.call_count >= 1  # Persists to disk
 
     # ===== Test: get_cycles_for_window() - ONE test for ALL scenarios =====
 
@@ -331,14 +330,14 @@ class TestHeatingCycleLifecycleManager:
         manager: HeatingCycleLifecycleManager,
         manager_with_cache: HeatingCycleLifecycleManager,
         mock_heating_cycle_service: Mock,
-        mock_cycle_cache: Mock,
+        mock_heating_cycle_storage: Mock,
         base_datetime: datetime,
     ) -> None:
         """Test get_cycles_for_window method.
 
         Method documentation summary:
         - Returns cycles from in-memory cache if available
-        - Falls back to persistent cache (ICycleCache)
+        - Falls back to persistent cache (IHeatingCycleStorage)
         - Extracts from historical data if no cache
         - Filters cycles to requested time window
 
@@ -348,6 +347,7 @@ class TestHeatingCycleLifecycleManager:
         - Aspect C: Filters by time range
         - Aspect D: Handles empty result
         - Aspect E: Handles edge cases (zero duration, inverted range)
+        - Aspect F: Persistent cache access optimization (cache hit vs miss)
         """
         # GIVEN: Setup for ALL aspects
         device_id = "climate.test_vtherm"
@@ -359,7 +359,13 @@ class TestHeatingCycleLifecycleManager:
             self._create_heating_cycle(base_datetime - timedelta(days=2)),
             self._create_heating_cycle(base_datetime - timedelta(days=1)),
         ]
-        mock_cycle_cache.get_cached_cycles.return_value = cached_cycles
+        cache_data = HeatingCycleCacheData(
+            device_id=device_id,
+            cycles=tuple(cached_cycles),
+            last_search_time=base_datetime,
+            retention_days=30,
+        )
+        mock_heating_cycle_storage.get_cache_data.return_value = cache_data
 
         # - Expected cycles for extraction (Aspect B)
         expected_cycles = [self._create_heating_cycle(base_datetime - timedelta(days=3))]
@@ -371,8 +377,12 @@ class TestHeatingCycleLifecycleManager:
         )
 
         # THEN Aspect A: Returns cycles from cache when available
-        assert result_cached == cached_cycles
-        mock_cycle_cache.get_cached_cycles.assert_called_once()
+        assert len(result_cached) == len(cached_cycles)
+        mock_heating_cycle_storage.get_cache_data.assert_called_once()
+
+        # THEN Aspect F: Persistent cache access optimization
+        # Scenario 1: Cache hit (data in cache_data) → NO extraction needed
+        mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
 
         # WHEN: get_cycles_for_window is called without cache (SINGLE CALL)
         result = await manager.get_cycles_for_window(device_id, start_time, end_time)
@@ -380,6 +390,22 @@ class TestHeatingCycleLifecycleManager:
         # THEN Aspect B: Extracts when no cache
         mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
         assert result == expected_cycles
+
+        # THEN Aspect F: Scenario 2 - Cache miss (cache_data is None)
+        mock_heating_cycle_storage.get_cache_data.reset_mock()
+        mock_heating_cycle_storage.get_cache_data.return_value = None  # Simulate cache miss
+        mock_heating_cycle_service.extract_heating_cycles.reset_mock()
+        mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
+
+        result_no_cache = await manager_with_cache.get_cycles_for_window(
+            device_id, start_time, end_time
+        )
+
+        # Persistent cache was checked (returns None)
+        mock_heating_cycle_storage.get_cache_data.assert_called_once()
+        # Falls back to extraction when cache misses
+        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
+        assert result_no_cache == expected_cycles
 
         # THEN Aspect C: Filters by time range
         # Result is filtered (implementation may filter)
@@ -417,7 +443,7 @@ class TestHeatingCycleLifecycleManager:
         manager: HeatingCycleLifecycleManager,
         manager_with_cache: HeatingCycleLifecycleManager,
         mock_heating_cycle_service: Mock,
-        mock_cycle_cache: Mock,
+        mock_heating_cycle_storage: Mock,
         device_config: DeviceConfig,
         base_datetime: datetime,
     ) -> None:
@@ -433,6 +459,7 @@ class TestHeatingCycleLifecycleManager:
         - Aspect A: Uses retention window correctly
         - Aspect B: Calculates correct time window
         - Aspect C: Returns cached when available
+        - Aspect D: Persistent cache access optimization (cache hit vs miss)
         """
         # GIVEN: Setup for ALL aspects
         device_id = "climate.test_vtherm"
@@ -444,7 +471,13 @@ class TestHeatingCycleLifecycleManager:
 
         # - Cache contains cycles for retention window (Aspect C)
         cached_cycles = [self._create_heating_cycle(base_datetime - timedelta(days=5))]
-        mock_cycle_cache.get_cached_cycles.return_value = cached_cycles
+        cache_data_with_cycles = HeatingCycleCacheData(
+            device_id=device_id,
+            cycles=tuple(cached_cycles),
+            last_search_time=base_datetime,
+            retention_days=30,
+        )
+        mock_heating_cycle_storage.get_cache_data.return_value = cache_data_with_cycles
 
         # WHEN: get_cycles_for_target_time is called (SINGLE CALL without cache)
         result = await manager.get_cycles_for_target_time(device_id, target_time)
@@ -457,12 +490,35 @@ class TestHeatingCycleLifecycleManager:
         # Window should be [target_time - 30 days, target_time]
         # (verified in implementation)
 
-        # WHEN: get_cycles_for_target_time is called with cache (separate call)
-        result_cached = await manager_with_cache.get_cycles_for_target_time(device_id, target_time)
+        # WHEN: get_cycles_for_target_time is called with cache hit
+        # First call reads from storage cache and stores in memory
+        result_cached_first = await manager_with_cache.get_cycles_for_target_time(
+            device_id, target_time
+        )
 
         # THEN Aspect C: Returns cached when available
         # Cached cycles are returned
-        assert result_cached == cached_cycles
+        assert result_cached_first == cached_cycles
+
+        # THEN Aspect D: Persistent cache access optimization
+        # With cache hit - persistent storage accessed via get_cycles_for_window()
+        mock_heating_cycle_storage.get_cache_data.assert_called()
+
+        # With cache miss - falls back to extraction
+        # Use a different target_time to bypass memory cache
+        mock_heating_cycle_storage.get_cache_data.reset_mock()
+        mock_heating_cycle_storage.get_cache_data.return_value = None
+        mock_heating_cycle_service.extract_heating_cycles.reset_mock()
+        mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
+
+        different_target = base_datetime + timedelta(days=1)  # Different date to avoid memory cache
+        result_no_cache = await manager_with_cache.get_cycles_for_target_time(
+            device_id, different_target
+        )
+
+        mock_heating_cycle_storage.get_cache_data.assert_called_once()
+        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
+        assert result_no_cache == expected_cycles
 
     # ===== Test: update_cycles_for_window() - ONE test for ALL scenarios =====
 
@@ -470,11 +526,8 @@ class TestHeatingCycleLifecycleManager:
     async def test_update_cycles_for_window(
         self,
         manager: HeatingCycleLifecycleManager,
-        manager_with_cache: HeatingCycleLifecycleManager,
-        manager_full: HeatingCycleLifecycleManager,
         mock_heating_cycle_service: Mock,
-        mock_cycle_cache: Mock,
-        mock_model_storage: Mock,
+        mock_heating_cycle_storage: Mock,
         base_datetime: datetime,
     ) -> None:
         """Test update_cycles_for_window method.
@@ -515,24 +568,19 @@ class TestHeatingCycleLifecycleManager:
         new_cycles = [self._create_heating_cycle(base_datetime - timedelta(days=3))]
         mock_heating_cycle_service.extract_heating_cycles.return_value = new_cycles
 
-        await manager_with_cache.update_cycles_for_window(device_id, start_time, end_time)
+        await manager.update_cycles_for_window(device_id, start_time, end_time)
 
         # THEN Aspect B: Updates cache when present
-        assert (
-            mock_cycle_cache.set_cached_cycles.called or mock_cycle_cache.update_cycle_window.called
-        )
+        assert mock_heating_cycle_storage.append_cycles.called
 
         # WHEN: update_cycles_for_window is called with storage (separate call)
         storage_cycles = [self._create_heating_cycle(base_datetime)]
         mock_heating_cycle_service.extract_heating_cycles.return_value = storage_cycles
 
-        await manager_full.update_cycles_for_window(device_id, start_time, end_time)
+        await manager.update_cycles_for_window(device_id, start_time, end_time)
 
-        # THEN Aspect C: Persists to storage cache when present
-        # NOTE: IModelStorage does not include save_heating_cycle()
-        # Cycles are extracted from Home Assistant recorder, not persisted via this interface
-        # Instead, verify that cycles are returned correctly
-        assert len(storage_cycles) > 0
+        # THEN Aspect E: Writes updated cycles to persistent cache
+        mock_heating_cycle_storage.append_cycles.assert_called()  # Persists to disk
 
         # THEN Aspect D: Handles extraction errors
         # (Setup for error scenario)
@@ -568,22 +616,22 @@ class TestHeatingCycleLifecycleManager:
     async def test_cancel(
         self,
         manager: HeatingCycleLifecycleManager,
-        manager_with_cache: HeatingCycleLifecycleManager,
-        manager_full: HeatingCycleLifecycleManager,
         mock_timer_scheduler: Mock,
+        mock_heating_cycle_storage: Mock,
         base_datetime: datetime,
     ) -> None:
         """Test cancel lifecycle event.
 
         Method documentation summary:
         - Stop scheduled refresh timer (if present)
-        - Clear cycle cache (if present)
+        - Do NOT clear cycle cache (data persists)
         - Release resources and cleanup
 
         Verified aspects:
         - Aspect A: Stops scheduled timer when present
         - Aspect B: Works without timer (no error)
-        - Aspect C: Is idempotent (can be called multiple times)
+        - Aspect C: Does NOT clear persistent cache
+        - Aspect D: Is idempotent (can be called multiple times)
         """
         # GIVEN: Setup for ALL aspects
         device_id = "climate.test_vtherm"
@@ -594,13 +642,18 @@ class TestHeatingCycleLifecycleManager:
         cancel_func = Mock()
         mock_timer_scheduler.schedule_timer.return_value = cancel_func
 
-        await manager_full.startup(device_id, start_time, end_time)
+        await manager.startup(device_id, start_time, end_time)
 
         # WHEN: Cancel is called (SINGLE CALL for timer aspect)
-        await manager_full.cancel()
+        mock_heating_cycle_storage.clear_cache.reset_mock()
+
+        await manager.cancel()
 
         # THEN Aspect A: Stops scheduled timer when present
         cancel_func.assert_called_once()
+
+        # THEN Aspect C: Does NOT clear persistent cache (data remains)
+        mock_heating_cycle_storage.clear_cache.assert_not_called()
 
         # WHEN: Cancel is called on manager without timer
         await manager.cancel()
@@ -608,12 +661,12 @@ class TestHeatingCycleLifecycleManager:
         # THEN Aspect B: Works without timer (no error)
         # No exception is raised
 
-        # THEN Aspect C: Is idempotent (can be called multiple times)
+        # THEN Aspect D: Is idempotent (can be called multiple times)
         # Setup manager again
-        await manager_full.startup(device_id, start_time, end_time)
+        await manager.startup(device_id, start_time, end_time)
 
         # Call cancel multiple times
-        await manager_full.cancel()
-        await manager_full.cancel()
+        await manager.cancel()
+        await manager.cancel()
 
         # No exception is raised

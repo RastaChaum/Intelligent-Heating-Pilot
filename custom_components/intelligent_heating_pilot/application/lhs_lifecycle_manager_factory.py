@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from .lhs_lifecycle_manager import LhsLifecycleManager
 
 if TYPE_CHECKING:
-    from ..domain.interfaces import IModelStorage, ITimerScheduler
+    from ..domain.interfaces import ILhsStorage, ITimerScheduler
     from ..domain.services.contextual_lhs_calculator_service import ContextualLHSCalculatorService
     from ..domain.services.global_lhs_calculator_service import GlobalLHSCalculatorService
 
@@ -26,7 +26,7 @@ class LhsLifecycleManagerFactory:
     Note on device_id:
     Since LhsLifecycleManager doesn't directly hold device_id, the singleton key
     is derived from the model_storage instance (assuming one storage per device).
-    For proper device-level isolation, ensure each device has its own IModelStorage.
+    For proper device-level isolation, ensure each device has its own ILhsStorage.
 
     Dependency Wiring:
     - Injects all required dependencies (calculators, storage, scheduler)
@@ -50,7 +50,7 @@ class LhsLifecycleManagerFactory:
     @classmethod
     def create(
         cls,
-        model_storage: IModelStorage,
+        model_storage: ILhsStorage,
         global_lhs_calculator: GlobalLHSCalculatorService,
         contextual_lhs_calculator: ContextualLHSCalculatorService,
         timer_scheduler: ITimerScheduler | None = None,

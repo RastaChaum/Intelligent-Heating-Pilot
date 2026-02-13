@@ -12,6 +12,12 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from custom_components.intelligent_heating_pilot.application import HeatingApplicationService
+from custom_components.intelligent_heating_pilot.application.heating_cycle_lifecycle_manager import (
+    HeatingCycleLifecycleManager,
+)
+from custom_components.intelligent_heating_pilot.application.lhs_lifecycle_manager import (
+    LhsLifecycleManager,
+)
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     EnvironmentState,
     ScheduledTimeslot,
@@ -66,6 +72,17 @@ def mock_adapters():
     timer_scheduler = Mock()
     timer_scheduler.schedule_timer = Mock(return_value=Mock())  # Returns cancel function
 
+    # Mock lifecycle managers
+    heating_cycle_manager = AsyncMock(spec=HeatingCycleLifecycleManager)
+    heating_cycle_manager.get_cycles_for_target_time = AsyncMock(return_value=[])
+    heating_cycle_manager.get_cycles_for_window = AsyncMock(return_value=[])
+
+    lhs_manager = AsyncMock(spec=LhsLifecycleManager)
+    lhs_manager.get_contextual_lhs = AsyncMock(return_value=2.5)
+    lhs_manager.get_global_lhs = AsyncMock(return_value=2.5)
+    lhs_manager.update_global_lhs_from_cycles = AsyncMock(return_value=2.5)
+    lhs_manager.update_contextual_lhs_from_cycles = AsyncMock(return_value={0: 2.0, 12: 3.0})
+
     return {
         "scheduler_reader": scheduler_reader,
         "model_storage": model_storage,
@@ -74,6 +91,8 @@ def mock_adapters():
         "environment_reader": environment_reader,
         "hass": hass,
         "timer_scheduler": timer_scheduler,
+        "heating_cycle_lifecycle_manager": heating_cycle_manager,
+        "lhs_lifecycle_manager": lhs_manager,
     }
 
 
@@ -87,6 +106,8 @@ def app_service(mock_adapters):
         climate_commander=mock_adapters["climate_commander"],
         environment_reader=mock_adapters["environment_reader"],
         timer_scheduler=mock_adapters["timer_scheduler"],
+        heating_cycle_lifecycle_manager=mock_adapters["heating_cycle_lifecycle_manager"],
+        lhs_lifecycle_manager=mock_adapters["lhs_lifecycle_manager"],
         lhs_window_hours=6.0,
     )
 
@@ -125,12 +146,12 @@ class TestRevertLogicWhenAnticipatedStartMoves:
 
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 1.0
+        mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 0.8
 
         # Step 1: Initial calculation triggers pre-heating at 04:00
         # Mock dt_util.now() to return base_time
         with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
-            # LHS=2°C/h → anticipated start = 04:00 (in past, so trigger now)
+            # LHS=0.8°C/h → anticipated start before 04:00, so trigger now
             await app_service.calculate_and_schedule_anticipation()
 
         # Verify pre-heating was triggered
@@ -149,7 +170,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
         )
 
         mock_adapters["environment_reader"].get_current_environment.return_value = environment_later
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 4.0
+        mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 4.0
         mock_adapters["scheduler_commander"].run_action.reset_mock()
 
         # Step 3: Recalculate - anticipated start now 05:00 (later than 04:45)
@@ -189,7 +210,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
 
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 0.5
+        mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 0.5
 
         # Initial calculation - low LHS means early start
         with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
@@ -245,7 +266,7 @@ class TestRevertLogicWhenAnticipatedStartMoves:
 
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 0.5
+        mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 0.5
 
         # Start pre-heating
         with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
@@ -387,7 +408,7 @@ class TestNoDirectVThermControl:
 
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 2.0
 
         # Calculate and schedule - should trigger pre-heating
         with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
@@ -471,7 +492,7 @@ class TestAdditionalScenarios:
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
         mock_adapters["environment_reader"].is_heating_active.return_value = True
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 2.0
 
         with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=now):
             app_service._is_preheating_active = True
@@ -533,7 +554,7 @@ class TestAdditionalScenarios:
         )
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 2.0
 
         # Initial trigger
         with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
@@ -585,7 +606,7 @@ class TestIHPEnabledDisabled:
 
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 2.0
 
         # Calculate with IHP disabled
         with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
@@ -625,7 +646,7 @@ class TestIHPEnabledDisabled:
 
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 2.0
 
         # Calculate with IHP enabled (default behavior)
         with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
@@ -661,7 +682,7 @@ class TestIHPEnabledDisabled:
 
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 0.5
+        mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 0.5
 
         # Step 1: Start preheating with IHP enabled
         with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=base_time):
@@ -734,7 +755,7 @@ class TestIHPEnabledDisabled:
 
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["model_storage"].get_learned_heating_slope.return_value = 2.0
+        mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 2.0
 
         # Mock timer scheduler to return a cancel function
         mock_cancel_func = Mock()

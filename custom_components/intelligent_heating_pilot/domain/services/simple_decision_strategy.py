@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from ..interfaces import IModelStorage, ISchedulerReader
+from ..interfaces import ILhsStorage, ISchedulerReader
 from ..interfaces.decision_strategy_interface import IDecisionStrategy
 from ..services.prediction_service import PredictionService
 from ..value_objects import (
@@ -37,7 +37,7 @@ class SimpleDecisionStrategy(IDecisionStrategy):
     def __init__(
         self,
         scheduler_reader: ISchedulerReader,
-        model_storage: IModelStorage,
+        model_storage: ILhsStorage,
     ) -> None:
         """Initialize simple decision strategy.
 

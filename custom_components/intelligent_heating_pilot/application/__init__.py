@@ -33,9 +33,9 @@ if TYPE_CHECKING:
     from ..domain.interfaces import ITimerScheduler
     from ..infrastructure.adapters import (
         HAClimateCommander,
-        HACycleCache,
         HAEnvironmentReader,
-        HAModelStorage,
+        HAHeatingCycleStorage,
+        HALhsStorage,
         HASchedulerCommander,
         HASchedulerReader,
     )
@@ -60,12 +60,12 @@ class HeatingApplicationService:
     def __init__(
         self,
         scheduler_reader: HASchedulerReader,
-        model_storage: HAModelStorage,
+        model_storage: HALhsStorage,
         scheduler_commander: HASchedulerCommander,
         climate_commander: HAClimateCommander,
         environment_reader: HAEnvironmentReader,
         timer_scheduler: ITimerScheduler,
-        cycle_cache: HACycleCache | None = None,
+        cycle_cache: HAHeatingCycleStorage | None = None,
         lhs_window_hours: float = 6.0,
         history_lookback_days: int | None = None,
         decision_mode: str = DEFAULT_DECISION_MODE,

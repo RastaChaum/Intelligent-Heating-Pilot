@@ -14,6 +14,12 @@ import pytest
 from homeassistant.util import dt as dt_util
 
 from custom_components.intelligent_heating_pilot.application import HeatingApplicationService
+from custom_components.intelligent_heating_pilot.application.heating_cycle_lifecycle_manager import (
+    HeatingCycleLifecycleManager,
+)
+from custom_components.intelligent_heating_pilot.application.lhs_lifecycle_manager import (
+    LhsLifecycleManager,
+)
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     EnvironmentState,
     PredictionResult,
@@ -74,6 +80,17 @@ def mock_adapters(mock_hass):
     timer_scheduler = Mock()
     timer_scheduler.schedule_timer = Mock(return_value=Mock())  # Returns cancel function
 
+    # Mock lifecycle managers
+    heating_cycle_manager = AsyncMock(spec=HeatingCycleLifecycleManager)
+    heating_cycle_manager.get_cycles_for_target_time = AsyncMock(return_value=[])
+    heating_cycle_manager.get_cycles_for_window = AsyncMock(return_value=[])
+
+    lhs_manager = AsyncMock(spec=LhsLifecycleManager)
+    lhs_manager.get_contextual_lhs = AsyncMock(return_value=2.5)
+    lhs_manager.get_global_lhs = AsyncMock(return_value=2.5)
+    lhs_manager.update_global_lhs_from_cycles = AsyncMock(return_value=2.5)
+    lhs_manager.update_contextual_lhs_from_cycles = AsyncMock(return_value={0: 2.0, 12: 3.0})
+
     return {
         "scheduler_reader": scheduler_reader,
         "model_storage": model_storage,
@@ -82,6 +99,8 @@ def mock_adapters(mock_hass):
         "environment_reader": environment_reader,
         "hass": mock_hass,
         "timer_scheduler": timer_scheduler,
+        "heating_cycle_lifecycle_manager": heating_cycle_manager,
+        "lhs_lifecycle_manager": lhs_manager,
     }
 
 
@@ -95,6 +114,8 @@ def app_service(mock_adapters):
         climate_commander=mock_adapters["climate_commander"],
         environment_reader=mock_adapters["environment_reader"],
         timer_scheduler=mock_adapters["timer_scheduler"],
+        heating_cycle_lifecycle_manager=mock_adapters["heating_cycle_lifecycle_manager"],
+        lhs_lifecycle_manager=mock_adapters["lhs_lifecycle_manager"],
         lhs_window_hours=6.0,
     )
 

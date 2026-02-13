@@ -21,9 +21,9 @@ from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN
 from .domain.interfaces.device_config_reader_interface import DeviceConfig
 from .infrastructure.adapters import (
     HAClimateCommander,
-    HACycleCache,
     HAEnvironmentReader,
-    HAModelStorage,
+    HAHeatingCycleStorage,
+    HALhsStorage,
     HASchedulerCommander,
     HASchedulerReader,
     HATimerScheduler,
@@ -91,8 +91,8 @@ class IntelligentHeatingPilotCoordinator:
         self._ihp_enabled = device_config.ihp_enabled
 
         # Infrastructure adapters
-        self._model_storage: HAModelStorage | None = None
-        self._cycle_cache: HACycleCache | None = None
+        self._model_storage: HALhsStorage | None = None
+        self._cycle_cache: HAHeatingCycleStorage | None = None
         self._scheduler_reader: HASchedulerReader | None = None
         self._scheduler_commander: HASchedulerCommander | None = None
         self._climate_commander: HAClimateCommander | None = None
@@ -120,12 +120,12 @@ class IntelligentHeatingPilotCoordinator:
     async def async_load(self) -> None:
         """Load and initialize all components."""
         # Create infrastructure adapters
-        self._model_storage = HAModelStorage(
+        self._model_storage = HALhsStorage(
             self.hass, self._entry_id, retention_days=self._data_retention_days
         )
 
         # Create cycle cache for incremental cycle extraction
-        self._cycle_cache = HACycleCache(
+        self._cycle_cache = HAHeatingCycleStorage(
             self.hass, self._entry_id, retention_days=self._data_retention_days
         )
 

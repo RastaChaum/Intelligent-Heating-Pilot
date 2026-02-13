@@ -696,278 +696,244 @@ DA:27,0
 DA:28,0
 DA:31,1
 DA:54,1
-DA:78,1
-DA:79,1
-DA:80,1
-DA:81,1
-DA:82,1
-DA:83,1
-DA:84,1
-DA:89,1
-DA:90,1
+DA:78,0
+DA:79,0
+DA:80,0
+DA:81,0
+DA:82,0
+DA:83,0
+DA:84,0
+DA:89,0
+DA:90,0
 DA:92,1
-DA:121,1
-DA:122,1
-DA:126,1
-DA:128,1
-DA:131,1
+DA:121,0
+DA:122,0
+DA:126,0
+DA:128,0
+DA:131,0
 DA:132,0
 DA:133,0
 DA:134,0
-DA:137,1
-DA:138,1
-DA:139,1
+DA:137,0
+DA:138,0
+DA:139,0
 DA:141,0
-DA:143,1
-DA:146,1
-DA:148,1
-DA:149,1
-DA:150,1
+DA:143,0
+DA:146,0
+DA:148,0
+DA:149,0
+DA:150,0
 DA:151,0
 DA:152,0
 DA:153,0
 DA:155,1
-DA:179,1
-DA:180,1
-DA:183,1
-DA:191,1
-DA:192,1
-DA:195,1
-DA:196,1
-DA:197,1
+DA:179,0
+DA:180,0
+DA:183,0
+DA:191,0
+DA:192,0
+DA:195,0
+DA:196,0
+DA:197,0
 DA:198,0
-DA:199,1
-DA:200,1
-DA:203,1
-DA:204,1
-DA:206,1
-DA:211,1
-DA:214,1
+DA:199,0
+DA:200,0
+DA:203,0
+DA:204,0
+DA:206,0
+DA:211,0
+DA:214,0
 DA:215,0
 DA:216,0
 DA:217,0
-DA:219,1
+DA:219,0
 DA:221,1
-DA:242,1
-DA:243,1
-DA:245,1
-DA:247,1
-DA:248,1
-DA:251,1
-DA:256,1
-DA:259,1
-DA:260,1
+DA:242,0
+DA:243,0
+DA:245,0
+DA:247,0
+DA:248,0
+DA:251,0
+DA:256,0
+DA:259,0
+DA:260,0
 DA:261,0
-DA:264,1
+DA:264,0
 DA:265,0
 DA:266,0
 DA:267,0
-DA:269,1
-DA:270,1
-DA:272,1
+DA:269,0
+DA:270,0
+DA:272,0
 DA:274,1
-DA:296,1
-DA:297,1
-DA:300,1
-DA:301,1
-DA:302,1
-DA:305,1
-DA:307,1
-DA:308,1
-DA:309,1
-DA:310,1
-DA:315,1
-DA:316,1
-DA:317,1
+DA:296,0
+DA:297,0
+DA:300,0
+DA:301,0
+DA:302,0
+DA:305,0
+DA:306,0
+DA:307,0
+DA:309,0
+DA:314,0
+DA:315,0
+DA:316,0
+DA:319,0
 DA:320,0
 DA:321,0
-DA:323,0
-DA:328,0
-DA:329,0
-DA:330,0
-DA:333,1
-DA:334,1
-DA:335,1
-DA:336,1
-DA:338,1
-DA:363,1
-DA:364,1
-DA:367,1
-DA:370,1
-DA:371,0
+DA:322,0
+DA:324,1
+DA:349,0
+DA:350,0
+DA:353,0
+DA:356,0
+DA:357,0
+DA:358,0
+DA:364,0
+DA:365,0
+DA:368,0
+DA:369,0
 DA:372,0
-DA:378,0
-DA:379,0
-DA:382,1
-DA:383,1
+DA:375,0
+DA:376,0
+DA:383,0
+DA:384,0
 DA:386,1
-DA:389,1
-DA:390,1
-DA:397,1
-DA:398,1
-DA:400,1
-DA:429,1
-DA:430,1
-DA:435,1
-DA:438,1
-DA:440,1
-DA:441,1
+DA:415,0
+DA:416,0
+DA:421,0
+DA:424,0
+DA:425,0
+DA:426,0
+DA:432,0
+DA:433,0
+DA:434,0
+DA:439,0
+DA:440,0
 DA:442,1
-DA:443,1
-DA:444,0
-DA:446,0
-DA:447,0
-DA:448,0
-DA:454,0
 DA:457,0
-DA:458,0
-DA:459,0
 DA:460,0
 DA:461,0
+DA:462,0
+DA:463,0
+DA:464,0
+DA:465,0
 DA:467,0
-DA:468,0
 DA:469,0
-DA:474,1
-DA:475,1
-DA:477,1
-DA:492,1
-DA:495,1
-DA:496,1
-DA:497,1
-DA:498,1
-DA:499,0
-DA:500,0
-DA:502,1
-DA:504,1
-DA:506,1
-DA:522,1
-DA:525,1
-DA:527,1
-DA:528,1
-DA:530,1
-DA:531,1
-DA:535,1
-DA:536,0
-DA:537,0
-DA:538,0
-DA:539,0
-DA:542,1
-DA:547,0
-DA:548,0
-DA:549,0
-DA:550,0
-DA:553,1
-DA:556,1
-DA:563,1
-DA:564,1
-DA:565,1
-LF:180
-LH:130
+DA:471,1
+DA:487,0
+DA:490,0
+DA:492,0
+DA:493,0
+DA:495,0
+DA:496,0
+DA:503,0
+DA:504,0
+DA:505,0
+DA:506,0
+DA:507,0
+DA:508,0
+DA:509,0
+DA:512,0
+DA:515,0
+DA:522,0
+DA:523,0
+DA:524,0
+LF:158
+LH:21
 FN:54,90,HeatingCycleLifecycleManager.__init__
-FNDA:1,HeatingCycleLifecycleManager.__init__
+FNDA:0,HeatingCycleLifecycleManager.__init__
 FN:92,153,HeatingCycleLifecycleManager.startup
-FNDA:1,HeatingCycleLifecycleManager.startup
+FNDA:0,HeatingCycleLifecycleManager.startup
 FN:155,219,HeatingCycleLifecycleManager.on_retention_change
-FNDA:1,HeatingCycleLifecycleManager.on_retention_change
+FNDA:0,HeatingCycleLifecycleManager.on_retention_change
 FN:221,272,HeatingCycleLifecycleManager.on_24h_timer
-FNDA:1,HeatingCycleLifecycleManager.on_24h_timer
-FN:274,336,HeatingCycleLifecycleManager.get_cycles_for_window
-FNDA:1,HeatingCycleLifecycleManager.get_cycles_for_window
-FN:338,398,HeatingCycleLifecycleManager.get_cycles_for_target_time
-FNDA:1,HeatingCycleLifecycleManager.get_cycles_for_target_time
-FN:400,475,HeatingCycleLifecycleManager.update_cycles_for_window
-FNDA:1,HeatingCycleLifecycleManager.update_cycles_for_window
-FN:477,504,HeatingCycleLifecycleManager.cancel
-FNDA:1,HeatingCycleLifecycleManager.cancel
-FN:506,565,HeatingCycleLifecycleManager._extract_cycles
-FNDA:1,HeatingCycleLifecycleManager._extract_cycles
+FNDA:0,HeatingCycleLifecycleManager.on_24h_timer
+FN:274,322,HeatingCycleLifecycleManager.get_cycles_for_window
+FNDA:0,HeatingCycleLifecycleManager.get_cycles_for_window
+FN:324,384,HeatingCycleLifecycleManager.get_cycles_for_target_time
+FNDA:0,HeatingCycleLifecycleManager.get_cycles_for_target_time
+FN:386,440,HeatingCycleLifecycleManager.update_cycles_for_window
+FNDA:0,HeatingCycleLifecycleManager.update_cycles_for_window
+FN:442,469,HeatingCycleLifecycleManager.cancel
+FNDA:0,HeatingCycleLifecycleManager.cancel
+FN:471,524,HeatingCycleLifecycleManager._extract_cycles
+FNDA:0,HeatingCycleLifecycleManager._extract_cycles
 FNF:9
-FNH:9
-BRDA:131,0,jump to line 132,0
-BRDA:131,0,jump to line 137,1
-BRDA:137,0,jump to line 138,1
-BRDA:137,0,jump to line 148,1
-BRDA:138,0,jump to line 139,1
-BRDA:138,0,jump to line 141,0
-BRDA:195,0,jump to line 196,1
-BRDA:195,0,jump to line 203,1
-BRDA:214,0,jump to line 215,0
-BRDA:214,0,jump to line 219,1
-BRDA:259,0,jump to line 260,1
-BRDA:259,0,jump to line 264,1
-BRDA:264,0,jump to line 265,0
-BRDA:264,0,jump to line 272,1
-BRDA:300,0,jump to line 301,1
-BRDA:300,0,jump to line 305,1
-BRDA:305,0,jump to line 307,1
-BRDA:305,0,jump to line 333,1
-BRDA:307,0,jump to line 308,1
-BRDA:307,0,jump to line 320,0
-BRDA:309,0,jump to line 310,1
-BRDA:309,0,jump to line 333,0
-BRDA:321,0,jump to line 323,-
-BRDA:321,0,jump to line 333,-
-BRDA:370,0,jump to line 371,0
-BRDA:370,0,jump to line 382,1
-BRDA:438,0,jump to line 440,1
-BRDA:438,0,jump to line 474,1
-BRDA:440,0,jump to line 441,1
-BRDA:440,0,jump to line 459,0
-BRDA:446,0,jump to line 447,-
-BRDA:446,0,jump to line 474,-
-BRDA:459,0,jump to line 460,-
-BRDA:459,0,jump to line 474,-
-BRDA:495,0,jump to line 496,1
-BRDA:495,0,jump to line 504,1
-BRDA:527,0,jump to line 528,1
-BRDA:527,0,jump to line 553,1
-BRDA:530,0,jump to line 531,1
-BRDA:530,0,jump to line 547,0
-BRDA:535,0,jump to line 536,0
-BRDA:535,0,jump to line 542,1
-BRDA:536,0,jump to line 527,-
-BRDA:536,0,jump to line 537,-
-BRDA:537,0,jump to line 538,-
-BRDA:537,0,jump to line 539,-
-BRF:46
-BRH:26
+FNH:0
+BRDA:131,0,jump to line 132,-
+BRDA:131,0,jump to line 137,-
+BRDA:137,0,jump to line 138,-
+BRDA:137,0,jump to line 148,-
+BRDA:138,0,jump to line 139,-
+BRDA:138,0,jump to line 141,-
+BRDA:195,0,jump to line 196,-
+BRDA:195,0,jump to line 203,-
+BRDA:214,0,jump to line 215,-
+BRDA:214,0,jump to line 219,-
+BRDA:259,0,jump to line 260,-
+BRDA:259,0,jump to line 264,-
+BRDA:264,0,jump to line 265,-
+BRDA:264,0,jump to line 272,-
+BRDA:300,0,jump to line 301,-
+BRDA:300,0,jump to line 305,-
+BRDA:305,0,jump to line 306,-
+BRDA:305,0,jump to line 319,-
+BRDA:307,0,jump to line 309,-
+BRDA:307,0,jump to line 319,-
+BRDA:356,0,jump to line 357,-
+BRDA:356,0,jump to line 368,-
+BRDA:424,0,jump to line 425,-
+BRDA:424,0,jump to line 439,-
+BRDA:460,0,jump to line 461,-
+BRDA:460,0,jump to line 469,-
+BRDA:492,0,jump to line 493,-
+BRDA:492,0,jump to line 512,-
+BRDA:495,0,jump to line 492,-
+BRDA:495,0,jump to line 496,-
+BRDA:503,0,jump to line 495,-
+BRDA:503,0,jump to line 504,-
+BRDA:504,0,jump to line 505,-
+BRDA:504,0,jump to line 506,-
+BRF:34
+BRH:0
 end_of_record
 SF:custom_components/intelligent_heating_pilot/application/heating_cycle_lifecycle_manager_factory.py
 DA:3,1
 DA:5,1
 DA:6,1
 DA:8,1
+DA:9,1
 DA:10,1
-DA:11,1
-DA:20,1
-DA:23,1
-DA:48,1
+DA:19,1
+DA:22,1
+DA:47,1
+DA:49,1
 DA:50,1
-DA:51,1
-DA:87,0
+DA:86,0
+DA:89,0
 DA:90,0
-DA:91,0
-DA:94,0
-DA:97,0
-DA:103,0
-DA:105,0
+DA:93,0
+DA:96,0
+DA:102,0
+DA:104,0
+DA:115,0
 DA:116,0
-DA:117,0
-DA:119,0
+DA:118,0
+DA:120,1
 DA:121,1
-DA:122,1
+DA:128,0
 DA:129,0
-DA:130,0
 LF:25
 LH:13
-FN:51,119,HeatingCycleLifecycleManagerFactory.create
+FN:50,118,HeatingCycleLifecycleManagerFactory.create
 FNDA:0,HeatingCycleLifecycleManagerFactory.create
-FN:122,130,HeatingCycleLifecycleManagerFactory.reset_instances
+FN:121,129,HeatingCycleLifecycleManagerFactory.reset_instances
 FNDA:0,HeatingCycleLifecycleManagerFactory.reset_instances
 FNF:2
 FNH:0
-BRDA:90,0,jump to line 91,-
-BRDA:90,0,jump to line 97,-
+BRDA:89,0,jump to line 90,-
+BRDA:89,0,jump to line 96,-
 BRF:2
 BRH:0
 end_of_record
@@ -984,23 +950,23 @@ DA:20,0
 DA:21,0
 DA:24,1
 DA:54,1
-DA:72,1
-DA:73,1
-DA:74,1
-DA:75,1
-DA:79,1
-DA:80,1
-DA:81,1
+DA:72,0
+DA:73,0
+DA:74,0
+DA:75,0
+DA:79,0
+DA:80,0
+DA:81,0
 DA:83,1
-DA:105,1
-DA:107,1
-DA:109,1
-DA:110,1
-DA:112,1
-DA:113,1
-DA:114,1
-DA:118,1
-DA:120,1
+DA:105,0
+DA:107,0
+DA:109,0
+DA:110,0
+DA:112,0
+DA:113,0
+DA:114,0
+DA:118,0
+DA:120,0
 DA:123,0
 DA:124,0
 DA:125,0
@@ -1010,68 +976,68 @@ DA:129,0
 DA:131,0
 DA:132,0
 DA:133,0
-DA:138,1
-DA:139,1
-DA:140,1
-DA:142,1
-DA:143,1
-DA:144,1
-DA:149,1
-DA:150,1
-DA:151,1
+DA:138,0
+DA:139,0
+DA:140,0
+DA:142,0
+DA:143,0
+DA:144,0
+DA:149,0
+DA:150,0
+DA:151,0
 DA:153,0
-DA:154,1
-DA:158,1
+DA:154,0
+DA:158,0
 DA:160,0
 DA:161,0
-DA:164,1
+DA:164,0
 DA:166,1
-DA:191,1
-DA:192,1
-DA:195,1
-DA:196,1
-DA:197,1
-DA:199,1
-DA:200,1
-DA:203,1
-DA:206,1
-DA:207,1
-DA:208,1
-DA:210,1
-DA:211,1
-DA:213,1
+DA:191,0
+DA:192,0
+DA:195,0
+DA:196,0
+DA:197,0
+DA:199,0
+DA:200,0
+DA:203,0
+DA:206,0
+DA:207,0
+DA:208,0
+DA:210,0
+DA:211,0
+DA:213,0
 DA:215,1
-DA:240,1
-DA:241,1
-DA:244,1
-DA:245,1
-DA:246,1
-DA:248,1
-DA:249,1
-DA:252,1
-DA:255,1
-DA:256,1
-DA:257,1
-DA:259,1
-DA:261,1
+DA:240,0
+DA:241,0
+DA:244,0
+DA:245,0
+DA:246,0
+DA:248,0
+DA:249,0
+DA:252,0
+DA:255,0
+DA:256,0
+DA:257,0
+DA:259,0
+DA:261,0
 DA:263,1
-DA:281,1
-DA:283,1
-DA:286,1
-DA:287,1
-DA:290,1
-DA:291,1
-DA:294,1
-DA:297,1
-DA:298,1
-DA:299,1
-DA:301,1
-DA:302,1
-DA:303,1
-DA:304,1
-DA:307,1
-DA:310,1
-DA:311,1
+DA:281,0
+DA:283,0
+DA:286,0
+DA:287,0
+DA:290,0
+DA:291,0
+DA:294,0
+DA:297,0
+DA:298,0
+DA:299,0
+DA:301,0
+DA:302,0
+DA:303,0
+DA:304,0
+DA:307,0
+DA:310,0
+DA:311,0
 DA:313,1
 DA:328,0
 DA:331,0
@@ -1083,21 +1049,21 @@ DA:336,0
 DA:338,0
 DA:340,0
 DA:342,1
-DA:369,1
-DA:371,1
-DA:372,1
-DA:375,1
-DA:376,1
-DA:377,1
-DA:382,1
-DA:383,1
-DA:386,1
-DA:388,1
-DA:389,1
-DA:391,1
-DA:392,1
-DA:397,1
-DA:398,1
+DA:369,0
+DA:371,0
+DA:372,0
+DA:375,0
+DA:376,0
+DA:377,0
+DA:382,0
+DA:383,0
+DA:386,0
+DA:388,0
+DA:389,0
+DA:391,0
+DA:392,0
+DA:397,0
+DA:398,0
 DA:401,0
 DA:402,0
 DA:406,0
@@ -1109,105 +1075,105 @@ DA:418,0
 DA:423,0
 DA:424,0
 DA:434,1
-DA:456,1
-DA:458,1
-DA:459,1
-DA:461,1
-DA:462,1
-DA:463,1
-DA:464,1
-DA:467,1
-DA:468,1
-DA:470,1
-DA:471,1
-DA:472,1
+DA:456,0
+DA:458,0
+DA:459,0
+DA:461,0
+DA:462,0
+DA:463,0
+DA:464,0
+DA:467,0
+DA:468,0
+DA:470,0
+DA:471,0
+DA:472,0
 DA:473,0
 DA:474,0
 DA:475,0
 DA:476,0
 DA:478,1
-DA:503,1
-DA:504,1
-DA:506,1
-DA:511,1
-DA:513,1
-DA:514,1
-DA:515,1
-DA:516,1
-DA:517,1
-DA:521,1
-DA:524,1
-DA:528,1
-DA:529,1
-DA:531,1
+DA:503,0
+DA:504,0
+DA:506,0
+DA:511,0
+DA:513,0
+DA:514,0
+DA:515,0
+DA:516,0
+DA:517,0
+DA:521,0
+DA:524,0
+DA:528,0
+DA:529,0
+DA:531,0
 LF:168
-LH:131
+LH:18
 FN:54,81,LhsLifecycleManager.__init__
-FNDA:1,LhsLifecycleManager.__init__
+FNDA:0,LhsLifecycleManager.__init__
 FN:83,164,LhsLifecycleManager.startup
-FNDA:1,LhsLifecycleManager.startup
+FNDA:0,LhsLifecycleManager.startup
 FN:166,213,LhsLifecycleManager.on_retention_change
-FNDA:1,LhsLifecycleManager.on_retention_change
+FNDA:0,LhsLifecycleManager.on_retention_change
 FN:215,261,LhsLifecycleManager.on_24h_timer
-FNDA:1,LhsLifecycleManager.on_24h_timer
+FNDA:0,LhsLifecycleManager.on_24h_timer
 FN:263,311,LhsLifecycleManager.get_global_lhs
-FNDA:1,LhsLifecycleManager.get_global_lhs
+FNDA:0,LhsLifecycleManager.get_global_lhs
 FN:313,340,LhsLifecycleManager.cancel
 FNDA:0,LhsLifecycleManager.cancel
 FN:342,432,LhsLifecycleManager.get_contextual_lhs
-FNDA:1,LhsLifecycleManager.get_contextual_lhs
+FNDA:0,LhsLifecycleManager.get_contextual_lhs
 FN:434,476,LhsLifecycleManager.update_global_lhs_from_cycles
-FNDA:1,LhsLifecycleManager.update_global_lhs_from_cycles
+FNDA:0,LhsLifecycleManager.update_global_lhs_from_cycles
 FN:478,531,LhsLifecycleManager.update_contextual_lhs_from_cycles
-FNDA:1,LhsLifecycleManager.update_contextual_lhs_from_cycles
+FNDA:0,LhsLifecycleManager.update_contextual_lhs_from_cycles
 FNF:9
-FNH:8
-BRDA:110,0,jump to line 112,1
-BRDA:110,0,jump to line 118,0
-BRDA:120,0,jump to line 123,0
-BRDA:120,0,jump to line 138,1
+FNH:0
+BRDA:110,0,jump to line 112,-
+BRDA:110,0,jump to line 118,-
+BRDA:120,0,jump to line 123,-
+BRDA:120,0,jump to line 138,-
 BRDA:124,0,jump to line 125,-
 BRDA:124,0,jump to line 149,-
 BRDA:126,0,jump to line 127,-
 BRDA:126,0,jump to line 129,-
 BRDA:129,0,jump to line 124,-
 BRDA:129,0,jump to line 131,-
-BRDA:138,0,jump to line 139,1
-BRDA:138,0,jump to line 149,1
-BRDA:140,0,jump to line 138,1
-BRDA:140,0,jump to line 142,1
-BRDA:149,0,jump to line 150,1
-BRDA:149,0,jump to line 164,1
-BRDA:150,0,jump to line 151,1
-BRDA:150,0,jump to line 153,0
-BRDA:206,0,jump to line 207,1
-BRDA:206,0,jump to line 210,1
-BRDA:207,0,jump to line 206,0
-BRDA:207,0,jump to line 208,1
-BRDA:255,0,jump to line 256,1
-BRDA:255,0,jump to line 259,1
-BRDA:256,0,jump to line 255,0
-BRDA:256,0,jump to line 257,1
-BRDA:286,0,jump to line 287,1
-BRDA:286,0,jump to line 294,1
-BRDA:297,0,jump to line 298,1
-BRDA:297,0,jump to line 307,1
-BRDA:299,0,jump to line 301,1
-BRDA:299,0,jump to line 307,1
+BRDA:138,0,jump to line 139,-
+BRDA:138,0,jump to line 149,-
+BRDA:140,0,jump to line 138,-
+BRDA:140,0,jump to line 142,-
+BRDA:149,0,jump to line 150,-
+BRDA:149,0,jump to line 164,-
+BRDA:150,0,jump to line 151,-
+BRDA:150,0,jump to line 153,-
+BRDA:206,0,jump to line 207,-
+BRDA:206,0,jump to line 210,-
+BRDA:207,0,jump to line 206,-
+BRDA:207,0,jump to line 208,-
+BRDA:255,0,jump to line 256,-
+BRDA:255,0,jump to line 259,-
+BRDA:256,0,jump to line 255,-
+BRDA:256,0,jump to line 257,-
+BRDA:286,0,jump to line 287,-
+BRDA:286,0,jump to line 294,-
+BRDA:297,0,jump to line 298,-
+BRDA:297,0,jump to line 307,-
+BRDA:299,0,jump to line 301,-
+BRDA:299,0,jump to line 307,-
 BRDA:331,0,jump to line 332,-
 BRDA:331,0,jump to line 340,-
-BRDA:375,0,jump to line 376,1
-BRDA:375,0,jump to line 386,1
-BRDA:388,0,jump to line 389,1
-BRDA:388,0,jump to line 401,0
+BRDA:375,0,jump to line 376,-
+BRDA:375,0,jump to line 386,-
+BRDA:388,0,jump to line 389,-
+BRDA:388,0,jump to line 401,-
 BRDA:409,0,jump to line 410,-
 BRDA:409,0,jump to line 417,-
-BRDA:514,0,jump to line 515,1
-BRDA:514,0,jump to line 521,1
-BRDA:515,0,jump to line 514,1
-BRDA:515,0,jump to line 516,1
+BRDA:514,0,jump to line 515,-
+BRDA:514,0,jump to line 521,-
+BRDA:515,0,jump to line 514,-
+BRDA:515,0,jump to line 516,-
 BRF:44
-BRH:28
+BRH:0
 end_of_record
 SF:custom_components/intelligent_heating_pilot/application/lhs_lifecycle_manager_factory.py
 DA:3,1
@@ -1809,28 +1775,6 @@ DA:21,1
 LF:13
 LH:13
 end_of_record
-SF:custom_components/intelligent_heating_pilot/domain/interfaces/cycle_cache_interface.py
-DA:3,1
-DA:5,1
-DA:6,1
-DA:8,1
-DA:9,1
-DA:12,1
-LF:6
-LH:6
-FN:21,33,ICycleCache.get_cache_data
-FNDA:0,ICycleCache.get_cache_data
-FN:36,55,ICycleCache.append_cycles
-FNDA:0,ICycleCache.append_cycles
-FN:58,69,ICycleCache.prune_old_cycles
-FNDA:0,ICycleCache.prune_old_cycles
-FN:72,80,ICycleCache.clear_cache
-FNDA:0,ICycleCache.clear_cache
-FN:83,95,ICycleCache.get_last_search_time
-FNDA:0,ICycleCache.get_last_search_time
-FNF:5
-FNH:0
-end_of_record
 SF:custom_components/intelligent_heating_pilot/domain/interfaces/decision_strategy_interface.py
 DA:3,1
 DA:5,1
@@ -1866,55 +1810,55 @@ DA:61,1
 DA:62,1
 DA:65,1
 DA:67,1
-DA:74,1
+DA:74,0
 DA:75,0
-DA:77,1
+DA:77,0
 DA:78,0
-DA:81,1
+DA:81,0
 DA:82,0
-DA:85,1
+DA:85,0
 DA:86,0
-DA:88,1
+DA:88,0
 DA:89,0
-DA:91,1
+DA:91,0
 DA:92,0
-DA:94,1
+DA:94,0
 DA:95,0
-DA:97,1
+DA:97,0
 DA:98,0
-DA:100,1
+DA:100,0
 DA:101,0
 DA:104,1
 LF:39
-LH:30
+LH:21
 FN:67,101,DeviceConfig.__post_init__
-FNDA:1,DeviceConfig.__post_init__
+FNDA:0,DeviceConfig.__post_init__
 FN:112,124,IDeviceConfigReader.get_device_config
 FNDA:0,IDeviceConfigReader.get_device_config
 FN:127,133,IDeviceConfigReader.get_all_device_ids
 FNDA:0,IDeviceConfigReader.get_all_device_ids
 FNF:3
-FNH:1
-BRDA:74,0,jump to line 75,0
-BRDA:74,0,jump to line 77,1
-BRDA:77,0,jump to line 78,0
-BRDA:77,0,jump to line 81,1
-BRDA:81,0,jump to line 82,0
-BRDA:81,0,jump to line 85,1
-BRDA:85,0,jump to line 86,0
-BRDA:85,0,jump to line 88,1
-BRDA:88,0,jump to line 89,0
-BRDA:88,0,jump to line 91,1
-BRDA:91,0,jump to line 92,0
-BRDA:91,0,jump to line 94,1
-BRDA:94,0,jump to line 95,0
-BRDA:94,0,jump to line 97,1
-BRDA:97,0,jump to line 98,0
-BRDA:97,0,jump to line 100,1
-BRDA:100,0,jump to line 101,0
-BRDA:100,0,return from function '__post_init__',1
+FNH:0
+BRDA:74,0,jump to line 75,-
+BRDA:74,0,jump to line 77,-
+BRDA:77,0,jump to line 78,-
+BRDA:77,0,jump to line 81,-
+BRDA:81,0,jump to line 82,-
+BRDA:81,0,jump to line 85,-
+BRDA:85,0,jump to line 86,-
+BRDA:85,0,jump to line 88,-
+BRDA:88,0,jump to line 89,-
+BRDA:88,0,jump to line 91,-
+BRDA:91,0,jump to line 92,-
+BRDA:91,0,jump to line 94,-
+BRDA:94,0,jump to line 95,-
+BRDA:94,0,jump to line 97,-
+BRDA:97,0,jump to line 98,-
+BRDA:97,0,jump to line 100,-
+BRDA:100,0,jump to line 101,-
+BRDA:100,0,return from function '__post_init__',-
 BRF:18
-BRH:9
+BRH:0
 end_of_record
 SF:custom_components/intelligent_heating_pilot/domain/interfaces/heating_cycle_service_interface.py
 DA:3,1
@@ -1930,6 +1874,28 @@ FNDA:0,IHeatingCycleService.extract_heating_cycles
 FNF:1
 FNH:0
 end_of_record
+SF:custom_components/intelligent_heating_pilot/domain/interfaces/heating_cycle_storage_interface.py
+DA:3,1
+DA:5,1
+DA:6,1
+DA:8,1
+DA:9,1
+DA:12,1
+LF:6
+LH:6
+FN:21,33,IHeatingCycleStorage.get_cache_data
+FNDA:0,IHeatingCycleStorage.get_cache_data
+FN:36,55,IHeatingCycleStorage.append_cycles
+FNDA:0,IHeatingCycleStorage.append_cycles
+FN:58,69,IHeatingCycleStorage.prune_old_cycles
+FNDA:0,IHeatingCycleStorage.prune_old_cycles
+FN:72,80,IHeatingCycleStorage.clear_cache
+FNDA:0,IHeatingCycleStorage.clear_cache
+FN:83,95,IHeatingCycleStorage.get_last_search_time
+FNDA:0,IHeatingCycleStorage.get_last_search_time
+FNF:5
+FNH:0
+end_of_record
 SF:custom_components/intelligent_heating_pilot/domain/interfaces/historical_data_adapter_interface.py
 DA:3,1
 DA:5,1
@@ -1943,7 +1909,7 @@ FNDA:0,IHistoricalDataAdapter.fetch_historical_data
 FNF:1
 FNH:0
 end_of_record
-SF:custom_components/intelligent_heating_pilot/domain/interfaces/model_storage_interface.py
+SF:custom_components/intelligent_heating_pilot/domain/interfaces/lhs_storage_interface.py
 DA:3,1
 DA:5,1
 DA:6,1
@@ -1951,20 +1917,20 @@ DA:8,1
 DA:11,1
 LF:5
 LH:5
-FN:24,33,IModelStorage.get_learned_heating_slope
-FNDA:0,IModelStorage.get_learned_heating_slope
-FN:36,41,IModelStorage.clear_slope_history
-FNDA:0,IModelStorage.clear_slope_history
-FN:44,45,IModelStorage.get_cached_global_lhs
-FNDA:0,IModelStorage.get_cached_global_lhs
-FN:48,49,IModelStorage.set_cached_global_lhs
-FNDA:0,IModelStorage.set_cached_global_lhs
-FN:52,53,IModelStorage.get_cached_contextual_lhs
-FNDA:0,IModelStorage.get_cached_contextual_lhs
-FN:56,57,IModelStorage.set_cached_contextual_lhs
-FNDA:0,IModelStorage.set_cached_contextual_lhs
-FN:60,61,IModelStorage.clear_contextual_cache
-FNDA:0,IModelStorage.clear_contextual_cache
+FN:24,33,ILhsStorage.get_learned_heating_slope
+FNDA:0,ILhsStorage.get_learned_heating_slope
+FN:36,41,ILhsStorage.clear_slope_history
+FNDA:0,ILhsStorage.clear_slope_history
+FN:44,45,ILhsStorage.get_cached_global_lhs
+FNDA:0,ILhsStorage.get_cached_global_lhs
+FN:48,49,ILhsStorage.set_cached_global_lhs
+FNDA:0,ILhsStorage.set_cached_global_lhs
+FN:52,53,ILhsStorage.get_cached_contextual_lhs
+FNDA:0,ILhsStorage.get_cached_contextual_lhs
+FN:56,57,ILhsStorage.set_cached_contextual_lhs
+FNDA:0,ILhsStorage.set_cached_contextual_lhs
+FN:60,61,ILhsStorage.clear_contextual_cache
+FNDA:0,ILhsStorage.clear_contextual_cache
 FNF:7
 FNH:0
 end_of_record
@@ -2818,32 +2784,32 @@ LF:9
 LH:9
 end_of_record
 SF:custom_components/intelligent_heating_pilot/domain/value_objects/contextual_lhs_data.py
-DA:3,0
-DA:5,0
-DA:6,0
-DA:9,0
-DA:10,0
-DA:25,0
-DA:26,0
-DA:27,0
-DA:28,0
-DA:29,0
-DA:31,0
+DA:3,1
+DA:5,1
+DA:6,1
+DA:9,1
+DA:10,1
+DA:25,1
+DA:26,1
+DA:27,1
+DA:28,1
+DA:29,1
+DA:31,1
 DA:33,0
 DA:34,0
 DA:36,0
 DA:37,0
 DA:39,0
 DA:40,0
-DA:42,0
-DA:43,0
+DA:42,1
+DA:43,1
 DA:45,0
-DA:47,0
+DA:47,1
 DA:53,0
 DA:54,0
 DA:55,0
 LF:24
-LH:0
+LH:14
 FN:31,40,ContextualLHSData.__post_init__
 FNDA:0,ContextualLHSData.__post_init__
 FN:43,45,ContextualLHSData.is_available
@@ -2861,54 +2827,6 @@ BRDA:39,0,return from function '__post_init__',-
 BRDA:53,0,jump to line 54,-
 BRDA:53,0,jump to line 55,-
 BRF:8
-BRH:0
-end_of_record
-SF:custom_components/intelligent_heating_pilot/domain/value_objects/cycle_cache_data.py
-DA:8,1
-DA:10,1
-DA:11,1
-DA:13,1
-DA:16,1
-DA:17,1
-DA:31,1
-DA:32,1
-DA:33,1
-DA:34,1
-DA:36,1
-DA:38,0
-DA:39,0
-DA:41,0
-DA:42,0
-DA:45,0
-DA:46,0
-DA:48,1
-DA:49,1
-DA:51,0
-DA:53,1
-DA:62,0
-DA:64,1
-DA:73,0
-DA:75,0
-DA:76,0
-LF:26
-LH:15
-FN:36,46,CycleCacheData.__post_init__
-FNDA:0,CycleCacheData.__post_init__
-FN:49,51,CycleCacheData.cycle_count
-FNDA:0,CycleCacheData.cycle_count
-FN:53,62,CycleCacheData.get_cycles_since
-FNDA:0,CycleCacheData.get_cycles_since
-FN:64,76,CycleCacheData.get_cycles_within_retention
-FNDA:0,CycleCacheData.get_cycles_within_retention
-FNF:4
-FNH:0
-BRDA:38,0,jump to line 39,-
-BRDA:38,0,jump to line 41,-
-BRDA:41,0,jump to line 42,-
-BRDA:41,0,jump to line 45,-
-BRDA:45,0,jump to line 46,-
-BRDA:45,0,return from function '__post_init__',-
-BRF:6
 BRH:0
 end_of_record
 SF:custom_components/intelligent_heating_pilot/domain/value_objects/environment_state.py
@@ -3019,10 +2937,10 @@ DA:142,1
 DA:143,1
 DA:145,0
 DA:147,1
-DA:149,1
+DA:149,0
 DA:150,0
 LF:75
-LH:53
+LH:52
 FN:35,41,HeatingDecision.__post_init__
 FNDA:0,HeatingDecision.__post_init__
 FN:84,100,HeatingCycle.avg_heating_slope
@@ -3046,9 +2964,9 @@ FNDA:0,HeatingCycle.total_heating_duration_minutes
 FN:143,145,HeatingCycle.total_cost_euro
 FNDA:0,HeatingCycle.total_cost_euro
 FN:147,150,HeatingCycle.__post_init__
-FNDA:1,HeatingCycle.__post_init__
+FNDA:0,HeatingCycle.__post_init__
 FNF:12
-FNH:1
+FNH:0
 BRDA:37,0,jump to line 38,-
 BRDA:37,0,jump to line 40,-
 BRDA:40,0,jump to line 41,-
@@ -3057,10 +2975,58 @@ BRDA:91,0,jump to line 92,-
 BRDA:91,0,jump to line 95,-
 BRDA:97,0,jump to line 98,-
 BRDA:97,0,jump to line 99,-
-BRDA:149,0,jump to line 150,0
-BRDA:149,0,return from function '__post_init__',1
+BRDA:149,0,jump to line 150,-
+BRDA:149,0,return from function '__post_init__',-
 BRF:10
-BRH:1
+BRH:0
+end_of_record
+SF:custom_components/intelligent_heating_pilot/domain/value_objects/heating_cycle_cache_data.py
+DA:8,1
+DA:10,1
+DA:11,1
+DA:13,1
+DA:16,1
+DA:17,1
+DA:31,1
+DA:32,1
+DA:33,1
+DA:34,1
+DA:36,1
+DA:38,0
+DA:39,0
+DA:41,0
+DA:42,0
+DA:45,0
+DA:46,0
+DA:48,1
+DA:49,1
+DA:51,0
+DA:53,1
+DA:62,0
+DA:64,1
+DA:73,0
+DA:75,0
+DA:76,0
+LF:26
+LH:15
+FN:36,46,HeatingCycleCacheData.__post_init__
+FNDA:0,HeatingCycleCacheData.__post_init__
+FN:49,51,HeatingCycleCacheData.cycle_count
+FNDA:0,HeatingCycleCacheData.cycle_count
+FN:53,62,HeatingCycleCacheData.get_cycles_since
+FNDA:0,HeatingCycleCacheData.get_cycles_since
+FN:64,76,HeatingCycleCacheData.get_cycles_within_retention
+FNDA:0,HeatingCycleCacheData.get_cycles_within_retention
+FNF:4
+FNH:0
+BRDA:38,0,jump to line 39,-
+BRDA:38,0,jump to line 41,-
+BRDA:41,0,jump to line 42,-
+BRDA:41,0,jump to line 45,-
+BRDA:45,0,jump to line 46,-
+BRDA:45,0,return from function '__post_init__',-
+BRF:6
+BRH:0
 end_of_record
 SF:custom_components/intelligent_heating_pilot/domain/value_objects/historical_data.py
 DA:3,1
@@ -3208,6 +3174,82 @@ DA:18,1
 DA:20,1
 LF:12
 LH:12
+end_of_record
+SF:custom_components/intelligent_heating_pilot/infrastructure/adapters/base_ha_storage.py
+DA:8,1
+DA:10,1
+DA:11,1
+DA:12,1
+DA:13,1
+DA:15,1
+DA:20,1
+DA:23,1
+DA:26,1
+DA:29,1
+DA:42,1
+DA:57,0
+DA:58,0
+DA:59,0
+DA:60,0
+DA:63,0
+DA:65,0
+DA:68,0
+DA:69,0
+DA:83,1
+DA:89,0
+DA:90,0
+DA:92,0
+DA:94,0
+DA:95,0
+DA:96,0
+DA:97,0
+DA:100,0
+DA:101,0
+DA:103,0
+DA:105,1
+DA:111,0
+DA:112,0
+DA:114,1
+DA:130,0
+DA:131,0
+DA:133,0
+DA:136,0
+DA:137,0
+DA:139,0
+DA:141,1
+DA:150,0
+DA:152,1
+DA:160,0
+LF:44
+LH:16
+FN:42,69,BaseHAStorageAdapter.__init__
+FNDA:0,BaseHAStorageAdapter.__init__
+FN:72,81,BaseHAStorageAdapter._get_default_data
+FNDA:0,BaseHAStorageAdapter._get_default_data
+FN:83,103,BaseHAStorageAdapter._ensure_loaded
+FNDA:0,BaseHAStorageAdapter._ensure_loaded
+FN:105,112,BaseHAStorageAdapter._save_data
+FNDA:0,BaseHAStorageAdapter._save_data
+FN:114,139,BaseHAStorageAdapter._parse_datetime
+FNDA:0,BaseHAStorageAdapter._parse_datetime
+FN:141,150,BaseHAStorageAdapter._serialize_datetime
+FNDA:0,BaseHAStorageAdapter._serialize_datetime
+FN:152,160,BaseHAStorageAdapter._is_caching_disabled
+FNDA:0,BaseHAStorageAdapter._is_caching_disabled
+FNF:7
+FNH:0
+BRDA:63,0,jump to line 65,-
+BRDA:63,0,jump to line 68,-
+BRDA:89,0,jump to line 90,-
+BRDA:89,0,jump to line 92,-
+BRDA:95,0,jump to line 96,-
+BRDA:95,0,jump to line 100,-
+BRDA:130,0,jump to line 131,-
+BRDA:130,0,jump to line 133,-
+BRDA:136,0,jump to line 137,-
+BRDA:136,0,jump to line 139,-
+BRF:10
+BRH:0
 end_of_record
 SF:custom_components/intelligent_heating_pilot/infrastructure/adapters/climate_commander.py
 DA:7,1
@@ -3376,206 +3418,19 @@ BRDA:232,0,jump to line 237,-
 BRF:34
 BRH:0
 end_of_record
-SF:custom_components/intelligent_heating_pilot/infrastructure/adapters/cycle_cache.py
-DA:7,1
-DA:9,1
-DA:10,1
-DA:11,1
-DA:13,1
-DA:14,1
-DA:16,1
-DA:17,1
-DA:18,1
-DA:23,1
-DA:26,1
-DA:27,1
-DA:30,1
-DA:33,1
-DA:41,1
-DA:54,0
-DA:60,0
-DA:61,0
-DA:62,0
-DA:63,0
-DA:64,0
-DA:65,0
-DA:67,1
-DA:69,0
-DA:70,0
-DA:72,0
-DA:74,0
-DA:75,0
-DA:76,0
-DA:77,0
-DA:84,0
-DA:85,0
-DA:87,0
-DA:89,1
-DA:98,0
-DA:99,0
-DA:101,0
-DA:103,0
-DA:104,0
-DA:105,0
-DA:106,0
-DA:107,0
-DA:110,0
-DA:111,0
-DA:112,0
-DA:114,0
-DA:115,0
-DA:116,0
-DA:117,0
-DA:119,0
-DA:126,0
-DA:131,0
-DA:133,0
-DA:135,1
-DA:150,0
-DA:151,0
-DA:159,0
-DA:162,0
-DA:164,0
-DA:167,0
-DA:170,0
-DA:177,0
-DA:178,0
-DA:181,0
-DA:186,0
-DA:192,0
-DA:194,0
-DA:200,0
-DA:202,1
-DA:213,0
-DA:214,0
-DA:220,0
-DA:222,0
-DA:223,0
-DA:224,0
-DA:225,0
-DA:226,0
-DA:228,0
-DA:231,0
-DA:233,0
-DA:235,0
-DA:237,0
-DA:243,0
-DA:245,0
-DA:252,0
-DA:254,0
-DA:256,1
-DA:262,0
-DA:263,0
-DA:265,0
-DA:267,0
-DA:268,0
-DA:269,0
-DA:270,0
-DA:272,0
-DA:274,0
-DA:276,1
-DA:285,0
-DA:286,0
-DA:288,0
-DA:290,0
-DA:292,0
-DA:293,0
-DA:295,0
-DA:297,1
-DA:306,0
-DA:307,0
-DA:308,0
-DA:319,0
-DA:320,0
-DA:330,0
-DA:332,0
-DA:334,1
-DA:343,0
-DA:344,0
-DA:345,0
-DA:347,0
-DA:348,0
-DA:349,0
-DA:359,0
-DA:368,0
-DA:369,0
-DA:370,0
-DA:371,0
-DA:373,0
-DA:375,1
-DA:387,0
-DA:388,0
-DA:390,0
-DA:393,0
-DA:394,0
-DA:396,0
-DA:398,0
-LF:133
-LH:24
-FN:41,65,HACycleCache.__init__
-FNDA:0,HACycleCache.__init__
-FN:67,87,HACycleCache._ensure_loaded
-FNDA:0,HACycleCache._ensure_loaded
-FN:89,133,HACycleCache.get_cache_data
-FNDA:0,HACycleCache.get_cache_data
-FN:135,200,HACycleCache.append_cycles
-FNDA:0,HACycleCache.append_cycles
-FN:202,254,HACycleCache.prune_old_cycles
-FNDA:0,HACycleCache.prune_old_cycles
-FN:256,274,HACycleCache.clear_cache
-FNDA:0,HACycleCache.clear_cache
-FN:276,295,HACycleCache.get_last_search_time
-FNDA:0,HACycleCache.get_last_search_time
-FN:297,332,HACycleCache._serialize_cycles
-FNDA:0,HACycleCache._serialize_cycles
-FN:334,373,HACycleCache._deserialize_cycles
-FNDA:0,HACycleCache._deserialize_cycles
-FN:375,398,HACycleCache._parse_timestamp
-FNDA:0,HACycleCache._parse_timestamp
-FNF:10
-FNH:0
-BRDA:69,0,jump to line 70,-
-BRDA:69,0,jump to line 72,-
-BRDA:75,0,jump to line 76,-
-BRDA:75,0,jump to line 84,-
-BRDA:104,0,jump to line 105,-
-BRDA:104,0,jump to line 110,-
-BRDA:114,0,jump to line 115,-
-BRDA:114,0,jump to line 119,-
-BRDA:223,0,jump to line 224,-
-BRDA:223,0,jump to line 228,-
-BRDA:235,0,jump to line 237,-
-BRDA:235,0,jump to line 252,-
-BRDA:267,0,jump to line 268,-
-BRDA:267,0,jump to line 272,-
-BRDA:307,0,jump to line 308,-
-BRDA:307,0,jump to line 332,-
-BRDA:319,0,jump to line 320,-
-BRDA:319,0,jump to line 330,-
-BRDA:344,0,jump to line 345,-
-BRDA:344,0,jump to line 373,-
-BRDA:348,0,jump to line 349,-
-BRDA:348,0,jump to line 359,-
-BRDA:387,0,jump to line 388,-
-BRDA:387,0,jump to line 390,-
-BRDA:393,0,jump to line 394,-
-BRDA:393,0,jump to line 398,-
-BRF:26
-BRH:0
-end_of_record
 SF:custom_components/intelligent_heating_pilot/infrastructure/adapters/device_config_reader.py
-DA:3,0
-DA:5,0
-DA:6,0
-DA:8,0
-DA:31,0
-DA:32,0
-DA:38,0
-DA:41,0
-DA:49,0
+DA:3,1
+DA:5,1
+DA:6,1
+DA:8,1
+DA:31,1
+DA:32,1
+DA:38,1
+DA:41,1
+DA:49,1
 DA:56,0
 DA:57,0
-DA:59,0
+DA:59,1
 DA:71,0
 DA:74,0
 DA:75,0
@@ -3612,19 +3467,19 @@ DA:136,0
 DA:138,0
 DA:155,0
 DA:156,0
-DA:158,0
+DA:158,1
 DA:167,0
-DA:169,0
-DA:170,0
+DA:169,1
+DA:170,1
 DA:175,0
 DA:176,0
 DA:178,0
-DA:180,0
-DA:181,0
+DA:180,1
+DA:181,1
 DA:186,0
 DA:189,0
 LF:59
-LH:0
+LH:15
 FN:49,57,HADeviceConfigReader.__init__
 FNDA:0,HADeviceConfigReader.__init__
 FN:59,156,HADeviceConfigReader.get_device_config
@@ -3793,157 +3648,302 @@ BRDA:175,0,jump to line 178,-
 BRF:22
 BRH:0
 end_of_record
-SF:custom_components/intelligent_heating_pilot/infrastructure/adapters/model_storage.py
+SF:custom_components/intelligent_heating_pilot/infrastructure/adapters/heating_cycle_storage.py
+DA:7,1
+DA:9,1
+DA:10,1
+DA:11,1
+DA:13,1
+DA:15,1
+DA:16,1
+DA:17,1
+DA:18,1
+DA:23,1
+DA:26,1
+DA:29,1
+DA:32,1
+DA:40,1
+DA:53,0
+DA:60,0
+DA:66,1
+DA:72,0
+DA:74,1
+DA:83,0
+DA:84,0
+DA:86,0
+DA:88,0
+DA:89,0
+DA:90,0
+DA:91,0
+DA:92,0
+DA:95,0
+DA:96,0
+DA:98,0
+DA:99,0
+DA:100,0
+DA:101,0
+DA:103,0
+DA:104,0
+DA:105,0
+DA:106,0
+DA:107,0
+DA:108,0
+DA:110,0
+DA:112,0
+DA:119,0
+DA:124,0
+DA:126,0
+DA:128,1
+DA:143,0
+DA:144,0
+DA:152,0
+DA:155,0
+DA:157,0
+DA:160,0
+DA:163,0
+DA:170,0
+DA:171,0
+DA:174,0
+DA:179,0
+DA:185,0
+DA:187,0
+DA:193,0
+DA:195,1
+DA:206,0
+DA:207,0
+DA:213,0
+DA:215,0
+DA:216,0
+DA:217,0
+DA:218,0
+DA:219,0
+DA:221,0
+DA:224,0
+DA:226,0
+DA:228,0
+DA:230,0
+DA:236,0
+DA:238,0
+DA:245,0
+DA:247,0
+DA:249,1
+DA:255,0
+DA:256,0
+DA:258,0
+DA:260,0
+DA:261,0
+DA:262,0
+DA:263,0
+DA:265,0
+DA:267,0
+DA:269,1
+DA:278,0
+DA:279,0
+DA:281,0
+DA:283,0
+DA:285,0
+DA:286,0
+DA:288,0
+DA:290,1
+DA:299,0
+DA:301,1
+DA:310,0
+DA:321,0
+DA:322,0
+DA:332,0
+DA:334,1
+DA:343,0
+DA:344,0
+DA:345,0
+DA:346,0
+DA:347,0
+DA:348,0
+DA:349,0
+DA:350,0
+DA:352,0
+DA:354,1
+DA:367,0
+DA:368,0
+DA:369,0
+DA:379,0
+LF:117
+LH:24
+FN:40,64,HAHeatingCycleStorage.__init__
+FNDA:0,HAHeatingCycleStorage.__init__
+FN:66,72,HAHeatingCycleStorage._get_default_data
+FNDA:0,HAHeatingCycleStorage._get_default_data
+FN:74,126,HAHeatingCycleStorage.get_cache_data
+FNDA:0,HAHeatingCycleStorage.get_cache_data
+FN:128,193,HAHeatingCycleStorage.append_cycles
+FNDA:0,HAHeatingCycleStorage.append_cycles
+FN:195,247,HAHeatingCycleStorage.prune_old_cycles
+FNDA:0,HAHeatingCycleStorage.prune_old_cycles
+FN:249,267,HAHeatingCycleStorage.clear_cache
+FNDA:0,HAHeatingCycleStorage.clear_cache
+FN:269,288,HAHeatingCycleStorage.get_last_search_time
+FNDA:0,HAHeatingCycleStorage.get_last_search_time
+FN:290,299,HAHeatingCycleStorage._serialize_heating_cycles
+FNDA:0,HAHeatingCycleStorage._serialize_heating_cycles
+FN:301,332,HAHeatingCycleStorage._serialize_heating_cycle
+FNDA:0,HAHeatingCycleStorage._serialize_heating_cycle
+FN:334,352,HAHeatingCycleStorage._deserialize_heating_cycles
+FNDA:0,HAHeatingCycleStorage._deserialize_heating_cycles
+FN:354,387,HAHeatingCycleStorage._deserialize_heating_cycle
+FNDA:0,HAHeatingCycleStorage._deserialize_heating_cycle
+FNF:11
+FNH:0
+BRDA:89,0,jump to line 90,-
+BRDA:89,0,jump to line 95,-
+BRDA:98,0,jump to line 99,-
+BRDA:98,0,jump to line 103,-
+BRDA:216,0,jump to line 217,-
+BRDA:216,0,jump to line 221,-
+BRDA:228,0,jump to line 230,-
+BRDA:228,0,jump to line 245,-
+BRDA:260,0,jump to line 261,-
+BRDA:260,0,jump to line 265,-
+BRDA:321,0,jump to line 322,-
+BRDA:321,0,jump to line 332,-
+BRDA:344,0,jump to line 345,-
+BRDA:344,0,jump to line 352,-
+BRDA:368,0,jump to line 369,-
+BRDA:368,0,jump to line 379,-
+BRF:16
+BRH:0
+end_of_record
+SF:custom_components/intelligent_heating_pilot/infrastructure/adapters/lhs_storage.py
 DA:10,1
 DA:12,1
 DA:13,1
 DA:14,1
 DA:16,1
-DA:17,1
+DA:18,1
 DA:19,1
 DA:20,1
 DA:25,1
 DA:28,1
-DA:29,1
-DA:32,1
-DA:35,1
-DA:45,1
-DA:59,0
-DA:60,0
-DA:61,0
-DA:62,0
-DA:63,0
-DA:64,0
+DA:31,1
+DA:34,1
+DA:44,1
+DA:58,0
+DA:65,0
 DA:66,0
-DA:67,0
-DA:72,1
-DA:74,0
-DA:75,0
+DA:71,1
 DA:77,0
-DA:78,0
-DA:79,0
-DA:80,0
-DA:83,0
-DA:86,0
-DA:88,0
-DA:90,1
-DA:101,0
+DA:81,1
+DA:92,0
+DA:93,0
+DA:98,0
+DA:100,0
 DA:102,0
+DA:105,0
+DA:106,0
 DA:107,0
+DA:108,0
 DA:109,0
-DA:111,0
-DA:114,0
-DA:115,0
+DA:113,0
 DA:116,0
 DA:117,0
 DA:118,0
 DA:122,0
-DA:125,0
-DA:126,0
-DA:127,0
+DA:124,0
+DA:126,1
 DA:131,0
 DA:133,0
-DA:135,1
-DA:140,0
-DA:142,0
-DA:143,0
+DA:134,0
+DA:136,0
+DA:138,1
+DA:144,0
 DA:145,0
-DA:147,1
-DA:153,0
-DA:154,0
+DA:148,0
+DA:150,0
+DA:151,0
+DA:153,1
+DA:156,0
 DA:157,0
-DA:159,0
-DA:160,0
-DA:162,1
-DA:165,0
-DA:166,0
+DA:158,0
+DA:160,1
+DA:163,0
+DA:164,0
 DA:167,0
-DA:169,1
+DA:169,0
+DA:170,0
+DA:171,0
 DA:172,0
-DA:173,0
-DA:176,0
+DA:174,1
+DA:177,0
 DA:178,0
 DA:179,0
-DA:180,0
 DA:181,0
-DA:183,1
-DA:186,0
-DA:187,0
-DA:188,0
+DA:182,0
+DA:183,0
+DA:184,0
+DA:186,1
+DA:189,0
 DA:190,0
 DA:191,0
-DA:192,0
-DA:193,0
-DA:195,1
-DA:198,0
-DA:199,0
-DA:200,0
-DA:202,1
-DA:212,0
-DA:217,1
-DA:229,0
+DA:193,1
+DA:203,0
+DA:208,1
+DA:220,0
+DA:221,0
+DA:223,0
+DA:224,0
+DA:225,0
+DA:227,0
+DA:228,0
 DA:230,0
+DA:231,0
 DA:232,0
 DA:233,0
 DA:234,0
-DA:236,0
-DA:237,0
-DA:239,0
-DA:240,0
-DA:241,0
-DA:242,0
-DA:243,0
-LF:99
-LH:24
-FN:45,70,HAModelStorage.__init__
-FNDA:0,HAModelStorage.__init__
-FN:72,88,HAModelStorage._ensure_loaded
-FNDA:0,HAModelStorage._ensure_loaded
-FN:90,133,HAModelStorage.get_learned_heating_slope
-FNDA:0,HAModelStorage.get_learned_heating_slope
-FN:135,145,HAModelStorage.clear_slope_history
-FNDA:0,HAModelStorage.clear_slope_history
-FN:147,160,HAModelStorage.get_cached_global_lhs
-FNDA:0,HAModelStorage.get_cached_global_lhs
-FN:162,167,HAModelStorage.set_cached_global_lhs
-FNDA:0,HAModelStorage.set_cached_global_lhs
-FN:169,181,HAModelStorage.get_cached_contextual_lhs
-FNDA:0,HAModelStorage.get_cached_contextual_lhs
-FN:183,193,HAModelStorage.set_cached_contextual_lhs
-FNDA:0,HAModelStorage.set_cached_contextual_lhs
-FN:195,200,HAModelStorage.clear_contextual_cache
-FNDA:0,HAModelStorage.clear_contextual_cache
-FN:202,215,HAModelStorage._serialize_cached_entry
-FNDA:0,HAModelStorage._serialize_cached_entry
-FN:217,243,HAModelStorage._deserialize_cached_entry
-FNDA:0,HAModelStorage._deserialize_cached_entry
+LF:85
+LH:23
+FN:44,69,HALhsStorage.__init__
+FNDA:0,HALhsStorage.__init__
+FN:71,79,HALhsStorage._get_default_data
+FNDA:0,HALhsStorage._get_default_data
+FN:81,124,HALhsStorage.get_learned_heating_slope
+FNDA:0,HALhsStorage.get_learned_heating_slope
+FN:126,136,HALhsStorage.clear_slope_history
+FNDA:0,HALhsStorage.clear_slope_history
+FN:138,151,HALhsStorage.get_cached_global_lhs
+FNDA:0,HALhsStorage.get_cached_global_lhs
+FN:153,158,HALhsStorage.set_cached_global_lhs
+FNDA:0,HALhsStorage.set_cached_global_lhs
+FN:160,172,HALhsStorage.get_cached_contextual_lhs
+FNDA:0,HALhsStorage.get_cached_contextual_lhs
+FN:174,184,HALhsStorage.set_cached_contextual_lhs
+FNDA:0,HALhsStorage.set_cached_contextual_lhs
+FN:186,191,HALhsStorage.clear_contextual_cache
+FNDA:0,HALhsStorage.clear_contextual_cache
+FN:193,206,HALhsStorage._serialize_lhs_cache_entry
+FNDA:0,HALhsStorage._serialize_lhs_cache_entry
+FN:208,234,HALhsStorage._deserialize_lhs_cache_entry
+FNDA:0,HALhsStorage._deserialize_lhs_cache_entry
 FNF:11
 FNH:0
-BRDA:66,0,jump to line 67,-
-BRDA:66,0,return from function '__init__',-
-BRDA:74,0,jump to line 75,-
-BRDA:74,0,jump to line 77,-
-BRDA:78,0,jump to line 79,-
-BRDA:78,0,jump to line 83,-
-BRDA:101,0,jump to line 102,-
-BRDA:101,0,jump to line 109,-
-BRDA:115,0,jump to line 116,-
-BRDA:115,0,jump to line 125,-
+BRDA:65,0,jump to line 66,-
+BRDA:65,0,return from function '__init__',-
+BRDA:92,0,jump to line 93,-
+BRDA:92,0,jump to line 100,-
+BRDA:106,0,jump to line 107,-
+BRDA:106,0,jump to line 116,-
+BRDA:108,0,jump to line 109,-
+BRDA:108,0,jump to line 116,-
 BRDA:117,0,jump to line 118,-
-BRDA:117,0,jump to line 125,-
-BRDA:126,0,jump to line 127,-
-BRDA:126,0,jump to line 133,-
-BRDA:153,0,jump to line 154,-
-BRDA:153,0,jump to line 159,-
-BRDA:172,0,jump to line 173,-
-BRDA:172,0,jump to line 178,-
-BRDA:186,0,jump to line 187,-
-BRDA:186,0,jump to line 190,-
-BRDA:229,0,jump to line 230,-
-BRDA:229,0,jump to line 232,-
-BRDA:236,0,jump to line 237,-
-BRDA:236,0,jump to line 239,-
-BRF:24
+BRDA:117,0,jump to line 124,-
+BRDA:144,0,jump to line 145,-
+BRDA:144,0,jump to line 150,-
+BRDA:163,0,jump to line 164,-
+BRDA:163,0,jump to line 169,-
+BRDA:177,0,jump to line 178,-
+BRDA:177,0,jump to line 181,-
+BRDA:220,0,jump to line 221,-
+BRDA:220,0,jump to line 223,-
+BRDA:227,0,jump to line 228,-
+BRDA:227,0,jump to line 230,-
+BRF:20
 BRH:0
 end_of_record
 SF:custom_components/intelligent_heating_pilot/infrastructure/adapters/scheduler_commander.py
@@ -5282,45 +5282,45 @@ BRF:62
 BRH:0
 end_of_record
 SF:custom_components/intelligent_heating_pilot/switch.py
-DA:3,0
-DA:5,0
-DA:6,0
-DA:8,0
-DA:9,0
-DA:10,0
-DA:11,0
-DA:13,0
-DA:18,0
-DA:21,0
+DA:3,1
+DA:5,1
+DA:6,1
+DA:8,1
+DA:9,1
+DA:10,1
+DA:11,1
+DA:13,1
+DA:18,1
+DA:21,1
 DA:27,0
 DA:28,0
 DA:30,0
 DA:34,0
-DA:37,0
-DA:40,0
-DA:41,0
-DA:42,0
-DA:44,0
+DA:37,1
+DA:40,1
+DA:41,1
+DA:42,1
+DA:44,1
 DA:48,0
 DA:49,0
 DA:50,0
 DA:51,0
-DA:58,0
-DA:59,0
+DA:58,1
+DA:59,1
 DA:61,0
-DA:63,0
+DA:63,1
 DA:65,0
 DA:66,0
 DA:67,0
-DA:69,0
+DA:69,1
 DA:71,0
 DA:72,0
 DA:73,0
-DA:75,0
-DA:76,0
+DA:75,1
+DA:76,1
 DA:78,0
 LF:37
-LH:0
+LH:21
 FN:21,34,async_setup_entry
 FNDA:0,async_setup_entry
 FN:44,56,IntelligentHeatingPilotEnableSwitch.__init__
