@@ -10,7 +10,7 @@ Feature: Memory Cache Eviction Strategy
   Scenario: Cache eviction when limit exceeded
     Given memory cache contains 50 cycles at the limit
     When a new cycle is added to the cache
-    Then oldest 25 cycles should be evicted
+    Then oldest cycle should be evicted
     And cache size should remain at 50
     And eviction should be logged
 
