@@ -625,3 +625,140 @@ class TestLhsLifecycleManager:
         # Empty dict is returned
         assert isinstance(result_empty, dict)
         assert len(result_empty) == 0
+
+    # ===== Test: ensure_contextual_lhs_populated() - ONE test for ALL scenarios =====
+
+    @pytest.mark.asyncio
+    async def test_ensure_contextual_lhs_populated(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        mock_contextual_lhs_calculator: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test ensure_contextual_lhs_populated method (lazy population with force_recalculate).
+
+        Method documentation summary:
+        - Ensures contextual LHS is populated for a specific hour (lazy population)
+        - Memory cache hit returns immediately (fast path)
+        - Storage cache hit loads into memory
+        - Computes contextual LHS if no cache exists
+        - force_recalculate=True bypasses BOTH memory and storage caches
+        - Falls back to global LHS if contextual unavailable
+
+        Verified aspects:
+        - Aspect A: Memory cache hit returns immediately (no storage call)
+        - Aspect B: Storage cache hit loads into memory
+        - Aspect C: Computes from cycles when no cache exists
+        - Aspect D: force_recalculate=True bypasses both caches and recomputes
+        - Aspect E: Falls back to global LHS when no contextual data exists
+
+        **REGRESSION PREVENTION**: This test prevents bug where force_recalculate
+        parameter is not respected, causing stale cache values to be used even when
+        explicit refresh is requested.
+        """
+        cycles = [self._create_heating_cycle(base_datetime)]
+        target_hour = 12
+
+        # GIVEN: Setup for ALL aspects
+        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.return_value = {
+            0: 2.0,
+            6: 2.5,
+            12: 3.0,
+            18: 2.8,
+        }
+
+        # WHEN/THEN Aspect A: Memory cache hit returns immediately (no storage call)
+        manager._cached_contextual_lhs[target_hour] = 3.0  # Pre-populate memory
+
+        result = await manager.ensure_contextual_lhs_populated(target_hour, cycles)
+
+        assert result == 3.0
+        # Storage should NOT be called (memory cache used)
+        mock_model_storage.get_cached_contextual_lhs.assert_not_called()
+
+        # WHEN/THEN Aspect B: Storage cache hit loads into memory
+        # Reset manager for clean state
+        manager._cached_contextual_lhs = {}
+        manager._cached_global_lhs = None  # Reset global too
+        mock_model_storage.get_cached_contextual_lhs.reset_mock()
+        mock_model_storage.get_cached_global_lhs.reset_mock()
+
+        # Storage returns cached value for hour 12
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=3.2, updated_at=datetime(2025, 2, 10, 12, 0, 0)
+        )
+
+        result = await manager.ensure_contextual_lhs_populated(target_hour, cycles)
+
+        assert result == 3.2
+        # Storage was called
+        mock_model_storage.get_cached_contextual_lhs.assert_called_once_with(target_hour)
+        # Value should now be in memory cache
+        assert manager._cached_contextual_lhs[target_hour] == 3.2
+
+        # WHEN/THEN Aspect C: Computes from cycles when no cache exists
+        # Reset manager for clean state
+        manager._cached_contextual_lhs = {}
+        manager._cached_global_lhs = None
+        mock_model_storage.get_cached_contextual_lhs.reset_mock()
+        mock_model_storage.get_cached_contextual_lhs.return_value = None
+
+        result = await manager.ensure_contextual_lhs_populated(target_hour, cycles)
+
+        assert result == 3.0  # Should compute from calculator mock
+        # Calculator should have been called to compute
+        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.assert_called()
+        # Value should be persisted to storage
+        mock_model_storage.set_cached_contextual_lhs.assert_called()
+        # Value should now be in memory cache
+        assert manager._cached_contextual_lhs[target_hour] == 3.0
+
+        # WHEN/THEN Aspect D: force_recalculate=True bypasses both caches
+        # Reset and pre-populate both caches
+        manager._cached_contextual_lhs[target_hour] = 3.5  # Stale memory cache
+        mock_model_storage.get_cached_contextual_lhs.reset_mock()
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=3.2,
+            updated_at=datetime(2025, 2, 10, 0, 0, 0),  # Stale storage
+        )
+        mock_model_storage.set_cached_contextual_lhs.reset_mock()
+        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.reset_mock()
+
+        # Call with force_recalculate=True - should ignore both caches
+        result = await manager.ensure_contextual_lhs_populated(
+            target_hour, cycles, force_recalculate=True
+        )
+
+        # Should get fresh calculated value (3.0 from mock)
+        assert result == 3.0
+        # Storage.get_cached_contextual_lhs should NOT be called (bypassed by force)
+        mock_model_storage.get_cached_contextual_lhs.assert_not_called()
+        # Calculator SHOULD be called (forced recalculation)
+        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.assert_called()
+        # New value should be persisted to storage
+        mock_model_storage.set_cached_contextual_lhs.assert_called()
+
+        # WHEN/THEN Aspect E: Falls back to global LHS when no contextual data
+        # Setup: Calculator returns None for target_hour (no contextual data)
+        manager._cached_contextual_lhs = {}
+        manager._cached_global_lhs = None
+        mock_model_storage.get_cached_contextual_lhs.reset_mock()
+        mock_model_storage.get_cached_contextual_lhs.return_value = None
+        mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
+            value=2.5, updated_at=datetime(2025, 2, 10, 12, 0, 0)
+        )
+        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.reset_mock()
+        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.return_value = {
+            0: 2.0,
+            6: 2.5,
+            # Hour 12 is NOT in dict (None case)
+            18: 2.8,
+        }
+
+        result = await manager.ensure_contextual_lhs_populated(target_hour, cycles)
+
+        # Should return global LHS as fallback
+        assert result == 2.5
+        # Global LHS should have been called
+        mock_model_storage.get_cached_global_lhs.assert_called()
