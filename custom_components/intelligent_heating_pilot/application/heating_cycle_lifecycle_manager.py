@@ -264,6 +264,20 @@ class HeatingCycleLifecycleManager:
             # Step 4: Cascade to LHS lifecycle manager to recalculate with fresh data
             await self._trigger_lhs_cascade(cycles)
 
+            # Step 5: Reschedule timer for next 24h refresh
+            if self._timer_scheduler is not None:
+                if dt_util is not None:
+                    next_refresh = dt_util.now() + timedelta(hours=24)
+                else:
+                    next_refresh = datetime.now() + timedelta(hours=24)
+
+                self._timer_cancel_func = self._timer_scheduler.schedule_timer(
+                    next_refresh, self.on_24h_timer
+                )
+                _LOGGER.debug(
+                    "Rescheduled 24h cycle refresh timer for %s", next_refresh.isoformat()
+                )
+
         except Exception as exc:
             _LOGGER.error("Error during 24h cycle refresh: %s", exc)
 
@@ -545,10 +559,14 @@ class HeatingCycleLifecycleManager:
         if len(self._cached_cycles_for_target_time) <= MAX_MEMORY_CACHE_ENTRIES:
             return  # No eviction needed
 
+        current_size = len(self._cached_cycles_for_target_time)
+        excess = current_size - MAX_MEMORY_CACHE_ENTRIES
+
         _LOGGER.debug(
-            "Memory cache size %d exceeds limit %d, triggering eviction",
-            len(self._cached_cycles_for_target_time),
+            "Memory cache size %d exceeds limit %d, evicting %d entries",
+            current_size,
             MAX_MEMORY_CACHE_ENTRIES,
+            excess,
         )
 
         # Sort cache keys by date (oldest first)
@@ -558,16 +576,18 @@ class HeatingCycleLifecycleManager:
             key=lambda k: k[1],  # k[1] is the date
         )
 
-        # Evict oldest 50% of entries
-        num_to_evict = MAX_MEMORY_CACHE_ENTRIES // 2
-        keys_to_remove = sorted_keys[:num_to_evict]
+        # Evict oldest entries to bring cache back to limit
+        keys_to_remove = sorted_keys[:excess]
 
         for key in keys_to_remove:
+            device_id, date = key
             del self._cached_cycles_for_target_time[key]
+            _LOGGER.info("Evicted heating cycle for device %s from %s", device_id, date)
 
         _LOGGER.debug(
-            "Evicted %d old memory cache entries (oldest dates removed)",
+            "Evicted %d old memory cache entries (cache size now %d)",
             len(keys_to_remove),
+            len(self._cached_cycles_for_target_time),
         )
 
     async def _extract_cycles(

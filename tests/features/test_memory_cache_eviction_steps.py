@@ -145,8 +145,10 @@ def cycle_evicted_from_date(eviction_context, device_id, date):
 
 
 @when("a new cycle is added to the cache")
-async def new_cycle_added(eviction_context, device_id):
+def new_cycle_added(eviction_context, device_id):
     """WHEN: Add a new cycle to trigger potential eviction."""
+    import asyncio
+
     manager = eviction_context["manager"]
     base_datetime = eviction_context["base_datetime"]
 
@@ -158,7 +160,7 @@ async def new_cycle_added(eviction_context, device_id):
     eviction_context["size_before_add"] = len(manager._cached_cycles_for_target_time)
 
     # Trigger eviction logic
-    await manager._evict_old_memory_cache_entries()
+    asyncio.run(manager._evict_old_memory_cache_entries())
 
     # Add the new cycle
     cache_key = (device_id, new_date)
@@ -168,8 +170,10 @@ async def new_cycle_added(eviction_context, device_id):
 
 
 @when(parsers.parse('a new cycle from "{date}" is added'))
-async def new_cycle_from_date_added(eviction_context, device_id, date):
+def new_cycle_from_date_added(eviction_context, device_id, date):
     """WHEN: Add a new cycle with specific date."""
+    import asyncio
+
     manager = eviction_context["manager"]
     new_date = datetime.strptime(date, "%Y-%m-%d").date()
 
@@ -177,7 +181,7 @@ async def new_cycle_from_date_added(eviction_context, device_id, date):
     eviction_context["size_before_add"] = len(manager._cached_cycles_for_target_time)
 
     # Trigger eviction logic
-    await manager._evict_old_memory_cache_entries()
+    asyncio.run(manager._evict_old_memory_cache_entries())
 
     # Add the new cycle
     new_cycle = create_test_heating_cycle(
@@ -190,7 +194,7 @@ async def new_cycle_from_date_added(eviction_context, device_id, date):
 
 
 @when(parsers.parse('the cycle from "{date}" is requested again'))
-async def cycle_requested_again(eviction_context, device_id, date):
+def cycle_requested_again(eviction_context, device_id, date):
     """WHEN: Request a cycle that was previously evicted."""
     requested_date = datetime.strptime(date, "%Y-%m-%d").date()
     eviction_context["requested_date"] = requested_date

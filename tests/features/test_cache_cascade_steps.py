@@ -71,26 +71,27 @@ def heating_cycle_completed(cascade_context, base_datetime, device_id):
 
 
 @when("cascade triggers LHS updates")
-async def cascade_triggers_lhs_updates(cascade_context):
+def cascade_triggers_lhs_updates(cascade_context):
     """WHEN: Trigger the cascade mechanism."""
+    # pytest-bdd cannot automatically await async steps, so we use asyncio.run
+    import asyncio
+
     manager = cascade_context["manager"]
     cycles = cascade_context["cycles"]
-
-    # Trigger cascade
-    await manager._trigger_lhs_cascade(cycles)
+    asyncio.run(manager._trigger_lhs_cascade(cycles))
 
 
-@when("global LHS calculation throws an error")
+@given("global LHS calculation throws an error")
 def global_lhs_throws_error(cascade_context):
-    """WHEN: Configure global LHS to throw an error."""
+    """Configure global LHS to throw an error."""
     cascade_context["lhs_manager"].update_global_lhs_from_cycles = AsyncMock(
         side_effect=Exception("Global LHS calculation failed")
     )
 
 
-@when("contextual LHS calculation throws an error")
+@given("contextual LHS calculation throws an error")
 def contextual_lhs_throws_error(cascade_context):
-    """WHEN: Configure contextual LHS to throw an error."""
+    """Configure contextual LHS to throw an error."""
     cascade_context["lhs_manager"].update_contextual_lhs_from_cycles = AsyncMock(
         side_effect=Exception("Contextual LHS calculation failed")
     )

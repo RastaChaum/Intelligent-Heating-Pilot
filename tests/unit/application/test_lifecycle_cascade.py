@@ -360,8 +360,9 @@ class TestLifecycleCascadeFlow:
         GIVEN: LHS manager with global_update raising exception
         WHEN: Cascade triggered
         THEN:
-          - Global update may fail
-          - Contextual update still attempted
+          - Global update error is caught and logged
+          - Contextual update still attempted (isolation)
+          - startup() completes without raising
         """
         manager, mock_lhs_manager = heating_cycle_manager_with_lhs_cascade
 
@@ -372,14 +373,14 @@ class TestLifecycleCascadeFlow:
         cycles = [self._create_heating_cycle(base_datetime)]
         manager._heating_cycle_service.extract_heating_cycles = AsyncMock(return_value=cycles)
 
-        # WHEN: Cascade triggered
-        with pytest.raises(ValueError):
-            await manager.startup(
-                "climate.test_vtherm", base_datetime - timedelta(days=7), base_datetime
-            )
+        # WHEN: Cascade triggered - should NOT raise (error is isolated)
+        result = await manager.startup(
+            "climate.test_vtherm", base_datetime - timedelta(days=7), base_datetime
+        )
 
-        # Note: Behavior depends on implementation
-        # Either cascade stops at first error, or continues with error handling
+        # THEN: startup returns normally and contextual update was still called
+        assert result is not None  # startup completed
+        assert mock_lhs_manager.update_contextual_lhs_from_cycles.called
 
     @pytest.mark.asyncio
     async def test_cascade_with_empty_cycles(

@@ -11,6 +11,10 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
+from custom_components.intelligent_heating_pilot.application.lhs_lifecycle_manager_factory import (
+    LhsLifecycleManagerFactory,
+)
+
 from .conftest import create_test_heating_cycle
 
 # Load all scenarios from lazy_contextual_lhs.feature
@@ -45,6 +49,18 @@ def lhs_lifecycle_manager_configured(lhs_context):
 
     mock_global_calculator = Mock()
     mock_global_calculator.calculate_global_lhs = Mock(return_value=3.0)
+
+    # Create the actual manager with mocked dependencies
+    manager = LhsLifecycleManagerFactory.create(
+        model_storage=mock_storage,
+        global_lhs_calculator=mock_global_calculator,
+        contextual_lhs_calculator=mock_contextual_calculator,
+    )
+
+    # Store all in context for step access
+    lhs_context["manager"] = manager
+    lhs_context["storage"] = mock_storage
+    lhs_context["contextual_calculator"] = mock_contextual_calculator
     lhs_context["global_calculator"] = mock_global_calculator
 
 
@@ -110,8 +126,10 @@ def no_contextual_lhs_data_for_hour(lhs_context, hour):
         "ensure_contextual_lhs_populated is called for hour {hour:d} with force_recalculate={recalc}"
     )
 )
-async def ensure_contextual_lhs_populated_called(lhs_context, hour, recalc="False"):
+def ensure_contextual_lhs_populated_called(lhs_context, hour, recalc="False"):
     """WHEN: Call ensure_contextual_lhs_populated() for specific hour."""
+    import asyncio
+
     manager = lhs_context["manager"]
     cycles = lhs_context.get("cycles", [])
 
@@ -125,8 +143,10 @@ async def ensure_contextual_lhs_populated_called(lhs_context, hour, recalc="Fals
     ].calculate_all_contextual_lhs.call_count
 
     # Call the method with target_hour as first parameter
-    result = await manager.ensure_contextual_lhs_populated(
-        target_hour=hour, cycles=cycles, force_recalculate=force_recalculate
+    result = asyncio.run(
+        manager.ensure_contextual_lhs_populated(
+            target_hour=hour, cycles=cycles, force_recalculate=force_recalculate
+        )
     )
 
     lhs_context["result"] = result
