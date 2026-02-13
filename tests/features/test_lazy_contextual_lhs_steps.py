@@ -14,6 +14,9 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from custom_components.intelligent_heating_pilot.application.lhs_lifecycle_manager_factory import (
     LhsLifecycleManagerFactory,
 )
+from custom_components.intelligent_heating_pilot.domain.value_objects.lhs_cache_entry import (
+    LHSCacheEntry,
+)
 
 from .conftest import create_test_heating_cycle
 
@@ -96,11 +99,13 @@ def cached_value_is(lhs_context, value):
 
 
 @given(parsers.parse("contextual LHS cache exists in storage for hour {hour:d}"))
-def contextual_lhs_cache_in_storage(lhs_context, hour):
+def contextual_lhs_cache_in_storage(lhs_context, hour, base_datetime):
     """GIVEN: Contextual LHS cache exists in storage for specific hour."""
     lhs_context["target_hour"] = hour
-    lhs_context["storage"].get_cached_contextual_lhs = AsyncMock(return_value=2.5)
-    lhs_context["storage_cache"][hour] = 2.5
+    # Return a proper LHSCacheEntry object as the interface requires
+    cache_entry = LHSCacheEntry(value=2.5, updated_at=base_datetime, hour=hour)
+    lhs_context["storage"].get_cached_contextual_lhs = AsyncMock(return_value=cache_entry)
+    lhs_context["storage_cache"][hour] = cache_entry
 
 
 @given(parsers.parse("memory cache is empty for hour {hour:d}"))
@@ -166,7 +171,7 @@ def lhs_calculated_for_hour(lhs_context, hour):
 def result_cached_in_memory(lhs_context):
     """THEN: Verify result was cached in memory."""
     hour = lhs_context["target_hour"]
-    assert hour in lhs_context["manager"]._contextual_lhs_cache
+    assert hour in lhs_context["manager"]._cached_contextual_lhs
 
 
 @then("result should be persisted to storage")

@@ -97,10 +97,10 @@ def contextual_lhs_throws_error(cascade_context):
     )
 
 
-@when("no errors occur during calculation")
+@given("no errors occur during calculation")
 def no_errors_during_calculation(cascade_context):
-    """WHEN: Both calculations succeed normally."""
-    # Default behavior - mocks return successfully
+    """GIVEN: Both calculations succeed normally (default mock behavior)."""
+    # Default behavior - mocks return successfully by default
     pass
 
 
