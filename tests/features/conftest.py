@@ -103,6 +103,46 @@ def device_id() -> str:
     return "climate.test_vtherm"
 
 
+@pytest.fixture
+def heating_cycle_builder(device_id, base_datetime):
+    """Fixture that provides a heating cycle builder function for BDD tests."""
+
+    def builder(
+        start_time: datetime | None = None,
+        duration_hours: float = 1.0,
+        temp_increase: float = 2.0,
+    ) -> HeatingCycle:
+        """Build a test heating cycle.
+
+        Args:
+            start_time: When the cycle started (default: base_datetime)
+            duration_hours: Duration in hours
+            temp_increase: Temperature increase during cycle
+
+        Returns:
+            HeatingCycle instance
+        """
+        if start_time is None:
+            start_time = base_datetime
+
+        end_time = start_time + timedelta(hours=duration_hours)  # type: ignore
+        start_temp = 18.0
+        end_temp = start_temp + temp_increase
+        target_temp = end_temp + 0.5
+
+        return HeatingCycle(
+            device_id=device_id,
+            start_time=start_time,  # type: ignore
+            end_time=end_time,
+            target_temp=target_temp,
+            end_temp=end_temp,
+            start_temp=start_temp,
+            tariff_details=None,
+        )
+
+    return builder
+
+
 def create_test_heating_cycle(
     device_id: str,
     start_time: datetime,
