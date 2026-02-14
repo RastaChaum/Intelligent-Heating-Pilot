@@ -985,3 +985,9 @@ class HeatingApplicationService:
     def set_lhs_lifecycle_manager(self, manager: LhsLifecycleManager) -> None:
         """Attach the LHS lifecycle manager."""
         self._lhs_lifecycle_manager = manager
+
+
+# Export orchestrator for DDD refactoring (STEP 1)
+from .orchestrator import HeatingOrchestrator  # noqa: E402
+
+__all__ = ["HeatingApplicationService", "HeatingOrchestrator"]
