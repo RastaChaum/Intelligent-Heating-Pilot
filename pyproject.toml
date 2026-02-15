@@ -1,11 +1,12 @@
 [tool.poetry]
 name = "intelligent-heating-pilot"
-version = "0.4.3"
+version = "0.5.0-rc.1"
 description = "Intelligent Heating Pilot for Home Assistant"
 authors = ["RastaChaum"]
 license = "MIT"
 readme = "README.md"
 packages = []                                                # No packaging; HA loads custom_components directly
+package-mode = false
 
 # Python constraint (align with HA core supported version)
 [tool.poetry.dependencies]
@@ -21,13 +22,18 @@ pytest = "^8.2"
 # pytest-asyncio 1.2 is required by HA test plugin
 pytest-asyncio = "^1.2.0"
 pytest-homeassistant-custom-component = "^0.13.0"
+pytest-bdd = "^7.2"  # BDD support with Gherkin
 ruff = "^0.6.0"
 mypy = "^1.10"
 types-setuptools = "^68.0.0"
 pysqlite3-binary = "^0.5.4.post2"
+pre-commit = "^3.5.0"
+bandit = {extras = ["toml"], version = "^1.7.5"}
+pbr = "^6.0"
 
 [tool.poetry.group.test.dependencies]
 coverage = "^7.6"
+pytest-cov = "^7.0.0"
 
 [tool.poetry.scripts]
 # Optional helper scripts
@@ -35,8 +41,8 @@ ihp-tests = "pytest:main"
 
 [tool.ruff]
 line-length = 100
-select = ["E", "F", "I", "UP", "B", "SIM"]
-ignore = ["E203", "E501"]
+lint.select = ["E", "F", "I", "UP", "B", "SIM"]
+lint.ignore = ["E203", "E501"]
 
 [tool.mypy]
 python_version = "3.13"
@@ -46,10 +52,40 @@ warn_unused_ignores = true
 warn_return_any = true
 warn_redundant_casts = true
 warn_unused_configs = true
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "$MYPY_CONFIG_FILE_DIR/custom_components"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts = "-q"
+addopts = "-q --cov=custom_components/intelligent_heating_pilot --cov-report=xml:coverage.xml --cov-report=lcov:lcov.info --cov-report=html:htmlcov --cov-report=term-missing:skip-covered"
+
+[tool.coverage.run]
+source = ["custom_components/intelligent_heating_pilot"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+branch = true
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = ["B101"]  # Skip assert_used (needed for tests)
 
 [build-system]
 requires = ["poetry-core>=1.9.0"]

@@ -23,9 +23,9 @@ Fixes #(issue number)
 
 <!-- Describe the changes in detail -->
 
-- 
-- 
-- 
+-
+-
+-
 
 ## Testing Performed
 
@@ -42,14 +42,14 @@ Fixes #(issue number)
 <!-- Provide details about your testing -->
 
 **Environment:**
-- Home Assistant Version: 
-- Python Version: 
-- VTherm Version: 
+- Home Assistant Version:
+- Python Version:
+- VTherm Version:
 
 **Test Scenarios:**
-1. 
-2. 
-3. 
+1.
+2.
+3.
 
 ## Screenshots (if applicable)
 
@@ -87,12 +87,12 @@ Fixes #(issue number)
 <!-- If this is a breaking change, describe the impact and migration path -->
 
 **Impact:**
-- 
+-
 
 **Migration Guide:**
-1. 
-2. 
-3. 
+1.
+2.
+3.
 
 ## Additional Notes
 

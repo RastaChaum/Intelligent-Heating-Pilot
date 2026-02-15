@@ -1,23 +1,25 @@
 """Unit tests for Home Assistant sensor data adapter (TDD)."""
+
 from __future__ import annotations
 
-import pytest
 from datetime import datetime
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
-    HistoricalDataSet,
     HistoricalDataKey,
+    HistoricalDataSet,
     HistoricalMeasurement,
 )
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.sensor_data_adapter import (
     SensorDataAdapter,
 )
 from tests.unit.domain.fixtures import (
-    get_test_datetime,
-    get_future_datetime,
-    TEST_ENTITY_ID,
     MOCK_SENSOR_HISTORY_RESPONSE,
+    TEST_ENTITY_ID,
+    get_future_datetime,
+    get_test_datetime,
 )
 
 
@@ -43,10 +45,7 @@ class TestSensorDataAdapter:
         adapter._fetch_history = AsyncMock(return_value=MOCK_SENSOR_HISTORY_RESPONSE[0])
 
         result = await adapter.fetch_historical_data(
-            TEST_ENTITY_ID,
-            HistoricalDataKey.OUTDOOR_TEMP,
-            start_time,
-            end_time
+            TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
         )
 
         assert isinstance(result, HistoricalDataSet)
@@ -61,10 +60,7 @@ class TestSensorDataAdapter:
         adapter._fetch_history = AsyncMock(return_value=MOCK_SENSOR_HISTORY_RESPONSE[0])
 
         result = await adapter.fetch_historical_data(
-            "some_id",
-            HistoricalDataKey.OUTDOOR_TEMP,
-            start_time,
-            end_time
+            "some_id", HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
         )
 
         assert HistoricalDataKey.OUTDOOR_TEMP in result.data
@@ -80,7 +76,7 @@ class TestSensorDataAdapter:
         # Verify second measurement
         assert outdoor_temps[1].value == 6.0
         assert outdoor_temps[1].entity_id == "sensor.outdoor_temp"  # Entity ID from mock data
-        
+
         # Verify third measurement
         assert outdoor_temps[2].value == 7.0
 
@@ -103,10 +99,7 @@ class TestSensorDataAdapter:
 
         # Explicitly pass INDOOR_HUMIDITY as the data key
         result = await adapter.fetch_historical_data(
-            "sensor.living_room_humidity",
-            HistoricalDataKey.INDOOR_HUMIDITY,
-            start_time,
-            end_time
+            "sensor.living_room_humidity", HistoricalDataKey.INDOOR_HUMIDITY, start_time, end_time
         )
 
         # Should use the provided INDOOR_HUMIDITY key
@@ -122,14 +115,11 @@ class TestSensorDataAdapter:
         adapter._fetch_history = AsyncMock(return_value=MOCK_SENSOR_HISTORY_RESPONSE[0])
 
         result = await adapter.fetch_historical_data(
-            "sensor.outdoor_temp",
-            HistoricalDataKey.OUTDOOR_TEMP,
-            start_time,
-            end_time
+            "sensor.outdoor_temp", HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
         )
 
         outdoor_temps = result.data[HistoricalDataKey.OUTDOOR_TEMP]
-        
+
         # Verify attributes are preserved
         first_measurement = outdoor_temps[0]
         assert "device_class" in first_measurement.attributes
@@ -145,10 +135,7 @@ class TestSensorDataAdapter:
 
         with pytest.raises(ValueError, match="Cannot fetch history for entity"):
             await adapter.fetch_historical_data(
-                "invalid.entity",
-                HistoricalDataKey.INDOOR_TEMP,
-                start_time,
-                end_time
+                "invalid.entity", HistoricalDataKey.INDOOR_TEMP, start_time, end_time
             )
 
     @pytest.mark.asyncio
@@ -160,10 +147,7 @@ class TestSensorDataAdapter:
         adapter._fetch_history = AsyncMock(return_value=[])
 
         result = await adapter.fetch_historical_data(
-            TEST_ENTITY_ID,
-            HistoricalDataKey.OUTDOOR_TEMP,
-            start_time,
-            end_time
+            TEST_ENTITY_ID, HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
         )
 
         assert isinstance(result, HistoricalDataSet)
@@ -177,14 +161,11 @@ class TestSensorDataAdapter:
         adapter._fetch_history = AsyncMock(return_value=MOCK_SENSOR_HISTORY_RESPONSE[0])
 
         result = await adapter.fetch_historical_data(
-            "sensor.outdoor_temp",
-            HistoricalDataKey.OUTDOOR_TEMP,
-            start_time,
-            end_time
+            "sensor.outdoor_temp", HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
         )
 
         outdoor_temps = result.data[HistoricalDataKey.OUTDOOR_TEMP]
-        
+
         # Verify all timestamps are datetime objects, not strings
         for measurement in outdoor_temps:
             assert isinstance(measurement.timestamp, datetime)
@@ -208,15 +189,12 @@ class TestSensorDataAdapter:
                 "state": "5.0",
                 "attributes": {"device_class": "temperature"},
                 "last_changed": "2024-01-15T12:10:00+00:00",
-            }
+            },
         ]
         adapter._fetch_history = AsyncMock(return_value=mock_invalid_data)
 
         result = await adapter.fetch_historical_data(
-            "sensor.outdoor_temp",
-            HistoricalDataKey.OUTDOOR_TEMP,
-            start_time,
-            end_time
+            "sensor.outdoor_temp", HistoricalDataKey.OUTDOOR_TEMP, start_time, end_time
         )
 
         # Should skip "unavailable" and only include the valid measurement
