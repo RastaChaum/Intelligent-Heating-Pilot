@@ -1,11 +1,10 @@
-"""Reset Learning Use Case.
+"""Reset Learning Data Use Case.
 
-This use case resets all learned heating slopes,
-clearing the model storage and cache.
+This use case resets all learned data:
+- Learned heating slopes (LHS)
+- Cached heating cycles
 
-STEP 1 IMPLEMENTATION: This is a facade/wrapper that delegates to
-HeatingApplicationService.reset_learned_slopes().
-No behavior change - pure delegation pattern.
+This allows the system to start learning from scratch.
 """
 
 from __future__ import annotations
@@ -14,41 +13,56 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .. import HeatingApplicationService
+    from ...domain.interfaces import IHeatingCycleStorage, ILhsStorage
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class ResetLearningUseCase:
-    """Use case for resetting learned heating slopes.
+    """Use case for resetting all learned heating data.
 
     This use case encapsulates the logic for:
-    1. Clearing all learned slopes from storage
-    2. Resetting the LHS cache
+    1. Clearing all learned heating slopes from storage
+    2. Clearing all cached heating cycles
     3. Logging the reset operation
 
-    STEP 1: Delegates to HeatingApplicationService (no logic here yet).
+    This allows the system to start fresh with no historical learning data.
     """
 
-    def __init__(self, application_service: HeatingApplicationService) -> None:
+    def __init__(
+        self,
+        lhs_storage: ILhsStorage,
+        cycle_cache: IHeatingCycleStorage,
+    ) -> None:
         """Initialize the use case.
 
         Args:
-            application_service: The application service to delegate to
+            lhs_storage: Storage for learned heating slopes
+            cycle_cache: Storage for heating cycle cache
         """
         _LOGGER.debug("Initializing ResetLearningUseCase")
-        self._app_service = application_service
+        self._lhs_storage = lhs_storage
+        self._cycle_cache = cycle_cache
 
-    async def execute(self) -> None:
-        """Execute the reset learning use case.
+    async def reset_all_learning_data(self, device_id: str) -> None:
+        """Reset all learned data (LHS + heating cycles cache).
 
-        This clears all learned heating slopes from storage.
+        Args:
+            device_id: Device identifier
         """
-        _LOGGER.debug("Entering ResetLearningUseCase.execute()")
-        _LOGGER.info("Resetting all learned heating slopes")
+        _LOGGER.debug(
+            "Entering ResetLearningUseCase.reset_all_learning_data(device_id=%s)",
+            device_id,
+        )
+        _LOGGER.info("Resetting all learned data (LHS + cycles) for device %s", device_id)
 
-        # STEP 1: Delegate to existing application service method
-        await self._app_service.reset_learned_slopes()
-
+        # Reset learned heating slopes
+        await self._lhs_storage.clear_slope_history()
         _LOGGER.info("Learned heating slopes have been reset")
-        _LOGGER.debug("Exiting ResetLearningUseCase.execute()")
+
+        # Reset heating cycle cache
+        await self._cycle_cache.clear_cache(device_id)
+        _LOGGER.info("Heating cycle cache has been reset")
+
+        _LOGGER.info("All learning data has been reset for device %s", device_id)
+        _LOGGER.debug("Exiting ResetLearningUseCase.reset_all_learning_data()")

@@ -1,10 +1,6 @@
 """Control Preheating Use Case.
 
-This use case controls the preheating state (start/stop/clear).
-
-STEP 1 IMPLEMENTATION: This is a facade/wrapper that delegates to
-HeatingApplicationService internal methods for preheating control.
-No behavior change - pure delegation pattern.
+This use case controls the preheating state (start/stop/cancel).
 """
 
 from __future__ import annotations
@@ -15,7 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from .. import HeatingApplicationService
+    from ...domain.interfaces import IClimateCommander, ISchedulerCommander
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,83 +20,112 @@ class ControlPreheatingUseCase:
     """Use case for controlling preheating state.
 
     This use case encapsulates operations for:
-    1. Starting preheating
-    2. Stopping preheating
-    3. Clearing preheating state
-
-    STEP 1: Delegates to HeatingApplicationService (no logic here yet).
+    1. Starting preheating (trigger scheduler action)
+    2. Canceling preheating (revert to current scheduled state)
+    3. Tracking preheating state
     """
 
-    def __init__(self, application_service: HeatingApplicationService) -> None:
+    def __init__(
+        self,
+        scheduler_commander: ISchedulerCommander,
+        climate_commander: IClimateCommander,
+    ) -> None:
         """Initialize the use case.
 
         Args:
-            application_service: The application service to delegate to
+            scheduler_commander: Commands scheduler actions
+            climate_commander: Commands climate entity
         """
         _LOGGER.debug("Initializing ControlPreheatingUseCase")
-        self._app_service = application_service
+        self._scheduler_commander = scheduler_commander
+        self._climate_commander = climate_commander
+        self._is_preheating_active = False
+        self._preheating_target_time: datetime | None = None
+        self._active_scheduler_entity: str | None = None
 
-    async def clear_anticipation_state(self) -> None:
-        """Clear anticipation state (cancel timer, reset tracking).
+    async def cancel_preheating(self, scheduler_entity_id: str) -> None:
+        """Cancel active preheating and revert to current scheduled state.
 
-        STEP 1: Delegates to _clear_anticipation_state().
+        Args:
+            scheduler_entity_id: Scheduler entity to cancel action on
         """
-        _LOGGER.debug("Entering ControlPreheatingUseCase.clear_anticipation_state()")
+        _LOGGER.debug(
+            "Entering ControlPreheatingUseCase.cancel_preheating(scheduler=%s)",
+            scheduler_entity_id,
+        )
 
-        # STEP 1: Delegate to existing application service method
-        await self._app_service._clear_anticipation_state()
+        if self._is_preheating_active:
+            _LOGGER.info(
+                "Canceling preheating for scheduler %s - reverting to current scheduled state",
+                scheduler_entity_id,
+            )
+            # Call cancel_action to revert thermostat to current time's preset/temperature
+            await self._scheduler_commander.cancel_action(scheduler_entity_id)
+        else:
+            _LOGGER.debug("No active preheating to cancel")
 
-        _LOGGER.debug("Exiting ControlPreheatingUseCase.clear_anticipation_state()")
+        # Clear state
+        self._is_preheating_active = False
+        self._preheating_target_time = None
+        self._active_scheduler_entity = None
 
-    async def trigger_anticipation_action(
+        _LOGGER.debug("Exiting ControlPreheatingUseCase.cancel_preheating()")
+
+    async def start_preheating(
         self,
         target_time: datetime,
         target_temp: float,
         scheduler_entity_id: str,
     ) -> None:
-        """Trigger the anticipation action (run scheduler action).
+        """Start preheating by triggering scheduler action.
 
         Args:
             target_time: Target schedule time
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity to trigger
-
-        STEP 1: Delegates to _trigger_anticipation_action().
         """
         _LOGGER.debug(
-            "Entering ControlPreheatingUseCase.trigger_anticipation_action(target_time=%s, temp=%.1f, scheduler=%s)",
+            "Entering ControlPreheatingUseCase.start_preheating(target_time=%s, temp=%.1f, scheduler=%s)",
             target_time.isoformat(),
             target_temp,
             scheduler_entity_id,
         )
-
-        # STEP 1: Delegate to existing application service method
-        await self._app_service._trigger_anticipation_action(
-            target_time=target_time,
-            target_temp=target_temp,
-            scheduler_entity_id=scheduler_entity_id,
+        _LOGGER.info(
+            "Starting preheating for target %s (%.1f°C)",
+            target_time.isoformat(),
+            target_temp,
         )
 
-        _LOGGER.debug("Exiting ControlPreheatingUseCase.trigger_anticipation_action()")
+        # Use scheduler's run_action to trigger the action
+        await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
+
+        # Mark pre-heating as active
+        self._is_preheating_active = True
+        self._preheating_target_time = target_time
+        self._active_scheduler_entity = scheduler_entity_id
+
+        _LOGGER.debug("Exiting ControlPreheatingUseCase.start_preheating()")
 
     def is_preheating_active(self) -> bool:
         """Check if preheating is currently active.
 
         Returns:
             True if preheating is active, False otherwise
-
-        STEP 1: Delegates to application service state.
         """
-        _LOGGER.debug("ControlPreheatingUseCase.is_preheating_active()")
-        return self._app_service._is_preheating_active
+        return self._is_preheating_active
 
     def get_preheating_target_time(self) -> datetime | None:
         """Get the target time for active preheating.
 
         Returns:
             Target time if preheating is active, None otherwise
-
-        STEP 1: Delegates to application service state.
         """
-        _LOGGER.debug("ControlPreheatingUseCase.get_preheating_target_time()")
-        return self._app_service._preheating_target_time
+        return self._preheating_target_time
+
+    def get_active_scheduler_entity(self) -> str | None:
+        """Get the active scheduler entity.
+
+        Returns:
+            Scheduler entity ID if active, None otherwise
+        """
+        return self._active_scheduler_entity

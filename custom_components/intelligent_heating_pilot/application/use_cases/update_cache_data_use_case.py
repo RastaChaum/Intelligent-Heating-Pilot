@@ -1,11 +1,9 @@
 """Update Cache Data Use Case.
 
-This use case updates the heating cycle cache with new data,
-implementing incremental cache updates and retention management.
-
-STEP 1 IMPLEMENTATION: This is a facade/wrapper that delegates to
-HeatingApplicationService cache management methods.
-No behavior change - pure delegation pattern.
+This use case manages the heating cycle cache:
+- Get cache data
+- Update/prune cache  
+- Reset cache completely
 """
 
 from __future__ import annotations
@@ -16,101 +14,118 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ...domain.value_objects import HeatingCycle
-    from .. import HeatingApplicationService
+    from ...domain.interfaces import IHeatingCycleStorage
+    from ...domain.value_objects import HeatingCycle, HeatingCycleCacheData
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class UpdateCacheDataUseCase:
-    """Use case for updating heating cycle cache.
+    """Use case for managing heating cycle cache.
 
     This use case encapsulates the logic for:
     1. Getting cycles from cache
-    2. Extracting new cycles from recorder
-    3. Appending cycles to cache
-    4. Pruning old cycles
-
-    STEP 1: Delegates to HeatingApplicationService (no logic here yet).
+    2. Updating cache (append new cycles)
+    3. Pruning old cycles
+    4. Resetting cache completely
     """
 
-    def __init__(self, application_service: HeatingApplicationService) -> None:
+    def __init__(self, cycle_cache: IHeatingCycleStorage) -> None:
         """Initialize the use case.
 
         Args:
-            application_service: The application service to delegate to
+            cycle_cache: Heating cycle cache storage
         """
         _LOGGER.debug("Initializing UpdateCacheDataUseCase")
-        self._app_service = application_service
+        self._cycle_cache = cycle_cache
 
-    async def get_cycles_with_cache(
-        self,
-        device_id: str,
-        target_time: datetime,
-    ) -> list[HeatingCycle]:
-        """Get heating cycles using cache with incremental updates.
+    async def get_cache_data(self, device_id: str) -> HeatingCycleCacheData | None:
+        """Get cache data for a device.
 
         Args:
             device_id: Device identifier
-            target_time: Current target time
 
         Returns:
-            List of heating cycles within retention period
-
-        STEP 1: Delegates to _get_cycles_with_cache().
+            Cache data if exists, None otherwise
         """
         _LOGGER.debug(
-            "Entering UpdateCacheDataUseCase.get_cycles_with_cache(device_id=%s, target_time=%s)",
+            "Entering UpdateCacheDataUseCase.get_cache_data(device_id=%s)",
             device_id,
-            target_time.isoformat(),
         )
 
-        # STEP 1: Delegate to existing application service method
-        cycles = await self._app_service._get_cycles_with_cache(
-            device_id=device_id,
-            target_time=target_time,
-        )
+        cache_data = await self._cycle_cache.get_cache_data(device_id)
 
         _LOGGER.debug(
-            "Exiting UpdateCacheDataUseCase.get_cycles_with_cache() -> %d cycles",
-            len(cycles),
+            "Exiting UpdateCacheDataUseCase.get_cache_data() -> %s",
+            "data" if cache_data else "None",
         )
-        return cycles
+        return cache_data
 
-    async def extract_cycles_from_recorder(
+    async def append_cycles(
         self,
         device_id: str,
-        start_time: datetime,
-        end_time: datetime,
-    ) -> list[HeatingCycle]:
-        """Extract heating cycles directly from Home Assistant recorder.
+        cycles: list[HeatingCycle],
+        search_end_time: datetime,
+    ) -> None:
+        """Append new cycles to cache.
 
         Args:
             device_id: Device identifier
-            start_time: Start of search period
-            end_time: End of search period
-
-        Returns:
-            List of extracted heating cycles
-
-        STEP 1: Delegates to _extract_cycles_from_recorder().
+            cycles: New heating cycles to append
+            search_end_time: End time of the search period
         """
         _LOGGER.debug(
-            "Entering UpdateCacheDataUseCase.extract_cycles_from_recorder(device_id=%s, start=%s, end=%s)",
+            "Entering UpdateCacheDataUseCase.append_cycles(device_id=%s, cycles=%d)",
             device_id,
-            start_time.isoformat(),
-            end_time.isoformat(),
-        )
-
-        # STEP 1: Delegate to existing application service method
-        cycles = await self._app_service._extract_cycles_from_recorder(
-            device_id=device_id,
-            start_time=start_time,
-            end_time=end_time,
-        )
-
-        _LOGGER.debug(
-            "Exiting UpdateCacheDataUseCase.extract_cycles_from_recorder() -> %d cycles",
             len(cycles),
         )
-        return cycles
+
+        await self._cycle_cache.append_cycles(device_id, cycles, search_end_time)
+
+        _LOGGER.info(
+            "Appended %d cycles to cache for device %s",
+            len(cycles),
+            device_id,
+        )
+        _LOGGER.debug("Exiting UpdateCacheDataUseCase.append_cycles()")
+
+    async def prune_old_cycles(
+        self,
+        device_id: str,
+        reference_time: datetime,
+    ) -> None:
+        """Prune cycles older than retention period.
+
+        Args:
+            device_id: Device identifier
+            reference_time: Reference time for retention calculation
+        """
+        _LOGGER.debug(
+            "Entering UpdateCacheDataUseCase.prune_old_cycles(device_id=%s, reference_time=%s)",
+            device_id,
+            reference_time.isoformat(),
+        )
+
+        await self._cycle_cache.prune_old_cycles(device_id, reference_time)
+
+        _LOGGER.debug("Exiting UpdateCacheDataUseCase.prune_old_cycles()")
+
+    async def reset_cache(self, device_id: str) -> None:
+        """Reset cache completely for a device.
+
+        This deletes all cached cycles.
+
+        Args:
+            device_id: Device identifier
+        """
+        _LOGGER.debug(
+            "Entering UpdateCacheDataUseCase.reset_cache(device_id=%s)",
+            device_id,
+        )
+        _LOGGER.info("Resetting heating cycle cache for device %s", device_id)
+
+        # Clear all cache data
+        await self._cycle_cache.clear_cache(device_id)
+
+        _LOGGER.info("Heating cycle cache has been reset for device %s", device_id)
+        _LOGGER.debug("Exiting UpdateCacheDataUseCase.reset_cache()")
