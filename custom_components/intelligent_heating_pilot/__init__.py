@@ -24,7 +24,7 @@ from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.util import dt as dt_util
 
 from .const import CONF_IHP_ENABLED, DOMAIN, SERVICE_CALCULATE_ANTICIPATED_START_TIME
-from .coordinator import IntelligentHeatingPilotCoordinator
+from .heating_application import HeatingApplication
 from .utils.config_helpers import as_bool
 from .view import async_register_http_views
 
@@ -97,7 +97,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # NEW: Coordinator ONLY receives device_config (pure DDD)
     # config_entry is passed later via setup_config_entry_access for options updates
 
-    coordinator = IntelligentHeatingPilotCoordinator(hass, device_config)
+    coordinator = HeatingApplication(hass, device_config)
     coordinator.setup_config_entry_access(entry)
     await coordinator.async_load()
 
@@ -197,7 +197,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # We need to find the config entry that owns this entity
         entry_id_found = None
         for entry_id, coord in hass.data[DOMAIN].items():
-            if isinstance(coord, IntelligentHeatingPilotCoordinator):
+            if isinstance(coord, HeatingApplication):
                 # Check if this coordinator owns the entity by checking entity registry
                 entity_reg = er.async_get(hass)
                 entity_entry = entity_reg.async_get(entity_id)
@@ -211,9 +211,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Get the coordinator for this device
         device_coordinator = hass.data[DOMAIN].get(entry_id_found)
-        if not device_coordinator or not isinstance(
-            device_coordinator, IntelligentHeatingPilotCoordinator
-        ):
+        if not device_coordinator or not isinstance(device_coordinator, HeatingApplication):
             _LOGGER.error("Invalid coordinator for entry_id: %s", entry_id_found)
             return
 
@@ -327,7 +325,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options and reload integration."""
     from .const import CONF_DATA_RETENTION_DAYS
 
-    coordinator: IntelligentHeatingPilotCoordinator | None = hass.data[DOMAIN].get(entry.entry_id)
+    coordinator: HeatingApplication | None = hass.data[DOMAIN].get(entry.entry_id)
 
     previous_options = (
         dict(getattr(coordinator, "_options_snapshot", {}) or {}) if coordinator else {}

@@ -1,4 +1,4 @@
-"""Coordinator for Intelligent Heating Pilot integration."""
+"""Heating application entry point and DI container for Intelligent Heating Pilot."""
 
 from __future__ import annotations
 
@@ -21,6 +21,8 @@ from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN
 from .domain.interfaces.device_config_reader_interface import DeviceConfig
 from .infrastructure.adapters import (
     HAClimateCommander,
+    HAClimateDataReader,
+    HAContextReader,
     HAEnvironmentReader,
     HAHeatingCycleStorage,
     HALhsStorage,
@@ -33,10 +35,10 @@ from .infrastructure.event_bridge import HAEventBridge
 _LOGGER = logging.getLogger(__name__)
 
 
-class IntelligentHeatingPilotCoordinator:
-    """Lightweight coordinator for DDD architecture.
+class HeatingApplication:
+    """Heating application entry point and DI container.
 
-    This coordinator:
+    This class:
     - Creates and wires adapters
     - Creates application service
     - Setups event bridge
@@ -61,7 +63,7 @@ class IntelligentHeatingPilotCoordinator:
         - All configuration comes from the value object (DeviceConfig)
         - For entry_id-based operations, use device_config.device_id
         """
-        _LOGGER.debug("Initializing IntelligentHeatingPilotCoordinator with injected DeviceConfig")
+        _LOGGER.debug("Initializing HeatingApplication with injected DeviceConfig")
 
         self.hass = hass
         self._entry_id = device_config.device_id  # Store entry ID for adapter creation
@@ -97,6 +99,8 @@ class IntelligentHeatingPilotCoordinator:
         self._scheduler_commander: HASchedulerCommander | None = None
         self._climate_commander: HAClimateCommander | None = None
         self._environment_reader: HAEnvironmentReader | None = None
+        self._environment_context_reader: HAContextReader | None = None
+        self._climate_data_reader: HAClimateDataReader | None = None
         self._timer_scheduler: HATimerScheduler | None = None
 
         # Application service
@@ -146,6 +150,14 @@ class IntelligentHeatingPilotCoordinator:
             humidity_out_entity_id=self._humidity_out,
             cloud_cover_entity_id=self._cloud_cover,
         )
+        self._environment_context_reader = HAContextReader(
+            self.hass,
+            outdoor_temp_entity_id=None,  # TODO: Add to config
+            humidity_in_entity_id=self._humidity_in,
+            humidity_out_entity_id=self._humidity_out,
+            cloud_cover_entity_id=self._cloud_cover,
+        )
+        self._climate_data_reader = HAClimateDataReader(self.hass, self._vtherm_entity)
 
         # Create timer scheduler adapter
         self._timer_scheduler = HATimerScheduler(self.hass)
@@ -157,6 +169,8 @@ class IntelligentHeatingPilotCoordinator:
             scheduler_commander=self._scheduler_commander,
             climate_commander=self._climate_commander,
             environment_reader=self._environment_reader,
+            climate_data_reader=self._climate_data_reader,
+            environment_context_reader=self._environment_context_reader,
             timer_scheduler=self._timer_scheduler,
             cycle_cache=self._cycle_cache,
             history_lookback_days=self._data_retention_days,

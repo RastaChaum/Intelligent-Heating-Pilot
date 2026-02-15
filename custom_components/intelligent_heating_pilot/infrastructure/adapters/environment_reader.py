@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from ...domain.interfaces import IEnvironmentReader
 from ...domain.value_objects import EnvironmentState
 from ..vtherm_compat import get_vtherm_attribute
 from .utils import get_entity_name
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class HAEnvironmentReader:
+class HAEnvironmentReader(IEnvironmentReader):
     """Reads environmental conditions from Home Assistant entities.
 
     Converts HA entity states into domain EnvironmentState value objects.
@@ -107,58 +108,6 @@ class HAEnvironmentReader:
             cloud_coverage=cloud_coverage,
         )
 
-    def get_vtherm_slope(self) -> float | None:
-        """Get current heating slope from VTherm.
-
-        Returns:
-            Current slope in °C/h, or None if not available
-        """
-        vtherm_state = self._hass.states.get(self._vtherm_entity_id)
-        if not vtherm_state:
-            return None
-
-        # Use v8.0.0+ compatible attribute access
-        slope_raw = get_vtherm_attribute(vtherm_state, "slope")
-        if slope_raw is None:
-            return None
-
-        try:
-            return float(slope_raw)
-        except (ValueError, TypeError):
-            return None
-
-    def is_heating_active(self) -> bool:
-        """Check if heating is currently active.
-
-        According to requirements: heating is active when:
-        1. hvac_mode == 'heat' (heating mode enabled)
-        2. current_temperature < target_temperature (demand for heat)
-
-        Returns:
-            True if heating is ON, False otherwise
-        """
-        vtherm_state = self._hass.states.get(self._vtherm_entity_id)
-        if not vtherm_state:
-            return False
-
-        # Check hvac_mode is 'heat'
-        hvac_mode = vtherm_state.state
-        if hvac_mode != "heat":
-            return False
-
-        # Check current temp is lower than target temp (v8.0.0+ compatible)
-        current_temp = get_vtherm_attribute(vtherm_state, "current_temperature")
-        target_temp = get_vtherm_attribute(vtherm_state, "temperature")
-
-        if current_temp is None or target_temp is None:
-            # If we can't determine temps, assume not heating
-            return False
-
-        try:
-            return float(current_temp) < float(target_temp)
-        except (ValueError, TypeError):
-            return False
-
     def _get_float_state(self, entity_id: str | None) -> float | None:
         """Safely get float value from entity state.
 
@@ -179,33 +128,3 @@ class HAEnvironmentReader:
             return float(state.state)
         except (ValueError, TypeError):
             return None
-
-    # --- Accessors for application orchestration (historical data fetching) ---
-    def get_hass(self):
-        """Return the Home Assistant instance for adapters.
-
-        Exposed for application layer orchestration that needs to construct
-        historical data adapters. This keeps infrastructure concerns out of
-        the domain while enabling coordinated use cases.
-        """
-        return self._hass
-
-    def get_vtherm_entity_id(self) -> str:
-        """Return the VTherm climate entity id."""
-        return self._vtherm_entity_id
-
-    def get_outdoor_temp_entity_id(self) -> str | None:
-        """Return the outdoor temperature sensor entity id (optional)."""
-        return self._outdoor_temp_entity_id
-
-    def get_humidity_in_entity_id(self) -> str | None:
-        """Return the indoor humidity sensor entity id (optional)."""
-        return self._humidity_in_entity_id
-
-    def get_humidity_out_entity_id(self) -> str | None:
-        """Return the outdoor humidity sensor entity id (optional)."""
-        return self._humidity_out_entity_id
-
-    def get_cloud_cover_entity_id(self) -> str | None:
-        """Return the cloud coverage sensor entity id (optional)."""
-        return self._cloud_cover_entity_id

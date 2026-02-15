@@ -15,9 +15,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ...domain.interfaces import ISchedulerReader
+    from ...domain.interfaces import IClimateDataReader, IEnvironmentReader, ISchedulerReader
     from ...domain.services import DeadTimeCalculationService, PredictionService
-    from ...infrastructure.adapters import HAEnvironmentReader
     from ..heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
     from ..lhs_lifecycle_manager import LhsLifecycleManager
 
@@ -39,7 +38,8 @@ class CalculateAnticipationUseCase:
     def __init__(
         self,
         scheduler_reader: ISchedulerReader | None,
-        environment_reader: HAEnvironmentReader,
+        environment_reader: IEnvironmentReader,
+        climate_data_reader: IClimateDataReader,
         heating_cycle_manager: HeatingCycleLifecycleManager,
         lhs_lifecycle_manager: LhsLifecycleManager,
         prediction_service: PredictionService,
@@ -52,6 +52,7 @@ class CalculateAnticipationUseCase:
         Args:
             scheduler_reader: Reads scheduled timeslots (optional for API-only usage)
             environment_reader: Reads current environment conditions
+            climate_data_reader: Unified reader for VTherm metadata, slope and heating state
             heating_cycle_manager: Manages heating cycle lifecycle
             lhs_lifecycle_manager: Manages learned heating slopes
             prediction_service: Predicts heating time
@@ -62,6 +63,7 @@ class CalculateAnticipationUseCase:
         _LOGGER.debug("Initializing CalculateAnticipationUseCase")
         self._scheduler_reader = scheduler_reader
         self._environment_reader = environment_reader
+        self._climate_data_reader = climate_data_reader
         self._heating_cycle_manager = heating_cycle_manager
         self._lhs_manager = lhs_lifecycle_manager
         self._prediction_service = prediction_service
@@ -94,18 +96,18 @@ class CalculateAnticipationUseCase:
         timeslot = None
         scheduler_entity = None
         timeslot_id = None
-        
+
         if target_time is None:
             # Use scheduler to get next timeslot
             if self._scheduler_reader is None:
                 _LOGGER.debug("No scheduler reader configured and no target_time provided")
                 return self._create_data_structure()
-            
+
             timeslot = await self._scheduler_reader.get_next_timeslot()
             if not timeslot:
                 _LOGGER.debug("No scheduled timeslot found")
                 return self._create_data_structure()
-            
+
             target_time = timeslot.target_time
             target_temp = timeslot.target_temp
             scheduler_entity = timeslot.scheduler_entity
@@ -124,7 +126,7 @@ class CalculateAnticipationUseCase:
         cloud_coverage = environment.cloud_coverage if environment else None
 
         # Get device ID
-        vtherm_id = self._environment_reader.get_vtherm_entity_id()
+        vtherm_id = self._climate_data_reader.get_vtherm_entity_id()
 
         # Get heating cycles for LHS calculation
         heating_cycles = await self._heating_cycle_manager.get_cycles_for_target_time(
