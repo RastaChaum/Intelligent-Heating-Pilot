@@ -3,8 +3,7 @@
 The orchestrator composes use cases to implement complex workflows.
 It coordinates multiple use cases but contains NO business logic itself.
 
-STEP 1 IMPLEMENTATION: The orchestrator delegates to HeatingApplicationService
-methods through use cases. This is a pure composition layer with no logic.
+This is the main entry point for heating operations from the infrastructure layer.
 """
 
 from __future__ import annotations
@@ -16,12 +15,12 @@ from .use_cases import (
     CalculateAnticipationUseCase,
     ControlPreheatingUseCase,
     ResetLearningUseCase,
-    ScheduleAnticipationActionUseCase,
+    SchedulePreheatingUseCase,
     UpdateCacheDataUseCase,
 )
 
 if TYPE_CHECKING:
-    from . import HeatingApplicationService
+    from datetime import datetime
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,98 +34,153 @@ class HeatingOrchestrator:
     3. Managing cross-use-case dependencies
 
     NO business logic - pure composition and coordination.
-
-    STEP 1: Use cases delegate to HeatingApplicationService.
-    STEP 3: Use cases will contain business logic, orchestrator will compose them.
     """
 
-    def __init__(self, application_service: HeatingApplicationService) -> None:
+    def __init__(
+        self,
+        calculate_anticipation: CalculateAnticipationUseCase,
+        control_preheating: ControlPreheatingUseCase,
+        schedule_preheating: SchedulePreheatingUseCase,
+        update_cache: UpdateCacheDataUseCase,
+        reset_learning: ResetLearningUseCase,
+    ) -> None:
         """Initialize the orchestrator with use cases.
 
         Args:
-            application_service: The application service (will be replaced
-                                by individual adapters in later steps)
+            calculate_anticipation: Use case for calculating anticipation data
+            control_preheating: Use case for controlling preheating
+            schedule_preheating: Use case for scheduling preheating timer
+            update_cache: Use case for updating cache
+            reset_learning: Use case for resetting learning data
         """
         _LOGGER.debug("Initializing HeatingOrchestrator")
+        self._calculate_anticipation = calculate_anticipation
+        self._control_preheating = control_preheating
+        self._schedule_preheating = schedule_preheating
+        self._update_cache = update_cache
+        self._reset_learning = reset_learning
 
-        # STEP 1: Create use cases that delegate to application service
-        self._calculate_anticipation = CalculateAnticipationUseCase(application_service)
-        self._control_preheating = ControlPreheatingUseCase(application_service)
-        self._schedule_action = ScheduleAnticipationActionUseCase(application_service)
-        self._update_cache = UpdateCacheDataUseCase(application_service)
-        self._reset_learning = ResetLearningUseCase(application_service)
+    async def calculate_anticipation_only(
+        self,
+        target_time: datetime | None = None,
+        target_temp: float | None = None,
+    ) -> dict:
+        """Calculate anticipation data only (no scheduling).
 
-        # Store reference for direct access in STEP 1 (will be removed in STEP 3)
-        self._app_service = application_service
-
-    async def calculate_and_schedule_anticipation(
-        self, ihp_enabled: bool = True
-    ) -> dict | None:
-        """Calculate anticipation and schedule preheating.
-
-        STEP 1: Delegates to CalculateAnticipationUseCase.
+        For users who use the service without a scheduler (via REST API).
 
         Args:
-            ihp_enabled: Whether IHP preheating is enabled
+            target_time: Target time for heating
+            target_temp: Target temperature
 
         Returns:
-            Dict with anticipation data for sensors, or None if not applicable
+            Dict with anticipation data
         """
-        _LOGGER.debug(
-            "Entering HeatingOrchestrator.calculate_and_schedule_anticipation(ihp_enabled=%s)",
-            ihp_enabled,
+        _LOGGER.debug("Entering HeatingOrchestrator.calculate_anticipation_only()")
+
+        result = await self._calculate_anticipation.calculate_anticipation_datas(
+            target_time=target_time,
+            target_temp=target_temp,
         )
 
-        # STEP 1: Direct delegation to use case
-        result = await self._calculate_anticipation.execute(ihp_enabled=ihp_enabled)
-
-        _LOGGER.debug(
-            "Exiting HeatingOrchestrator.calculate_and_schedule_anticipation() -> %s",
-            "data" if result else "None",
-        )
+        _LOGGER.debug("Exiting calculate_anticipation_only() -> data")
         return result
 
-    async def reset_learned_slopes(self) -> None:
-        """Reset all learned heating slopes.
+    async def enable_preheating(self) -> dict:
+        """Calculate anticipation and enable preheating.
 
-        STEP 1: Delegates to ResetLearningUseCase.
+        This is the main workflow that:
+        1. Calculates anticipation data
+        2. Schedules preheating timer if data is valid
+        3. Returns data for sensors
+
+        Returns:
+            Dict with anticipation data (may contain None values if no data)
         """
-        _LOGGER.debug("Entering HeatingOrchestrator.reset_learned_slopes()")
+        _LOGGER.debug("Entering HeatingOrchestrator.enable_preheating()")
 
-        # STEP 1: Direct delegation to use case
-        await self._reset_learning.execute()
+        # Step 1: Calculate anticipation data (pure calculation, no scheduling)
+        anticipation_data = await self._calculate_anticipation.calculate_anticipation_datas()
 
-        _LOGGER.debug("Exiting HeatingOrchestrator.reset_learned_slopes()")
+        # Check if we have valid data
+        if anticipation_data["anticipated_start_time"] is None:
+            _LOGGER.debug("No valid anticipation data - skipping scheduling")
+            _LOGGER.debug("Exiting enable_preheating() -> no data")
+            return anticipation_data
 
-    async def clear_anticipation_state(self) -> None:
-        """Clear anticipation state.
+        # Step 2: Schedule preheating timer
+        # Create callback for timer
+        async def preheating_callback() -> None:
+            """Callback to trigger preheating when timer fires."""
+            await self._control_preheating.start_preheating(
+                target_time=anticipation_data["next_schedule_time"],
+                target_temp=anticipation_data["next_target_temperature"],
+                scheduler_entity_id=anticipation_data["scheduler_entity"],
+            )
 
-        STEP 1: Delegates to ControlPreheatingUseCase.
+        # Schedule the timer
+        await self._schedule_preheating.create_preheating_scheduler(
+            anticipated_start=anticipation_data["anticipated_start_time"],
+            preheating_callback=preheating_callback,
+        )
+        _LOGGER.info(
+            "Preheating enabled and scheduled for %s",
+            anticipation_data["anticipated_start_time"].isoformat(),
+        )
+
+        _LOGGER.debug("Exiting enable_preheating() -> data")
+        return anticipation_data
+
+    async def disable_preheating(self, scheduler_entity_id: str) -> None:
+        """Disable preheating (cancel timer and active preheating).
+
+        Args:
+            scheduler_entity_id: Scheduler entity to cancel
         """
-        _LOGGER.debug("Entering HeatingOrchestrator.clear_anticipation_state()")
+        _LOGGER.debug("Entering HeatingOrchestrator.disable_preheating()")
 
-        # STEP 1: Direct delegation to use case
-        await self._control_preheating.clear_anticipation_state()
+        # Cancel timer
+        await self._schedule_preheating.cancel_preheating_scheduler()
 
-        _LOGGER.debug("Exiting HeatingOrchestrator.clear_anticipation_state()")
+        # Cancel active preheating if any
+        if self._control_preheating.is_preheating_active():
+            await self._control_preheating.cancel_preheating(scheduler_entity_id)
+
+        _LOGGER.info("Preheating disabled")
+        _LOGGER.debug("Exiting HeatingOrchestrator.disable_preheating()")
+
+    async def cancel_preheating(self, scheduler_entity_id: str) -> None:
+        """Cancel active preheating.
+
+        Args:
+            scheduler_entity_id: Scheduler entity to cancel
+        """
+        _LOGGER.debug("Entering HeatingOrchestrator.cancel_preheating()")
+
+        # Cancel timer
+        await self._schedule_preheating.cancel_preheating_scheduler()
+
+        # Cancel preheating action
+        await self._control_preheating.cancel_preheating(scheduler_entity_id)
+
+        _LOGGER.debug("Exiting HeatingOrchestrator.cancel_preheating()")
+
+    async def reset_all_learning_data(self, device_id: str) -> None:
+        """Reset all learned data (LHS + cycles).
+
+        Args:
+            device_id: Device identifier
+        """
+        _LOGGER.debug("Entering HeatingOrchestrator.reset_all_learning_data()")
+
+        await self._reset_learning.reset_all_learning_data(device_id)
+
+        _LOGGER.debug("Exiting HeatingOrchestrator.reset_all_learning_data()")
 
     def is_preheating_active(self) -> bool:
         """Check if preheating is currently active.
-
-        STEP 1: Delegates to ControlPreheatingUseCase.
 
         Returns:
             True if preheating is active, False otherwise
         """
         return self._control_preheating.is_preheating_active()
-
-    # STEP 1: Provide access to application service for backward compatibility
-    # This will be removed in STEP 3 when logic is migrated to use cases
-    @property
-    def application_service(self) -> HeatingApplicationService:
-        """Get the underlying application service.
-
-        TEMPORARY: For backward compatibility during STEP 1.
-        Will be removed in STEP 3.
-        """
-        return self._app_service

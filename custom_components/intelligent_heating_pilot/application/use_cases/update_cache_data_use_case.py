@@ -14,8 +14,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ...domain.interfaces import IHeatingCycleStorage
+    from ...domain.interfaces import IHeatingCycleStorage, ILhsStorage
     from ...domain.value_objects import HeatingCycle, HeatingCycleCacheData
+    from ..lhs_lifecycle_manager import LhsLifecycleManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,19 +26,28 @@ class UpdateCacheDataUseCase:
 
     This use case encapsulates the logic for:
     1. Getting cycles from cache
-    2. Updating cache (append new cycles)
-    3. Pruning old cycles
+    2. Updating cache (append new cycles, then prune old ones)
+    3. Recalculating LHS when cycles change
     4. Resetting cache completely
     """
 
-    def __init__(self, cycle_cache: IHeatingCycleStorage) -> None:
+    def __init__(
+        self,
+        cycle_storage: IHeatingCycleStorage,
+        lhs_storage: ILhsStorage,
+        lhs_lifecycle_manager: LhsLifecycleManager,
+    ) -> None:
         """Initialize the use case.
 
         Args:
-            cycle_cache: Heating cycle cache storage
+            cycle_storage: Heating cycle cache storage
+            lhs_storage: LHS storage for clearing
+            lhs_lifecycle_manager: Manages LHS recalculation
         """
         _LOGGER.debug("Initializing UpdateCacheDataUseCase")
-        self._cycle_cache = cycle_cache
+        self._cycle_storage = cycle_storage
+        self._lhs_storage = lhs_storage
+        self._lhs_manager = lhs_lifecycle_manager
 
     async def get_cache_data(self, device_id: str) -> HeatingCycleCacheData | None:
         """Get cache data for a device.
@@ -53,7 +63,7 @@ class UpdateCacheDataUseCase:
             device_id,
         )
 
-        cache_data = await self._cycle_cache.get_cache_data(device_id)
+        cache_data = await self._cycle_storage.get_cache_data(device_id)
 
         _LOGGER.debug(
             "Exiting UpdateCacheDataUseCase.get_cache_data() -> %s",
@@ -65,14 +75,14 @@ class UpdateCacheDataUseCase:
         self,
         device_id: str,
         cycles: list[HeatingCycle],
-        search_end_time: datetime,
+        reference_time: datetime,
     ) -> None:
-        """Append new cycles to cache.
+        """Append new cycles to cache and prune old ones.
 
         Args:
             device_id: Device identifier
             cycles: New heating cycles to append
-            search_end_time: End time of the search period
+            reference_time: Reference time for pruning old cycles
         """
         _LOGGER.debug(
             "Entering UpdateCacheDataUseCase.append_cycles(device_id=%s, cycles=%d)",
@@ -80,13 +90,18 @@ class UpdateCacheDataUseCase:
             len(cycles),
         )
 
-        await self._cycle_cache.append_cycles(device_id, cycles, search_end_time)
+        # Append cycles to storage (storage handles deduplication)
+        await self._cycle_storage.append_cycles(device_id, cycles, reference_time)
 
         _LOGGER.info(
             "Appended %d cycles to cache for device %s",
             len(cycles),
             device_id,
         )
+
+        # Prune old cycles based on retention
+        await self.prune_old_cycles(device_id, reference_time)
+
         _LOGGER.debug("Exiting UpdateCacheDataUseCase.append_cycles()")
 
     async def prune_old_cycles(
@@ -94,7 +109,7 @@ class UpdateCacheDataUseCase:
         device_id: str,
         reference_time: datetime,
     ) -> None:
-        """Prune cycles older than retention period.
+        """Prune cycles older than retention period and recalculate LHS.
 
         Args:
             device_id: Device identifier
@@ -106,14 +121,19 @@ class UpdateCacheDataUseCase:
             reference_time.isoformat(),
         )
 
-        await self._cycle_cache.prune_old_cycles(device_id, reference_time)
+        # Prune old cycles
+        await self._cycle_storage.prune_old_cycles(device_id, reference_time)
+
+        # Recalculate LHS after pruning (cycles have changed)
+        await self._lhs_manager.update_global_lhs_from_cache(device_id)
+        _LOGGER.info("LHS recalculated after pruning old cycles")
 
         _LOGGER.debug("Exiting UpdateCacheDataUseCase.prune_old_cycles()")
 
     async def reset_cache(self, device_id: str) -> None:
-        """Reset cache completely for a device.
+        """Reset cache completely for a device (both cycles and LHS).
 
-        This deletes all cached cycles.
+        This deletes all cached cycles and LHS data.
 
         Args:
             device_id: Device identifier
@@ -122,10 +142,15 @@ class UpdateCacheDataUseCase:
             "Entering UpdateCacheDataUseCase.reset_cache(device_id=%s)",
             device_id,
         )
-        _LOGGER.info("Resetting heating cycle cache for device %s", device_id)
+        _LOGGER.info("Resetting heating cycle cache and LHS for device %s", device_id)
 
-        # Clear all cache data
-        await self._cycle_cache.clear_cache(device_id)
+        # Clear all cycle cache data
+        await self._cycle_storage.clear_cache(device_id)
+        _LOGGER.info("Heating cycle cache has been reset")
 
-        _LOGGER.info("Heating cycle cache has been reset for device %s", device_id)
+        # Clear LHS data
+        await self._lhs_storage.clear_slopes_datas()
+        _LOGGER.info("LHS data has been reset")
+
+        _LOGGER.info("Cache and LHS have been reset for device %s", device_id)
         _LOGGER.debug("Exiting UpdateCacheDataUseCase.reset_cache()")

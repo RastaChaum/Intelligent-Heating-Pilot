@@ -32,17 +32,17 @@ class ResetLearningUseCase:
     def __init__(
         self,
         lhs_storage: ILhsStorage,
-        cycle_cache: IHeatingCycleStorage,
+        cycle_storage: IHeatingCycleStorage,
     ) -> None:
         """Initialize the use case.
 
         Args:
             lhs_storage: Storage for learned heating slopes
-            cycle_cache: Storage for heating cycle cache
+            cycle_storage: Storage for heating cycle cache
         """
         _LOGGER.debug("Initializing ResetLearningUseCase")
         self._lhs_storage = lhs_storage
-        self._cycle_cache = cycle_cache
+        self._cycle_storage = cycle_storage
 
     async def reset_all_learning_data(self, device_id: str) -> None:
         """Reset all learned data (LHS + heating cycles cache).
@@ -57,11 +57,11 @@ class ResetLearningUseCase:
         _LOGGER.info("Resetting all learned data (LHS + cycles) for device %s", device_id)
 
         # Reset learned heating slopes
-        await self._lhs_storage.clear_slope_history()
+        await self._lhs_storage.clear_slopes_datas()
         _LOGGER.info("Learned heating slopes have been reset")
 
         # Reset heating cycle cache
-        await self._cycle_cache.clear_cache(device_id)
+        await self._cycle_storage.clear_heatingcycle_datas(device_id)
         _LOGGER.info("Heating cycle cache has been reset")
 
         _LOGGER.info("All learning data has been reset for device %s", device_id)

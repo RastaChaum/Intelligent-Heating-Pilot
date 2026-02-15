@@ -1,6 +1,6 @@
 """Control Preheating Use Case.
 
-This use case controls the preheating state (start/stop/cancel).
+This use case controls the preheating state (start/cancel).
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ...domain.interfaces import IClimateCommander, ISchedulerCommander
+    from ...domain.interfaces import ISchedulerCommander
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,17 +28,14 @@ class ControlPreheatingUseCase:
     def __init__(
         self,
         scheduler_commander: ISchedulerCommander,
-        climate_commander: IClimateCommander,
     ) -> None:
         """Initialize the use case.
 
         Args:
             scheduler_commander: Commands scheduler actions
-            climate_commander: Commands climate entity
         """
         _LOGGER.debug("Initializing ControlPreheatingUseCase")
         self._scheduler_commander = scheduler_commander
-        self._climate_commander = climate_commander
         self._is_preheating_active = False
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None

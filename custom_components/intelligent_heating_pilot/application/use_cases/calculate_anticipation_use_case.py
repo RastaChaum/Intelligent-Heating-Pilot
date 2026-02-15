@@ -15,8 +15,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ...domain.interfaces import IEnvironmentReader, ISchedulerReader
+    from ...domain.interfaces import ISchedulerReader
     from ...domain.services import DeadTimeCalculationService, PredictionService
+    from ...infrastructure.adapters import HAEnvironmentReader
     from ..heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
     from ..lhs_lifecycle_manager import LhsLifecycleManager
 
@@ -27,7 +28,7 @@ class CalculateAnticipationUseCase:
     """Use case for calculating anticipation data (NO preheating scheduling).
 
     This use case encapsulates the pure calculation logic for:
-    1. Reading the next scheduled timeslot
+    1. Reading the next scheduled timeslot (or using provided target_time)
     2. Getting heating cycles for LHS calculation
     3. Calculating the anticipated start time based on learned heating slope
     4. Returning anticipation data for display/sensors
@@ -37,8 +38,8 @@ class CalculateAnticipationUseCase:
 
     def __init__(
         self,
-        scheduler_reader: ISchedulerReader,
-        environment_reader: IEnvironmentReader,
+        scheduler_reader: ISchedulerReader | None,
+        environment_reader: HAEnvironmentReader,
         heating_cycle_manager: HeatingCycleLifecycleManager,
         lhs_lifecycle_manager: LhsLifecycleManager,
         prediction_service: PredictionService,
@@ -49,7 +50,7 @@ class CalculateAnticipationUseCase:
         """Initialize the use case.
 
         Args:
-            scheduler_reader: Reads scheduled timeslots
+            scheduler_reader: Reads scheduled timeslots (optional for API-only usage)
             environment_reader: Reads current environment conditions
             heating_cycle_manager: Manages heating cycle lifecycle
             lhs_lifecycle_manager: Manages learned heating slopes
@@ -71,51 +72,56 @@ class CalculateAnticipationUseCase:
     async def calculate_anticipation_datas(
         self,
         target_time: datetime | None = None,
+        target_temp: float | None = None,
     ) -> dict:
         """Calculate anticipation data without scheduling preheating.
 
         Args:
-            target_time: Optional target time. If None, uses next scheduled timeslot.
+            target_time: Target time for heating. If None, uses next scheduled timeslot.
+            target_temp: Target temperature. If None, uses value from timeslot.
 
         Returns:
-            Dict with anticipation data. Returns structure with None values if
-            no scheduler configured or no valid timeslot available.
-            Structure:
-            {
-                "anticipated_start_time": datetime | None,
-                "next_schedule_time": datetime | None,
-                "next_target_temperature": float | None,
-                "anticipation_minutes": float | None,
-                "current_temp": float | None,
-                "learned_heating_slope": float | None,
-                "confidence_level": float | None,
-                "timeslot_id": str | None,
-                "scheduler_entity": str | None,
-            }
+            Dict with anticipation data. Returns structure with None values for fields
+            that cannot be calculated.
         """
         _LOGGER.debug(
-            "Entering CalculateAnticipationUseCase.calculate_anticipation_datas(target_time=%s)",
+            "Entering CalculateAnticipationUseCase.calculate_anticipation_datas(target_time=%s, target_temp=%s)",
             target_time.isoformat() if target_time else "None",
+            target_temp,
         )
 
-        # Get timeslot (either provided target_time or next scheduled)
+        # Determine target time and temp
+        timeslot = None
+        scheduler_entity = None
+        timeslot_id = None
+        
         if target_time is None:
+            # Use scheduler to get next timeslot
+            if self._scheduler_reader is None:
+                _LOGGER.debug("No scheduler reader configured and no target_time provided")
+                return self._create_data_structure()
+            
             timeslot = await self._scheduler_reader.get_next_timeslot()
             if not timeslot:
                 _LOGGER.debug("No scheduled timeslot found")
-                return self._empty_data_structure()
+                return self._create_data_structure()
+            
+            target_time = timeslot.target_time
+            target_temp = timeslot.target_temp
+            scheduler_entity = timeslot.scheduler_entity
+            timeslot_id = timeslot.timeslot_id
         else:
-            # Use provided target_time to find matching timeslot
-            timeslot = await self._scheduler_reader.get_next_timeslot()
-            if not timeslot:
-                _LOGGER.debug("No scheduler configured")
-                return self._empty_data_structure()
+            # Using provided target_time (API/REST usage without scheduler)
+            if target_temp is None:
+                _LOGGER.warning("target_time provided but target_temp is None")
+                return self._create_data_structure()
 
-        # Get current environment
+        # Get current environment (optional - used to adjust calculations)
         environment = await self._environment_reader.get_current_environment()
-        if not environment:
-            _LOGGER.warning("Cannot read current environment")
-            return self._empty_data_structure()
+        current_temp = environment.indoor_temperature if environment else None
+        outdoor_temp = environment.outdoor_temp if environment else None
+        humidity = environment.indoor_humidity if environment else None
+        cloud_coverage = environment.cloud_coverage if environment else None
 
         # Get device ID
         vtherm_id = self._environment_reader.get_vtherm_entity_id()
@@ -123,12 +129,12 @@ class CalculateAnticipationUseCase:
         # Get heating cycles for LHS calculation
         heating_cycles = await self._heating_cycle_manager.get_cycles_for_target_time(
             device_id=vtherm_id,
-            target_time=timeslot.target_time,
+            target_time=target_time,
         )
 
         # Get contextual LHS
         lhs = await self._lhs_manager.get_contextual_lhs(
-            target_time=timeslot.target_time,
+            target_time=target_time,
             cycles=heating_cycles,
         )
 
@@ -147,36 +153,15 @@ class CalculateAnticipationUseCase:
         else:
             dead_time = self._default_dead_time_minutes
 
-        # Check if already at target
-        if environment.indoor_temperature >= timeslot.target_temp:
-            _LOGGER.debug(
-                "Already at target (%.1f°C >= %.1f°C)",
-                environment.indoor_temperature,
-                timeslot.target_temp,
-            )
-            result = {
-                "anticipated_start_time": timeslot.target_time,
-                "next_schedule_time": timeslot.target_time,
-                "next_target_temperature": timeslot.target_temp,
-                "anticipation_minutes": 0.0,
-                "current_temp": environment.indoor_temperature,
-                "learned_heating_slope": lhs,
-                "confidence_level": 100.0,
-                "timeslot_id": timeslot.timeslot_id,
-                "scheduler_entity": timeslot.scheduler_entity,
-            }
-            _LOGGER.debug("Exiting calculate_anticipation_datas() -> already at target")
-            return result
-
-        # Calculate prediction
+        # Calculate prediction (prediction_service handles case where current_temp >= target_temp)
         prediction = self._prediction_service.predict_heating_time(
-            current_temp=environment.indoor_temperature,
-            target_temp=timeslot.target_temp,
-            outdoor_temp=environment.outdoor_temp,
-            humidity=environment.indoor_humidity,
+            current_temp=current_temp if current_temp is not None else target_temp - 5.0,
+            target_temp=target_temp,
+            outdoor_temp=outdoor_temp,
+            humidity=humidity,
             learned_slope=lhs,
-            target_time=timeslot.target_time,
-            cloud_coverage=environment.cloud_coverage,
+            target_time=target_time,
+            cloud_coverage=cloud_coverage,
             dead_time_minutes=dead_time,
         )
 
@@ -184,39 +169,50 @@ class CalculateAnticipationUseCase:
             "Calculated anticipation: start at %s (%.1f min) for target %.1f°C at %s (LHS: %.2f°C/h)",
             prediction.anticipated_start_time.isoformat(),
             prediction.estimated_duration_minutes,
-            timeslot.target_temp,
-            timeslot.target_time.isoformat(),
+            target_temp,
+            target_time.isoformat(),
             prediction.learned_heating_slope,
         )
 
-        result = {
-            "anticipated_start_time": prediction.anticipated_start_time,
-            "next_schedule_time": timeslot.target_time,
-            "next_target_temperature": timeslot.target_temp,
-            "anticipation_minutes": prediction.estimated_duration_minutes,
-            "current_temp": environment.indoor_temperature,
-            "learned_heating_slope": prediction.learned_heating_slope,
-            "confidence_level": prediction.confidence_level,
-            "timeslot_id": timeslot.timeslot_id,
-            "scheduler_entity": timeslot.scheduler_entity,
-        }
+        result = self._create_data_structure(
+            anticipated_start_time=prediction.anticipated_start_time,
+            next_schedule_time=target_time,
+            next_target_temperature=target_temp,
+            anticipation_minutes=prediction.estimated_duration_minutes,
+            current_temp=current_temp,
+            learned_heating_slope=prediction.learned_heating_slope,
+            confidence_level=prediction.confidence_level,
+            timeslot_id=timeslot_id,
+            scheduler_entity=scheduler_entity,
+        )
 
         _LOGGER.debug("Exiting calculate_anticipation_datas() -> %s", "data")
         return result
 
-    def _empty_data_structure(self) -> dict:
-        """Return empty data structure with all fields set to None.
+    def _create_data_structure(
+        self,
+        anticipated_start_time: datetime | None = None,
+        next_schedule_time: datetime | None = None,
+        next_target_temperature: float | None = None,
+        anticipation_minutes: float | None = None,
+        current_temp: float | None = None,
+        learned_heating_slope: float | None = None,
+        confidence_level: float | None = None,
+        timeslot_id: str | None = None,
+        scheduler_entity: str | None = None,
+    ) -> dict:
+        """Create data structure with provided values or None defaults.
 
-        Returns consistent structure even when no data is available.
+        Returns consistent structure with each field having a value or None.
         """
         return {
-            "anticipated_start_time": None,
-            "next_schedule_time": None,
-            "next_target_temperature": None,
-            "anticipation_minutes": None,
-            "current_temp": None,
-            "learned_heating_slope": None,
-            "confidence_level": None,
-            "timeslot_id": None,
-            "scheduler_entity": None,
+            "anticipated_start_time": anticipated_start_time,
+            "next_schedule_time": next_schedule_time,
+            "next_target_temperature": next_target_temperature,
+            "anticipation_minutes": anticipation_minutes,
+            "current_temp": current_temp,
+            "learned_heating_slope": learned_heating_slope,
+            "confidence_level": confidence_level,
+            "timeslot_id": timeslot_id,
+            "scheduler_entity": scheduler_entity,
         }

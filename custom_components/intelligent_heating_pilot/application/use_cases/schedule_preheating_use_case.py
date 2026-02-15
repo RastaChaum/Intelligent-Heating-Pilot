@@ -1,88 +1,83 @@
-"""Schedule Anticipation Action Use Case.
+"""Schedule Preheating Use Case.
 
-This use case schedules the anticipation timer to trigger preheating
+This use case schedules the preheating timer to trigger preheating
 at the calculated start time.
-
-STEP 1 IMPLEMENTATION: This is a facade/wrapper that delegates to
-HeatingApplicationService._schedule_anticipation().
-No behavior change - pure delegation pattern.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from .. import HeatingApplicationService
+    from ...domain.interfaces import ITimerScheduler
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class ScheduleAnticipationActionUseCase:
-    """Use case for scheduling anticipation timer.
+class SchedulePreheatingUseCase:
+    """Use case for scheduling preheating timer.
 
     This use case encapsulates the logic for:
-    1. Canceling existing anticipation timer
-    2. Scheduling new anticipation timer
+    1. Canceling existing preheating timer
+    2. Scheduling new preheating timer with callback
     3. Managing timer state and callbacks
-
-    STEP 1: Delegates to HeatingApplicationService (no logic here yet).
     """
 
-    def __init__(self, application_service: HeatingApplicationService) -> None:
+    def __init__(self, timer_scheduler: ITimerScheduler) -> None:
         """Initialize the use case.
 
         Args:
-            application_service: The application service to delegate to
+            timer_scheduler: Schedules timer callbacks
         """
-        _LOGGER.debug("Initializing ScheduleAnticipationActionUseCase")
-        self._app_service = application_service
+        _LOGGER.debug("Initializing SchedulePreheatingUseCase")
+        self._timer_scheduler = timer_scheduler
+        self._timer_cancel_callback: Callable[[], None] | None = None
 
-    async def execute(
+    async def create_preheating_scheduler(
         self,
         anticipated_start: datetime,
-        target_time: datetime,
-        target_temp: float,
-        scheduler_entity_id: str,
-        lhs: float,
+        preheating_callback: Callable[[], None],
     ) -> None:
-        """Execute the schedule anticipation action use case.
+        """Create preheating scheduler to trigger at anticipated start time.
 
         Args:
-            anticipated_start: When to trigger the anticipation
-            target_time: Target schedule time
-            target_temp: Target temperature
-            scheduler_entity_id: Scheduler entity to trigger
-            lhs: Learned heating slope (for logging/tracking)
+            anticipated_start: When to trigger the preheating
+            preheating_callback: Callback function to execute when timer fires
+                                (typically start_preheating from ControlPreheatingUseCase)
         """
         _LOGGER.debug(
-            "Entering ScheduleAnticipationActionUseCase.execute(anticipated_start=%s, scheduler=%s)",
+            "Entering SchedulePreheatingUseCase.create_preheating_scheduler(anticipated_start=%s)",
             anticipated_start.isoformat(),
-            scheduler_entity_id,
         )
 
-        # STEP 1: Delegate to existing application service method
-        await self._app_service._schedule_anticipation(
-            anticipated_start=anticipated_start,
-            target_time=target_time,
-            target_temp=target_temp,
-            scheduler_entity_id=scheduler_entity_id,
-            lhs=lhs,
+        # Cancel any existing timer first
+        await self.cancel_preheating_scheduler()
+
+        # Schedule the new timer
+        self._timer_cancel_callback = self._timer_scheduler.schedule_timer(
+            anticipated_start,
+            preheating_callback,
         )
 
-        _LOGGER.debug("Exiting ScheduleAnticipationActionUseCase.execute()")
+        _LOGGER.info(
+            "Preheating scheduler created: will trigger at %s",
+            anticipated_start.isoformat(),
+        )
 
-    async def cancel_anticipation_timer(self) -> None:
-        """Cancel any active anticipation timer.
+        _LOGGER.debug("Exiting SchedulePreheatingUseCase.create_preheating_scheduler()")
 
-        STEP 1: Delegates to _cancel_anticipation_timer().
-        """
-        _LOGGER.debug("Entering ScheduleAnticipationActionUseCase.cancel_anticipation_timer()")
+    async def cancel_preheating_scheduler(self) -> None:
+        """Cancel any active preheating scheduler."""
+        _LOGGER.debug("Entering SchedulePreheatingUseCase.cancel_preheating_scheduler()")
 
-        # STEP 1: Delegate to existing application service method
-        await self._app_service._cancel_anticipation_timer()
+        if self._timer_cancel_callback:
+            _LOGGER.debug("Canceling active preheating scheduler")
+            self._timer_cancel_callback()
+            self._timer_cancel_callback = None
+        else:
+            _LOGGER.debug("No active preheating scheduler to cancel")
 
-        _LOGGER.debug("Exiting ScheduleAnticipationActionUseCase.cancel_anticipation_timer()")
+        _LOGGER.debug("Exiting SchedulePreheatingUseCase.cancel_preheating_scheduler()")
