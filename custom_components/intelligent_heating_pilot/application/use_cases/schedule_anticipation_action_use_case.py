@@ -67,6 +67,77 @@ class ScheduleAnticipationActionUseCase:
         _LOGGER.debug("Setting preheating target temp: %.1f", target_temp or 0.0)
         self._preheating_target_temp = target_temp
 
+    async def handle_anticipation_scheduling(
+        self,
+        anticipation_data: dict,
+        ihp_enabled: bool,
+    ) -> None:
+        """Handle the complete scheduling workflow based on anticipation data and IHP status.
+
+        This method contains all the business logic for deciding when to schedule/cancel
+        preheating based on data availability, IHP status, and current state.
+
+        Args:
+            anticipation_data: Calculated anticipation data
+            ihp_enabled: Whether IHP is enabled
+        """
+        _LOGGER.debug(
+            "Entering handle_anticipation_scheduling(ihp_enabled=%s, has_data=%s)",
+            ihp_enabled,
+            anticipation_data.get("anticipated_start_time") is not None,
+        )
+
+        # Decision 1: No valid data - cancel everything
+        if anticipation_data.get("anticipated_start_time") is None:
+            _LOGGER.debug("No valid anticipation data - cancelling any active scheduling")
+            await self.cancel_action()
+            if self._control_preheating.is_preheating_active():
+                scheduler_entity = self._control_preheating.get_active_scheduler_entity()
+                if scheduler_entity:
+                    await self._control_preheating.cancel_preheating(scheduler_entity)
+            return
+
+        # Decision 2: IHP disabled - cancel but don't schedule
+        if not ihp_enabled:
+            _LOGGER.debug("IHP disabled - cancelling preheating if active")
+            if self._control_preheating.is_preheating_active():
+                scheduler_entity = (
+                    self._control_preheating.get_active_scheduler_entity()
+                    or anticipation_data.get("scheduler_entity")
+                )
+                if scheduler_entity:
+                    await self._control_preheating.cancel_preheating(scheduler_entity)
+            await self.cancel_action()
+            return
+
+        # Decision 3: Target already reached (anticipation_minutes == 0) - clear state
+        if anticipation_data.get("anticipation_minutes") == 0:
+            _LOGGER.debug("Target reached - clearing anticipation state")
+            await self.cancel_action()
+            if self._control_preheating.is_preheating_active():
+                scheduler_entity = (
+                    self._control_preheating.get_active_scheduler_entity()
+                    or anticipation_data.get("scheduler_entity")
+                )
+                if scheduler_entity:
+                    await self._control_preheating.cancel_preheating(scheduler_entity)
+            return
+
+        # Decision 4: No scheduler entity - skip scheduling
+        scheduler_entity = anticipation_data.get("scheduler_entity")
+        if not scheduler_entity:
+            _LOGGER.debug("No scheduler entity - skipping scheduling")
+            return
+
+        # Decision 5: Valid data + IHP enabled + scheduler available - schedule
+        await self.schedule_action(
+            anticipated_start=anticipation_data["anticipated_start_time"],
+            target_time=anticipation_data["next_schedule_time"],
+            target_temp=anticipation_data["next_target_temperature"],
+            scheduler_entity_id=scheduler_entity,
+            lhs=float(anticipation_data.get("learned_heating_slope") or 0.0),
+        )
+
     async def schedule_action(
         self,
         anticipated_start: datetime,
@@ -151,15 +222,15 @@ class ScheduleAnticipationActionUseCase:
 
         # If anticipated start is in past but target is future, trigger now
         if anticipated_start <= now < target_time:
-            if not self._is_preheating_active:
+            if not self._control_preheating.is_preheating_active():
                 _LOGGER.info(
                     "Anticipated start %s is past, triggering preheating immediately",
                     anticipated_start.isoformat(),
                 )
-                await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
-                self._is_preheating_active = True
-                self._preheating_target_time = target_time
-                self._active_scheduler_entity = scheduler_entity_id
+                # Delegate to ControlPreheatingUseCase
+                await self._control_preheating.start_preheating(
+                    target_time, target_temp, scheduler_entity_id
+                )
             else:
                 _LOGGER.debug(
                     "Already preheating, continuing through target time %s", target_time.isoformat()

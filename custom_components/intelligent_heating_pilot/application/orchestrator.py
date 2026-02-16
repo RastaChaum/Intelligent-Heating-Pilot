@@ -128,17 +128,15 @@ class HeatingOrchestrator:
     async def calculate_and_schedule_anticipation(
         self, ihp_enabled: bool = True
     ) -> dict[str, Any]:
-        """Calculate anticipation and optionally schedule preheating.
+        """Calculate anticipation and handle scheduling based on IHP status.
 
-        This method:
-        1. Calculates anticipation data using CalculateAnticipationUseCase
-        2. If valid data and IHP enabled, schedules preheating
-        3. If valid data and IHP disabled, ensures preheating is cancelled
-        4. Always returns anticipation data structure (with None values if needed)
+        This orchestrator method:
+        1. Calculates anticipation data
+        2. Delegates scheduling decisions to ScheduleAnticipationActionUseCase
+        3. Always returns anticipation data structure
 
         Args:
-            ihp_enabled: Whether IHP preheating is enabled. When False,
-                        cancels any active preheating but continues calculations.
+            ihp_enabled: Whether IHP preheating is enabled
 
         Returns:
             Dict with anticipation data for sensors (always returns structure)
@@ -151,59 +149,10 @@ class HeatingOrchestrator:
         # Step 1: Calculate anticipation data
         anticipation_data = await self._calculate_anticipation.calculate_anticipation_datas()
 
-        # Step 2: Handle scheduling based on data availability and IHP status
-        if anticipation_data.get("anticipated_start_time") is None:
-            # No valid data - cancel any active scheduling
-            _LOGGER.debug("No valid anticipation data - cancelling any active scheduling")
-            await self._schedule_anticipation_action.cancel_action()
-            if self._control_preheating.is_preheating_active():
-                scheduler_entity = self._control_preheating.get_active_scheduler_entity()
-                if scheduler_entity:
-                    await self._control_preheating.cancel_preheating(scheduler_entity)
-            _LOGGER.debug("Exiting calculate_and_schedule_anticipation() -> data with None values")
-            return anticipation_data
-
-        if not ihp_enabled:
-            # IHP disabled - cancel but return data
-            _LOGGER.debug("IHP disabled - cancelling preheating if active")
-            if self._control_preheating.is_preheating_active():
-                scheduler_entity = (
-                    self._control_preheating.get_active_scheduler_entity()
-                    or anticipation_data.get("scheduler_entity")
-                )
-                if scheduler_entity:
-                    await self._control_preheating.cancel_preheating(scheduler_entity)
-            await self._schedule_anticipation_action.cancel_action()
-            _LOGGER.debug("Exiting calculate_and_schedule_anticipation() -> data")
-            return anticipation_data
-
-        if anticipation_data.get("anticipation_minutes") == 0:
-            # Target reached - clear state
-            _LOGGER.debug("Target reached - clearing anticipation state")
-            await self._schedule_anticipation_action.cancel_action()
-            if self._control_preheating.is_preheating_active():
-                scheduler_entity = (
-                    self._control_preheating.get_active_scheduler_entity()
-                    or anticipation_data.get("scheduler_entity")
-                )
-                if scheduler_entity:
-                    await self._control_preheating.cancel_preheating(scheduler_entity)
-            _LOGGER.debug("Exiting calculate_and_schedule_anticipation() -> data")
-            return anticipation_data
-
-        # Step 3: Schedule preheating action
-        scheduler_entity = anticipation_data.get("scheduler_entity")
-        if not scheduler_entity:
-            _LOGGER.debug("No scheduler entity - skipping scheduling")
-            _LOGGER.debug("Exiting calculate_and_schedule_anticipation() -> data")
-            return anticipation_data
-
-        await self._schedule_anticipation_action.schedule_action(
-            anticipated_start=anticipation_data["anticipated_start_time"],
-            target_time=anticipation_data["next_schedule_time"],
-            target_temp=anticipation_data["next_target_temperature"],
-            scheduler_entity_id=scheduler_entity,
-            lhs=float(anticipation_data.get("learned_heating_slope") or 0.0),
+        # Step 2: Delegate scheduling decisions to use case (contains business logic)
+        await self._schedule_anticipation_action.handle_anticipation_scheduling(
+            anticipation_data,
+            ihp_enabled,
         )
 
         _LOGGER.debug("Exiting HeatingOrchestrator.calculate_and_schedule_anticipation() -> data")
