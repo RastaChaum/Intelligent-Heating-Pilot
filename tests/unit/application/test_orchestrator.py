@@ -18,9 +18,7 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
     CalculateAnticipationUseCase,
     CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
-    ResetLearningUseCase,
     ScheduleAnticipationActionUseCase,
-    SchedulePreheatingUseCase,
     UpdateCacheDataUseCase,
 )
 
@@ -57,18 +55,11 @@ class TestHeatingOrchestrator:
         return uc
 
     @pytest.fixture
-    def mock_schedule_preheating(self) -> Mock:
-        """Create mock SchedulePreheatingUseCase."""
-        uc = Mock(spec=SchedulePreheatingUseCase)
-        uc.create_preheating_scheduler = AsyncMock()
-        uc.cancel_preheating_scheduler = AsyncMock()
-        return uc
-
-    @pytest.fixture
     def mock_schedule_anticipation_action(self) -> Mock:
         """Create mock ScheduleAnticipationActionUseCase."""
         uc = Mock(spec=ScheduleAnticipationActionUseCase)
         uc.schedule_action = AsyncMock()
+        uc.cancel_action = AsyncMock()
         return uc
 
     @pytest.fixture
@@ -82,13 +73,7 @@ class TestHeatingOrchestrator:
     def mock_update_cache(self) -> Mock:
         """Create mock UpdateCacheDataUseCase."""
         uc = Mock(spec=UpdateCacheDataUseCase)
-        return uc
-
-    @pytest.fixture
-    def mock_reset_learning(self) -> Mock:
-        """Create mock ResetLearningUseCase."""
-        uc = Mock(spec=ResetLearningUseCase)
-        uc.reset_all_learning_data = AsyncMock()
+        uc.reset_cache = AsyncMock()
         return uc
 
     @pytest.fixture
@@ -96,21 +81,17 @@ class TestHeatingOrchestrator:
         self,
         mock_calculate_anticipation: Mock,
         mock_control_preheating: Mock,
-        mock_schedule_preheating: Mock,
         mock_schedule_anticipation_action: Mock,
         mock_check_overshoot_risk: Mock,
         mock_update_cache: Mock,
-        mock_reset_learning: Mock,
     ) -> HeatingOrchestrator:
         """Create HeatingOrchestrator instance with mocked use cases."""
         return HeatingOrchestrator(
             calculate_anticipation=mock_calculate_anticipation,
             control_preheating=mock_control_preheating,
-            schedule_preheating=mock_schedule_preheating,
             schedule_anticipation_action=mock_schedule_anticipation_action,
             check_overshoot_risk=mock_check_overshoot_risk,
             update_cache=mock_update_cache,
-            reset_learning=mock_reset_learning,
         )
 
     @pytest.mark.asyncio
@@ -151,56 +132,18 @@ class TestHeatingOrchestrator:
         assert result == expected_data
 
     @pytest.mark.asyncio
-    async def test_enable_preheating_calculates_and_schedules(
-        self,
-        orchestrator: HeatingOrchestrator,
-        mock_calculate_anticipation: Mock,
-        mock_schedule_preheating: Mock,
-    ) -> None:
-        """Test that enable_preheating calculates anticipation and schedules timer."""
-        anticipated = datetime(2025, 2, 10, 9, 30, 0, tzinfo=timezone.utc)
-        mock_calculate_anticipation.calculate_anticipation_datas.return_value = {
-            "anticipated_start_time": anticipated,
-            "next_schedule_time": datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc),
-            "next_target_temperature": 21.0,
-            "scheduler_entity": "schedule.heating",
-        }
-
-        result = await orchestrator.enable_preheating()
-
-        mock_calculate_anticipation.calculate_anticipation_datas.assert_called_once()
-        mock_schedule_preheating.create_preheating_scheduler.assert_called_once()
-        assert result["anticipated_start_time"] == anticipated
-
-    @pytest.mark.asyncio
-    async def test_enable_preheating_skips_scheduling_when_no_data(
-        self,
-        orchestrator: HeatingOrchestrator,
-        mock_calculate_anticipation: Mock,
-        mock_schedule_preheating: Mock,
-    ) -> None:
-        """Test that enable_preheating skips scheduling when no valid data."""
-        mock_calculate_anticipation.calculate_anticipation_datas.return_value = {
-            "anticipated_start_time": None,
-        }
-
-        await orchestrator.enable_preheating()
-
-        mock_schedule_preheating.create_preheating_scheduler.assert_not_called()
-
-    @pytest.mark.asyncio
     async def test_disable_preheating_cancels_timer_and_preheating(
         self,
         orchestrator: HeatingOrchestrator,
         mock_control_preheating: Mock,
-        mock_schedule_preheating: Mock,
+        mock_schedule_anticipation_action: Mock,
     ) -> None:
         """Test that disable_preheating cancels timer and active preheating."""
         mock_control_preheating.is_preheating_active.return_value = True
 
         await orchestrator.disable_preheating(scheduler_entity_id="schedule.heating")
 
-        mock_schedule_preheating.cancel_preheating_scheduler.assert_called_once()
+        mock_schedule_anticipation_action.cancel_action.assert_called_once()
         mock_control_preheating.cancel_preheating.assert_called_once_with("schedule.heating")
 
     @pytest.mark.asyncio
@@ -208,39 +151,26 @@ class TestHeatingOrchestrator:
         self,
         orchestrator: HeatingOrchestrator,
         mock_control_preheating: Mock,
-        mock_schedule_preheating: Mock,
+        mock_schedule_anticipation_action: Mock,
     ) -> None:
         """Test that disable_preheating doesn't cancel preheating if not active."""
         mock_control_preheating.is_preheating_active.return_value = False
 
         await orchestrator.disable_preheating(scheduler_entity_id="schedule.heating")
 
-        mock_schedule_preheating.cancel_preheating_scheduler.assert_called_once()
+        mock_schedule_anticipation_action.cancel_action.assert_called_once()
         mock_control_preheating.cancel_preheating.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_cancel_preheating_delegates(
-        self,
-        orchestrator: HeatingOrchestrator,
-        mock_control_preheating: Mock,
-        mock_schedule_preheating: Mock,
-    ) -> None:
-        """Test that cancel_preheating cancels timer and preheating action."""
-        await orchestrator.cancel_preheating(scheduler_entity_id="schedule.heating")
-
-        mock_schedule_preheating.cancel_preheating_scheduler.assert_called_once()
-        mock_control_preheating.cancel_preheating.assert_called_once_with("schedule.heating")
 
     @pytest.mark.asyncio
     async def test_reset_all_learning_data_delegates(
         self,
         orchestrator: HeatingOrchestrator,
-        mock_reset_learning: Mock,
+        mock_update_cache: Mock,
     ) -> None:
-        """Test that reset_all_learning_data delegates to use case."""
+        """Test that reset_all_learning_data delegates to update_cache.reset_cache()."""
         await orchestrator.reset_all_learning_data(device_id="test_device")
 
-        mock_reset_learning.reset_all_learning_data.assert_called_once_with("test_device")
+        mock_update_cache.reset_cache.assert_called_once_with("test_device")
 
     def test_is_preheating_active_delegates(
         self,
