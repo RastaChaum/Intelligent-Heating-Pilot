@@ -13,14 +13,17 @@ from typing import TYPE_CHECKING
 
 from .use_cases import (
     CalculateAnticipationUseCase,
+    CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
     ResetLearningUseCase,
+    ScheduleAnticipationActionUseCase,
     SchedulePreheatingUseCase,
     UpdateCacheDataUseCase,
 )
 
 if TYPE_CHECKING:
     from datetime import datetime
+    from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +44,8 @@ class HeatingOrchestrator:
         calculate_anticipation: CalculateAnticipationUseCase,
         control_preheating: ControlPreheatingUseCase,
         schedule_preheating: SchedulePreheatingUseCase,
+        schedule_anticipation_action: ScheduleAnticipationActionUseCase,
+        check_overshoot_risk: CheckOvershootRiskUseCase,
         update_cache: UpdateCacheDataUseCase,
         reset_learning: ResetLearningUseCase,
     ) -> None:
@@ -50,6 +55,8 @@ class HeatingOrchestrator:
             calculate_anticipation: Use case for calculating anticipation data
             control_preheating: Use case for controlling preheating
             schedule_preheating: Use case for scheduling preheating timer
+            schedule_anticipation_action: Use case for scheduling anticipation actions
+            check_overshoot_risk: Use case for checking overshoot risk
             update_cache: Use case for updating cache
             reset_learning: Use case for resetting learning data
         """
@@ -57,6 +64,8 @@ class HeatingOrchestrator:
         self._calculate_anticipation = calculate_anticipation
         self._control_preheating = control_preheating
         self._schedule_preheating = schedule_preheating
+        self._schedule_anticipation_action = schedule_anticipation_action
+        self._check_overshoot_risk = check_overshoot_risk
         self._update_cache = update_cache
         self._reset_learning = reset_learning
 
@@ -121,7 +130,7 @@ class HeatingOrchestrator:
         # Schedule the timer
         await self._schedule_preheating.create_preheating_scheduler(
             anticipated_start=anticipation_data["anticipated_start_time"],
-            preheating_callback=preheating_callback,
+            preheating_callback=preheating_callback,  # type: ignore[arg-type]
         )
         _LOGGER.info(
             "Preheating enabled and scheduled for %s",
@@ -184,3 +193,122 @@ class HeatingOrchestrator:
             True if preheating is active, False otherwise
         """
         return self._control_preheating.is_preheating_active()
+
+    async def calculate_and_schedule_anticipation(
+        self, ihp_enabled: bool = True
+    ) -> dict[str, Any] | None:
+        """Calculate anticipation and optionally schedule preheating.
+
+        This method:
+        1. Calculates anticipation data using CalculateAnticipationUseCase
+        2. If valid data and IHP enabled, schedules preheating
+        3. If valid data and IHP disabled, ensures preheating is cancelled
+        4. Returns anticipation data for sensors
+
+        Args:
+            ihp_enabled: Whether IHP preheating is enabled. When False,
+                        cancels any active preheating but continues calculations.
+
+        Returns:
+            Dict with anticipation data for sensors, or None if error
+        """
+        _LOGGER.debug(
+            "Entering HeatingOrchestrator.calculate_and_schedule_anticipation(ihp_enabled=%s)",
+            ihp_enabled,
+        )
+
+        anticipation_data = await self._calculate_anticipation.calculate_anticipation_datas()
+
+        if not anticipation_data:
+            _LOGGER.debug("No anticipation data available")
+            _LOGGER.debug(
+                "Exiting HeatingOrchestrator.calculate_and_schedule_anticipation() -> no data"
+            )
+            return None
+
+        if anticipation_data.get("anticipated_start_time") is None:
+            _LOGGER.debug("No valid anticipation data - clearing state")
+            await self._schedule_preheating.cancel_preheating_scheduler()
+            if self._control_preheating.is_preheating_active():
+                scheduler_entity = self._control_preheating.get_active_scheduler_entity()
+                if scheduler_entity:
+                    await self._control_preheating.cancel_preheating(scheduler_entity)
+            _LOGGER.debug(
+                "Exiting HeatingOrchestrator.calculate_and_schedule_anticipation() -> clear_values"
+            )
+            return {"clear_values": True}
+
+        if not ihp_enabled:
+            _LOGGER.debug("IHP disabled - cancelling preheating if active")
+            if self._control_preheating.is_preheating_active():
+                scheduler_entity = (
+                    self._control_preheating.get_active_scheduler_entity()
+                    or anticipation_data.get("scheduler_entity")
+                )
+                if scheduler_entity:
+                    await self._control_preheating.cancel_preheating(scheduler_entity)
+            await self._schedule_preheating.cancel_preheating_scheduler()
+            _LOGGER.debug("Exiting calculate_and_schedule_anticipation() -> data")
+            return anticipation_data
+
+        if anticipation_data.get("anticipation_minutes") == 0:
+            _LOGGER.debug("Target reached - clearing anticipation state")
+            await self._schedule_preheating.cancel_preheating_scheduler()
+            if self._control_preheating.is_preheating_active():
+                scheduler_entity = (
+                    self._control_preheating.get_active_scheduler_entity()
+                    or anticipation_data.get("scheduler_entity")
+                )
+                if scheduler_entity:
+                    await self._control_preheating.cancel_preheating(scheduler_entity)
+            _LOGGER.debug("Exiting calculate_and_schedule_anticipation() -> data")
+            return anticipation_data
+
+        scheduler_entity = anticipation_data.get("scheduler_entity")
+        if not scheduler_entity:
+            _LOGGER.debug("No scheduler entity - skipping scheduling")
+            _LOGGER.debug("Exiting calculate_and_schedule_anticipation() -> data")
+            return anticipation_data
+
+        await self._schedule_anticipation_action.schedule_action(
+            anticipated_start=anticipation_data["anticipated_start_time"],
+            target_time=anticipation_data["next_schedule_time"],
+            target_temp=anticipation_data["next_target_temperature"],
+            scheduler_entity_id=scheduler_entity,
+            lhs=float(anticipation_data.get("learned_heating_slope") or 0.0),
+        )
+
+        _LOGGER.debug("Exiting HeatingOrchestrator.calculate_and_schedule_anticipation() -> data")
+        return anticipation_data
+
+    async def check_and_prevent_overshoot(self, scheduler_entity_id: str) -> bool:
+        """Check overshoot risk and cancel preheating if needed.
+
+        Args:
+            scheduler_entity_id: Scheduler entity to cancel if overshoot detected
+
+        Returns:
+            True if overshoot detected and cancellation triggered, False otherwise
+        """
+        _LOGGER.debug(
+            "Entering HeatingOrchestrator.check_and_prevent_overshoot(scheduler=%s)",
+            scheduler_entity_id,
+        )
+
+        if not self._control_preheating.is_preheating_active():
+            _LOGGER.debug("No active preheating - skipping overshoot check")
+            _LOGGER.debug("Exiting check_and_prevent_overshoot() -> False")
+            return False
+
+        overshoot_detected = await self._check_overshoot_risk.check_and_prevent_overshoot(
+            scheduler_entity_id=scheduler_entity_id
+        )
+
+        if overshoot_detected:
+            await self._schedule_preheating.cancel_preheating_scheduler()
+
+        _LOGGER.debug(
+            "Exiting HeatingOrchestrator.check_and_prevent_overshoot() -> %s",
+            overshoot_detected,
+        )
+        return overshoot_detected

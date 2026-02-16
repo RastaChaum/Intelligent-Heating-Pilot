@@ -17,8 +17,19 @@ from .application.heating_cycle_lifecycle_manager_factory import (
 )
 from .application.lhs_lifecycle_manager import LhsLifecycleManager
 from .application.lhs_lifecycle_manager_factory import LhsLifecycleManagerFactory
+from .application.orchestrator import HeatingOrchestrator
+from .application.use_cases import (
+    CalculateAnticipationUseCase,
+    CheckOvershootRiskUseCase,
+    ControlPreheatingUseCase,
+    ResetLearningUseCase,
+    ScheduleAnticipationActionUseCase,
+    SchedulePreheatingUseCase,
+    UpdateCacheDataUseCase,
+)
 from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN
 from .domain.interfaces.device_config_reader_interface import DeviceConfig
+from .domain.services import DeadTimeCalculationService, PredictionService
 from .infrastructure.adapters import (
     HAClimateCommander,
     HAClimateDataReader,
@@ -66,18 +77,19 @@ class HeatingApplication:
         _LOGGER.debug("Initializing HeatingApplication with injected DeviceConfig")
 
         self.hass = hass
-        self._entry_id = device_config.device_id  # Store entry ID for adapter creation
+        self._device_id = device_config.device_id  # Store entry ID for adapter creation
 
         # Store immutable device configuration
         self._device_config = device_config
 
         # Extract configuration from DeviceConfig (NOT from config_entry!)
         # This is the key change: we read from the injected value object
-        self._vtherm_entity = device_config.vtherm_entity_id
-        self._scheduler_entities = device_config.scheduler_entities
-        self._humidity_in = device_config.humidity_in_entity_id
-        self._humidity_out = device_config.humidity_out_entity_id
-        self._cloud_cover = device_config.cloud_cover_entity_id
+        self._vtherm_id = device_config.vtherm_entity_id
+        self._scheduler_ids = device_config.scheduler_entities
+        self._humidity_in_id = device_config.humidity_in_entity_id
+        self._humidity_out_id = device_config.humidity_out_entity_id
+        self._temperature_out_id = device_config.temperature_out_entity_id
+        self._cloud_cover_id = device_config.cloud_cover_entity_id
         self._data_retention_days = device_config.lhs_retention_days
         self._decision_mode = DECISION_MODE_SIMPLE
 
@@ -93,18 +105,21 @@ class HeatingApplication:
         self._ihp_enabled = device_config.ihp_enabled
 
         # Infrastructure adapters
-        self._model_storage: HALhsStorage | None = None
-        self._cycle_cache: HAHeatingCycleStorage | None = None
+        self._lhs_storage: HALhsStorage | None = None
+        self._cycle_storage: HAHeatingCycleStorage | None = None
         self._scheduler_reader: HASchedulerReader | None = None
         self._scheduler_commander: HASchedulerCommander | None = None
         self._climate_commander: HAClimateCommander | None = None
         self._environment_reader: HAEnvironmentReader | None = None
-        self._environment_context_reader: HAContextReader | None = None
+        self._context_reader: HAContextReader | None = None
         self._climate_data_reader: HAClimateDataReader | None = None
         self._timer_scheduler: HATimerScheduler | None = None
 
         # Application service
         self._app_service: HeatingApplicationService | None = None
+
+        # Orchestrator (coordinates use cases)
+        self._orchestrator: Any | None = None
 
         # Lifecycle managers
         self._heating_cycle_manager: HeatingCycleLifecycleManager | None = None
@@ -124,40 +139,40 @@ class HeatingApplication:
     async def async_load(self) -> None:
         """Load and initialize all components."""
         # Create infrastructure adapters
-        self._model_storage = HALhsStorage(
-            self.hass, self._entry_id, retention_days=self._data_retention_days
+        self._lhs_storage = HALhsStorage(
+            self.hass, self._device_id, retention_days=self._data_retention_days
         )
 
         # Create cycle cache for incremental cycle extraction
-        self._cycle_cache = HAHeatingCycleStorage(
-            self.hass, self._entry_id, retention_days=self._data_retention_days
+        self._cycle_storage = HAHeatingCycleStorage(
+            self.hass, self._device_id, retention_days=self._data_retention_days
         )
 
         self._scheduler_reader = HASchedulerReader(
             self.hass,
-            self._scheduler_entities,
-            vtherm_entity_id=self._vtherm_entity,
+            self._scheduler_ids,
+            vtherm_entity_id=self._vtherm_id,
         )
 
         self._scheduler_commander = HASchedulerCommander(self.hass)
 
-        self._climate_commander = HAClimateCommander(self.hass, self._vtherm_entity)
+        self._climate_commander = HAClimateCommander(self.hass, self._vtherm_id)
         self._environment_reader = HAEnvironmentReader(
             self.hass,
-            self._vtherm_entity,
-            outdoor_temp_entity_id=None,  # TODO: Add to config
-            humidity_in_entity_id=self._humidity_in,
-            humidity_out_entity_id=self._humidity_out,
-            cloud_cover_entity_id=self._cloud_cover,
+            self._vtherm_id,
+            outdoor_temp_entity_id=self._temperature_out_id,
+            humidity_in_entity_id=self._humidity_in_id,
+            humidity_out_entity_id=self._humidity_out_id,
+            cloud_cover_entity_id=self._cloud_cover_id,
         )
-        self._environment_context_reader = HAContextReader(
+        self._context_reader = HAContextReader(
             self.hass,
-            outdoor_temp_entity_id=None,  # TODO: Add to config
-            humidity_in_entity_id=self._humidity_in,
-            humidity_out_entity_id=self._humidity_out,
-            cloud_cover_entity_id=self._cloud_cover,
+            outdoor_temp_entity_id=self._temperature_out_id,
+            humidity_in_entity_id=self._humidity_in_id,
+            humidity_out_entity_id=self._humidity_out_id,
+            cloud_cover_entity_id=self._cloud_cover_id,
         )
-        self._climate_data_reader = HAClimateDataReader(self.hass, self._vtherm_entity)
+        self._climate_data_reader = HAClimateDataReader(self.hass, self._vtherm_id)
 
         # Create timer scheduler adapter
         self._timer_scheduler = HATimerScheduler(self.hass)
@@ -165,14 +180,14 @@ class HeatingApplication:
         # Create application service
         self._app_service = HeatingApplicationService(
             scheduler_reader=self._scheduler_reader,
-            model_storage=self._model_storage,
+            model_storage=self._lhs_storage,
             scheduler_commander=self._scheduler_commander,
             climate_commander=self._climate_commander,
             environment_reader=self._environment_reader,
             climate_data_reader=self._climate_data_reader,
-            environment_context_reader=self._environment_context_reader,
+            environment_context_reader=self._context_reader,
             timer_scheduler=self._timer_scheduler,
-            cycle_cache=self._cycle_cache,
+            cycle_cache=self._cycle_storage,
             history_lookback_days=self._data_retention_days,
             decision_mode=self._decision_mode,
             temp_delta_threshold=self._temp_delta_threshold,
@@ -189,13 +204,13 @@ class HeatingApplication:
             hass=self.hass,
             device_config=self._device_config,
             heating_cycle_service=self._app_service.get_heating_cycle_service(),
-            cycle_cache=self._cycle_cache,
+            cycle_cache=self._cycle_storage,
             timer_scheduler=self._timer_scheduler,
-            model_storage=self._model_storage,
+            model_storage=self._lhs_storage,
         )
 
         self._lhs_manager = LhsLifecycleManagerFactory.create(
-            model_storage=self._model_storage,
+            model_storage=self._lhs_storage,
             global_lhs_calculator=self._app_service.get_global_lhs_calculator(),
             contextual_lhs_calculator=self._app_service.get_contextual_lhs_calculator(),
             timer_scheduler=self._timer_scheduler,
@@ -204,22 +219,83 @@ class HeatingApplication:
         self._app_service.set_heating_cycle_lifecycle_manager(self._heating_cycle_manager)
         self._app_service.set_lhs_lifecycle_manager(self._lhs_manager)
 
+        # Create use cases for orchestrator
+        _LOGGER.debug("Creating use cases for orchestrator")
+
+        # Create services directly (they're simple domain services, not state-dependent)
+        prediction_service = PredictionService()
+        dead_time_calculator = DeadTimeCalculationService()
+
+        calculate_anticipation = CalculateAnticipationUseCase(
+            scheduler_reader=self._scheduler_reader,
+            environment_reader=self._environment_reader,
+            climate_data_reader=self._climate_data_reader,
+            heating_cycle_manager=self._heating_cycle_manager,
+            lhs_lifecycle_manager=self._lhs_manager,
+            prediction_service=prediction_service,
+            dead_time_calculator=dead_time_calculator,
+            auto_learning=self._auto_learning,
+            default_dead_time_minutes=self._dead_time_minutes,
+        )
+
+        control_preheating = ControlPreheatingUseCase(
+            scheduler_commander=self._scheduler_commander,
+        )
+
+        schedule_preheating = SchedulePreheatingUseCase(timer_scheduler=self._timer_scheduler)
+
+        schedule_anticipation_action = ScheduleAnticipationActionUseCase(
+            scheduler_reader=self._scheduler_reader,
+            scheduler_commander=self._scheduler_commander,
+            timer_scheduler=self._timer_scheduler,
+        )
+
+        check_overshoot_risk = CheckOvershootRiskUseCase(
+            scheduler_reader=self._scheduler_reader,
+            environment_reader=self._environment_reader,
+            climate_data_reader=self._climate_data_reader,
+            control_preheating=control_preheating,
+        )
+
+        update_cache = UpdateCacheDataUseCase(
+            cycle_storage=self._cycle_storage,
+            lhs_storage=self._lhs_storage,
+            lhs_lifecycle_manager=self._lhs_manager,
+        )
+
+        reset_learning = ResetLearningUseCase(
+            lhs_storage=self._lhs_storage,
+            cycle_storage=self._cycle_storage,
+        )
+
+        # Create orchestrator
+        self._orchestrator = HeatingOrchestrator(
+            calculate_anticipation=calculate_anticipation,
+            control_preheating=control_preheating,
+            schedule_preheating=schedule_preheating,
+            schedule_anticipation_action=schedule_anticipation_action,
+            check_overshoot_risk=check_overshoot_risk,
+            update_cache=update_cache,
+            reset_learning=reset_learning,
+        )
+        _LOGGER.debug("Orchestrator created successfully")
+
         # Create event bridge
         monitored_entities = []
-        if self._humidity_in:
-            monitored_entities.append(self._humidity_in)
-        if self._humidity_out:
-            monitored_entities.append(self._humidity_out)
-        if self._cloud_cover:
-            monitored_entities.append(self._cloud_cover)
+        if self._humidity_in_id:
+            monitored_entities.append(self._humidity_in_id)
+        if self._humidity_out_id:
+            monitored_entities.append(self._humidity_out_id)
+        if self._cloud_cover_id:
+            monitored_entities.append(self._cloud_cover_id)
 
         self._event_bridge = HAEventBridge(
             self.hass,
-            self._app_service,
-            self._vtherm_entity,
-            self._scheduler_entities,
+            self._orchestrator,
+            self._vtherm_id,
+            self._scheduler_ids,
             monitored_entities,
-            entry_id=self._entry_id,
+            entry_id=self._device_id,
             get_ihp_enabled_func=self.is_ihp_enabled,
         )
 
@@ -238,9 +314,9 @@ class HeatingApplication:
 
         _LOGGER.info(
             "[%s] Coordinator initialized (VTherm: %s, Schedulers: %d)",
-            self._entry_id,
-            self._vtherm_entity,
-            len(self._scheduler_entities),
+            self._device_id,
+            self._vtherm_id,
+            len(self._scheduler_ids),
         )
 
         # NOTE: Initial update is now deferred to async_setup_entry to avoid blocking
@@ -272,7 +348,7 @@ class HeatingApplication:
         - Schedules 24h periodic refresh timer
         - Logs initialization with retention days
         """
-        _LOGGER.debug("Entering _initialize_cycle_refresh for device=%s", self._entry_id)
+        _LOGGER.debug("Entering _initialize_cycle_refresh for device=%s", self._device_id)
 
         try:
             # Sanity checks
@@ -320,7 +396,7 @@ class HeatingApplication:
                 len(extracted_cycles),
             )
 
-            _LOGGER.debug("Exiting _initialize_cycle_refresh for device=%s", self._entry_id)
+            _LOGGER.debug("Exiting _initialize_cycle_refresh for device=%s", self._device_id)
 
         except Exception as err:  # pylint: disable=broad-except
             _LOGGER.warning("Failed to initialize cycle extraction: %s", err, exc_info=True)
@@ -389,11 +465,11 @@ class HeatingApplication:
 
     async def async_update(self) -> None:
         """Trigger anticipation calculation and cache results for sensors."""
-        if not self._app_service:
+        if not self._orchestrator:
             return
 
-        # Calculate and schedule via application service (passing IHP enabled state)
-        anticipation_data = await self._app_service.calculate_and_schedule_anticipation(
+        # Calculate and schedule via orchestrator (passing IHP enabled state)
+        anticipation_data = await self._orchestrator.calculate_and_schedule_anticipation(
             ihp_enabled=self._ihp_enabled
         )
 
@@ -412,7 +488,7 @@ class HeatingApplication:
                 self.hass.bus.async_fire(
                     f"{DOMAIN}_anticipation_calculated",
                     {
-                        "entry_id": self._entry_id,
+                        "entry_id": self._device_id,
                         "clear_values": True,
                     },
                 )
@@ -421,7 +497,7 @@ class HeatingApplication:
                 self.hass.bus.async_fire(
                     f"{DOMAIN}_anticipation_calculated",
                     {
-                        "entry_id": self._entry_id,
+                        "entry_id": self._device_id,
                         "anticipated_start_time": anticipation_data[
                             "anticipated_start_time"
                         ].isoformat(),
@@ -500,11 +576,11 @@ class HeatingApplication:
 
     def get_vtherm_entity(self) -> str:
         """Get VTherm entity ID."""
-        return self._vtherm_entity
+        return self._vtherm_id
 
     def get_scheduler_entities(self) -> list[str]:
         """Get scheduler entity IDs."""
-        return self._scheduler_entities[:]
+        return self._scheduler_ids[:]
 
     async def async_cleanup(self) -> None:
         """Cleanup coordinator resources.

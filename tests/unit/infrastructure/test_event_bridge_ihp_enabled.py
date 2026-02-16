@@ -14,9 +14,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.intelligent_heating_pilot.application import (
-    HeatingApplicationService,
-)
+from custom_components.intelligent_heating_pilot.application import HeatingOrchestrator
 from custom_components.intelligent_heating_pilot.infrastructure.event_bridge import (
     HAEventBridge,
 )
@@ -24,8 +22,8 @@ from custom_components.intelligent_heating_pilot.infrastructure.event_bridge imp
 
 @pytest.fixture
 def mock_app_service() -> Mock:
-    """Create mock application service."""
-    service = Mock(spec=HeatingApplicationService)
+    """Create mock orchestrator."""
+    service = Mock(spec=HeatingOrchestrator)
     service.calculate_and_schedule_anticipation = AsyncMock(return_value=None)
     return service
 
@@ -45,7 +43,7 @@ def event_bridge(
     """Create HAEventBridge instance for testing."""
     bridge = HAEventBridge(
         hass=hass,
-        application_service=mock_app_service,
+        orchestrator=mock_app_service,
         vtherm_entity_id="climate.bedroom",
         scheduler_entity_ids=["switch.bedroom_schedule"],
         monitored_entity_ids=["sensor.bedroom_humidity", "sensor.cloud_coverage"],
@@ -340,7 +338,7 @@ class TestEventBridgeMultipleSchedulers:
         get_ihp_enabled_mock.return_value = False
         bridge = HAEventBridge(
             hass=hass,
-            application_service=mock_app_service,
+            orchestrator=mock_app_service,
             vtherm_entity_id="climate.bedroom",
             scheduler_entity_ids=[
                 "switch.bedroom_schedule",
@@ -381,7 +379,7 @@ class TestEventBridgeMultipleSchedulers:
         get_ihp_enabled_mock.return_value = True
         bridge = HAEventBridge(
             hass=hass,
-            application_service=mock_app_service,
+            orchestrator=mock_app_service,
             vtherm_entity_id="climate.bedroom",
             scheduler_entity_ids=[
                 "switch.bedroom_schedule",
@@ -424,7 +422,7 @@ class TestEventBridgeNoCallableProvided:
         # GIVEN: Bridge created without get_ihp_enabled_func
         bridge = HAEventBridge(
             hass=hass,
-            application_service=mock_app_service,
+            orchestrator=mock_app_service,
             vtherm_entity_id="climate.bedroom",
             scheduler_entity_ids=["switch.bedroom_schedule"],
             entry_id="test_entry_123",

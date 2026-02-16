@@ -57,11 +57,11 @@ class ResetLearningUseCase:
         _LOGGER.info("Resetting all learned data (LHS + cycles) for device %s", device_id)
 
         # Reset learned heating slopes
-        await self._lhs_storage.clear_slopes_datas()
+        await self._lhs_storage.clear_slope_history()
         _LOGGER.info("Learned heating slopes have been reset")
 
         # Reset heating cycle cache
-        await self._cycle_storage.clear_heatingcycle_datas(device_id)
+        await self._cycle_storage.clear_cache(device_id)
         _LOGGER.info("Heating cycle cache has been reset")
 
         _LOGGER.info("All learning data has been reset for device %s", device_id)

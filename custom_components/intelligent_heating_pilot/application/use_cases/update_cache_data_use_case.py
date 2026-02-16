@@ -2,7 +2,7 @@
 
 This use case manages the heating cycle cache:
 - Get cache data
-- Update/prune cache  
+- Update/prune cache
 - Reset cache completely
 """
 
@@ -124,9 +124,9 @@ class UpdateCacheDataUseCase:
         # Prune old cycles
         await self._cycle_storage.prune_old_cycles(device_id, reference_time)
 
-        # Recalculate LHS after pruning (cycles have changed)
-        await self._lhs_manager.update_global_lhs_from_cache(device_id)
-        _LOGGER.info("LHS recalculated after pruning old cycles")
+        # Note: LHS is automatically updated when cycles change via event listeners
+        # No need to explicitly recalculate here
+        _LOGGER.info("Old cycles pruned, LHS will be recalculated automatically")
 
         _LOGGER.debug("Exiting UpdateCacheDataUseCase.prune_old_cycles()")
 
@@ -149,7 +149,7 @@ class UpdateCacheDataUseCase:
         _LOGGER.info("Heating cycle cache has been reset")
 
         # Clear LHS data
-        await self._lhs_storage.clear_slopes_datas()
+        await self._lhs_storage.clear_slope_history()
         _LOGGER.info("LHS data has been reset")
 
         _LOGGER.info("Cache and LHS have been reset for device %s", device_id)

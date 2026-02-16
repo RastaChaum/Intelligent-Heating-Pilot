@@ -146,10 +146,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if coordinator._app_service:
             await coordinator._app_service.reset_learned_slopes()
             # Refresh LHS cache
-            if coordinator._model_storage:
-                coordinator._lhs_cache = (
-                    await coordinator._model_storage.get_learned_heating_slope()
-                )
+            if coordinator._lhs_storage:
+                coordinator._lhs_cache = await coordinator._lhs_storage.get_learned_heating_slope()
 
     async def handle_calculate_anticipated_start_time(call: ServiceCall):
         """Handle calculate_anticipated_start_time service.
@@ -228,7 +226,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Use target_temp from service call, or fallback to VTherm's current target
         if target_temp is None:
             # Try to get target temp from VTherm
-            vtherm_state = hass.states.get(device_coordinator._vtherm_entity)
+            vtherm_state = hass.states.get(device_coordinator._vtherm_id)
             if vtherm_state:
                 target_temp = vtherm_state.attributes.get("temperature")
             if target_temp is None:

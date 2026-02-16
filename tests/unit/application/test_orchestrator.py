@@ -7,7 +7,7 @@ and delegates to them without changing behavior.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, Mock, PropertyMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -16,8 +16,10 @@ from custom_components.intelligent_heating_pilot.application.orchestrator import
 )
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     CalculateAnticipationUseCase,
+    CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
     ResetLearningUseCase,
+    ScheduleAnticipationActionUseCase,
     SchedulePreheatingUseCase,
     UpdateCacheDataUseCase,
 )
@@ -30,17 +32,19 @@ class TestHeatingOrchestrator:
     def mock_calculate_anticipation(self) -> Mock:
         """Create mock CalculateAnticipationUseCase."""
         uc = Mock(spec=CalculateAnticipationUseCase)
-        uc.calculate_anticipation_datas = AsyncMock(return_value={
-            "anticipated_start_time": None,
-            "next_schedule_time": None,
-            "next_target_temperature": None,
-            "anticipation_minutes": None,
-            "current_temp": None,
-            "learned_heating_slope": None,
-            "confidence_level": None,
-            "timeslot_id": None,
-            "scheduler_entity": None,
-        })
+        uc.calculate_anticipation_datas = AsyncMock(
+            return_value={
+                "anticipated_start_time": None,
+                "next_schedule_time": None,
+                "next_target_temperature": None,
+                "anticipation_minutes": None,
+                "current_temp": None,
+                "learned_heating_slope": None,
+                "confidence_level": None,
+                "timeslot_id": None,
+                "scheduler_entity": None,
+            }
+        )
         return uc
 
     @pytest.fixture
@@ -58,6 +62,20 @@ class TestHeatingOrchestrator:
         uc = Mock(spec=SchedulePreheatingUseCase)
         uc.create_preheating_scheduler = AsyncMock()
         uc.cancel_preheating_scheduler = AsyncMock()
+        return uc
+
+    @pytest.fixture
+    def mock_schedule_anticipation_action(self) -> Mock:
+        """Create mock ScheduleAnticipationActionUseCase."""
+        uc = Mock(spec=ScheduleAnticipationActionUseCase)
+        uc.schedule_action = AsyncMock()
+        return uc
+
+    @pytest.fixture
+    def mock_check_overshoot_risk(self) -> Mock:
+        """Create mock CheckOvershootRiskUseCase."""
+        uc = Mock(spec=CheckOvershootRiskUseCase)
+        uc.check_overshoot_risk = AsyncMock(return_value=False)
         return uc
 
     @pytest.fixture
@@ -79,6 +97,8 @@ class TestHeatingOrchestrator:
         mock_calculate_anticipation: Mock,
         mock_control_preheating: Mock,
         mock_schedule_preheating: Mock,
+        mock_schedule_anticipation_action: Mock,
+        mock_check_overshoot_risk: Mock,
         mock_update_cache: Mock,
         mock_reset_learning: Mock,
     ) -> HeatingOrchestrator:
@@ -87,6 +107,8 @@ class TestHeatingOrchestrator:
             calculate_anticipation=mock_calculate_anticipation,
             control_preheating=mock_control_preheating,
             schedule_preheating=mock_schedule_preheating,
+            schedule_anticipation_action=mock_schedule_anticipation_action,
+            check_overshoot_risk=mock_check_overshoot_risk,
             update_cache=mock_update_cache,
             reset_learning=mock_reset_learning,
         )

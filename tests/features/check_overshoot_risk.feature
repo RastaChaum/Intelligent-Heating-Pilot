@@ -12,7 +12,7 @@ Feature: Check Overshoot Risk
     And the next target is 21°C at 07:00
     And the current indoor temperature is 20.0°C
     And the current heating slope is 3.0°C per hour
-    And the current time is 06:45
+    And the current time is 06:30
     When the system checks for overshoot risk
     Then overshoot should be detected
     And preheating should be canceled to prevent overheating

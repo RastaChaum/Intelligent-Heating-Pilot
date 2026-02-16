@@ -1,7 +1,7 @@
-"""Home Assistant event bridge - translates HA events to application service calls.
+"""Home Assistant event bridge - translates HA events to orchestrator calls.
 
 This infrastructure component listens to HA entity state changes and delegates
-to the application service.
+to the orchestrator.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from .vtherm_compat import get_vtherm_attribute
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ..application import HeatingApplicationService
+    from ..application import HeatingOrchestrator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class HAEventBridge:
     def __init__(
         self,
         hass: HomeAssistant,
-        application_service: HeatingApplicationService,
+        orchestrator: HeatingOrchestrator,
         vtherm_entity_id: str,
         scheduler_entity_ids: list[str],
         monitored_entity_ids: list[str] | None = None,
@@ -48,7 +48,7 @@ class HAEventBridge:
 
         Args:
             hass: Home Assistant instance
-            application_service: Application service to delegate to
+            orchestrator: Orchestrator to delegate to
             vtherm_entity_id: VTherm entity to monitor for slopes
             scheduler_entity_ids: Scheduler entities to monitor
             monitored_entity_ids: Additional entities to monitor (humidity, etc.)
@@ -56,7 +56,7 @@ class HAEventBridge:
             get_ihp_enabled_func: Callback function to get current IHP enabled state
         """
         self._hass = hass
-        self._app_service = application_service
+        self._orchestrator = orchestrator
         self._vtherm_entity_id = vtherm_entity_id
         self._scheduler_entity_ids = scheduler_entity_ids
         self._monitored_entity_ids = monitored_entity_ids or []
@@ -136,14 +136,14 @@ class HAEventBridge:
     async def _recalculate_and_publish(self) -> None:
         """Recalculate anticipation and publish event for sensors.
 
-        Handles three response cases from application service:
+        Handles three response cases from orchestrator:
         1. None or empty dict: No data available, publish clear event
         2. {"clear_values": True}: Signal to clear sensors, publish clear event
         3. Full data dict: Publish complete anticipation data with all fields
         """
         _LOGGER.debug("Recalculating anticipation and publishing update")
 
-        anticipation_data = await self._app_service.calculate_and_schedule_anticipation(
+        anticipation_data = await self._orchestrator.calculate_and_schedule_anticipation(
             ihp_enabled=self._get_ihp_enabled()
         )
 

@@ -59,7 +59,7 @@ class SchedulePreheatingUseCase:
         # Schedule the new timer
         self._timer_cancel_callback = self._timer_scheduler.schedule_timer(
             anticipated_start,
-            preheating_callback,
+            preheating_callback,  # type: ignore[arg-type]
         )
 
         _LOGGER.info(

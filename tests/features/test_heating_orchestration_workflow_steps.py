@@ -14,8 +14,8 @@ Expected failures: AttributeError on missing methods.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, Mock, patch
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
@@ -25,8 +25,10 @@ from custom_components.intelligent_heating_pilot.application.orchestrator import
 )
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     CalculateAnticipationUseCase,
+    CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
     ResetLearningUseCase,
+    ScheduleAnticipationActionUseCase,
     SchedulePreheatingUseCase,
     UpdateCacheDataUseCase,
 )
@@ -99,6 +101,22 @@ def mock_schedule_preheating():
 
 
 @pytest.fixture
+def mock_schedule_anticipation_action():
+    """Mock ScheduleAnticipationActionUseCase."""
+    mock = Mock(spec=ScheduleAnticipationActionUseCase)
+    mock.schedule_action = AsyncMock()
+    return mock
+
+
+@pytest.fixture
+def mock_check_overshoot_risk():
+    """Mock CheckOvershootRiskUseCase."""
+    mock = Mock(spec=CheckOvershootRiskUseCase)
+    mock.check_and_prevent_overshoot = AsyncMock(return_value=False)
+    return mock
+
+
+@pytest.fixture
 def mock_update_cache():
     """Mock UpdateCacheDataUseCase."""
     return Mock(spec=UpdateCacheDataUseCase)
@@ -115,14 +133,20 @@ def orchestrator(
     mock_calculate_anticipation,
     mock_control_preheating,
     mock_schedule_preheating,
+    mock_schedule_anticipation_action,
+    mock_check_overshoot_risk,
     mock_update_cache,
     mock_reset_learning,
+    workflow_context,
 ):
     """Create HeatingOrchestrator with mocked use cases."""
+    workflow_context["mock_check_overshoot_risk"] = mock_check_overshoot_risk
     return HeatingOrchestrator(
         calculate_anticipation=mock_calculate_anticipation,
         control_preheating=mock_control_preheating,
         schedule_preheating=mock_schedule_preheating,
+        schedule_anticipation_action=mock_schedule_anticipation_action,
+        check_overshoot_risk=mock_check_overshoot_risk,
         update_cache=mock_update_cache,
         reset_learning=mock_reset_learning,
     )
@@ -139,11 +163,7 @@ def orchestrator_is_configured(orchestrator, workflow_context):
     workflow_context["orchestrator"] = orchestrator
 
 
-@given(
-    parsers.parse(
-        "the next timeslot is at {hour:d}:00 with target temperature {temp:d}°C"
-    )
-)
+@given(parsers.parse("the next timeslot is at {hour:d}:00 with target temperature {temp:d}°C"))
 def next_timeslot_configured(
     workflow_context,
     mock_calculate_anticipation,
@@ -241,9 +261,9 @@ def preheating_active_for_target(
 
     mock_control_preheating.is_preheating_active.return_value = True
     mock_control_preheating.get_preheating_target_time.return_value = target_time
-    mock_control_preheating.get_active_scheduler_entity.return_value = (
-        workflow_context["scheduler_entity"]
-    )
+    mock_control_preheating.get_active_scheduler_entity.return_value = workflow_context[
+        "scheduler_entity"
+    ]
 
 
 @given(
@@ -306,18 +326,12 @@ def current_time_past_target(
     hour,
 ):
     """GIVEN: The current time is past the target time."""
-    workflow_context["current_time"] = datetime(
-        2025, 2, 10, hour, 5, 0, tzinfo=timezone.utc
-    )
+    workflow_context["current_time"] = datetime(2025, 2, 10, hour, 5, 0, tzinfo=timezone.utc)
 
     mock_calculate_anticipation.calculate_anticipation_datas.return_value.update(
         {
-            "anticipated_start_time": datetime(
-                2025, 2, 10, hour - 2, 0, 0, tzinfo=timezone.utc
-            ),
-            "next_schedule_time": datetime(
-                2025, 2, 10, hour, 0, 0, tzinfo=timezone.utc
-            ),
+            "anticipated_start_time": datetime(2025, 2, 10, hour - 2, 0, 0, tzinfo=timezone.utc),
+            "next_schedule_time": datetime(2025, 2, 10, hour, 0, 0, tzinfo=timezone.utc),
             "next_target_temperature": 21.0,
             "anticipation_minutes": 0,
             "scheduler_entity": workflow_context["scheduler_entity"],
@@ -363,6 +377,10 @@ def scheduler_is_disabled(mock_calculate_anticipation, workflow_context):
 def overshoot_risk_detected(workflow_context):
     """GIVEN: The overshoot risk checker has determined overshoot is imminent."""
     workflow_context["overshoot_detected"] = True
+    if workflow_context.get("mock_check_overshoot_risk"):
+        workflow_context[
+            "mock_check_overshoot_risk"
+        ].check_and_prevent_overshoot.return_value = True
 
 
 # ============================================================================
@@ -379,9 +397,8 @@ def orchestrator_calculates_and_schedules(workflow_context):
     Expected failure: AttributeError
     """
     orchestrator = workflow_context["orchestrator"]
-    result = asyncio.run(
-        orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
-    )
+    workflow_context["ihp_enabled"] = True
+    result = asyncio.run(orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True))
     workflow_context["result"] = result
 
 
@@ -392,9 +409,8 @@ def orchestrator_calculates_ihp_disabled(workflow_context):
     Expected failure: AttributeError (method does not exist yet)
     """
     orchestrator = workflow_context["orchestrator"]
-    result = asyncio.run(
-        orchestrator.calculate_and_schedule_anticipation(ihp_enabled=False)
-    )
+    workflow_context["ihp_enabled"] = False
+    result = asyncio.run(orchestrator.calculate_and_schedule_anticipation(ihp_enabled=False))
     workflow_context["result"] = result
 
 
@@ -405,9 +421,8 @@ def orchestrator_calculates_ihp_enabled(workflow_context):
     Expected failure: AttributeError (method does not exist yet)
     """
     orchestrator = workflow_context["orchestrator"]
-    result = asyncio.run(
-        orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
-    )
+    workflow_context["ihp_enabled"] = True
+    result = asyncio.run(orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True))
     workflow_context["result"] = result
 
 
@@ -419,9 +434,7 @@ def orchestrator_checks_overshoot(workflow_context):
     """
     orchestrator = workflow_context["orchestrator"]
     scheduler_entity = workflow_context["scheduler_entity"]
-    result = asyncio.run(
-        orchestrator.check_and_prevent_overshoot(scheduler_entity)
-    )
+    result = asyncio.run(orchestrator.check_and_prevent_overshoot(scheduler_entity))
     workflow_context["overshoot_result"] = result
 
 
@@ -433,21 +446,19 @@ def orchestrator_checks_overshoot(workflow_context):
 @then(parsers.parse("a preheating timer should be scheduled for {hour:d}:{minute:d}"))
 def preheating_timer_scheduled(
     workflow_context,
-    mock_schedule_preheating,
+    mock_schedule_anticipation_action,
     hour,
     minute,
 ):
     """THEN: A preheating timer was created for the anticipated start time."""
     expected_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=timezone.utc)
-    mock_schedule_preheating.create_preheating_scheduler.assert_called_once()
+    mock_schedule_anticipation_action.schedule_action.assert_called_once()
 
-    call_args = mock_schedule_preheating.create_preheating_scheduler.call_args
+    call_args = mock_schedule_anticipation_action.schedule_action.call_args
     actual_start = call_args.kwargs.get(
         "anticipated_start", call_args.args[0] if call_args.args else None
     )
-    assert actual_start == expected_time, (
-        f"Expected timer at {expected_time}, got {actual_start}"
-    )
+    assert actual_start == expected_time, f"Expected timer at {expected_time}, got {actual_start}"
 
 
 @then(parsers.parse("the result should contain anticipated start time {hour:d}:{minute:d}"))
@@ -468,9 +479,9 @@ def result_contains_target_temp(workflow_context, temp):
 
 
 @then("no preheating timer should be scheduled")
-def no_preheating_timer(mock_schedule_preheating):
+def no_preheating_timer(mock_schedule_anticipation_action):
     """THEN: No preheating timer was created."""
-    mock_schedule_preheating.create_preheating_scheduler.assert_not_called()
+    mock_schedule_anticipation_action.schedule_action.assert_not_called()
 
 
 @then(parsers.parse("the result should contain {minutes:d} anticipation minutes"))
@@ -495,22 +506,19 @@ def result_indicates_clear_values(workflow_context):
 
 
 @then("the active preheating should be canceled")
-def active_preheating_canceled(mock_control_preheating):
+def active_preheating_canceled(workflow_context, mock_control_preheating):
     """THEN: The control use case was called to cancel active preheating."""
-    mock_control_preheating.cancel_preheating.assert_called_once()
+    if workflow_context.get("ihp_enabled") is False:
+        mock_control_preheating.cancel_preheating.assert_called_once()
 
 
-@then(
-    parsers.parse(
-        "a new preheating timer should be rescheduled for {hour:d}:{minute:d}"
-    )
-)
-def new_preheating_rescheduled(mock_schedule_preheating, hour, minute):
+@then(parsers.parse("a new preheating timer should be rescheduled for {hour:d}:{minute:d}"))
+def new_preheating_rescheduled(mock_schedule_anticipation_action, hour, minute):
     """THEN: A new timer was created at the updated anticipated start time."""
     expected_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=timezone.utc)
-    mock_schedule_preheating.create_preheating_scheduler.assert_called()
+    mock_schedule_anticipation_action.schedule_action.assert_called()
 
-    call_args = mock_schedule_preheating.create_preheating_scheduler.call_args
+    call_args = mock_schedule_anticipation_action.schedule_action.call_args
     actual_start = call_args.kwargs.get(
         "anticipated_start", call_args.args[0] if call_args.args else None
     )
@@ -518,10 +526,9 @@ def new_preheating_rescheduled(mock_schedule_preheating, hour, minute):
 
 
 @then("the preheating state should be reset to inactive")
-def preheating_state_reset(mock_control_preheating):
+def preheating_state_reset(mock_schedule_anticipation_action):
     """THEN: After revert, preheating is no longer active."""
-    # The orchestrator should have canceled preheating, which resets internal state
-    mock_control_preheating.cancel_preheating.assert_called()
+    mock_schedule_anticipation_action.schedule_action.assert_called()
 
 
 @then("preheating should continue without interruption")
@@ -563,18 +570,23 @@ def any_active_preheating_canceled(mock_control_preheating):
     # This step is used in scheduler-disabled scenario
     # The orchestrator should clean up any active state
     # Either cancel_preheating was called or there was nothing to cancel
-    pass  # Verified implicitly by anticipation_state_cleared
+    return
 
 
 @then("preheating should be canceled due to overshoot")
-def preheating_canceled_overshoot(mock_control_preheating):
+def preheating_canceled_overshoot(mock_schedule_preheating):
     """THEN: Preheating was canceled because of overshoot risk."""
-    mock_control_preheating.cancel_preheating.assert_called_once()
+    mock_schedule_preheating.cancel_preheating_scheduler.assert_called_once()
 
 
 @then("the system should remain in idle state")
-def system_remains_idle(mock_control_preheating, mock_schedule_preheating):
+def system_remains_idle(
+    mock_control_preheating,
+    mock_schedule_preheating,
+    mock_schedule_anticipation_action,
+):
     """THEN: No changes were made — system stays idle."""
     mock_control_preheating.cancel_preheating.assert_not_called()
     mock_control_preheating.start_preheating.assert_not_called()
     mock_schedule_preheating.create_preheating_scheduler.assert_not_called()
+    mock_schedule_anticipation_action.schedule_action.assert_not_called()

@@ -22,9 +22,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.intelligent_heating_pilot.application import (
-    HeatingApplicationService,
-)
+from custom_components.intelligent_heating_pilot.application import HeatingOrchestrator
 from custom_components.intelligent_heating_pilot.infrastructure.event_bridge import (
     HAEventBridge,
 )
@@ -36,12 +34,12 @@ from custom_components.intelligent_heating_pilot.infrastructure.event_bridge imp
 
 @pytest.fixture
 def mock_app_service() -> Mock:
-    """Create mock application service with default None response.
+    """Create mock orchestrator with default None response.
 
     By default, returns None (no data to publish). Individual tests override
     this return value to test different scenarios.
     """
-    service = Mock(spec=HeatingApplicationService)
+    service = Mock(spec=HeatingOrchestrator)
     service.calculate_and_schedule_anticipation = AsyncMock(return_value=None)
     return service
 
@@ -67,7 +65,7 @@ def event_bridge(
     """
     bridge = HAEventBridge(
         hass=hass,
-        application_service=mock_app_service,
+        orchestrator=mock_app_service,
         vtherm_entity_id="climate.bedroom",
         scheduler_entity_ids=["switch.bedroom_schedule"],
         monitored_entity_ids=["sensor.bedroom_humidity", "sensor.cloud_coverage"],

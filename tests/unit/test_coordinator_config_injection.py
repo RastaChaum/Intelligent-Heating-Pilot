@@ -174,7 +174,7 @@ class TestCoordinatorUsesInjectedConfig:
         )
 
         # THEN: Coordinator should use value from DeviceConfig
-        assert coordinator._vtherm_entity == "climate.injected_vtherm"
+        assert coordinator._vtherm_id == "climate.injected_vtherm"
 
     def test_coordinator_extracts_scheduler_entities_from_device_config(
         self, mock_hass: Mock, mock_config_entry: Mock, sample_device_config: DeviceConfig
@@ -205,7 +205,7 @@ class TestCoordinatorUsesInjectedConfig:
         )
 
         # THEN: Should use DeviceConfig values
-        assert coordinator._scheduler_entities == ["switch.injected_1", "switch.injected_2"]
+        assert coordinator._scheduler_ids == ["switch.injected_1", "switch.injected_2"]
 
     def test_coordinator_extracts_all_optional_sensors_from_device_config(
         self, mock_hass: Mock, mock_config_entry: Mock
@@ -245,9 +245,9 @@ class TestCoordinatorUsesInjectedConfig:
         )
 
         # THEN: Should use DeviceConfig values
-        assert coordinator._humidity_in == "sensor.injected_humidity_in"
-        assert coordinator._humidity_out == "sensor.injected_humidity_out"
-        assert coordinator._cloud_cover == "sensor.injected_cloud_cover"
+        assert coordinator._humidity_in_id == "sensor.injected_humidity_in"
+        assert coordinator._humidity_out_id == "sensor.injected_humidity_out"
+        assert coordinator._cloud_cover_id == "sensor.injected_cloud_cover"
 
 
 class TestCoordinatorUsesAllDeviceConfigParameters:
@@ -442,9 +442,9 @@ class TestCoordinatorAsyncLoadUsesDeviceConfig:
 
         # THEN: Coordinator should store all DeviceConfig values as instance variables
         # which will be used by async_load to create adapters with correct parameters
-        assert coordinator._vtherm_entity == "climate.specific_vtherm"
-        assert coordinator._scheduler_entities == ["switch.specific_schedule"]
-        assert coordinator._humidity_in == "sensor.specific_humidity_in"
+        assert coordinator._vtherm_id == "climate.specific_vtherm"
+        assert coordinator._scheduler_ids == ["switch.specific_schedule"]
+        assert coordinator._humidity_in_id == "sensor.specific_humidity_in"
         assert coordinator._data_retention_days == 90  # From lhs_retention_days
         assert coordinator._dead_time_minutes == 25.0
         assert coordinator._auto_learning is True

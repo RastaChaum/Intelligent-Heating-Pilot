@@ -10,15 +10,19 @@ the HeatingOrchestrator to implement complex workflows.
 from __future__ import annotations
 
 from .calculate_anticipation_use_case import CalculateAnticipationUseCase
+from .check_overshoot_risk_use_case import CheckOvershootRiskUseCase
 from .control_preheating_use_case import ControlPreheatingUseCase
 from .reset_learning_use_case import ResetLearningUseCase
+from .schedule_anticipation_action_use_case import ScheduleAnticipationActionUseCase
 from .schedule_preheating_use_case import SchedulePreheatingUseCase
 from .update_cache_data_use_case import UpdateCacheDataUseCase
 
 __all__ = [
     "CalculateAnticipationUseCase",
+    "CheckOvershootRiskUseCase",
     "ControlPreheatingUseCase",
     "ResetLearningUseCase",
+    "ScheduleAnticipationActionUseCase",
     "SchedulePreheatingUseCase",
     "UpdateCacheDataUseCase",
 ]
