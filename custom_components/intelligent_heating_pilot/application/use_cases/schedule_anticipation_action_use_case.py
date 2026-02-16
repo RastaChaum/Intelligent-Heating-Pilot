@@ -34,6 +34,7 @@ class ScheduleAnticipationActionUseCase:
         scheduler_reader: ISchedulerReader,
         scheduler_commander: ISchedulerCommander,
         timer_scheduler: ITimerScheduler,
+        control_preheating_use_case,  # ControlPreheatingUseCase (avoid circular import)
     ) -> None:
         """Initialize the use case.
 
@@ -41,42 +42,29 @@ class ScheduleAnticipationActionUseCase:
             scheduler_reader: Reads scheduler state
             scheduler_commander: Triggers scheduler actions
             timer_scheduler: Schedules timer callbacks
+            control_preheating_use_case: Use case for managing preheating state
         """
         _LOGGER.debug("Initializing ScheduleAnticipationActionUseCase")
         self._scheduler_reader = scheduler_reader
         self._scheduler_commander = scheduler_commander
         self._timer_scheduler = timer_scheduler
+        self._control_preheating = control_preheating_use_case
 
-        # State tracking for preheating
-        self._is_preheating_active = False
-        self._preheating_target_time: datetime | None = None
-        self._preheating_target_temp: float | None = None
+        # Scheduling-specific state (not preheating state - delegated to ControlPreheatingUseCase)
         self._last_scheduled_time: datetime | None = None
         self._last_scheduled_lhs: float | None = None
-        self._active_scheduler_entity: str | None = None
         self._anticipation_timer_cancel: Callable[[], None] | None = None
+        self._preheating_target_temp: float | None = None  # Temp only (time/active delegated)
 
-    def set_preheating_state(
-        self,
-        is_active: bool,
-        target_time: datetime | None = None,
-        target_temp: float | None = None,
-    ) -> None:
-        """Update preheating tracking state.
+    def set_preheating_temp(self, target_temp: float | None) -> None:
+        """Update preheating target temperature.
+
+        Note: Preheating state (active, target_time) is managed by ControlPreheatingUseCase.
 
         Args:
-            is_active: Whether preheating is active
-            target_time: Target time for preheating
             target_temp: Target temperature
         """
-        _LOGGER.debug(
-            "Setting preheating state: active=%s, target_time=%s, target_temp=%.1f",
-            is_active,
-            target_time.isoformat() if target_time else None,
-            target_temp or 0.0,
-        )
-        self._is_preheating_active = is_active
-        self._preheating_target_time = target_time
+        _LOGGER.debug("Setting preheating target temp: %.1f", target_temp or 0.0)
         self._preheating_target_temp = target_temp
 
     async def schedule_action(
@@ -117,17 +105,15 @@ class ScheduleAnticipationActionUseCase:
                 "Scheduler %s is disabled. Skipping anticipation scheduling.",
                 scheduler_entity_id,
             )
-            if self._active_scheduler_entity == scheduler_entity_id:
+            active_scheduler = self._control_preheating.get_active_scheduler_entity()
+            if active_scheduler == scheduler_entity_id:
                 await self._clear_state()
             return
 
-        # Track scheduler entity for later disable detection
-        if self._active_scheduler_entity != scheduler_entity_id:
-            self._active_scheduler_entity = scheduler_entity_id
-
         # Handle revert logic: if LHS improved, cancel active preheating and reschedule
-        if self._is_preheating_active:
-            if anticipated_start > now and self._preheating_target_time == target_time:
+        if self._control_preheating.is_preheating_active():
+            preheating_target = self._control_preheating.get_preheating_target_time()
+            if anticipated_start > now and preheating_target == target_time:
                 _LOGGER.info(
                     "Anticipated start moved later (now: %s, new start: %s). "
                     "LHS improved from %.2f to %.2f°C/h. Reverting and rescheduling.",
@@ -137,12 +123,11 @@ class ScheduleAnticipationActionUseCase:
                     lhs,
                 )
 
-                await self._scheduler_commander.cancel_action(scheduler_entity_id)
+                # Delegate cancellation to ControlPreheatingUseCase
+                await self._control_preheating.cancel_preheating(scheduler_entity_id)
 
                 self._last_scheduled_time = anticipated_start
                 self._last_scheduled_lhs = lhs
-                self._is_preheating_active = False
-                self._preheating_target_time = None
 
                 # Schedule timer for new anticipated time
                 await self._schedule_timer(
@@ -276,44 +261,55 @@ class ScheduleAnticipationActionUseCase:
             await self._clear_state()
             return
 
-        # Trigger via scheduler
-        await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
-
-        # Mark as active
-        self._is_preheating_active = True
-        self._preheating_target_time = target_time
-        self._active_scheduler_entity = scheduler_entity_id
+        # Delegate to ControlPreheatingUseCase
+        await self._control_preheating.start_preheating(
+            target_time, target_temp, scheduler_entity_id
+        )
+        self._preheating_target_temp = target_temp
 
         _LOGGER.debug("Action triggered successfully")
 
     async def _cancel_timer(self) -> None:
-        """Cancel any active timer."""
+        """Cancel any active timer.
+        
+        Note: Does NOT clear _preheating_target_time - that's preserved for state tracking.
+        """
         _LOGGER.debug("Entering cancel_timer")
         if self._anticipation_timer_cancel:
             _LOGGER.debug("Canceling active timer")
             self._anticipation_timer_cancel()
             self._anticipation_timer_cancel = None
+            # Note: Timer cancelled but target_time preserved (as per review feedback)
         _LOGGER.debug("Exiting cancel_timer")
 
     async def _clear_state(self) -> None:
         """Clear all tracking state."""
         _LOGGER.debug("Clearing anticipation state")
         await self._cancel_timer()
-        self._is_preheating_active = False
-        self._preheating_target_time = None
+        # Clear scheduling-specific state
         self._preheating_target_temp = None
-        self._active_scheduler_entity = None
         self._last_scheduled_time = None
         self._last_scheduled_lhs = None
+        # Note: Preheating active/target_time managed by ControlPreheatingUseCase
+
+    async def cancel_action(self) -> None:
+        """Cancel any active timer and clear state.
+        
+        Called by orchestrator when disabling preheating or when conditions change.
+        """
+        _LOGGER.debug("Canceling anticipation action")
+        await self._cancel_timer()
 
     def get_preheating_state(self) -> tuple[bool, datetime | None, float | None]:
         """Get current preheating state.
+
+        Delegates to ControlPreheatingUseCase for state queries.
 
         Returns:
             Tuple of (is_active, target_time, target_temp)
         """
         return (
-            self._is_preheating_active,
-            self._preheating_target_time,
+            self._control_preheating.is_preheating_active(),
+            self._control_preheating.get_preheating_target_time(),
             self._preheating_target_temp,
         )

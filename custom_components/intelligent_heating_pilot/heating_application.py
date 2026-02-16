@@ -229,12 +229,11 @@ class HeatingApplication:
             scheduler_commander=self._scheduler_commander,
         )
 
-        schedule_preheating = SchedulePreheatingUseCase(timer_scheduler=self._timer_scheduler)
-
         schedule_anticipation_action = ScheduleAnticipationActionUseCase(
             scheduler_reader=self._scheduler_reader,
             scheduler_commander=self._scheduler_commander,
             timer_scheduler=self._timer_scheduler,
+            control_preheating_use_case=control_preheating,  # Delegate state management
         )
 
         check_overshoot_risk = CheckOvershootRiskUseCase(
@@ -250,20 +249,13 @@ class HeatingApplication:
             lhs_lifecycle_manager=self._lhs_manager,
         )
 
-        reset_learning = ResetLearningUseCase(
-            lhs_storage=self._lhs_storage,
-            cycle_storage=self._cycle_storage,
-        )
-
         # Create orchestrator
         self._orchestrator = HeatingOrchestrator(
             calculate_anticipation=calculate_anticipation,
             control_preheating=control_preheating,
-            schedule_preheating=schedule_preheating,
             schedule_anticipation_action=schedule_anticipation_action,
             check_overshoot_risk=check_overshoot_risk,
             update_cache=update_cache,
-            reset_learning=reset_learning,
         )
         _LOGGER.debug("Orchestrator created successfully")
 
