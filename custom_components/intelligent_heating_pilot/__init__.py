@@ -142,19 +142,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Register services
     async def handle_reset_learning(call):
-        """Handle reset_learning service."""
-        if coordinator._app_service:
-            await coordinator._app_service.reset_learned_slopes()
-            # Refresh LHS cache
-            if coordinator._lhs_storage:
-                coordinator._lhs_cache = await coordinator._lhs_storage.get_learned_heating_slope()
+        """Handle reset_learning service.
+        
+        Delegates to orchestrator - no business logic here.
+        """
+        await coordinator._orchestrator.reset_all_learning_data()
 
     async def handle_calculate_anticipated_start_time(call: ServiceCall):
         """Handle calculate_anticipated_start_time service.
 
         This service calculates the anticipated start time for a given IHP device
-        to reach a target temperature at a specified time. It uses the device's
-        learned heating slope and current environmental data.
+        to reach a target temperature at a specified time.
+        
+        Delegates to orchestrator's calculate_anticipation_only() - no business logic here.
         """
         _LOGGER.debug("Entering handle_calculate_anticipated_start_time")
 
@@ -213,17 +213,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.error("Invalid coordinator for entry_id: %s", entry_id_found)
             return
 
-        # Get current environment
-        if not device_coordinator._environment_reader:
-            _LOGGER.error("Environment reader not available for device")
-            return
-
-        environment = await device_coordinator._environment_reader.get_current_environment()
-        if not environment:
-            _LOGGER.error("Could not read current environment")
-            return
-
-        # Use target_temp from service call, or fallback to VTherm's current target
+        # Get target_temp from service call or VTherm
         if target_temp is None:
             # Try to get target temp from VTherm
             vtherm_state = hass.states.get(device_coordinator._vtherm_id)
@@ -235,51 +225,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         target_temp = float(target_temp)
 
-        # Get learned heating slope (contextual)
-        if not device_coordinator._app_service:
-            _LOGGER.error("Application service not available for device")
-            return
-
-        lhs = await device_coordinator._app_service._get_contextual_lhs(target_time)
-
-        # Calculate anticipated start time using prediction service
-        from .domain.services import PredictionService
-
-        prediction_service = PredictionService()
-
-        prediction = prediction_service.predict_heating_time(
-            current_temp=environment.indoor_temperature,
-            target_temp=target_temp,
-            outdoor_temp=environment.outdoor_temp,
-            humidity=environment.indoor_humidity,
-            learned_slope=lhs,
+        # Delegate to orchestrator (pure routing - no business logic)
+        anticipation_data = await device_coordinator._orchestrator.calculate_anticipation_only(
             target_time=target_time,
-            cloud_coverage=environment.cloud_coverage,
+            target_temp=target_temp,
         )
+
+        # Extract fields from anticipation_data (which is already structured)
+        anticipated_start_time = anticipation_data.get("anticipated_start_time")
+        if anticipated_start_time is None:
+            _LOGGER.warning(
+                "Could not calculate anticipated start time (insufficient data)"
+            )
+            # Return structure with None values
+            return {
+                "anticipated_start_time": None,
+                "target_time": target_time.isoformat(),
+                "target_temp": target_temp,
+                "current_temp": anticipation_data.get("current_temp"),
+                "estimated_duration_minutes": None,
+                "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
+                "confidence_level": None,
+            }
 
         _LOGGER.info(
             "Service calculate_anticipated_start_time: "
             "anticipated_start=%s, target_time=%s, target_temp=%.1f°C, "
             "current_temp=%.1f°C, LHS=%.2f°C/h, confidence=%.2f",
-            prediction.anticipated_start_time.isoformat(),
+            anticipated_start_time.isoformat(),
             target_time.isoformat(),
             target_temp,
-            environment.indoor_temperature,
-            prediction.learned_heating_slope,
-            prediction.confidence_level,
+            anticipation_data.get("current_temp") or 0.0,
+            anticipation_data.get("learned_heating_slope") or 0.0,
+            anticipation_data.get("confidence_level") or 0.0,
         )
 
         # Return the result as service response data
-        # Note: Service responses are only available in HA 2023.7+
-        # For older versions, this will just log the result
         return {
-            "anticipated_start_time": prediction.anticipated_start_time.isoformat(),
+            "anticipated_start_time": anticipated_start_time.isoformat(),
             "target_time": target_time.isoformat(),
             "target_temp": target_temp,
-            "current_temp": environment.indoor_temperature,
-            "estimated_duration_minutes": prediction.estimated_duration_minutes,
-            "learned_heating_slope": prediction.learned_heating_slope,
-            "confidence_level": prediction.confidence_level,
+            "current_temp": anticipation_data.get("current_temp"),
+            "estimated_duration_minutes": anticipation_data.get("estimated_duration_minutes"),
+            "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
+            "confidence_level": anticipation_data.get("confidence_level"),
         }
 
     # Define service schema
