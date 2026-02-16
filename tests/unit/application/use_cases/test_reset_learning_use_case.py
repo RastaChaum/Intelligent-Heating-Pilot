@@ -25,20 +25,18 @@ class TestResetLearningUseCase:
     def mock_lhs_storage(self) -> Mock:
         """Create mock ILhsStorage."""
         storage = Mock()
-        storage.clear_slopes_datas = AsyncMock()
+        storage.clear_slope_history = AsyncMock()
         return storage
 
     @pytest.fixture
     def mock_cycle_storage(self) -> Mock:
         """Create mock IHeatingCycleStorage."""
         storage = Mock()
-        storage.clear_heatingcycle_datas = AsyncMock()
+        storage.clear_cache = AsyncMock()
         return storage
 
     @pytest.fixture
-    def use_case(
-        self, mock_lhs_storage: Mock, mock_cycle_storage: Mock
-    ) -> ResetLearningUseCase:
+    def use_case(self, mock_lhs_storage: Mock, mock_cycle_storage: Mock) -> ResetLearningUseCase:
         """Create ResetLearningUseCase instance."""
         return ResetLearningUseCase(mock_lhs_storage, mock_cycle_storage)
 
@@ -60,8 +58,8 @@ class TestResetLearningUseCase:
         await use_case.reset_all_learning_data(device_id)
 
         # THEN: Both storages are cleared
-        mock_lhs_storage.clear_slopes_datas.assert_called_once()
-        mock_cycle_storage.clear_heatingcycle_datas.assert_called_once_with(device_id)
+        mock_lhs_storage.clear_slope_history.assert_called_once()
+        mock_cycle_storage.clear_cache.assert_called_once_with(device_id)
 
     @pytest.mark.asyncio
     async def test_execute_no_return_value(

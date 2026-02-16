@@ -37,7 +37,7 @@ class TestUpdateCacheDataUseCase:
     def mock_lhs_storage(self) -> Mock:
         """Create mock ILhsStorage."""
         storage = Mock()
-        storage.clear_slopes_datas = AsyncMock()
+        storage.clear_slope_history = AsyncMock()
         return storage
 
     @pytest.fixture
@@ -152,12 +152,13 @@ class TestUpdateCacheDataUseCase:
         self,
         use_case: UpdateCacheDataUseCase,
         mock_cycle_storage: Mock,
-        mock_lhs_lifecycle_manager: Mock,
         sample_cycles: list[HeatingCycle],
     ) -> None:
-        """Test that append_cycles() also prunes old cycles and recalculates LHS.
+        """Test that append_cycles() also prunes old cycles.
 
-        Verifies that the full workflow is triggered.
+        Verifies that prune_old_cycles is called automatically after append.
+        LHS recalculation happens asynchronously via event listeners,
+        not explicitly here.
         """
         # GIVEN: Parameters for appending cycles
         device_id = "climate.test_vtherm"
@@ -170,11 +171,8 @@ class TestUpdateCacheDataUseCase:
             reference_time=reference_time,
         )
 
-        # THEN: Prune is also called (via prune_old_cycles path)
-        mock_cycle_storage.prune_old_cycles.assert_called_once_with(
-            device_id, reference_time
+        # THEN: Both append and prune are called
+        mock_cycle_storage.append_cycles.assert_called_once_with(
+            device_id, sample_cycles, reference_time
         )
-        # And LHS is recalculated
-        mock_lhs_lifecycle_manager.update_global_lhs_from_cache.assert_called_once_with(
-            device_id
-        )
+        mock_cycle_storage.prune_old_cycles.assert_called_once_with(device_id, reference_time)

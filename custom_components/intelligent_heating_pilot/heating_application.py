@@ -10,7 +10,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .application import HeatingApplicationService
 from .application.heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
 from .application.heating_cycle_lifecycle_manager_factory import (
     HeatingCycleLifecycleManagerFactory,
@@ -29,7 +28,13 @@ from .application.use_cases import (
 )
 from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN
 from .domain.interfaces.device_config_reader_interface import DeviceConfig
-from .domain.services import DeadTimeCalculationService, PredictionService
+from .domain.services import (
+    ContextualLHSCalculatorService,
+    DeadTimeCalculationService,
+    GlobalLHSCalculatorService,
+    HeatingCycleService,
+    PredictionService,
+)
 from .infrastructure.adapters import (
     HAClimateCommander,
     HAClimateDataReader,
@@ -115,9 +120,6 @@ class HeatingApplication:
         self._climate_data_reader: HAClimateDataReader | None = None
         self._timer_scheduler: HATimerScheduler | None = None
 
-        # Application service
-        self._app_service: HeatingApplicationService | None = None
-
         # Orchestrator (coordinates use cases)
         self._orchestrator: Any | None = None
 
@@ -177,33 +179,21 @@ class HeatingApplication:
         # Create timer scheduler adapter
         self._timer_scheduler = HATimerScheduler(self.hass)
 
-        # Create application service
-        self._app_service = HeatingApplicationService(
-            scheduler_reader=self._scheduler_reader,
-            model_storage=self._lhs_storage,
-            scheduler_commander=self._scheduler_commander,
-            climate_commander=self._climate_commander,
-            environment_reader=self._environment_reader,
-            climate_data_reader=self._climate_data_reader,
-            environment_context_reader=self._context_reader,
-            timer_scheduler=self._timer_scheduler,
-            cycle_cache=self._cycle_storage,
-            history_lookback_days=self._data_retention_days,
-            decision_mode=self._decision_mode,
+        # Create domain services (they're stateless, can be created once)
+        heating_cycle_service = HeatingCycleService(
             temp_delta_threshold=self._temp_delta_threshold,
             cycle_split_duration_minutes=self._cycle_split_duration_minutes,
             min_cycle_duration_minutes=self._min_cycle_duration_minutes,
             max_cycle_duration_minutes=self._max_cycle_duration_minutes,
-            dead_time_minutes=self._dead_time_minutes,
-            auto_learning=self._auto_learning,
-            on_lhs_changed=self.refresh_caches,
         )
+        global_lhs_calculator = GlobalLHSCalculatorService()
+        contextual_lhs_calculator = ContextualLHSCalculatorService()
 
         # Create lifecycle managers
         self._heating_cycle_manager = HeatingCycleLifecycleManagerFactory.create(
             hass=self.hass,
             device_config=self._device_config,
-            heating_cycle_service=self._app_service.get_heating_cycle_service(),
+            heating_cycle_service=heating_cycle_service,
             cycle_cache=self._cycle_storage,
             timer_scheduler=self._timer_scheduler,
             model_storage=self._lhs_storage,
@@ -211,13 +201,10 @@ class HeatingApplication:
 
         self._lhs_manager = LhsLifecycleManagerFactory.create(
             model_storage=self._lhs_storage,
-            global_lhs_calculator=self._app_service.get_global_lhs_calculator(),
-            contextual_lhs_calculator=self._app_service.get_contextual_lhs_calculator(),
+            global_lhs_calculator=global_lhs_calculator,
+            contextual_lhs_calculator=contextual_lhs_calculator,
             timer_scheduler=self._timer_scheduler,
         )
-
-        self._app_service.set_heating_cycle_lifecycle_manager(self._heating_cycle_manager)
-        self._app_service.set_lhs_lifecycle_manager(self._lhs_manager)
 
         # Create use cases for orchestrator
         _LOGGER.debug("Creating use cases for orchestrator")
@@ -354,12 +341,6 @@ class HeatingApplication:
             # Sanity checks
             if not self._device_config:
                 _LOGGER.warning("Cannot initialize cycle refresh: device_config not available")
-                return
-
-            if not self._app_service:
-                _LOGGER.warning(
-                    "Cannot initialize cycle refresh: application service not available"
-                )
                 return
 
             if not self._heating_cycle_manager:
