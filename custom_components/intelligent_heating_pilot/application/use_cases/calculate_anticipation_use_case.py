@@ -96,17 +96,32 @@ class CalculateAnticipationUseCase:
         timeslot = None
         scheduler_entity = None
         timeslot_id = None
+        
+        # Always get environment data (for minimal return structure)
+        environment = await self._environment_reader.get_current_environment()
+        current_temp = environment.indoor_temperature if environment else None
+        
+        # Always get global LHS (for minimal return structure)
+        global_lhs = await self._lhs_manager.get_global_lhs()
 
         if target_time is None:
             # Use scheduler to get next timeslot
             if self._scheduler_reader is None:
                 _LOGGER.debug("No scheduler reader configured and no target_time provided")
-                return self._create_data_structure()
+                # Return minimal data structure
+                return self._create_data_structure(
+                    current_temp=current_temp,
+                    learned_heating_slope=global_lhs,
+                )
 
             timeslot = await self._scheduler_reader.get_next_timeslot()
             if not timeslot:
                 _LOGGER.debug("No scheduled timeslot found")
-                return self._create_data_structure()
+                # Return minimal data structure
+                return self._create_data_structure(
+                    current_temp=current_temp,
+                    learned_heating_slope=global_lhs,
+                )
 
             target_time = timeslot.target_time
             target_temp = timeslot.target_temp
@@ -116,11 +131,13 @@ class CalculateAnticipationUseCase:
             # Using provided target_time (API/REST usage without scheduler)
             if target_temp is None:
                 _LOGGER.warning("target_time provided but target_temp is None")
-                return self._create_data_structure()
+                # Return minimal data structure
+                return self._create_data_structure(
+                    current_temp=current_temp,
+                    learned_heating_slope=global_lhs,
+                )
 
-        # Get current environment (optional - used to adjust calculations)
-        environment = await self._environment_reader.get_current_environment()
-        current_temp = environment.indoor_temperature if environment else None
+        # Get remaining environment data
         outdoor_temp = environment.outdoor_temp if environment else None
         humidity = environment.indoor_humidity if environment else None
         cloud_coverage = environment.cloud_coverage if environment else None
@@ -155,9 +172,9 @@ class CalculateAnticipationUseCase:
         else:
             dead_time = self._default_dead_time_minutes
 
-        # Calculate prediction (prediction_service handles case where current_temp >= target_temp)
+        # Calculate prediction - let prediction_service handle None values
         prediction = self._prediction_service.predict_heating_time(
-            current_temp=current_temp if current_temp is not None else target_temp - 5.0,
+            current_temp=current_temp,  # Pass None if unavailable
             target_temp=target_temp,
             outdoor_temp=outdoor_temp,
             humidity=humidity,
