@@ -111,7 +111,7 @@ class TestAsyncSetupEntryCreatesDeviceConfigReader:
 
             # Mock Coordinator to avoid full initialization
             with patch(
-                "custom_components.intelligent_heating_pilot.IntelligentHeatingPilotCoordinator"
+                "custom_components.intelligent_heating_pilot.HeatingApplication"
             ) as mock_coordinator_class:
                 mock_coordinator = MagicMock()
                 mock_coordinator.async_load = AsyncMock()
@@ -151,7 +151,7 @@ class TestAsyncSetupEntryCreatesDeviceConfigReader:
 
             # Mock Coordinator
             with patch(
-                "custom_components.intelligent_heating_pilot.IntelligentHeatingPilotCoordinator"
+                "custom_components.intelligent_heating_pilot.HeatingApplication"
             ) as mock_coordinator_class:
                 mock_coordinator = MagicMock()
                 mock_coordinator.async_load = AsyncMock()
@@ -209,7 +209,7 @@ class TestAsyncSetupEntryInjectsDeviceConfigIntoCoordinator:
 
             # Mock Coordinator to track constructor calls
             with patch(
-                "custom_components.intelligent_heating_pilot.IntelligentHeatingPilotCoordinator"
+                "custom_components.intelligent_heating_pilot.HeatingApplication"
             ) as mock_coordinator_class:
                 mock_coordinator = MagicMock()
                 mock_coordinator.async_load = AsyncMock()
@@ -269,7 +269,7 @@ class TestEndToEndConfigInjectionFlow:
         # WHEN: Setting up entry (using REAL HADeviceConfigReader)
         # We only mock the Coordinator to avoid full HA setup
         with patch(
-            "custom_components.intelligent_heating_pilot.IntelligentHeatingPilotCoordinator"
+            "custom_components.intelligent_heating_pilot.HeatingApplication"
         ) as mock_coordinator_class:
             mock_coordinator = MagicMock()
             mock_coordinator.async_load = AsyncMock()
@@ -320,34 +320,53 @@ class TestEndToEndConfigInjectionFlow:
         # WHEN: Setting up entry and loading coordinator
         # We'll partially mock to verify adapter creation
         with patch(
-            "custom_components.intelligent_heating_pilot.coordinator.HAModelStorage"
+            "custom_components.intelligent_heating_pilot.heating_application.HALhsStorage"
         ) as mock_storage_class:
             mock_storage = MagicMock()
             mock_storage.get_learned_heating_slope = AsyncMock(return_value=2.0)
             mock_storage_class.return_value = mock_storage
 
             with patch(
-                "custom_components.intelligent_heating_pilot.coordinator.HASchedulerReader"
+                "custom_components.intelligent_heating_pilot.heating_application.HASchedulerReader"
             ) as mock_scheduler_class:
                 mock_scheduler = MagicMock()
                 mock_scheduler_class.return_value = mock_scheduler
 
                 # Note: We need to mock other adapters and app service too
                 with patch(
-                    "custom_components.intelligent_heating_pilot.infrastructure.adapters.HACycleCache"
+                    "custom_components.intelligent_heating_pilot.heating_application.HAHeatingCycleStorage"
                 ), patch(
-                    "custom_components.intelligent_heating_pilot.infrastructure.adapters.HASchedulerCommander"
+                    "custom_components.intelligent_heating_pilot.heating_application.HASchedulerCommander"
                 ), patch(
-                    "custom_components.intelligent_heating_pilot.infrastructure.adapters.HAClimateCommander"
+                    "custom_components.intelligent_heating_pilot.heating_application.HAClimateCommander"
                 ), patch(
-                    "custom_components.intelligent_heating_pilot.infrastructure.adapters.HAEnvironmentReader"
+                    "custom_components.intelligent_heating_pilot.heating_application.HAEnvironmentReader"
                 ), patch(
-                    "custom_components.intelligent_heating_pilot.infrastructure.adapters.HATimerScheduler"
+                    "custom_components.intelligent_heating_pilot.heating_application.HATimerScheduler"
                 ), patch(
-                    "custom_components.intelligent_heating_pilot.application.HeatingApplicationService"
+                    "custom_components.intelligent_heating_pilot.heating_application.HAClimateDataReader"
                 ), patch(
-                    "custom_components.intelligent_heating_pilot.infrastructure.event_bridge.HAEventBridge"
-                ):
+                    "custom_components.intelligent_heating_pilot.heating_application.HAContextReader"
+                ), patch(
+                    "custom_components.intelligent_heating_pilot.heating_application.HeatingApplicationService"
+                ) as mock_app_service_class, patch(
+                    "custom_components.intelligent_heating_pilot.heating_application.HAEventBridge"
+                ), patch(
+                    "custom_components.intelligent_heating_pilot.heating_application.HeatingCycleLifecycleManagerFactory"
+                ), patch(
+                    "custom_components.intelligent_heating_pilot.heating_application.LhsLifecycleManagerFactory"
+                ) as mock_lhs_factory:
+                    # Ensure LhsLifecycleManagerFactory returns a mock with async methods
+                    mock_lhs_manager = MagicMock()
+                    mock_lhs_manager.get_global_lhs = AsyncMock(return_value=None)
+                    mock_lhs_factory.create.return_value = mock_lhs_manager
+
+                    # Ensure HeatingApplicationService mock returns proper sub-services
+                    mock_app_service = MagicMock()
+                    mock_app_service.get_heating_cycle_service.return_value = MagicMock()
+                    mock_app_service.get_global_lhs_calculator.return_value = MagicMock()
+                    mock_app_service.get_contextual_lhs_calculator.return_value = MagicMock()
+                    mock_app_service_class.return_value = mock_app_service
                     await async_setup_entry(mock_hass, mock_config_entry)
 
                     # Get the coordinator from hass.data
@@ -358,7 +377,7 @@ class TestEndToEndConfigInjectionFlow:
                         await coordinator.async_load()
 
                     # THEN: Adapters should be created with values from DeviceConfig
-                    # HAModelStorage should get retention_days=55 from DeviceConfig
+                    # HALhsStorage should get retention_days=55 from DeviceConfig
                     mock_storage_class.assert_called()
                     storage_kwargs = mock_storage_class.call_args[1]
                     assert storage_kwargs["retention_days"] == 55
@@ -400,7 +419,7 @@ class TestConfigurationUpdateFlow:
         mock_config_entry.options = {CONF_LHS_RETENTION_DAYS: 30}
 
         with patch(
-            "custom_components.intelligent_heating_pilot.IntelligentHeatingPilotCoordinator"
+            "custom_components.intelligent_heating_pilot.HeatingApplication"
         ) as mock_coordinator_class:
             mock_coordinator = MagicMock()
             mock_coordinator.async_load = AsyncMock()

@@ -1,7 +1,7 @@
 """Tests for ResetLearningUseCase.
 
-STEP 1: Tests verify that the use case correctly delegates to
-HeatingApplicationService without changing behavior.
+Tests verify that the use case correctly delegates to
+ILhsStorage and IHeatingCycleStorage.
 """
 
 from __future__ import annotations
@@ -18,50 +18,62 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
 class TestResetLearningUseCase:
     """Test suite for ResetLearningUseCase.
 
-    STEP 1: Verify delegation to HeatingApplicationService.
+    Verifies delegation to ILhsStorage and IHeatingCycleStorage.
     """
 
     @pytest.fixture
-    def mock_app_service(self) -> Mock:
-        """Create mock HeatingApplicationService."""
-        service = Mock()
-        service.reset_learned_slopes = AsyncMock()
-        return service
+    def mock_lhs_storage(self) -> Mock:
+        """Create mock ILhsStorage."""
+        storage = Mock()
+        storage.clear_slopes_datas = AsyncMock()
+        return storage
 
     @pytest.fixture
-    def use_case(self, mock_app_service: Mock) -> ResetLearningUseCase:
+    def mock_cycle_storage(self) -> Mock:
+        """Create mock IHeatingCycleStorage."""
+        storage = Mock()
+        storage.clear_heatingcycle_datas = AsyncMock()
+        return storage
+
+    @pytest.fixture
+    def use_case(
+        self, mock_lhs_storage: Mock, mock_cycle_storage: Mock
+    ) -> ResetLearningUseCase:
         """Create ResetLearningUseCase instance."""
-        return ResetLearningUseCase(mock_app_service)
+        return ResetLearningUseCase(mock_lhs_storage, mock_cycle_storage)
 
     @pytest.mark.asyncio
-    async def test_execute_delegates_to_app_service(
+    async def test_execute_delegates_to_storages(
         self,
         use_case: ResetLearningUseCase,
-        mock_app_service: Mock,
+        mock_lhs_storage: Mock,
+        mock_cycle_storage: Mock,
     ) -> None:
-        """Test that execute() delegates to application service.
+        """Test that reset_all_learning_data() delegates to both storages.
 
-        STEP 1: Verify delegation pattern.
+        Verifies delegation pattern.
         """
-        # GIVEN: Use case is initialized with mock service
-        # WHEN: Execute is called
-        await use_case.execute()
+        # GIVEN: Use case initialized with mock storages
+        device_id = "climate.test_vtherm"
 
-        # THEN: Application service reset method is called once
-        mock_app_service.reset_learned_slopes.assert_called_once()
+        # WHEN: reset_all_learning_data is called
+        await use_case.reset_all_learning_data(device_id)
+
+        # THEN: Both storages are cleared
+        mock_lhs_storage.clear_slopes_datas.assert_called_once()
+        mock_cycle_storage.clear_heatingcycle_datas.assert_called_once_with(device_id)
 
     @pytest.mark.asyncio
     async def test_execute_no_return_value(
         self,
         use_case: ResetLearningUseCase,
-        mock_app_service: Mock,
     ) -> None:
-        """Test that execute() has no return value.
+        """Test that reset_all_learning_data() has no return value.
 
-        STEP 1: Verify void return.
+        Verifies void return.
         """
-        # WHEN: Execute is called
-        result = await use_case.execute()
+        # WHEN: reset_all_learning_data is called
+        result = await use_case.reset_all_learning_data("climate.test_vtherm")
 
         # THEN: Result is None
         assert result is None

@@ -24,7 +24,7 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
 )
 
 # Constant for patch target to avoid duplication
-DT_UTIL_NOW_PATCH_TARGET = "custom_components.intelligent_heating_pilot.application.dt_util.now"
+DT_UTIL_NOW_PATCH_TARGET = "custom_components.intelligent_heating_pilot.application.heating_application_service.dt_util.now"
 
 
 def make_aware(dt: datetime) -> datetime:
@@ -59,14 +59,24 @@ def mock_adapters():
 
     environment_reader = Mock()
     environment_reader.get_current_environment = AsyncMock()
-    environment_reader.is_heating_active = AsyncMock(return_value=False)
-    environment_reader.get_vtherm_slope = Mock(return_value=None)
-    environment_reader.get_vtherm_entity_id = Mock(return_value="climate.test_vtherm")
-    environment_reader.get_hass = Mock()
+
+    # Climate data reader (replaces old vtherm_metadata/slope/state readers)
+    climate_data_reader = Mock()
+    climate_data_reader.get_vtherm_entity_id = Mock(return_value="climate.test_vtherm")
+    climate_data_reader.get_current_slope = Mock(return_value=None)
+    climate_data_reader.is_heating_active = Mock(return_value=False)
 
     # Mock HomeAssistant instance
     hass = Mock()
     hass.async_create_task = Mock()
+
+    # Context reader (provides HA context for adapters)
+    environment_context_reader = Mock()
+    environment_context_reader.get_hass = Mock(return_value=hass)
+    environment_context_reader.get_humidity_in_entity_id = Mock(return_value=None)
+    environment_context_reader.get_humidity_out_entity_id = Mock(return_value=None)
+    environment_context_reader.get_outdoor_temp_entity_id = Mock(return_value=None)
+    environment_context_reader.get_cloud_cover_entity_id = Mock(return_value=None)
 
     # Mock timer scheduler
     timer_scheduler = Mock()
@@ -89,6 +99,8 @@ def mock_adapters():
         "scheduler_commander": scheduler_commander,
         "climate_commander": climate_commander,
         "environment_reader": environment_reader,
+        "climate_data_reader": climate_data_reader,
+        "environment_context_reader": environment_context_reader,
         "hass": hass,
         "timer_scheduler": timer_scheduler,
         "heating_cycle_lifecycle_manager": heating_cycle_manager,
@@ -105,6 +117,8 @@ def app_service(mock_adapters):
         scheduler_commander=mock_adapters["scheduler_commander"],
         climate_commander=mock_adapters["climate_commander"],
         environment_reader=mock_adapters["environment_reader"],
+        climate_data_reader=mock_adapters["climate_data_reader"],
+        environment_context_reader=mock_adapters["environment_context_reader"],
         timer_scheduler=mock_adapters["timer_scheduler"],
         heating_cycle_lifecycle_manager=mock_adapters["heating_cycle_lifecycle_manager"],
         lhs_lifecycle_manager=mock_adapters["lhs_lifecycle_manager"],
@@ -326,7 +340,7 @@ class TestOvershootPrevention:
 
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["environment_reader"].get_vtherm_slope.return_value = 3.0  # High heating rate
+        mock_adapters["climate_data_reader"].get_current_slope.return_value = 3.0  # High heating rate
 
         # Mark as pre-heating active
         app_service._is_preheating_active = True
@@ -366,7 +380,7 @@ class TestOvershootPrevention:
         )
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["environment_reader"].get_vtherm_slope.return_value = 3.0
+        mock_adapters["climate_data_reader"].get_current_slope.return_value = 3.0
 
         # Not preheating
         app_service._is_preheating_active = False
@@ -491,7 +505,7 @@ class TestAdditionalScenarios:
         )
         mock_adapters["scheduler_reader"].get_next_timeslot.return_value = timeslot
         mock_adapters["environment_reader"].get_current_environment.return_value = environment
-        mock_adapters["environment_reader"].is_heating_active.return_value = True
+        mock_adapters["climate_data_reader"].is_heating_active.return_value = True
         mock_adapters["lhs_lifecycle_manager"].get_contextual_lhs.return_value = 2.0
 
         with patch(DT_UTIL_NOW_PATCH_TARGET, return_value=now):

@@ -1,11 +1,12 @@
 """Tests for CalculateAnticipationUseCase.
 
-STEP 1: Tests verify that the use case correctly delegates to
-HeatingApplicationService without changing behavior.
+Tests verify that the use case correctly calculates anticipation data
+using domain dependencies (scheduler_reader, environment_reader, etc.).
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -13,123 +14,209 @@ import pytest
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     CalculateAnticipationUseCase,
 )
+from custom_components.intelligent_heating_pilot.application.heating_cycle_lifecycle_manager import (
+    HeatingCycleLifecycleManager,
+)
+from custom_components.intelligent_heating_pilot.application.lhs_lifecycle_manager import (
+    LhsLifecycleManager,
+)
+from custom_components.intelligent_heating_pilot.domain.services import (
+    DeadTimeCalculationService,
+    PredictionService,
+)
+from custom_components.intelligent_heating_pilot.domain.value_objects import (
+    EnvironmentState,
+    PredictionResult,
+    ScheduledTimeslot,
+)
 
 
 class TestCalculateAnticipationUseCase:
-    """Test suite for CalculateAnticipationUseCase.
-
-    STEP 1: Verify delegation to HeatingApplicationService.
-    """
+    """Test suite for CalculateAnticipationUseCase with domain dependencies."""
 
     @pytest.fixture
-    def mock_app_service(self) -> Mock:
-        """Create mock HeatingApplicationService."""
-        service = Mock()
-        service.calculate_and_schedule_anticipation = AsyncMock(return_value=None)
-        return service
+    def mock_scheduler_reader(self) -> Mock:
+        """Create mock scheduler reader."""
+        reader = Mock()
+        reader.get_next_timeslot = AsyncMock(return_value=None)
+        return reader
 
     @pytest.fixture
-    def use_case(self, mock_app_service: Mock) -> CalculateAnticipationUseCase:
-        """Create CalculateAnticipationUseCase instance."""
-        return CalculateAnticipationUseCase(mock_app_service)
+    def mock_environment_reader(self) -> Mock:
+        """Create mock environment reader."""
+        reader = Mock()
+        reader.get_current_environment = AsyncMock(return_value=EnvironmentState(
+            indoor_temperature=19.0,
+            outdoor_temp=5.0,
+            indoor_humidity=60.0,
+            cloud_coverage=50.0,
+            timestamp=datetime(2025, 2, 10, 6, 0, 0, tzinfo=timezone.utc),
+        ))
+        return reader
 
-    @pytest.mark.asyncio
-    async def test_execute_delegates_to_app_service(
+    @pytest.fixture
+    def mock_climate_data_reader(self) -> Mock:
+        """Create mock climate data reader."""
+        reader = Mock()
+        reader.get_vtherm_entity_id = Mock(return_value="climate.test_vtherm")
+        reader.get_current_slope = Mock(return_value=None)
+        reader.is_heating_active = Mock(return_value=False)
+        return reader
+
+    @pytest.fixture
+    def mock_heating_cycle_manager(self) -> Mock:
+        """Create mock heating cycle lifecycle manager."""
+        mgr = AsyncMock(spec=HeatingCycleLifecycleManager)
+        mgr.get_cycles_for_target_time = AsyncMock(return_value=[])
+        return mgr
+
+    @pytest.fixture
+    def mock_lhs_lifecycle_manager(self) -> Mock:
+        """Create mock LHS lifecycle manager."""
+        mgr = AsyncMock(spec=LhsLifecycleManager)
+        mgr.get_contextual_lhs = AsyncMock(return_value=2.0)
+        return mgr
+
+    @pytest.fixture
+    def mock_prediction_service(self) -> Mock:
+        """Create mock prediction service."""
+        svc = Mock(spec=PredictionService)
+        svc.predict_heating_time = Mock(return_value=PredictionResult(
+            anticipated_start_time=datetime(2025, 2, 10, 9, 0, 0, tzinfo=timezone.utc),
+            estimated_duration_minutes=60.0,
+            confidence_level=0.8,
+            learned_heating_slope=2.0,
+        ))
+        return svc
+
+    @pytest.fixture
+    def mock_dead_time_calculator(self) -> Mock:
+        """Create mock dead time calculator."""
+        calc = Mock(spec=DeadTimeCalculationService)
+        calc.calculate_average_dead_time = Mock(return_value=None)
+        return calc
+
+    @pytest.fixture
+    def use_case(
         self,
-        use_case: CalculateAnticipationUseCase,
-        mock_app_service: Mock,
-    ) -> None:
-        """Test that execute() delegates to application service.
-
-        STEP 1: Verify delegation pattern.
-        """
-        # GIVEN: Use case is initialized with mock service
-        # WHEN: Execute is called with ihp_enabled=True
-        await use_case.execute(ihp_enabled=True)
-
-        # THEN: Application service method is called with same parameters
-        mock_app_service.calculate_and_schedule_anticipation.assert_called_once_with(
-            ihp_enabled=True
+        mock_scheduler_reader: Mock,
+        mock_environment_reader: Mock,
+        mock_climate_data_reader: Mock,
+        mock_heating_cycle_manager: Mock,
+        mock_lhs_lifecycle_manager: Mock,
+        mock_prediction_service: Mock,
+        mock_dead_time_calculator: Mock,
+    ) -> CalculateAnticipationUseCase:
+        """Create CalculateAnticipationUseCase instance with domain dependencies."""
+        return CalculateAnticipationUseCase(
+            scheduler_reader=mock_scheduler_reader,
+            environment_reader=mock_environment_reader,
+            climate_data_reader=mock_climate_data_reader,
+            heating_cycle_manager=mock_heating_cycle_manager,
+            lhs_lifecycle_manager=mock_lhs_lifecycle_manager,
+            prediction_service=mock_prediction_service,
+            dead_time_calculator=mock_dead_time_calculator,
+            auto_learning=True,
+            default_dead_time_minutes=0.0,
         )
 
     @pytest.mark.asyncio
-    async def test_execute_with_ihp_disabled(
+    async def test_happy_path_valid_timeslot_returns_prediction(
         self,
         use_case: CalculateAnticipationUseCase,
-        mock_app_service: Mock,
+        mock_scheduler_reader: Mock,
+        mock_prediction_service: Mock,
     ) -> None:
-        """Test execution with IHP disabled.
-
-        STEP 1: Verify delegation with ihp_enabled=False.
-        """
-        # WHEN: Execute is called with ihp_enabled=False
-        await use_case.execute(ihp_enabled=False)
-
-        # THEN: Application service receives ihp_enabled=False
-        mock_app_service.calculate_and_schedule_anticipation.assert_called_once_with(
-            ihp_enabled=False
+        """Test that valid timeslot produces anticipation data with prediction."""
+        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc)
+        mock_scheduler_reader.get_next_timeslot.return_value = ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=21.0,
+            timeslot_id="morning",
+            scheduler_entity="schedule.heating",
         )
 
-    @pytest.mark.asyncio
-    async def test_execute_returns_result(
-        self,
-        use_case: CalculateAnticipationUseCase,
-        mock_app_service: Mock,
-    ) -> None:
-        """Test that execute() returns application service result.
+        result = await use_case.calculate_anticipation_datas()
 
-        STEP 1: Verify return value passthrough.
-        """
-        # GIVEN: Application service returns anticipation data
-        expected_data = {
-            "anticipated_start_time": "2025-02-10T10:00:00",
-            "next_schedule_time": "2025-02-10T11:00:00",
-            "anticipation_minutes": 60,
-        }
-        mock_app_service.calculate_and_schedule_anticipation.return_value = expected_data
-
-        # WHEN: Execute is called
-        result = await use_case.execute(ihp_enabled=True)
-
-        # THEN: Result matches application service return value
-        assert result == expected_data
+        assert result is not None
+        assert result["anticipated_start_time"] is not None
+        assert result["next_schedule_time"] == target_time
+        assert result["next_target_temperature"] == 21.0
+        mock_prediction_service.predict_heating_time.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_execute_returns_none_when_no_schedule(
+    async def test_no_scheduler_reader_returns_empty_data(
         self,
-        use_case: CalculateAnticipationUseCase,
-        mock_app_service: Mock,
+        mock_environment_reader: Mock,
+        mock_climate_data_reader: Mock,
+        mock_heating_cycle_manager: Mock,
+        mock_lhs_lifecycle_manager: Mock,
+        mock_prediction_service: Mock,
+        mock_dead_time_calculator: Mock,
     ) -> None:
-        """Test that execute() returns None when no schedule available.
+        """Test that no scheduler reader and no target_time returns empty data structure."""
+        use_case = CalculateAnticipationUseCase(
+            scheduler_reader=None,
+            environment_reader=mock_environment_reader,
+            climate_data_reader=mock_climate_data_reader,
+            heating_cycle_manager=mock_heating_cycle_manager,
+            lhs_lifecycle_manager=mock_lhs_lifecycle_manager,
+            prediction_service=mock_prediction_service,
+            dead_time_calculator=mock_dead_time_calculator,
+        )
 
-        STEP 1: Verify None passthrough.
-        """
-        # GIVEN: Application service returns None (no schedule)
-        mock_app_service.calculate_and_schedule_anticipation.return_value = None
+        result = await use_case.calculate_anticipation_datas()
 
-        # WHEN: Execute is called
-        result = await use_case.execute(ihp_enabled=True)
-
-        # THEN: Result is None
-        assert result is None
+        assert result["anticipated_start_time"] is None
+        mock_prediction_service.predict_heating_time.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_execute_returns_clear_values_dict(
+    async def test_no_timeslot_returns_empty_data(
         self,
         use_case: CalculateAnticipationUseCase,
-        mock_app_service: Mock,
+        mock_scheduler_reader: Mock,
+        mock_prediction_service: Mock,
     ) -> None:
-        """Test that execute() returns clear_values dict when appropriate.
+        """Test that no scheduled timeslot returns empty data structure."""
+        mock_scheduler_reader.get_next_timeslot.return_value = None
 
-        STEP 1: Verify clear_values dict passthrough.
-        """
-        # GIVEN: Application service returns clear_values signal
-        mock_app_service.calculate_and_schedule_anticipation.return_value = {
-            "clear_values": True
-        }
+        result = await use_case.calculate_anticipation_datas()
 
-        # WHEN: Execute is called
-        result = await use_case.execute(ihp_enabled=True)
+        assert result["anticipated_start_time"] is None
+        mock_prediction_service.predict_heating_time.assert_not_called()
 
-        # THEN: Result contains clear_values flag
-        assert result == {"clear_values": True}
+    @pytest.mark.asyncio
+    async def test_target_time_without_target_temp_returns_empty(
+        self,
+        use_case: CalculateAnticipationUseCase,
+        mock_prediction_service: Mock,
+    ) -> None:
+        """Test that providing target_time without target_temp returns empty data."""
+        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc)
+
+        result = await use_case.calculate_anticipation_datas(
+            target_time=target_time,
+            target_temp=None,
+        )
+
+        assert result["anticipated_start_time"] is None
+        mock_prediction_service.predict_heating_time.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_target_time_with_target_temp_bypasses_scheduler(
+        self,
+        use_case: CalculateAnticipationUseCase,
+        mock_scheduler_reader: Mock,
+        mock_prediction_service: Mock,
+    ) -> None:
+        """Test that providing target_time and target_temp bypasses scheduler reader."""
+        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc)
+
+        result = await use_case.calculate_anticipation_datas(
+            target_time=target_time,
+            target_temp=22.0,
+        )
+
+        mock_scheduler_reader.get_next_timeslot.assert_not_called()
+        mock_prediction_service.predict_heating_time.assert_called_once()
+        assert result["anticipated_start_time"] is not None

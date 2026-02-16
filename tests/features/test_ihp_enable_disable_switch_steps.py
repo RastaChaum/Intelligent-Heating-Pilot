@@ -77,13 +77,27 @@ def mock_adapters_ihp_switch():
 
     environment_reader = Mock()
     environment_reader.get_current_environment = AsyncMock()
-    environment_reader.is_heating_active = AsyncMock(return_value=False)
-    environment_reader.get_vtherm_slope = Mock(return_value=None)
-    environment_reader.get_vtherm_entity_id = Mock(return_value="climate.bedroom")
-    environment_reader.get_hass = Mock()
+
+    # Climate data reader (replaces old vtherm_metadata/slope/state readers)
+    climate_data_reader = Mock()
+    climate_data_reader.get_vtherm_entity_id = Mock(return_value="climate.bedroom")
+    climate_data_reader.get_current_slope = Mock(return_value=None)
+    climate_data_reader.is_heating_active = Mock(return_value=False)
 
     timer_scheduler = Mock()
     timer_scheduler.schedule_timer = Mock(return_value=Mock())
+
+    # Mock HomeAssistant instance
+    hass = Mock()
+    hass.async_create_task = Mock()
+
+    # Context reader (provides HA context for adapters)
+    environment_context_reader = Mock()
+    environment_context_reader.get_hass = Mock(return_value=hass)
+    environment_context_reader.get_humidity_in_entity_id = Mock(return_value=None)
+    environment_context_reader.get_humidity_out_entity_id = Mock(return_value=None)
+    environment_context_reader.get_outdoor_temp_entity_id = Mock(return_value=None)
+    environment_context_reader.get_cloud_cover_entity_id = Mock(return_value=None)
 
     heating_cycle_manager = AsyncMock()
     heating_cycle_manager.get_cycles_for_target_time = AsyncMock(return_value=[])
@@ -99,6 +113,8 @@ def mock_adapters_ihp_switch():
         "scheduler_commander": scheduler_commander,
         "climate_commander": climate_commander,
         "environment_reader": environment_reader,
+        "climate_data_reader": climate_data_reader,
+        "environment_context_reader": environment_context_reader,
         "timer_scheduler": timer_scheduler,
         "heating_cycle_lifecycle_manager": heating_cycle_manager,
         "lhs_lifecycle_manager": lhs_manager,
@@ -114,6 +130,8 @@ def app_service_ihp_switch(mock_adapters_ihp_switch):
         scheduler_commander=mock_adapters_ihp_switch["scheduler_commander"],
         climate_commander=mock_adapters_ihp_switch["climate_commander"],
         environment_reader=mock_adapters_ihp_switch["environment_reader"],
+        climate_data_reader=mock_adapters_ihp_switch["climate_data_reader"],
+        environment_context_reader=mock_adapters_ihp_switch["environment_context_reader"],
         timer_scheduler=mock_adapters_ihp_switch["timer_scheduler"],
         heating_cycle_lifecycle_manager=mock_adapters_ihp_switch["heating_cycle_lifecycle_manager"],
         lhs_lifecycle_manager=mock_adapters_ihp_switch["lhs_lifecycle_manager"],
@@ -263,7 +281,7 @@ def system_calculates_anticipation_at(
 
     # Perform calculation with ihp_enabled state
     with patch(
-        "custom_components.intelligent_heating_pilot.application.dt_util.now",
+        "custom_components.intelligent_heating_pilot.application.heating_application_service.dt_util.now",
         return_value=current_time,
     ):
         result = asyncio.run(
@@ -314,7 +332,7 @@ def user_turns_off_ihp_switch(
     ].get_current_environment.return_value = environment
 
     with patch(
-        "custom_components.intelligent_heating_pilot.application.dt_util.now",
+        "custom_components.intelligent_heating_pilot.application.heating_application_service.dt_util.now",
         return_value=current_time,
     ):
         asyncio.run(app_service_ihp_switch.calculate_and_schedule_anticipation(ihp_enabled=False))
@@ -363,7 +381,7 @@ def system_recalculates_anticipation(
     ].get_current_environment.return_value = environment
 
     with patch(
-        "custom_components.intelligent_heating_pilot.application.dt_util.now",
+        "custom_components.intelligent_heating_pilot.application.heating_application_service.dt_util.now",
         return_value=current_time,
     ):
         result = asyncio.run(
@@ -417,6 +435,8 @@ def home_assistant_restarts(
         scheduler_commander=mock_adapters_ihp_switch["scheduler_commander"],
         climate_commander=mock_adapters_ihp_switch["climate_commander"],
         environment_reader=mock_adapters_ihp_switch["environment_reader"],
+        climate_data_reader=mock_adapters_ihp_switch["climate_data_reader"],
+        environment_context_reader=mock_adapters_ihp_switch["environment_context_reader"],
         timer_scheduler=mock_adapters_ihp_switch["timer_scheduler"],
         heating_cycle_lifecycle_manager=mock_adapters_ihp_switch["heating_cycle_lifecycle_manager"],
         lhs_lifecycle_manager=mock_adapters_ihp_switch["lhs_lifecycle_manager"],
@@ -481,7 +501,7 @@ def system_processes_all_events(
 
         # Calculate anticipation with IHP disabled
         with patch(
-            "custom_components.intelligent_heating_pilot.application.dt_util.now",
+            "custom_components.intelligent_heating_pilot.application.heating_application_service.dt_util.now",
             return_value=calc_time,
         ):
             result = asyncio.run(
@@ -668,7 +688,7 @@ def no_preheating_after_restart(ihp_switch_context, mock_adapters_ihp_switch):
 
         # Calculate with IHP disabled (after restart)
         with patch(
-            "custom_components.intelligent_heating_pilot.application.dt_util.now",
+            "custom_components.intelligent_heating_pilot.application.heating_application_service.dt_util.now",
             return_value=current_time,
         ):
             result = asyncio.run(

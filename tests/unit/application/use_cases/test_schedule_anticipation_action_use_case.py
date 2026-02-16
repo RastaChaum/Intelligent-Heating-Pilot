@@ -1,7 +1,7 @@
-"""Tests for ScheduleAnticipationActionUseCase.
+"""Tests for SchedulePreheatingUseCase.
 
-STEP 1: Tests verify that the use case correctly delegates to
-HeatingApplicationService without changing behavior.
+Tests verify that the use case correctly delegates to
+ITimerScheduler for scheduling and canceling preheating timers.
 """
 
 from __future__ import annotations
@@ -12,78 +12,91 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from custom_components.intelligent_heating_pilot.application.use_cases import (
-    ScheduleAnticipationActionUseCase,
+    SchedulePreheatingUseCase,
 )
 
 
-class TestScheduleAnticipationActionUseCase:
-    """Test suite for ScheduleAnticipationActionUseCase.
+class TestSchedulePreheatingUseCase:
+    """Test suite for SchedulePreheatingUseCase.
 
-    STEP 1: Verify delegation to HeatingApplicationService.
+    Verifies delegation to ITimerScheduler.
     """
 
     @pytest.fixture
-    def mock_app_service(self) -> Mock:
-        """Create mock HeatingApplicationService."""
-        service = Mock()
-        service._schedule_anticipation = AsyncMock()
-        service._cancel_anticipation_timer = AsyncMock()
-        return service
+    def mock_timer_scheduler(self) -> Mock:
+        """Create mock ITimerScheduler."""
+        scheduler = Mock()
+        cancel_callback = Mock()
+        scheduler.schedule_timer = Mock(return_value=cancel_callback)
+        return scheduler
 
     @pytest.fixture
     def use_case(
-        self, mock_app_service: Mock
-    ) -> ScheduleAnticipationActionUseCase:
-        """Create ScheduleAnticipationActionUseCase instance."""
-        return ScheduleAnticipationActionUseCase(mock_app_service)
+        self, mock_timer_scheduler: Mock
+    ) -> SchedulePreheatingUseCase:
+        """Create SchedulePreheatingUseCase instance."""
+        return SchedulePreheatingUseCase(mock_timer_scheduler)
 
     @pytest.mark.asyncio
-    async def test_execute_delegates_to_app_service(
+    async def test_create_preheating_scheduler_delegates(
         self,
-        use_case: ScheduleAnticipationActionUseCase,
-        mock_app_service: Mock,
+        use_case: SchedulePreheatingUseCase,
+        mock_timer_scheduler: Mock,
     ) -> None:
-        """Test that execute() delegates to application service.
+        """Test that create_preheating_scheduler() delegates to timer scheduler.
 
-        STEP 1: Verify delegation pattern with parameters.
+        Verifies delegation pattern with parameters.
         """
         # GIVEN: Parameters for scheduling
         anticipated_start = datetime(2025, 2, 10, 10, 0, 0)
-        target_time = datetime(2025, 2, 10, 11, 0, 0)
-        target_temp = 21.0
-        scheduler_entity_id = "schedule.heating"
-        lhs = 1.5
+        preheating_callback = Mock()
 
-        # WHEN: Execute is called
-        await use_case.execute(
+        # WHEN: create_preheating_scheduler is called
+        await use_case.create_preheating_scheduler(
             anticipated_start=anticipated_start,
-            target_time=target_time,
-            target_temp=target_temp,
-            scheduler_entity_id=scheduler_entity_id,
-            lhs=lhs,
+            preheating_callback=preheating_callback,
         )
 
-        # THEN: Application service method is called with same parameters
-        mock_app_service._schedule_anticipation.assert_called_once_with(
-            anticipated_start=anticipated_start,
-            target_time=target_time,
-            target_temp=target_temp,
-            scheduler_entity_id=scheduler_entity_id,
-            lhs=lhs,
+        # THEN: Timer scheduler is called with correct parameters
+        mock_timer_scheduler.schedule_timer.assert_called_once_with(
+            anticipated_start,
+            preheating_callback,
         )
 
     @pytest.mark.asyncio
-    async def test_cancel_anticipation_timer_delegates(
+    async def test_cancel_preheating_scheduler_calls_cancel_callback(
         self,
-        use_case: ScheduleAnticipationActionUseCase,
-        mock_app_service: Mock,
+        use_case: SchedulePreheatingUseCase,
+        mock_timer_scheduler: Mock,
     ) -> None:
-        """Test that cancel_anticipation_timer() delegates to application service.
+        """Test that cancel_preheating_scheduler() calls the cancel callback.
 
-        STEP 1: Verify delegation pattern.
+        Verifies that a previously scheduled timer can be canceled.
         """
-        # WHEN: cancel_anticipation_timer is called
-        await use_case.cancel_anticipation_timer()
+        # GIVEN: A timer has been scheduled
+        cancel_callback = Mock()
+        mock_timer_scheduler.schedule_timer.return_value = cancel_callback
+        await use_case.create_preheating_scheduler(
+            anticipated_start=datetime(2025, 2, 10, 10, 0, 0),
+            preheating_callback=Mock(),
+        )
 
-        # THEN: Application service method is called
-        mock_app_service._cancel_anticipation_timer.assert_called_once()
+        # WHEN: cancel_preheating_scheduler is called
+        await use_case.cancel_preheating_scheduler()
+
+        # THEN: The cancel callback is invoked
+        cancel_callback.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cancel_preheating_scheduler_no_op_when_no_timer(
+        self,
+        use_case: SchedulePreheatingUseCase,
+    ) -> None:
+        """Test that cancel_preheating_scheduler() is safe when no timer exists.
+
+        Verifies no exception is raised.
+        """
+        # WHEN: cancel_preheating_scheduler is called without scheduling
+        await use_case.cancel_preheating_scheduler()
+
+        # THEN: No exception is raised (no-op)

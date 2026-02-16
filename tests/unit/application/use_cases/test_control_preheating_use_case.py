@@ -1,7 +1,7 @@
 """Tests for ControlPreheatingUseCase.
 
-STEP 1: Tests verify that the use case correctly delegates to
-HeatingApplicationService without changing behavior.
+Tests verify that the use case correctly delegates to ISchedulerCommander
+and tracks preheating state.
 """
 
 from __future__ import annotations
@@ -19,120 +19,137 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
 class TestControlPreheatingUseCase:
     """Test suite for ControlPreheatingUseCase.
 
-    STEP 1: Verify delegation to HeatingApplicationService.
+    Verifies delegation to ISchedulerCommander and internal state tracking.
     """
 
     @pytest.fixture
-    def mock_app_service(self) -> Mock:
-        """Create mock HeatingApplicationService."""
-        service = Mock()
-        service._clear_anticipation_state = AsyncMock()
-        service._trigger_anticipation_action = AsyncMock()
-        service._is_preheating_active = False
-        service._preheating_target_time = None
-        return service
+    def mock_scheduler_commander(self) -> Mock:
+        """Create mock ISchedulerCommander."""
+        commander = Mock()
+        commander.run_action = AsyncMock()
+        commander.cancel_action = AsyncMock()
+        return commander
 
     @pytest.fixture
-    def use_case(self, mock_app_service: Mock) -> ControlPreheatingUseCase:
+    def use_case(self, mock_scheduler_commander: Mock) -> ControlPreheatingUseCase:
         """Create ControlPreheatingUseCase instance."""
-        return ControlPreheatingUseCase(mock_app_service)
+        return ControlPreheatingUseCase(mock_scheduler_commander)
 
     @pytest.mark.asyncio
-    async def test_clear_anticipation_state_delegates(
+    async def test_cancel_preheating_delegates_to_commander(
         self,
         use_case: ControlPreheatingUseCase,
-        mock_app_service: Mock,
+        mock_scheduler_commander: Mock,
     ) -> None:
-        """Test that clear_anticipation_state() delegates to application service.
+        """Test that cancel_preheating() delegates to scheduler commander.
 
-        STEP 1: Verify delegation pattern.
+        Verifies delegation pattern when preheating is active.
         """
-        # WHEN: clear_anticipation_state is called
-        await use_case.clear_anticipation_state()
+        # GIVEN: Preheating is active
+        target_time = datetime(2025, 2, 10, 11, 0, 0)
+        scheduler_entity_id = "schedule.heating"
+        await use_case.start_preheating(
+            target_time=target_time,
+            target_temp=21.0,
+            scheduler_entity_id=scheduler_entity_id,
+        )
 
-        # THEN: Application service method is called
-        mock_app_service._clear_anticipation_state.assert_called_once()
+        # WHEN: cancel_preheating is called
+        await use_case.cancel_preheating(scheduler_entity_id)
+
+        # THEN: Commander cancel_action is called
+        mock_scheduler_commander.cancel_action.assert_called_once_with(
+            scheduler_entity_id
+        )
 
     @pytest.mark.asyncio
-    async def test_trigger_anticipation_action_delegates(
+    async def test_start_preheating_delegates_to_commander(
         self,
         use_case: ControlPreheatingUseCase,
-        mock_app_service: Mock,
+        mock_scheduler_commander: Mock,
     ) -> None:
-        """Test that trigger_anticipation_action() delegates to application service.
+        """Test that start_preheating() delegates to scheduler commander.
 
-        STEP 1: Verify delegation with parameters.
+        Verifies delegation with parameters.
         """
-        # GIVEN: Parameters for triggering action
+        # GIVEN: Parameters for starting preheating
         target_time = datetime(2025, 2, 10, 11, 0, 0)
         target_temp = 21.0
         scheduler_entity_id = "schedule.heating"
 
-        # WHEN: trigger_anticipation_action is called
-        await use_case.trigger_anticipation_action(
+        # WHEN: start_preheating is called
+        await use_case.start_preheating(
             target_time=target_time,
             target_temp=target_temp,
             scheduler_entity_id=scheduler_entity_id,
         )
 
-        # THEN: Application service method is called with same parameters
-        mock_app_service._trigger_anticipation_action.assert_called_once_with(
-            target_time=target_time,
-            target_temp=target_temp,
-            scheduler_entity_id=scheduler_entity_id,
+        # THEN: Commander run_action is called with correct parameters
+        mock_scheduler_commander.run_action.assert_called_once_with(
+            target_time, scheduler_entity_id
         )
 
     def test_is_preheating_active_returns_state(
         self,
         use_case: ControlPreheatingUseCase,
-        mock_app_service: Mock,
     ) -> None:
-        """Test that is_preheating_active() returns application service state.
+        """Test that is_preheating_active() returns internal state.
 
-        STEP 1: Verify state read.
+        Verifies state tracking.
         """
-        # GIVEN: Application service has preheating inactive
-        mock_app_service._is_preheating_active = False
-
+        # GIVEN: No preheating started
         # WHEN: is_preheating_active is called
         result = use_case.is_preheating_active()
 
-        # THEN: Result matches service state
+        # THEN: Result is False
         assert result is False
 
-        # GIVEN: Application service has preheating active
-        mock_app_service._is_preheating_active = True
+    @pytest.mark.asyncio
+    async def test_is_preheating_active_after_start(
+        self,
+        use_case: ControlPreheatingUseCase,
+        mock_scheduler_commander: Mock,
+    ) -> None:
+        """Test that is_preheating_active() returns True after start."""
+        # GIVEN: Preheating has been started
+        await use_case.start_preheating(
+            target_time=datetime(2025, 2, 10, 11, 0, 0),
+            target_temp=21.0,
+            scheduler_entity_id="schedule.heating",
+        )
 
-        # WHEN: is_preheating_active is called again
-        result = use_case.is_preheating_active()
-
-        # THEN: Result matches updated service state
-        assert result is True
+        # WHEN/THEN
+        assert use_case.is_preheating_active() is True
 
     def test_get_preheating_target_time_returns_state(
         self,
         use_case: ControlPreheatingUseCase,
-        mock_app_service: Mock,
     ) -> None:
-        """Test that get_preheating_target_time() returns application service state.
+        """Test that get_preheating_target_time() returns internal state.
 
-        STEP 1: Verify state read.
+        Verifies state tracking.
         """
-        # GIVEN: Application service has no target time
-        mock_app_service._preheating_target_time = None
-
+        # GIVEN: No preheating started
         # WHEN: get_preheating_target_time is called
         result = use_case.get_preheating_target_time()
 
         # THEN: Result is None
         assert result is None
 
-        # GIVEN: Application service has a target time
+    @pytest.mark.asyncio
+    async def test_get_preheating_target_time_after_start(
+        self,
+        use_case: ControlPreheatingUseCase,
+        mock_scheduler_commander: Mock,
+    ) -> None:
+        """Test that get_preheating_target_time() returns time after start."""
+        # GIVEN: Preheating has been started
         target_time = datetime(2025, 2, 10, 11, 0, 0)
-        mock_app_service._preheating_target_time = target_time
+        await use_case.start_preheating(
+            target_time=target_time,
+            target_temp=21.0,
+            scheduler_entity_id="schedule.heating",
+        )
 
-        # WHEN: get_preheating_target_time is called again
-        result = use_case.get_preheating_target_time()
-
-        # THEN: Result matches service state
-        assert result == target_time
+        # WHEN/THEN
+        assert use_case.get_preheating_target_time() == target_time

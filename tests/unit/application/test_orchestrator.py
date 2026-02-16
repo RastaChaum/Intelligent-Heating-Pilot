@@ -1,172 +1,233 @@
 """Tests for HeatingOrchestrator.
 
-STEP 1: Tests verify that the orchestrator correctly composes use cases
-and delegates to HeatingApplicationService without changing behavior.
+Tests verify that the orchestrator correctly composes use cases
+and delegates to them without changing behavior.
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, Mock
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, Mock, PropertyMock
 
 import pytest
 
 from custom_components.intelligent_heating_pilot.application.orchestrator import (
     HeatingOrchestrator,
 )
+from custom_components.intelligent_heating_pilot.application.use_cases import (
+    CalculateAnticipationUseCase,
+    ControlPreheatingUseCase,
+    ResetLearningUseCase,
+    SchedulePreheatingUseCase,
+    UpdateCacheDataUseCase,
+)
 
 
 class TestHeatingOrchestrator:
-    """Test suite for HeatingOrchestrator.
-
-    STEP 1: Verify composition and delegation to HeatingApplicationService.
-    """
+    """Test suite for HeatingOrchestrator with use case composition."""
 
     @pytest.fixture
-    def mock_app_service(self) -> Mock:
-        """Create mock HeatingApplicationService."""
-        service = Mock()
-        service.calculate_and_schedule_anticipation = AsyncMock(return_value=None)
-        service.reset_learned_slopes = AsyncMock()
-        service._clear_anticipation_state = AsyncMock()
-        service._is_preheating_active = False
-        return service
+    def mock_calculate_anticipation(self) -> Mock:
+        """Create mock CalculateAnticipationUseCase."""
+        uc = Mock(spec=CalculateAnticipationUseCase)
+        uc.calculate_anticipation_datas = AsyncMock(return_value={
+            "anticipated_start_time": None,
+            "next_schedule_time": None,
+            "next_target_temperature": None,
+            "anticipation_minutes": None,
+            "current_temp": None,
+            "learned_heating_slope": None,
+            "confidence_level": None,
+            "timeslot_id": None,
+            "scheduler_entity": None,
+        })
+        return uc
 
     @pytest.fixture
-    def orchestrator(self, mock_app_service: Mock) -> HeatingOrchestrator:
-        """Create HeatingOrchestrator instance."""
-        return HeatingOrchestrator(mock_app_service)
+    def mock_control_preheating(self) -> Mock:
+        """Create mock ControlPreheatingUseCase."""
+        uc = Mock(spec=ControlPreheatingUseCase)
+        uc.start_preheating = AsyncMock()
+        uc.cancel_preheating = AsyncMock()
+        uc.is_preheating_active = Mock(return_value=False)
+        return uc
 
-    @pytest.mark.asyncio
-    async def test_calculate_and_schedule_anticipation_delegates(
+    @pytest.fixture
+    def mock_schedule_preheating(self) -> Mock:
+        """Create mock SchedulePreheatingUseCase."""
+        uc = Mock(spec=SchedulePreheatingUseCase)
+        uc.create_preheating_scheduler = AsyncMock()
+        uc.cancel_preheating_scheduler = AsyncMock()
+        return uc
+
+    @pytest.fixture
+    def mock_update_cache(self) -> Mock:
+        """Create mock UpdateCacheDataUseCase."""
+        uc = Mock(spec=UpdateCacheDataUseCase)
+        return uc
+
+    @pytest.fixture
+    def mock_reset_learning(self) -> Mock:
+        """Create mock ResetLearningUseCase."""
+        uc = Mock(spec=ResetLearningUseCase)
+        uc.reset_all_learning_data = AsyncMock()
+        return uc
+
+    @pytest.fixture
+    def orchestrator(
         self,
-        orchestrator: HeatingOrchestrator,
-        mock_app_service: Mock,
-    ) -> None:
-        """Test that calculate_and_schedule_anticipation delegates to use case.
-
-        STEP 1: Verify delegation through use case.
-        """
-        # WHEN: Orchestrator method is called with ihp_enabled=True
-        await orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
-
-        # THEN: Application service is called through use case
-        mock_app_service.calculate_and_schedule_anticipation.assert_called_once_with(
-            ihp_enabled=True
+        mock_calculate_anticipation: Mock,
+        mock_control_preheating: Mock,
+        mock_schedule_preheating: Mock,
+        mock_update_cache: Mock,
+        mock_reset_learning: Mock,
+    ) -> HeatingOrchestrator:
+        """Create HeatingOrchestrator instance with mocked use cases."""
+        return HeatingOrchestrator(
+            calculate_anticipation=mock_calculate_anticipation,
+            control_preheating=mock_control_preheating,
+            schedule_preheating=mock_schedule_preheating,
+            update_cache=mock_update_cache,
+            reset_learning=mock_reset_learning,
         )
 
     @pytest.mark.asyncio
-    async def test_calculate_and_schedule_anticipation_with_ihp_disabled(
+    async def test_calculate_anticipation_only_delegates(
         self,
         orchestrator: HeatingOrchestrator,
-        mock_app_service: Mock,
+        mock_calculate_anticipation: Mock,
     ) -> None:
-        """Test calculate_and_schedule_anticipation with IHP disabled.
+        """Test that calculate_anticipation_only delegates to use case."""
+        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc)
 
-        STEP 1: Verify delegation with ihp_enabled=False.
-        """
-        # WHEN: Orchestrator method is called with ihp_enabled=False
-        await orchestrator.calculate_and_schedule_anticipation(ihp_enabled=False)
+        await orchestrator.calculate_anticipation_only(
+            target_time=target_time,
+            target_temp=21.0,
+        )
 
-        # THEN: Application service receives ihp_enabled=False
-        mock_app_service.calculate_and_schedule_anticipation.assert_called_once_with(
-            ihp_enabled=False
+        mock_calculate_anticipation.calculate_anticipation_datas.assert_called_once_with(
+            target_time=target_time,
+            target_temp=21.0,
         )
 
     @pytest.mark.asyncio
-    async def test_calculate_and_schedule_anticipation_returns_result(
+    async def test_calculate_anticipation_only_returns_result(
         self,
         orchestrator: HeatingOrchestrator,
-        mock_app_service: Mock,
+        mock_calculate_anticipation: Mock,
     ) -> None:
-        """Test that orchestrator returns use case result.
-
-        STEP 1: Verify return value passthrough.
-        """
-        # GIVEN: Application service returns anticipation data
+        """Test that calculate_anticipation_only returns use case result."""
         expected_data = {
-            "anticipated_start_time": "2025-02-10T10:00:00",
-            "next_schedule_time": "2025-02-10T11:00:00",
+            "anticipated_start_time": datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc),
+            "next_schedule_time": datetime(2025, 2, 10, 11, 0, 0, tzinfo=timezone.utc),
             "anticipation_minutes": 60,
         }
-        mock_app_service.calculate_and_schedule_anticipation.return_value = expected_data
+        mock_calculate_anticipation.calculate_anticipation_datas.return_value = expected_data
 
-        # WHEN: Orchestrator method is called
-        result = await orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
+        result = await orchestrator.calculate_anticipation_only()
 
-        # THEN: Result matches application service return value
         assert result == expected_data
 
     @pytest.mark.asyncio
-    async def test_reset_learned_slopes_delegates(
+    async def test_enable_preheating_calculates_and_schedules(
         self,
         orchestrator: HeatingOrchestrator,
-        mock_app_service: Mock,
+        mock_calculate_anticipation: Mock,
+        mock_schedule_preheating: Mock,
     ) -> None:
-        """Test that reset_learned_slopes delegates to use case.
+        """Test that enable_preheating calculates anticipation and schedules timer."""
+        anticipated = datetime(2025, 2, 10, 9, 30, 0, tzinfo=timezone.utc)
+        mock_calculate_anticipation.calculate_anticipation_datas.return_value = {
+            "anticipated_start_time": anticipated,
+            "next_schedule_time": datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc),
+            "next_target_temperature": 21.0,
+            "scheduler_entity": "schedule.heating",
+        }
 
-        STEP 1: Verify delegation through use case.
-        """
-        # WHEN: Orchestrator method is called
-        await orchestrator.reset_learned_slopes()
+        result = await orchestrator.enable_preheating()
 
-        # THEN: Application service is called through use case
-        mock_app_service.reset_learned_slopes.assert_called_once()
+        mock_calculate_anticipation.calculate_anticipation_datas.assert_called_once()
+        mock_schedule_preheating.create_preheating_scheduler.assert_called_once()
+        assert result["anticipated_start_time"] == anticipated
 
     @pytest.mark.asyncio
-    async def test_clear_anticipation_state_delegates(
+    async def test_enable_preheating_skips_scheduling_when_no_data(
         self,
         orchestrator: HeatingOrchestrator,
-        mock_app_service: Mock,
+        mock_calculate_anticipation: Mock,
+        mock_schedule_preheating: Mock,
     ) -> None:
-        """Test that clear_anticipation_state delegates to use case.
+        """Test that enable_preheating skips scheduling when no valid data."""
+        mock_calculate_anticipation.calculate_anticipation_datas.return_value = {
+            "anticipated_start_time": None,
+        }
 
-        STEP 1: Verify delegation through use case.
-        """
-        # WHEN: Orchestrator method is called
-        await orchestrator.clear_anticipation_state()
+        await orchestrator.enable_preheating()
 
-        # THEN: Application service is called through use case
-        mock_app_service._clear_anticipation_state.assert_called_once()
+        mock_schedule_preheating.create_preheating_scheduler.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_disable_preheating_cancels_timer_and_preheating(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_control_preheating: Mock,
+        mock_schedule_preheating: Mock,
+    ) -> None:
+        """Test that disable_preheating cancels timer and active preheating."""
+        mock_control_preheating.is_preheating_active.return_value = True
+
+        await orchestrator.disable_preheating(scheduler_entity_id="schedule.heating")
+
+        mock_schedule_preheating.cancel_preheating_scheduler.assert_called_once()
+        mock_control_preheating.cancel_preheating.assert_called_once_with("schedule.heating")
+
+    @pytest.mark.asyncio
+    async def test_disable_preheating_skips_cancel_when_not_active(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_control_preheating: Mock,
+        mock_schedule_preheating: Mock,
+    ) -> None:
+        """Test that disable_preheating doesn't cancel preheating if not active."""
+        mock_control_preheating.is_preheating_active.return_value = False
+
+        await orchestrator.disable_preheating(scheduler_entity_id="schedule.heating")
+
+        mock_schedule_preheating.cancel_preheating_scheduler.assert_called_once()
+        mock_control_preheating.cancel_preheating.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cancel_preheating_delegates(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_control_preheating: Mock,
+        mock_schedule_preheating: Mock,
+    ) -> None:
+        """Test that cancel_preheating cancels timer and preheating action."""
+        await orchestrator.cancel_preheating(scheduler_entity_id="schedule.heating")
+
+        mock_schedule_preheating.cancel_preheating_scheduler.assert_called_once()
+        mock_control_preheating.cancel_preheating.assert_called_once_with("schedule.heating")
+
+    @pytest.mark.asyncio
+    async def test_reset_all_learning_data_delegates(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_reset_learning: Mock,
+    ) -> None:
+        """Test that reset_all_learning_data delegates to use case."""
+        await orchestrator.reset_all_learning_data(device_id="test_device")
+
+        mock_reset_learning.reset_all_learning_data.assert_called_once_with("test_device")
 
     def test_is_preheating_active_delegates(
         self,
         orchestrator: HeatingOrchestrator,
-        mock_app_service: Mock,
+        mock_control_preheating: Mock,
     ) -> None:
-        """Test that is_preheating_active delegates to use case.
+        """Test that is_preheating_active delegates to use case."""
+        mock_control_preheating.is_preheating_active.return_value = False
+        assert orchestrator.is_preheating_active() is False
 
-        STEP 1: Verify delegation through use case.
-        """
-        # GIVEN: Application service has preheating inactive
-        mock_app_service._is_preheating_active = False
-
-        # WHEN: Orchestrator method is called
-        result = orchestrator.is_preheating_active()
-
-        # THEN: Result matches service state
-        assert result is False
-
-        # GIVEN: Application service has preheating active
-        mock_app_service._is_preheating_active = True
-
-        # WHEN: Orchestrator method is called again
-        result = orchestrator.is_preheating_active()
-
-        # THEN: Result matches updated service state
-        assert result is True
-
-    def test_application_service_property(
-        self,
-        orchestrator: HeatingOrchestrator,
-        mock_app_service: Mock,
-    ) -> None:
-        """Test that application_service property returns the service.
-
-        STEP 1: Verify backward compatibility property.
-        This property will be removed in STEP 3.
-        """
-        # WHEN: application_service property is accessed
-        result = orchestrator.application_service
-
-        # THEN: Result is the mock service
-        assert result is mock_app_service
+        mock_control_preheating.is_preheating_active.return_value = True
+        assert orchestrator.is_preheating_active() is True

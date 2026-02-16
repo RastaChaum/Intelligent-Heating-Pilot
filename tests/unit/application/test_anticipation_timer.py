@@ -71,10 +71,20 @@ def mock_adapters(mock_hass):
 
     environment_reader = Mock()
     environment_reader.get_current_environment = AsyncMock()
-    environment_reader.is_heating_active = AsyncMock(return_value=False)
-    environment_reader.get_vtherm_slope = Mock(return_value=None)
-    environment_reader.get_vtherm_entity_id = Mock(return_value="climate.test_vtherm")
-    environment_reader.get_hass = Mock(return_value=mock_hass)
+
+    # Climate data reader (replaces old vtherm_metadata/slope/state readers)
+    climate_data_reader = Mock()
+    climate_data_reader.get_vtherm_entity_id = Mock(return_value="climate.test_vtherm")
+    climate_data_reader.get_current_slope = Mock(return_value=None)
+    climate_data_reader.is_heating_active = Mock(return_value=False)
+
+    # Context reader (provides HA context for adapters)
+    environment_context_reader = Mock()
+    environment_context_reader.get_hass = Mock(return_value=mock_hass)
+    environment_context_reader.get_humidity_in_entity_id = Mock(return_value=None)
+    environment_context_reader.get_humidity_out_entity_id = Mock(return_value=None)
+    environment_context_reader.get_outdoor_temp_entity_id = Mock(return_value=None)
+    environment_context_reader.get_cloud_cover_entity_id = Mock(return_value=None)
 
     # Mock timer scheduler
     timer_scheduler = Mock()
@@ -97,6 +107,8 @@ def mock_adapters(mock_hass):
         "scheduler_commander": scheduler_commander,
         "climate_commander": climate_commander,
         "environment_reader": environment_reader,
+        "climate_data_reader": climate_data_reader,
+        "environment_context_reader": environment_context_reader,
         "hass": mock_hass,
         "timer_scheduler": timer_scheduler,
         "heating_cycle_lifecycle_manager": heating_cycle_manager,
@@ -113,6 +125,8 @@ def app_service(mock_adapters):
         scheduler_commander=mock_adapters["scheduler_commander"],
         climate_commander=mock_adapters["climate_commander"],
         environment_reader=mock_adapters["environment_reader"],
+        climate_data_reader=mock_adapters["climate_data_reader"],
+        environment_context_reader=mock_adapters["environment_context_reader"],
         timer_scheduler=mock_adapters["timer_scheduler"],
         heating_cycle_lifecycle_manager=mock_adapters["heating_cycle_lifecycle_manager"],
         lhs_lifecycle_manager=mock_adapters["lhs_lifecycle_manager"],

@@ -1,7 +1,7 @@
 """Tests for UpdateCacheDataUseCase.
 
-STEP 1: Tests verify that the use case correctly delegates to
-HeatingApplicationService without changing behavior.
+Tests verify that the use case correctly delegates to
+IHeatingCycleStorage, ILhsStorage, and LhsLifecycleManager.
 """
 
 from __future__ import annotations
@@ -20,21 +20,44 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import Hea
 class TestUpdateCacheDataUseCase:
     """Test suite for UpdateCacheDataUseCase.
 
-    STEP 1: Verify delegation to HeatingApplicationService.
+    Verifies delegation to IHeatingCycleStorage, ILhsStorage, and LhsLifecycleManager.
     """
 
     @pytest.fixture
-    def mock_app_service(self) -> Mock:
-        """Create mock HeatingApplicationService."""
-        service = Mock()
-        service._get_cycles_with_cache = AsyncMock(return_value=[])
-        service._extract_cycles_from_recorder = AsyncMock(return_value=[])
-        return service
+    def mock_cycle_storage(self) -> Mock:
+        """Create mock IHeatingCycleStorage."""
+        storage = Mock()
+        storage.get_cache_data = AsyncMock(return_value=None)
+        storage.append_cycles = AsyncMock()
+        storage.prune_old_cycles = AsyncMock()
+        storage.clear_cache = AsyncMock()
+        return storage
 
     @pytest.fixture
-    def use_case(self, mock_app_service: Mock) -> UpdateCacheDataUseCase:
+    def mock_lhs_storage(self) -> Mock:
+        """Create mock ILhsStorage."""
+        storage = Mock()
+        storage.clear_slopes_datas = AsyncMock()
+        return storage
+
+    @pytest.fixture
+    def mock_lhs_lifecycle_manager(self) -> Mock:
+        """Create mock LhsLifecycleManager."""
+        manager = Mock()
+        manager.update_global_lhs_from_cache = AsyncMock()
+        return manager
+
+    @pytest.fixture
+    def use_case(
+        self,
+        mock_cycle_storage: Mock,
+        mock_lhs_storage: Mock,
+        mock_lhs_lifecycle_manager: Mock,
+    ) -> UpdateCacheDataUseCase:
         """Create UpdateCacheDataUseCase instance."""
-        return UpdateCacheDataUseCase(mock_app_service)
+        return UpdateCacheDataUseCase(
+            mock_cycle_storage, mock_lhs_storage, mock_lhs_lifecycle_manager
+        )
 
     @pytest.fixture
     def sample_cycles(self) -> list[HeatingCycle]:
@@ -59,103 +82,99 @@ class TestUpdateCacheDataUseCase:
         ]
 
     @pytest.mark.asyncio
-    async def test_get_cycles_with_cache_delegates(
+    async def test_get_cache_data_delegates(
         self,
         use_case: UpdateCacheDataUseCase,
-        mock_app_service: Mock,
+        mock_cycle_storage: Mock,
     ) -> None:
-        """Test that get_cycles_with_cache() delegates to application service.
+        """Test that get_cache_data() delegates to cycle storage.
 
-        STEP 1: Verify delegation pattern with parameters.
+        Verifies delegation pattern with parameters.
         """
-        # GIVEN: Parameters for getting cycles
+        # GIVEN: Parameters for getting cache data
         device_id = "climate.test_vtherm"
-        target_time = datetime(2025, 2, 10, 12, 0, 0)
 
-        # WHEN: get_cycles_with_cache is called
-        await use_case.get_cycles_with_cache(
-            device_id=device_id,
-            target_time=target_time,
-        )
+        # WHEN: get_cache_data is called
+        await use_case.get_cache_data(device_id=device_id)
 
-        # THEN: Application service method is called with same parameters
-        mock_app_service._get_cycles_with_cache.assert_called_once_with(
-            device_id=device_id,
-            target_time=target_time,
-        )
+        # THEN: Cycle storage method is called with same parameters
+        mock_cycle_storage.get_cache_data.assert_called_once_with(device_id)
 
     @pytest.mark.asyncio
-    async def test_get_cycles_with_cache_returns_cycles(
+    async def test_get_cache_data_returns_result(
         self,
         use_case: UpdateCacheDataUseCase,
-        mock_app_service: Mock,
+        mock_cycle_storage: Mock,
+    ) -> None:
+        """Test that get_cache_data() returns storage result.
+
+        Verifies return value passthrough.
+        """
+        # GIVEN: Storage returns cache data
+        mock_cache_data = Mock()
+        mock_cycle_storage.get_cache_data.return_value = mock_cache_data
+
+        # WHEN: get_cache_data is called
+        result = await use_case.get_cache_data(device_id="climate.test")
+
+        # THEN: Result matches storage return value
+        assert result == mock_cache_data
+
+    @pytest.mark.asyncio
+    async def test_append_cycles_delegates(
+        self,
+        use_case: UpdateCacheDataUseCase,
+        mock_cycle_storage: Mock,
         sample_cycles: list[HeatingCycle],
     ) -> None:
-        """Test that get_cycles_with_cache() returns application service result.
+        """Test that append_cycles() delegates to cycle storage.
 
-        STEP 1: Verify return value passthrough.
+        Verifies delegation pattern with parameters.
         """
-        # GIVEN: Application service returns cycles
-        mock_app_service._get_cycles_with_cache.return_value = sample_cycles
-
-        # WHEN: get_cycles_with_cache is called
-        result = await use_case.get_cycles_with_cache(
-            device_id="climate.test",
-            target_time=datetime(2025, 2, 10, 12, 0, 0),
-        )
-
-        # THEN: Result matches application service return value
-        assert result == sample_cycles
-
-    @pytest.mark.asyncio
-    async def test_extract_cycles_from_recorder_delegates(
-        self,
-        use_case: UpdateCacheDataUseCase,
-        mock_app_service: Mock,
-    ) -> None:
-        """Test that extract_cycles_from_recorder() delegates to application service.
-
-        STEP 1: Verify delegation pattern with parameters.
-        """
-        # GIVEN: Parameters for extracting cycles
+        # GIVEN: Parameters for appending cycles
         device_id = "climate.test_vtherm"
-        start_time = datetime(2025, 2, 1, 0, 0, 0)
-        end_time = datetime(2025, 2, 10, 23, 59, 59)
+        reference_time = datetime(2025, 2, 10, 12, 0, 0)
 
-        # WHEN: extract_cycles_from_recorder is called
-        await use_case.extract_cycles_from_recorder(
+        # WHEN: append_cycles is called
+        await use_case.append_cycles(
             device_id=device_id,
-            start_time=start_time,
-            end_time=end_time,
+            cycles=sample_cycles,
+            reference_time=reference_time,
         )
 
-        # THEN: Application service method is called with same parameters
-        mock_app_service._extract_cycles_from_recorder.assert_called_once_with(
-            device_id=device_id,
-            start_time=start_time,
-            end_time=end_time,
+        # THEN: Cycle storage append_cycles is called
+        mock_cycle_storage.append_cycles.assert_called_once_with(
+            device_id, sample_cycles, reference_time
         )
 
     @pytest.mark.asyncio
-    async def test_extract_cycles_from_recorder_returns_cycles(
+    async def test_append_cycles_triggers_prune(
         self,
         use_case: UpdateCacheDataUseCase,
-        mock_app_service: Mock,
+        mock_cycle_storage: Mock,
+        mock_lhs_lifecycle_manager: Mock,
         sample_cycles: list[HeatingCycle],
     ) -> None:
-        """Test that extract_cycles_from_recorder() returns application service result.
+        """Test that append_cycles() also prunes old cycles and recalculates LHS.
 
-        STEP 1: Verify return value passthrough.
+        Verifies that the full workflow is triggered.
         """
-        # GIVEN: Application service returns extracted cycles
-        mock_app_service._extract_cycles_from_recorder.return_value = sample_cycles
+        # GIVEN: Parameters for appending cycles
+        device_id = "climate.test_vtherm"
+        reference_time = datetime(2025, 2, 10, 12, 0, 0)
 
-        # WHEN: extract_cycles_from_recorder is called
-        result = await use_case.extract_cycles_from_recorder(
-            device_id="climate.test",
-            start_time=datetime(2025, 2, 1, 0, 0, 0),
-            end_time=datetime(2025, 2, 10, 23, 59, 59),
+        # WHEN: append_cycles is called
+        await use_case.append_cycles(
+            device_id=device_id,
+            cycles=sample_cycles,
+            reference_time=reference_time,
         )
 
-        # THEN: Result matches application service return value
-        assert result == sample_cycles
+        # THEN: Prune is also called (via prune_old_cycles path)
+        mock_cycle_storage.prune_old_cycles.assert_called_once_with(
+            device_id, reference_time
+        )
+        # And LHS is recalculated
+        mock_lhs_lifecycle_manager.update_global_lhs_from_cache.assert_called_once_with(
+            device_id
+        )
