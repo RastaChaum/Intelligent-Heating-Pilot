@@ -40,24 +40,32 @@ class ControlPreheatingUseCase:
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None
 
-    async def cancel_preheating(self, scheduler_entity_id: str) -> None:
+    async def cancel_preheating(self, scheduler_entity_id: str | None = None) -> None:
         """Cancel active preheating and revert to current scheduled state.
 
         Args:
-            scheduler_entity_id: Scheduler entity to cancel action on
+            scheduler_entity_id: Scheduler entity to cancel action on.
+                If None, uses the active scheduler entity.
         """
         _LOGGER.debug(
             "Entering ControlPreheatingUseCase.cancel_preheating(scheduler=%s)",
             scheduler_entity_id,
         )
 
+        effective_scheduler = scheduler_entity_id or self._active_scheduler_entity
+
         if self._is_preheating_active:
+            if not effective_scheduler:
+                _LOGGER.warning("Cannot cancel preheating: no scheduler entity available")
+                _LOGGER.debug("Exiting ControlPreheatingUseCase.cancel_preheating() -> no-op")
+                return
             _LOGGER.info(
                 "Canceling preheating for scheduler %s - reverting to current scheduled state",
-                scheduler_entity_id,
+                effective_scheduler,
             )
             # Call cancel_action to revert thermostat to current time's preset/temperature
-            await self._scheduler_commander.cancel_action(scheduler_entity_id)
+            # Validation is handled by scheduler_commander
+            await self._scheduler_commander.cancel_action(effective_scheduler)
         else:
             _LOGGER.debug("No active preheating to cancel")
 

@@ -91,22 +91,19 @@ class ScheduleAnticipationActionUseCase:
         if anticipation_data.get("anticipated_start_time") is None:
             _LOGGER.debug("No valid anticipation data - cancelling any active scheduling")
             await self.cancel_action()
-            if self._control_preheating.is_preheating_active():
-                scheduler_entity = self._control_preheating.get_active_scheduler_entity()
-                if scheduler_entity:
-                    await self._control_preheating.cancel_preheating(scheduler_entity)
+            await self._control_preheating.cancel_preheating(
+                self._control_preheating.get_active_scheduler_entity()
+                or anticipation_data.get("scheduler_entity")
+            )
             return
 
         # Decision 2: IHP disabled - cancel but don't schedule
         if not ihp_enabled:
             _LOGGER.debug("IHP disabled - cancelling preheating if active")
-            if self._control_preheating.is_preheating_active():
-                scheduler_entity = (
-                    self._control_preheating.get_active_scheduler_entity()
-                    or anticipation_data.get("scheduler_entity")
-                )
-                if scheduler_entity:
-                    await self._control_preheating.cancel_preheating(scheduler_entity)
+            await self._control_preheating.cancel_preheating(
+                self._control_preheating.get_active_scheduler_entity()
+                or anticipation_data.get("scheduler_entity")
+            )
             await self.cancel_action()
             return
 
@@ -114,13 +111,10 @@ class ScheduleAnticipationActionUseCase:
         if anticipation_data.get("anticipation_minutes") == 0:
             _LOGGER.debug("Target reached - clearing anticipation state")
             await self.cancel_action()
-            if self._control_preheating.is_preheating_active():
-                scheduler_entity = (
-                    self._control_preheating.get_active_scheduler_entity()
-                    or anticipation_data.get("scheduler_entity")
-                )
-                if scheduler_entity:
-                    await self._control_preheating.cancel_preheating(scheduler_entity)
+            await self._control_preheating.cancel_preheating(
+                self._control_preheating.get_active_scheduler_entity()
+                or anticipation_data.get("scheduler_entity")
+            )
             return
 
         # Decision 4: No scheduler entity - skip scheduling
@@ -342,7 +336,7 @@ class ScheduleAnticipationActionUseCase:
 
     async def _cancel_timer(self) -> None:
         """Cancel any active timer.
-        
+
         Note: Does NOT clear _preheating_target_time - that's preserved for state tracking.
         """
         _LOGGER.debug("Entering cancel_timer")
@@ -365,7 +359,7 @@ class ScheduleAnticipationActionUseCase:
 
     async def cancel_action(self) -> None:
         """Cancel any active timer and clear state.
-        
+
         Called by orchestrator when disabling preheating or when conditions change.
         """
         _LOGGER.debug("Canceling anticipation action")

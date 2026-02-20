@@ -42,7 +42,7 @@ class PredictionService:
 
     def predict_heating_time(
         self,
-        current_temp: float,
+        current_temp: float | None,
         target_temp: float,
         learned_slope: float,
         target_time: datetime,
@@ -53,20 +53,29 @@ class PredictionService:
     ) -> PredictionResult:
         """Calculate when heating should start.
 
-        Required Args:
-            current_temp: Current room temperature in Celsius
+        Args:
+            current_temp: Current room temperature in Celsius (None = cannot calculate)
             target_temp: Target temperature in Celsius
             learned_slope: Learned heating slope in °C/hour
             target_time: When target should be reached (mandatory)
-
-        Optional Args:
-            outdoor_temp: Outdoor temperature in Celsius
-            humidity: Indoor humidity percentage (0-100)
-            cloud_coverage: Cloud coverage percentage (0-100, 0=clear sky)
+            outdoor_temp: Outdoor temperature in Celsius (optional)
+            humidity: Indoor humidity percentage (0-100) (optional)
+            cloud_coverage: Cloud coverage percentage (0-100, 0=clear sky) (optional)
             dead_time_minutes: Dead time in minutes (initial period with minimal heating effect)
+
         Returns:
             Prediction result with start time and confidence
         """
+        # Handle missing current temperature
+        if current_temp is None:
+            _LOGGER.warning("Cannot calculate prediction: current_temp is None")
+            return PredictionResult(
+                anticipated_start_time=target_time,
+                estimated_duration_minutes=0.0,
+                confidence_level=0.0,
+                learned_heating_slope=learned_slope,
+            )
+
         # Calculate temperature difference
         temp_delta = target_temp - current_temp
 

@@ -21,9 +21,7 @@ from .application.use_cases import (
     CalculateAnticipationUseCase,
     CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
-    ResetLearningUseCase,
     ScheduleAnticipationActionUseCase,
-    SchedulePreheatingUseCase,
     UpdateCacheDataUseCase,
 )
 from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN

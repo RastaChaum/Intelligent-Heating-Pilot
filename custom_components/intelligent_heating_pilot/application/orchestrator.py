@@ -99,8 +99,7 @@ class HeatingOrchestrator:
         await self._schedule_anticipation_action.cancel_action()
 
         # Cancel active preheating if any
-        if self._control_preheating.is_preheating_active():
-            await self._control_preheating.cancel_preheating(scheduler_entity_id)
+        await self._control_preheating.cancel_preheating(scheduler_entity_id)
 
         _LOGGER.info("Preheating disabled")
         _LOGGER.debug("Exiting HeatingOrchestrator.disable_preheating()")
@@ -125,9 +124,7 @@ class HeatingOrchestrator:
         """
         return self._control_preheating.is_preheating_active()
 
-    async def calculate_and_schedule_anticipation(
-        self, ihp_enabled: bool = True
-    ) -> dict[str, Any]:
+    async def calculate_and_schedule_anticipation(self, ihp_enabled: bool = True) -> dict[str, Any]:
         """Calculate anticipation and handle scheduling based on IHP status.
 
         This orchestrator method:
@@ -171,11 +168,6 @@ class HeatingOrchestrator:
             "Entering HeatingOrchestrator.check_and_prevent_overshoot(scheduler=%s)",
             scheduler_entity_id,
         )
-
-        if not self._control_preheating.is_preheating_active():
-            _LOGGER.debug("No active preheating - skipping overshoot check")
-            _LOGGER.debug("Exiting check_and_prevent_overshoot() -> False")
-            return False
 
         overshoot_detected = await self._check_overshoot_risk.check_and_prevent_overshoot(
             scheduler_entity_id=scheduler_entity_id

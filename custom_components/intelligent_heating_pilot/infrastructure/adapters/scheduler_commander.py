@@ -48,6 +48,7 @@ class HASchedulerCommander(ISchedulerCommander):
 
         Args:
             target_time: The time of the scheduler timeslot to trigger
+            scheduler_entity_id: Scheduler entity ID to control
 
         Raises:
             ValueError: If scheduler entity is not configured
@@ -92,6 +93,12 @@ class HASchedulerCommander(ISchedulerCommander):
         Note: The scheduler-component doesn't have a direct "cancel" service.
         This implementation triggers the action for "now" which effectively
         reverts to the current scheduled state.
+
+        Args:
+            scheduler_entity_id: Scheduler entity ID to control
+
+        Raises:
+            ValueError: If scheduler entity is not configured
         """
         if not scheduler_entity_id:
             _LOGGER.error("Cannot cancel action: no scheduler entity configured")

@@ -92,29 +92,13 @@ class CheckOvershootRiskUseCase:
 
         current_slope = self._climate_data_reader.get_current_slope()
         if current_slope is None or current_slope <= 0.0:
-            # Use contextual LHS as fallback when current slope unavailable
-            _LOGGER.debug("Current slope unavailable (%.2f°C/h) - using contextual LHS", current_slope or 0.0)
-            timeslot = await self._scheduler_reader.get_next_timeslot()
-            if not timeslot:
-                _LOGGER.debug("No timeslot for contextual LHS - skipping overshoot check")
-                _LOGGER.debug("Exiting check_and_prevent_overshoot() -> False")
-                return False
-            
-            # Get heating cycles for contextual LHS
-            vtherm_id = self._climate_data_reader.get_vtherm_entity_id()
-            heating_cycles = await self._heating_cycle_manager.get_cycles_for_target_time(
-                device_id=vtherm_id,
-                target_time=timeslot.target_time,
+            # Cannot check overshoot without valid slope data
+            _LOGGER.debug(
+                "Current slope unavailable (%.2f°C/h) - skipping overshoot check",
+                current_slope or 0.0,
             )
-            
-            # Get contextual LHS
-            lhs = await self._lhs_manager.get_contextual_lhs(
-                target_time=timeslot.target_time,
-                cycles=heating_cycles,
-            )
-            
-            current_slope = lhs
-            _LOGGER.debug("Using contextual LHS: %.2f°C/h", current_slope)
+            _LOGGER.debug("Exiting check_and_prevent_overshoot() -> False")
+            return False
 
         now = environment.timestamp
         if now >= timeslot.target_time:

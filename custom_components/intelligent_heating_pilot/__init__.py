@@ -11,8 +11,6 @@ The coordinator here is reduced to a thin setup/teardown manager.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import cast
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
@@ -143,7 +141,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register services
     async def handle_reset_learning(call):
         """Handle reset_learning service.
-        
+
         Delegates to orchestrator - no business logic here.
         """
         await coordinator._orchestrator.reset_all_learning_data()
@@ -153,38 +151,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         This service calculates the anticipated start time for a given IHP device
         to reach a target temperature at a specified time.
-        
+
         Delegates to orchestrator's calculate_anticipation_only() - no business logic here.
         """
         _LOGGER.debug("Entering handle_calculate_anticipated_start_time")
 
         # Extract service call parameters
-        entity_id = call.data.get("entity_id")
-        target_time_raw = call.data.get("target_time")
+        entity_id = call.data["entity_id"]
+        target_time = call.data["target_time"]
         target_temp = call.data.get("target_temp")
-
-        if not entity_id:
-            _LOGGER.error("entity_id is required for calculate_anticipated_start_time service")
-            return
-
-        if not target_time_raw:
-            _LOGGER.error("target_time is required for calculate_anticipated_start_time service")
-            return
-
-        # Parse target_time
-        if isinstance(target_time_raw, str):
-            target_time = dt_util.parse_datetime(target_time_raw)
-            if target_time is None:
-                try:
-                    target_time = datetime.fromisoformat(target_time_raw)
-                except ValueError:
-                    _LOGGER.error("Invalid target_time format: %s", target_time_raw)
-                    return
-        elif isinstance(target_time_raw, datetime):
-            target_time = target_time_raw
-        else:
-            _LOGGER.error("Invalid target_time type: %s", type(target_time_raw))
-            return
 
         # Ensure target_time has timezone
         if target_time.tzinfo is None:
@@ -219,11 +194,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             vtherm_state = hass.states.get(device_coordinator._vtherm_id)
             if vtherm_state:
                 target_temp = vtherm_state.attributes.get("temperature")
-            if target_temp is None:
-                _LOGGER.error("target_temp not provided and could not be read from VTherm")
-                return
-
-        target_temp = float(target_temp)
+        if target_temp is not None:
+            target_temp = float(target_temp)
 
         # Delegate to orchestrator (pure routing - no business logic)
         anticipation_data = await device_coordinator._orchestrator.calculate_anticipation_only(
@@ -233,15 +205,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Extract fields from anticipation_data (which is already structured)
         anticipated_start_time = anticipation_data.get("anticipated_start_time")
+        response_target_time = anticipation_data.get("next_schedule_time") or target_time
+        response_target_temp = anticipation_data.get("next_target_temperature")
+        if response_target_temp is None:
+            response_target_temp = target_temp
         if anticipated_start_time is None:
-            _LOGGER.warning(
-                "Could not calculate anticipated start time (insufficient data)"
-            )
+            _LOGGER.warning("Could not calculate anticipated start time (insufficient data)")
             # Return structure with None values
             return {
                 "anticipated_start_time": None,
-                "target_time": target_time.isoformat(),
-                "target_temp": target_temp,
+                "target_time": response_target_time.isoformat(),
+                "target_temp": response_target_temp,
                 "current_temp": anticipation_data.get("current_temp"),
                 "estimated_duration_minutes": None,
                 "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
@@ -253,8 +227,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "anticipated_start=%s, target_time=%s, target_temp=%.1f°C, "
             "current_temp=%.1f°C, LHS=%.2f°C/h, confidence=%.2f",
             anticipated_start_time.isoformat(),
-            target_time.isoformat(),
-            target_temp,
+            response_target_time.isoformat(),
+            response_target_temp or 0.0,
             anticipation_data.get("current_temp") or 0.0,
             anticipation_data.get("learned_heating_slope") or 0.0,
             anticipation_data.get("confidence_level") or 0.0,
@@ -263,8 +237,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Return the result as service response data
         return {
             "anticipated_start_time": anticipated_start_time.isoformat(),
-            "target_time": target_time.isoformat(),
-            "target_temp": target_temp,
+            "target_time": response_target_time.isoformat(),
+            "target_temp": response_target_temp,
             "current_temp": anticipation_data.get("current_temp"),
             "estimated_duration_minutes": anticipation_data.get("estimated_duration_minutes"),
             "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
@@ -305,7 +279,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
 
-    return cast(bool, unload_ok)
+    return bool(unload_ok)
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:

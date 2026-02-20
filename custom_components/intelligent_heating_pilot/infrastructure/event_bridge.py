@@ -80,7 +80,7 @@ class HAEventBridge:
         @callback
         def _on_entity_changed(event: Event[EventStateChangedData]) -> None:
             """Handle entity state change events.
-            
+
             All listened entities trigger _recalculate_and_publish(), which routes
             to appropriate orchestrator method based on event source.
             """
@@ -101,7 +101,9 @@ class HAEventBridge:
 
         _LOGGER.debug("Event bridge tracking %d entities", len(self._tracked_entities))
 
-    async def _recalculate_and_publish(self, event: Event[EventStateChangedData] | None = None) -> None:
+    async def _recalculate_and_publish(
+        self, event: Event[EventStateChangedData] | None = None
+    ) -> None:
         """Recalculate anticipation and publish event for sensors.
 
         Routes to appropriate orchestrator method based on event source:
@@ -119,7 +121,7 @@ class HAEventBridge:
         # Event-based routing logic
         if event is not None:
             entity_id = event.data.get("entity_id")
-            
+
             # VTherm-specific handling for slope learning
             if entity_id == self._vtherm_entity_id:
                 old_state = event.data.get("old_state")
@@ -176,7 +178,7 @@ class HAEventBridge:
                     "current_temp": anticipation_data.get("current_temp"),
                     "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
                     "confidence_level": anticipation_data.get("confidence_level"),
-                    "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
+                    "scheduler_entity": anticipation_data.get("scheduler_entity"),
                 },
             )
         else:
@@ -194,7 +196,7 @@ class HAEventBridge:
                     "current_temp": anticipation_data.get("current_temp"),
                     "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
                     "confidence_level": None,
-                    "scheduler_entity": "",
+                    "scheduler_entity": None,
                 },
             )
 

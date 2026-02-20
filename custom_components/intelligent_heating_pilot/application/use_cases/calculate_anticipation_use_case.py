@@ -96,11 +96,11 @@ class CalculateAnticipationUseCase:
         timeslot = None
         scheduler_entity = None
         timeslot_id = None
-        
+
         # Always get environment data (for minimal return structure)
         environment = await self._environment_reader.get_current_environment()
         current_temp = environment.indoor_temperature if environment else None
-        
+
         # Always get global LHS (for minimal return structure)
         global_lhs = await self._lhs_manager.get_global_lhs()
 
