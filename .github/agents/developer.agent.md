@@ -27,6 +27,7 @@ You are the **Developer** for the Intelligent Heating Pilot project. Your respon
 - Complete type hints and Google-style docstrings
 - Keep functions small and focused
 - Avoid duplication; refactor only after tests are green
+- Enforce callee-side parameter validation; callers only check return values
 
 ### 4. Commit Changes
 - After implementation and GREEN tests, commit changes with clear commit messages

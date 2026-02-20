@@ -34,6 +34,7 @@ Before any merge, engage in **collaborative peer discussion** with:
    - Architecture alignment (DDD/SOLID)
    - Code clarity and maintainability
    - Test coverage completeness
+   - Verify callee-side parameter validation (callers only check return values)
 
 2. **Engage peer feedback via PR comments**:
    - Tag `@software-architect` for design questions
