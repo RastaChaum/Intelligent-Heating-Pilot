@@ -27,9 +27,7 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
     CalculateAnticipationUseCase,
     CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
-    ResetLearningUseCase,
     ScheduleAnticipationActionUseCase,
-    SchedulePreheatingUseCase,
     UpdateCacheDataUseCase,
 )
 from custom_components.intelligent_heating_pilot.domain.services import (
@@ -155,14 +153,11 @@ def orchestrator_ihp_switch(mock_adapters_ihp_switch):
         scheduler_commander=mock_adapters_ihp_switch["scheduler_commander"],
     )
 
-    schedule_preheating = SchedulePreheatingUseCase(
-        timer_scheduler=mock_adapters_ihp_switch["timer_scheduler"],
-    )
-
     schedule_anticipation_action = ScheduleAnticipationActionUseCase(
         scheduler_reader=mock_adapters_ihp_switch["scheduler_reader"],
         scheduler_commander=mock_adapters_ihp_switch["scheduler_commander"],
         timer_scheduler=mock_adapters_ihp_switch["timer_scheduler"],
+        control_preheating_use_case=control_preheating,
     )
 
     check_overshoot_risk = CheckOvershootRiskUseCase(
@@ -178,19 +173,12 @@ def orchestrator_ihp_switch(mock_adapters_ihp_switch):
         lhs_lifecycle_manager=mock_adapters_ihp_switch["lhs_lifecycle_manager"],
     )
 
-    reset_learning = ResetLearningUseCase(
-        lhs_storage=mock_adapters_ihp_switch["model_storage"],
-        cycle_storage=mock_adapters_ihp_switch["heating_cycle_lifecycle_manager"],
-    )
-
     orchestrator = HeatingOrchestrator(
         calculate_anticipation=calculate_anticipation,
         control_preheating=control_preheating,
-        schedule_preheating=schedule_preheating,
         schedule_anticipation_action=schedule_anticipation_action,
         check_overshoot_risk=check_overshoot_risk,
         update_cache=update_cache,
-        reset_learning=reset_learning,
     )
     return orchestrator
 
@@ -254,13 +242,8 @@ def preheating_started_at(ihp_switch_context, hour, temp, orchestrator_ihp_switc
     ihp_switch_context["vtherm_setpoint"] = float(temp)
 
     schedule_use_case = orchestrator_ihp_switch._schedule_anticipation_action
-    schedule_use_case.set_preheating_state(
-        True,
-        target_time=datetime(
-            2025, 2, 10, ihp_switch_context["target_hour"], 0, 0, tzinfo=timezone.utc
-        ),
-        target_temp=float(temp),
-    )
+    schedule_use_case._preheating_target_temp = float(temp)
+    schedule_use_case._last_scheduled_time = datetime(2025, 2, 10, hour, 30, 0, tzinfo=timezone.utc)
 
 
 @given(parsers.parse("the current time is {hour:d}:00 and preheating is active"))

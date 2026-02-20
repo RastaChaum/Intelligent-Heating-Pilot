@@ -48,16 +48,30 @@ def mock_timer_scheduler() -> Mock:
 
 
 @pytest.fixture
+def mock_control_preheating() -> Mock:
+    """Create a mock control preheating use case."""
+    control = Mock()
+    control.is_preheating_active = Mock(return_value=False)
+    control.get_preheating_target_time = Mock(return_value=None)
+    control.get_active_scheduler_entity = Mock(return_value=None)
+    control.cancel_preheating = AsyncMock()
+    control.start_preheating = AsyncMock()
+    return control
+
+
+@pytest.fixture
 def use_case(
     mock_scheduler_reader: Mock,
     mock_scheduler_commander: Mock,
     mock_timer_scheduler: Mock,
+    mock_control_preheating: Mock,
 ) -> ScheduleAnticipationActionUseCase:
     """Create ScheduleAnticipationActionUseCase with mocked dependencies."""
     return ScheduleAnticipationActionUseCase(
         scheduler_reader=mock_scheduler_reader,
         scheduler_commander=mock_scheduler_commander,
         timer_scheduler=mock_timer_scheduler,
+        control_preheating_use_case=mock_control_preheating,
     )
 
 
@@ -129,7 +143,7 @@ class TestAnticipationTimer:
     async def test_immediate_trigger_when_anticipation_in_past(
         self,
         use_case: ScheduleAnticipationActionUseCase,
-        mock_scheduler_commander: Mock,
+        mock_control_preheating: Mock,
     ) -> None:
         """Test that action is triggered immediately when anticipated start is in the past."""
         now = make_aware(datetime(2025, 1, 15, 6, 30, 0))
@@ -145,13 +159,12 @@ class TestAnticipationTimer:
                 lhs=2.0,
             )
 
-        mock_scheduler_commander.run_action.assert_called_once_with(
+        # Verify delegation to control_preheating.start_preheating
+        mock_control_preheating.start_preheating.assert_called_once_with(
             target_time,
+            21.0,
             "switch.test_scheduler",
         )
-        is_active, active_target_time, _ = use_case.get_preheating_state()
-        assert is_active is True
-        assert active_target_time == target_time
 
     @pytest.mark.asyncio
     async def test_timer_cancelled_when_state_cleared(
@@ -186,6 +199,7 @@ class TestAnticipationTimer:
         use_case: ScheduleAnticipationActionUseCase,
         mock_scheduler_reader: Mock,
         mock_timer_scheduler: Mock,
+        mock_control_preheating: Mock,
     ) -> None:
         """Test that timer is cancelled when scheduler is disabled."""
         now = make_aware(datetime(2025, 1, 15, 4, 0, 0))
@@ -195,6 +209,7 @@ class TestAnticipationTimer:
         cancel_callback = Mock()
         mock_timer_scheduler.schedule_timer.return_value = cancel_callback
 
+        # First, schedule normally with scheduler enabled
         with patch.object(dt_util, "now", return_value=now):
             await use_case.schedule_action(
                 anticipated_start=anticipated_start,
@@ -204,7 +219,12 @@ class TestAnticipationTimer:
                 lhs=2.0,
             )
 
+        # Verify timer was scheduled
+        assert mock_timer_scheduler.schedule_timer.called
+
+        # Now disable scheduler and set active scheduler to match
         mock_scheduler_reader.is_scheduler_enabled.return_value = False
+        mock_control_preheating.get_active_scheduler_entity.return_value = "switch.test_scheduler"
 
         with patch.object(dt_util, "now", return_value=now):
             await use_case.schedule_action(
@@ -215,5 +235,5 @@ class TestAnticipationTimer:
                 lhs=2.0,
             )
 
+        # Verify timer was cancelled (via _clear_state)
         cancel_callback.assert_called_once()
-        assert use_case.get_preheating_state() == (False, None, None)

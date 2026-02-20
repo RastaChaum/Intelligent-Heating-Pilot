@@ -153,13 +153,18 @@ class TestHeatingOrchestrator:
         mock_control_preheating: Mock,
         mock_schedule_anticipation_action: Mock,
     ) -> None:
-        """Test that disable_preheating doesn't cancel preheating if not active."""
+        """Test that disable_preheating calls cancel_preheating regardless of state.
+
+        With callee-side validation, the orchestrator always calls cancel_preheating,
+        and cancel_preheating handles the internal check for active state.
+        """
         mock_control_preheating.is_preheating_active.return_value = False
 
         await orchestrator.disable_preheating(scheduler_entity_id="schedule.heating")
 
         mock_schedule_anticipation_action.cancel_action.assert_called_once()
-        mock_control_preheating.cancel_preheating.assert_not_called()
+        # With callee-side validation, cancel_preheating is always called
+        mock_control_preheating.cancel_preheating.assert_called_once_with("schedule.heating")
 
     @pytest.mark.asyncio
     async def test_reset_all_learning_data_delegates(
