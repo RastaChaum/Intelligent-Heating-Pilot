@@ -407,9 +407,9 @@ class HeatingCycleLifecycleManager:
 
     async def update_cycles_for_window(
         self,
+        device_id: str,
         start_time: datetime,
         end_time: datetime,
-        device_id: str | None = None,
     ) -> list[HeatingCycle]:
         """Extract and persist cycles for a specific window.
 
@@ -427,16 +427,15 @@ class HeatingCycleLifecycleManager:
         - on_24h_timer(): Periodic refresh
 
         Args:
+            device_id: Device identifier used for history queries and cache keys.
             start_time: Start of the extraction window.
             end_time: End of the extraction window.
-            device_id: Device identifier used for history queries and cache keys.
-                Defaults to the configured device_id.
 
         Returns:
             Newly extracted heating cycles for the window.
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager.update_cycles_for_window")
-        effective_device_id = device_id or self._device_config.device_id
+        effective_device_id = device_id
         _LOGGER.debug(
             "Updating cycles for device=%s from %s to %s",
             effective_device_id,
