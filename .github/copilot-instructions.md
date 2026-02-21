@@ -7,6 +7,13 @@
 - **See [`.github/agents/`](./agents/README.md)** for specialized agent roles and orchestration workflow
 - **See [`.github/CONTRIBUTOR_STANDARDS.md`](./CONTRIBUTOR_STANDARDS.md)** for practical development standards
 
+## 🤖 Local Agent Invocation
+
+When delegating work to specialized agents in this local environment:
+
+- **Use `runSubagent` only** to invoke agents
+- **Do NOT use `@developer`, `@qa-engineer`, or any `@...` mentions** (these do not work locally)
+
 ## 🎯 Project Overview
 
 The Intelligent Heating Pilot (IHP) is a Home Assistant integration that intelligently preheats homes using predictive algorithms and machine learning. This document defines the architectural principles and development practices that **must** be followed by all AI-assisted code generation.
