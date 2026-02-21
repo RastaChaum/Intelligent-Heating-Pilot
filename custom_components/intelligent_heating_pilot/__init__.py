@@ -35,6 +35,13 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Intelligent Heating Pilot component."""
     hass.data.setdefault(DOMAIN, {})
 
+    # Initialize shared recorder access queue (FIFO) for all IHP devices.
+    # This must be created before any device entry setup to ensure all adapters
+    # share the same queue and recorder access is serialized across instances.
+    from .infrastructure.recorder_queue import get_recorder_queue
+
+    get_recorder_queue(hass)
+
     # Store hass in http app context for REST API views to access it
     hass.http.app["hass"] = hass
 

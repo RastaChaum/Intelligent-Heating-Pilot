@@ -1,4 +1,4 @@
-"""Integration tests for WeatherDataAdapter using real Home Assistant recorder.
+"""Integration tests for HAWeatherDataReader using real Home Assistant recorder.
 
 These tests use real HA state recording via hass.states.async_set + recorder,
 not manually constructed State objects, to ensure adapter behavior matches
@@ -22,9 +22,19 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     HistoricalDataKey,
 )
-from custom_components.intelligent_heating_pilot.infrastructure.adapters.weather_data_adapter import (
-    WeatherDataAdapter,
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.weather_data_reader import (
+    HAWeatherDataReader,
 )
+from custom_components.intelligent_heating_pilot.infrastructure.recorder_queue import (
+    RecorderAccessQueue,
+)
+
+
+@pytest.fixture
+def recorder_queue() -> RecorderAccessQueue:
+    """Create a RecorderAccessQueue for tests."""
+    return RecorderAccessQueue()
+
 
 # Check SQLite version
 SQLITE_VERSION = tuple(map(int, sqlite3.sqlite_version.split(".")))
@@ -36,8 +46,8 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.mark.usefixtures("recorder_mock")
-async def test_weather_adapter_fetch_real_outdoor_temp_history(hass):
-    """Test WeatherDataAdapter fetches outdoor temperature from real recorded states."""
+async def test_weather_adapter_fetch_real_outdoor_temp_history(hass, recorder_queue):
+    """Test HAWeatherDataReader fetches outdoor temperature from real recorded states."""
     entity_id = "weather.home"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
@@ -87,7 +97,7 @@ async def test_weather_adapter_fetch_real_outdoor_temp_history(hass):
     assert len(hist[entity_id]) >= 2
 
     # Test adapter fetches and converts correctly from real recorder data
-    adapter = WeatherDataAdapter(hass)
+    adapter = HAWeatherDataReader(hass, recorder_queue)
     dataset = await adapter.fetch_historical_data(
         entity_id=entity_id,
         data_key=HistoricalDataKey.OUTDOOR_TEMP,
@@ -108,8 +118,8 @@ async def test_weather_adapter_fetch_real_outdoor_temp_history(hass):
 
 
 @pytest.mark.usefixtures("recorder_mock")
-async def test_weather_adapter_fetch_real_outdoor_humidity_history(hass):
-    """Test WeatherDataAdapter fetches outdoor humidity from real recorded states."""
+async def test_weather_adapter_fetch_real_outdoor_humidity_history(hass, recorder_queue):
+    """Test HAWeatherDataReader fetches outdoor humidity from real recorded states."""
     entity_id = "weather.forecast"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
@@ -152,7 +162,7 @@ async def test_weather_adapter_fetch_real_outdoor_humidity_history(hass):
         await async_wait_recording_done(hass)
 
     # Test adapter extraction from real recorder data
-    adapter = WeatherDataAdapter(hass)
+    adapter = HAWeatherDataReader(hass, recorder_queue)
     dataset = await adapter.fetch_historical_data(
         entity_id=entity_id,
         data_key=HistoricalDataKey.OUTDOOR_HUMIDITY,
@@ -171,8 +181,8 @@ async def test_weather_adapter_fetch_real_outdoor_humidity_history(hass):
 
 
 @pytest.mark.usefixtures("recorder_mock")
-async def test_weather_adapter_fetch_real_cloud_coverage_history(hass):
-    """Test WeatherDataAdapter fetches cloud coverage from real recorded states."""
+async def test_weather_adapter_fetch_real_cloud_coverage_history(hass, recorder_queue):
+    """Test HAWeatherDataReader fetches cloud coverage from real recorded states."""
     entity_id = "weather.local"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
@@ -215,7 +225,7 @@ async def test_weather_adapter_fetch_real_cloud_coverage_history(hass):
         await async_wait_recording_done(hass)
 
     # Test adapter extraction of cloud_coverage from real recorder data
-    adapter = WeatherDataAdapter(hass)
+    adapter = HAWeatherDataReader(hass, recorder_queue)
     dataset = await adapter.fetch_historical_data(
         entity_id=entity_id,
         data_key=HistoricalDataKey.CLOUD_COVERAGE,
@@ -234,7 +244,7 @@ async def test_weather_adapter_fetch_real_cloud_coverage_history(hass):
 
 
 @pytest.mark.usefixtures("recorder_mock")
-async def test_weather_adapter_handles_missing_attributes_in_real_states(hass):
+async def test_weather_adapter_handles_missing_attributes_in_real_states(hass, recorder_queue):
     """Test adapter handles weather states where expected attributes might be missing."""
     entity_id = "weather.partial"
     now = dt_util.utcnow()
@@ -280,7 +290,7 @@ async def test_weather_adapter_handles_missing_attributes_in_real_states(hass):
         await async_wait_recording_done(hass)
 
     # Test adapter only extracts valid measurements from real recorder data
-    adapter = WeatherDataAdapter(hass)
+    adapter = HAWeatherDataReader(hass, recorder_queue)
     dataset = await adapter.fetch_historical_data(
         entity_id=entity_id,
         data_key=HistoricalDataKey.OUTDOOR_TEMP,

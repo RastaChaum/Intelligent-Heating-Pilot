@@ -1,6 +1,6 @@
-"""Sensor data adapter for Home Assistant historical data.
+"""Home Assistant sensor data reader adapter.
 
-Converts Home Assistant sensor entity history into HistoricalDataSet.
+Provides historical data access for sensor entities via HA Recorder.
 """
 
 from __future__ import annotations
@@ -19,27 +19,32 @@ from ...domain.value_objects import (
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+    from ..recorder_queue import RecorderAccessQueue
+
 _LOGGER = logging.getLogger(__name__)
 
 
-class SensorDataAdapter(IHistoricalDataAdapter):
-    """Adapter for converting Home Assistant sensor entity history to HistoricalDataSet.
+class HASensorDataReader(IHistoricalDataAdapter):
+    """Adapter for reading historical sensor data from Home Assistant.
 
-    Sensor entities provide numeric or string state values with optional attributes
-    like unit_of_measurement, device_class, etc.
+    Generic adapter supporting any sensor type (temperature, humidity, etc.)
+    mapped to appropriate HistoricalDataKey values.
 
-    This adapter is generic and can handle any sensor type, mapping them to
-    appropriate HistoricalDataKey values based on device_class or configuration.
+    Uses RecorderAccessQueue (MANDATORY) to serialize database access and prevent
+    Home Assistant performance degradation when multiple IHP instances query
+    historical data simultaneously.
     """
 
-    def __init__(self, hass: HomeAssistant) -> None:
-        """Initialize the sensor data adapter.
+    def __init__(self, hass: HomeAssistant, recorder_queue: RecorderAccessQueue) -> None:
+        """Initialize the sensor data reader.
 
         Args:
             hass: Home Assistant instance
+            recorder_queue: Shared FIFO queue to serialize recorder access (MANDATORY)
         """
         self._hass = hass
-        _LOGGER.debug("Initialized SensorDataAdapter")
+        self._recorder_queue = recorder_queue
+        _LOGGER.debug("Initialized HASensorDataReader with mandatory RecorderAccessQueue")
 
     async def fetch_historical_data(
         self,
@@ -50,9 +55,11 @@ class SensorDataAdapter(IHistoricalDataAdapter):
     ) -> HistoricalDataSet:
         """Fetch historical data for a sensor entity.
 
+        USES RecorderAccessQueue to serialize database access.
+
         Args:
-            entity_id: The sensor entity ID (e.g., "sensor.indoor_temperature")
-            data_key: The HistoricalDataKey to use (e.g., OUTDOOR_TEMP, INDOOR_HUMIDITY)
+            entity_id: Sensor entity ID (e.g., "sensor.indoor_temperature")
+            data_key: HistoricalDataKey (e.g., OUTDOOR_TEMP, INDOOR_HUMIDITY)
             start_time: Start of historical period
             end_time: End of historical period
 
@@ -176,9 +183,11 @@ class SensorDataAdapter(IHistoricalDataAdapter):
         start_time: datetime,
         end_time: datetime,
     ) -> list[dict[str, Any]]:
-        """Fetch historical data from Home Assistant.
+        """Fetch historical data from Home Assistant Recorder.
 
-        This is a separate method to make it easily mockable in tests.
+        CRITICAL: Uses RecorderAccessQueue to serialize database access.
+        This is a FIFO queue shared across all IHP instances to prevent
+        overwhelming the recorder during startup or cache refresh.
 
         Args:
             entity_id: The entity ID
@@ -202,7 +211,11 @@ class SensorDataAdapter(IHistoricalDataAdapter):
             end_time,
             entity_ids=[entity_id],
         )
-        history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
+
+        # Serialize recorder access via shared FIFO queue (MANDATORY)
+        async with self._recorder_queue.lock:
+            _LOGGER.debug("Acquired recorder lock for sensor entity %s", entity_id)
+            history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
 
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])

@@ -1,4 +1,4 @@
-"""Integration tests for SensorDataAdapter using real Home Assistant recorder.
+"""Integration tests for HASensorDataReader using real Home Assistant recorder.
 
 These tests use real HA state recording via hass.states.async_set + recorder,
 not manually constructed State objects, to ensure adapter behavior matches
@@ -22,9 +22,19 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     HistoricalDataKey,
 )
-from custom_components.intelligent_heating_pilot.infrastructure.adapters.sensor_data_adapter import (
-    SensorDataAdapter,
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.sensor_data_reader import (
+    HASensorDataReader,
 )
+from custom_components.intelligent_heating_pilot.infrastructure.recorder_queue import (
+    RecorderAccessQueue,
+)
+
+
+@pytest.fixture
+def recorder_queue() -> RecorderAccessQueue:
+    """Create a RecorderAccessQueue for tests."""
+    return RecorderAccessQueue()
+
 
 # Check SQLite version
 SQLITE_VERSION = tuple(map(int, sqlite3.sqlite_version.split(".")))
@@ -36,8 +46,8 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.mark.usefixtures("recorder_mock")
-async def test_sensor_adapter_fetch_real_sensor_value_history(hass):
-    """Test SensorDataAdapter fetches sensor values from real recorded states."""
+async def test_sensor_adapter_fetch_real_sensor_value_history(hass, recorder_queue):
+    """Test HASensorDataReader fetches sensor values from real recorded states."""
     entity_id = "sensor.temperature_bedroom"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
@@ -84,7 +94,7 @@ async def test_sensor_adapter_fetch_real_sensor_value_history(hass):
     assert len(hist[entity_id]) >= 2
 
     # Test adapter fetches and converts correctly from real recorder data
-    adapter = SensorDataAdapter(hass)
+    adapter = HASensorDataReader(hass, recorder_queue)
     dataset = await adapter.fetch_historical_data(
         entity_id=entity_id,
         data_key=HistoricalDataKey.INDOOR_TEMP,
@@ -105,8 +115,8 @@ async def test_sensor_adapter_fetch_real_sensor_value_history(hass):
 
 
 @pytest.mark.usefixtures("recorder_mock")
-async def test_sensor_adapter_fetch_real_battery_level_history(hass):
-    """Test SensorDataAdapter fetches battery levels from real recorded states."""
+async def test_sensor_adapter_fetch_real_battery_level_history(hass, recorder_queue):
+    """Test HASensorDataReader fetches battery levels from real recorded states."""
     entity_id = "sensor.temperature_sensor_battery"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
@@ -150,7 +160,7 @@ async def test_sensor_adapter_fetch_real_battery_level_history(hass):
         await async_wait_recording_done(hass)
 
     # Test adapter extraction from real recorder data
-    adapter = SensorDataAdapter(hass)
+    adapter = HASensorDataReader(hass, recorder_queue)
     dataset = await adapter.fetch_historical_data(
         entity_id=entity_id,
         data_key=HistoricalDataKey.INDOOR_HUMIDITY,
@@ -169,7 +179,7 @@ async def test_sensor_adapter_fetch_real_battery_level_history(hass):
 
 
 @pytest.mark.usefixtures("recorder_mock")
-async def test_sensor_adapter_handles_non_numeric_states(hass):
+async def test_sensor_adapter_handles_non_numeric_states(hass, recorder_queue):
     """Test adapter handles sensors with non-numeric states (should be filtered)."""
     entity_id = "sensor.status_sensor"
     now = dt_util.utcnow()
@@ -210,7 +220,7 @@ async def test_sensor_adapter_handles_non_numeric_states(hass):
         await async_wait_recording_done(hass)
 
     # Test adapter only extracts valid numeric measurements
-    adapter = SensorDataAdapter(hass)
+    adapter = HASensorDataReader(hass, recorder_queue)
     dataset = await adapter.fetch_historical_data(
         entity_id=entity_id,
         data_key=HistoricalDataKey.INDOOR_TEMP,

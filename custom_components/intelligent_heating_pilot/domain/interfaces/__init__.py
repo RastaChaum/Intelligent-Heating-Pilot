@@ -17,9 +17,7 @@ from .historical_data_adapter_interface import IHistoricalDataAdapter
 from .lhs_storage_interface import ILhsStorage
 from .scheduler_commander_interface import ISchedulerCommander
 from .scheduler_reader_interface import ISchedulerReader
-from .sensor_data_adapter_interface import ISensorDataAdapter
 from .timer_scheduler import ITimerScheduler
-from .weather_data_adapter_interface import IWeatherDataAdapter
 
 __all__ = [
     "IClimateDataReader",
@@ -33,7 +31,5 @@ __all__ = [
     "IHeatingCycleStorage",
     "IDeviceConfigReader",
     "IHistoricalDataAdapter",
-    "ISensorDataAdapter",
-    "IWeatherDataAdapter",
     "ITimerScheduler",
 ]
