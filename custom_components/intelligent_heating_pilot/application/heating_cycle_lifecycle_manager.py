@@ -461,12 +461,23 @@ class HeatingCycleLifecycleManager:
                 _LOGGER.error("Error updating cycle cache: %s", exc)
 
         # Calculate and persist learned dead time from cycles
+        _LOGGER.debug(
+            "Dead time persistence check: cycles=%d, lhs_storage=%s, auto_learning=%s",
+            len(cycles) if cycles else 0,
+            "Not None" if self._lhs_storage is not None else "None",
+            self._device_config.auto_learning,
+        )
         if cycles and self._lhs_storage is not None and self._device_config.auto_learning:
             try:
                 from ..domain.services import DeadTimeCalculationService
 
                 dead_time_calculator = DeadTimeCalculationService()
                 learned_dead_time = dead_time_calculator.calculate_average_dead_time(cycles)
+
+                _LOGGER.debug(
+                    "Calculated learned_dead_time: %s minutes",
+                    f"{learned_dead_time:.1f}" if learned_dead_time is not None else "None",
+                )
 
                 if learned_dead_time is not None:
                     await self._lhs_storage.set_learned_dead_time(learned_dead_time)
@@ -481,7 +492,7 @@ class HeatingCycleLifecycleManager:
                         except Exception as exc:
                             _LOGGER.warning("Dead time update callback failed: %s", exc)
             except Exception as exc:
-                _LOGGER.warning("Failed to calculate/persist dead time: %s", exc)
+                _LOGGER.warning("Failed to calculate/persist dead time: %s", exc, exc_info=True)
         elif cycles and self._lhs_storage is not None and not self._device_config.auto_learning:
             _LOGGER.debug(
                 "Auto-learning disabled; skipping dead time persistence for device=%s",

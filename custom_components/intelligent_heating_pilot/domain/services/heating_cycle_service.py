@@ -687,6 +687,7 @@ class HeatingCycleService(IHeatingCycleService):
         start_temp: float,
         history_data_set: HistoricalDataSet,
         temp_change_threshold: float = 0.1,
+        max_dead_time_minutes: float = 60.0,
     ) -> float | None:
         """Calculate the dead time for a specific cycle.
 
@@ -698,9 +699,12 @@ class HeatingCycleService(IHeatingCycleService):
             start_temp: Initial temperature at cycle start
             history_data_set: Historical temperature data
             temp_change_threshold: Minimum temperature rise to detect (default: 0.1°C, must be positive)
+            max_dead_time_minutes: Maximum acceptable dead time (default: 60 minutes).
+                Values above this threshold are considered data artifacts.
 
         Returns:
-            Dead time in minutes, or None if temperature never rises by threshold or no data available
+            Dead time in minutes, or None if temperature never rises by threshold,
+            no data available, or dead time exceeds maximum threshold
         """
         indoor_temp_history = history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, [])
 
@@ -722,6 +726,16 @@ class HeatingCycleService(IHeatingCycleService):
                 temp_change = current_temp - start_temp
                 if temp_change >= temp_change_threshold:
                     dead_time_minutes = (measurement.timestamp - start_time).total_seconds() / 60.0
+
+                    # Filter out abnormally high dead times (data artifacts)
+                    if dead_time_minutes > max_dead_time_minutes:
+                        _LOGGER.debug(
+                            "Dead time %.1f minutes exceeds maximum threshold %.1f minutes - ignoring as data artifact",
+                            dead_time_minutes,
+                            max_dead_time_minutes,
+                        )
+                        return None
+
                     _LOGGER.debug(
                         "Dead time calculated: %.1f minutes (temp change from %.1f to %.1f°C)",
                         dead_time_minutes,
