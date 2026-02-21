@@ -21,6 +21,14 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Minimum change in monitored sensor value (humidity %, cloud coverage %) to
+# trigger a recalculation.  Small fluctuations below this threshold are ignored.
+_MONITORED_ENTITY_CHANGE_THRESHOLD = 3.0
+
+# Tolerance in seconds for anticipated_start_time comparison.  Changes smaller
+# than this are not considered meaningful enough to re-publish the event.
+_ANTICIPATION_TIME_TOLERANCE_SECONDS = 60
+
 
 class HAEventBridge:
     """Bridges Home Assistant events to application service.
@@ -67,6 +75,11 @@ class HAEventBridge:
         
         # Debouncing state
         self._ignore_vtherm_until: datetime | None = None
+
+        # Deduplication: remember the last event data that was published so we
+        # can skip firing when nothing meaningful has changed.
+        self._last_published_data: dict | None = None
+        self._last_clear_published: bool = False
     
     def setup_listeners(self) -> None:
         """Setup all event listeners."""
@@ -81,11 +94,15 @@ class HAEventBridge:
             # VTherm-specific handling for slope learning
             if entity_id == self._vtherm_entity_id:
                 self._handle_vtherm_change(event)
+            elif entity_id in self._scheduler_entity_ids:
+                # Only trigger for meaningful scheduler state changes
+                self._trigger_recalculate_if_meaningful(
+                    self._has_meaningful_scheduler_change(event), entity_id
+                )
             else:
-                # Other entities just trigger recalculation
-                _LOGGER.debug("Entity %s changed, triggering update", entity_id)
-                self._hass.async_create_task(
-                    self._recalculate_and_publish()
+                # Monitored entity (humidity, cloud cover) – apply threshold filter
+                self._trigger_recalculate_if_meaningful(
+                    self._has_meaningful_monitored_change(event), entity_id
                 )
         
         # Register state change listener
@@ -97,6 +114,129 @@ class HAEventBridge:
         self._listeners.append(unsub)
         
         _LOGGER.debug("Event bridge tracking %d entities", len(self._tracked_entities))
+
+    # ------------------------------------------------------------------
+    # Smart filtering helpers
+    # ------------------------------------------------------------------
+
+    def _trigger_recalculate_if_meaningful(self, meaningful: bool, entity_id: str) -> None:
+        """Trigger recalculation when the entity change is meaningful.
+
+        Logs the outcome at DEBUG level to aid diagnostics without noise.
+        """
+        if meaningful:
+            _LOGGER.debug("Entity %s changed meaningfully, triggering update", entity_id)
+            self._hass.async_create_task(self._recalculate_and_publish())
+        else:
+            _LOGGER.debug("Entity %s change not actionable, skipping recalculation", entity_id)
+
+    def _has_meaningful_scheduler_change(self, event: Event[EventStateChangedData]) -> bool:
+        """Return True only when a scheduler state change is actionable for IHP.
+
+        Ignores attribute-only updates that do not affect the IHP schedule
+        (e.g., internal counters, last_triggered, etc.).  Only the following
+        changes are considered meaningful:
+
+        - The enabled / disabled state (on / off) toggled.
+        - The ``next_trigger`` timestamp changed (different upcoming slot).
+        - The ``actions`` attribute changed (different target temperature / preset).
+        """
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+
+        if not old_state or not new_state:
+            return True
+
+        # Enabled / disabled toggle
+        if old_state.state != new_state.state:
+            return True
+
+        old_attrs = old_state.attributes
+        new_attrs = new_state.attributes
+
+        # Next occurrence time changed
+        if old_attrs.get("next_trigger") != new_attrs.get("next_trigger"):
+            return True
+
+        # Target temperature / actions changed
+        if old_attrs.get("actions") != new_attrs.get("actions"):
+            return True
+
+        return False
+
+    def _has_meaningful_monitored_change(self, event: Event[EventStateChangedData]) -> bool:
+        """Return True only when a monitored sensor value changed significantly.
+
+        Tiny fluctuations in humidity or cloud coverage sensors are ignored.
+        Availability transitions are always considered meaningful.
+        """
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+
+        if not old_state or not new_state:
+            return True
+
+        _unavailable = {"unavailable", "unknown"}
+        old_unavailable = old_state.state in _unavailable
+        new_unavailable = new_state.state in _unavailable
+
+        # Availability transition is always actionable
+        if old_unavailable != new_unavailable:
+            return True
+
+        # Both unavailable – nothing changed
+        if old_unavailable and new_unavailable:
+            return False
+
+        try:
+            old_val = float(old_state.state)
+            new_val = float(new_state.state)
+            return abs(new_val - old_val) >= _MONITORED_ENTITY_CHANGE_THRESHOLD
+        except (TypeError, ValueError):
+            # Non-numeric state: trigger on any state string change
+            return old_state.state != new_state.state
+
+    def _is_meaningful_change_from_last(self, new_data: dict) -> bool:
+        """Return True when *new_data* differs meaningfully from the last published event.
+
+        Prevents flooding sensors with identical or near-identical events.
+        """
+        last = self._last_published_data
+        if last is None:
+            return True
+
+        # Core schedule fields – any difference is significant
+        for key in ("next_schedule_time", "next_target_temperature", "scheduler_entity"):
+            if new_data.get(key) != last.get(key):
+                return True
+
+        # Current indoor temperature (0.1 °C tolerance)
+        new_temp = new_data.get("current_temp") or 0.0
+        last_temp = last.get("current_temp") or 0.0
+        if abs(new_temp - last_temp) >= 0.1:
+            return True
+
+        # Learned heating slope (0.05 °C/h tolerance)
+        new_lhs = new_data.get("learned_heating_slope") or 0.0
+        last_lhs = last.get("learned_heating_slope") or 0.0
+        if abs(new_lhs - last_lhs) >= 0.05:
+            return True
+
+        # Anticipated start time (1-minute tolerance)
+        new_start = new_data.get("anticipated_start_time")
+        last_start = last.get("anticipated_start_time")
+        if new_start != last_start:
+            try:
+                new_dt = dt_util.parse_datetime(new_start) if isinstance(new_start, str) else new_start
+                last_dt = dt_util.parse_datetime(last_start) if isinstance(last_start, str) else last_start
+                if new_dt is None or last_dt is None:
+                    return True
+                if abs((new_dt - last_dt).total_seconds()) >= _ANTICIPATION_TIME_TOLERANCE_SECONDS:
+                    return True
+            except (TypeError, ValueError, AttributeError):
+                return True
+
+        return False
     
     def _handle_vtherm_change(self, event: Event[EventStateChangedData]) -> None:
         """Handle VTherm state changes (slope learning + update).
@@ -133,36 +273,47 @@ class HAEventBridge:
         )
     
     async def _recalculate_and_publish(self) -> None:
-        """Recalculate anticipation and publish event for sensors."""
+        """Recalculate anticipation and publish event for sensors if data changed."""
         anticipation_data = await self._app_service.calculate_and_schedule_anticipation()
-        
+
         if anticipation_data:
-            # Publish event for sensors with data
-            self._hass.bus.async_fire(
-                "intelligent_heating_pilot_anticipation_calculated",
-                {
-                    "entry_id": self._entry_id,
-                    "anticipated_start_time": anticipation_data["anticipated_start_time"].isoformat(),
-                    "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
-                    "next_target_temperature": anticipation_data["next_target_temperature"],
-                    "anticipation_minutes": anticipation_data["anticipation_minutes"],
-                    "current_temp": anticipation_data["current_temp"],
-                    "learned_heating_slope": anticipation_data["learned_heating_slope"],
-                    "confidence_level": anticipation_data["confidence_level"],
-                    "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
-                },
-            )
-            _LOGGER.debug("Published anticipation event for sensors")
+            event_data: dict = {
+                "entry_id": self._entry_id,
+                "anticipated_start_time": anticipation_data["anticipated_start_time"].isoformat(),
+                "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
+                "next_target_temperature": anticipation_data["next_target_temperature"],
+                "anticipation_minutes": anticipation_data["anticipation_minutes"],
+                "current_temp": anticipation_data["current_temp"],
+                "learned_heating_slope": anticipation_data["learned_heating_slope"],
+                "confidence_level": anticipation_data["confidence_level"],
+                "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
+            }
+
+            if self._is_meaningful_change_from_last(event_data):
+                self._hass.bus.async_fire(
+                    "intelligent_heating_pilot_anticipation_calculated",
+                    event_data,
+                )
+                self._last_published_data = event_data
+                self._last_clear_published = False
+                _LOGGER.debug("Published anticipation event for sensors (data changed)")
+            else:
+                _LOGGER.debug("Skipped anticipation event: no meaningful change from last published data")
         else:
-            # Publish event to clear sensor values (set to unknown)
-            self._hass.bus.async_fire(
-                "intelligent_heating_pilot_anticipation_calculated",
-                {
-                    "entry_id": self._entry_id,
-                    "clear_values": True,  # Signal to sensors to clear their values
-                },
-            )
-            _LOGGER.debug("Published clear event for sensors")
+            # Only publish the clear event once until data becomes available again
+            if not self._last_clear_published:
+                self._hass.bus.async_fire(
+                    "intelligent_heating_pilot_anticipation_calculated",
+                    {
+                        "entry_id": self._entry_id,
+                        "clear_values": True,  # Signal to sensors to clear their values
+                    },
+                )
+                self._last_published_data = None
+                self._last_clear_published = True
+                _LOGGER.debug("Published clear event for sensors")
+            else:
+                _LOGGER.debug("Skipped clear event: already published")
     
     def ignore_vtherm_changes_for(self, seconds: int = 10) -> None:
         """Temporarily ignore VTherm changes (used after self-induced changes).

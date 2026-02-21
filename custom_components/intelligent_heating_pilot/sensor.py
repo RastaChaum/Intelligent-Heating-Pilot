@@ -77,8 +77,12 @@ class IntelligentHeatingPilotSensorBase(SensorEntity):
             # Filter events to only those coming from our own config entry
             if data.get("entry_id") != self._config_entry.entry_id:
                 return
+            old_value = self.native_value
             self._handle_anticipation_result(data)
-            self.async_write_ha_state()
+            # Only write HA state when the sensor value actually changed to
+            # avoid unnecessary state-machine writes and log noise.
+            if self.native_value != old_value:
+                self.async_write_ha_state()
 
         self.async_on_remove(
             self.hass.bus.async_listen(
@@ -162,7 +166,7 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
                 ATTR_LEARNED_HEATING_SLOPE: data.get(ATTR_LEARNED_HEATING_SLOPE),
                 "confidence_level": data.get("confidence_level"),  # Phase 4: New from domain
             }
-            _LOGGER.info("Anticipated start time updated: %s (confidence: %.2f)", 
+            _LOGGER.debug("Anticipated start time updated: %s (confidence: %.2f)", 
                         self._anticipated_start, data.get("confidence_level", 0.0))
 
 
@@ -324,7 +328,7 @@ class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBas
                 ATTR_NEXT_TARGET_TEMP: data.get(ATTR_NEXT_TARGET_TEMP),
                 "scheduler_entity": data.get("scheduler_entity"),
             }
-            _LOGGER.info("Next schedule time updated: %s", self._next_schedule)
+            _LOGGER.debug("Next schedule time updated: %s", self._next_schedule)
 
 
 class IntelligentHeatingPilotNextScheduleHmsSensor(IntelligentHeatingPilotSensorBase):
@@ -434,4 +438,4 @@ class IntelligentHeatingPilotPredictionConfidenceSensor(IntelligentHeatingPilotS
                     "cloud_coverage": data.get("cloud_coverage") is not None,
                 },
             }
-            _LOGGER.info("Prediction confidence updated: %.1f%%", self._confidence * 100)
+            _LOGGER.debug("Prediction confidence updated: %.1f%%", self._confidence * 100)
