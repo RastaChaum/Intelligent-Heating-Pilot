@@ -49,6 +49,8 @@ async def async_setup_entry(
         IntelligentHeatingPilotPredictionConfidenceSensor(
             coordinator, config_entry, name
         ),  # Phase 4: New
+        # Dead time learning sensor
+        IntelligentHeatingPilotDeadTimeSensor(coordinator, config_entry, name),
     ]
 
     async_add_entities(sensors, True)
@@ -519,3 +521,65 @@ class IntelligentHeatingPilotPredictionConfidenceSensor(IntelligentHeatingPilotS
                 },
             }
             _LOGGER.info("Prediction confidence updated: %.1f%%", self._confidence * 100)
+
+
+class IntelligentHeatingPilotDeadTimeSensor(SensorEntity):
+    """Sensor for displaying learned dead time value.
+
+    Shows the dead time calculated from heating cycles.
+    Dead time is the delay between heating start and first measurable temperature rise (in minutes).
+    """
+
+    _attr_name = "Dead Time"
+    _attr_icon = "mdi:timer-sand"
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "min"
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: Any,
+        config_entry: ConfigEntry,
+        name: str,
+    ) -> None:
+        """Initialize the sensor."""
+        self._coordinator = coordinator
+        self._attr_unique_id = f"{config_entry.entry_id}_dead_time"
+
+        # Device info
+        self._attr_device_info = {
+            "identifiers": {("intelligent_heating_pilot", config_entry.entry_id)},
+            "name": f"Intelligent Heating Pilot {name}",
+            "manufacturer": "Intelligent Heating Pilot",
+            "model": "IHP",
+        }
+
+        self._dead_time: float | None = None
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the current dead time value in minutes."""
+        return self._dead_time
+
+    @property
+    def available(self) -> bool:
+        """Return True if sensor is available."""
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        return {
+            "auto_learning": self._coordinator.is_auto_learning_enabled(),
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+
+        # Load initial value from storage
+        dead_time = await self._coordinator.get_current_dead_time()
+        if dead_time is not None:
+            self._dead_time = dead_time
+            self.async_write_ha_state()

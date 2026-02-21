@@ -76,6 +76,7 @@ class HALhsStorage(BaseHAStorageAdapter[dict[str, Any]], ILhsStorage):
         """
         return {
             "learned_heating_slope": DEFAULT_HEATING_SLOPE,
+            "learned_dead_time": None,
         }
 
     async def get_learned_heating_slope(self) -> float:
@@ -189,6 +190,26 @@ class HALhsStorage(BaseHAStorageAdapter[dict[str, Any]], ILhsStorage):
         await self._ensure_loaded()
         self._data["cached_contextual_lhs"] = {}
         await self._save_data()
+
+    async def get_learned_dead_time(self) -> float | None:
+        """Get the learned dead time value from auto-learning.
+
+        Returns:
+            Dead time in minutes, or None if not yet learned
+        """
+        await self._ensure_loaded()
+        return self._data.get("learned_dead_time")
+
+    async def set_learned_dead_time(self, dead_time: float | None) -> None:
+        """Persist learned dead time value from auto-learning.
+
+        Args:
+            dead_time: Dead time in minutes, or None to clear
+        """
+        await self._ensure_loaded()
+        self._data["learned_dead_time"] = dead_time
+        await self._save_data()
+        _LOGGER.info("Learned dead time updated: %.1f minutes", dead_time or 0)
 
     def _serialize_lhs_cache_entry(self, lhs: float, updated_at: datetime) -> dict[str, Any]:
         """Serialize an LHS cache entry to a dictionary for storage.

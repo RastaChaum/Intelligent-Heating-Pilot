@@ -611,6 +611,32 @@ class HeatingApplication:
         """Get scheduler entity IDs."""
         return self._scheduler_ids[:]
 
+    def is_auto_learning_enabled(self) -> bool:
+        """Check if auto-learning is enabled.
+
+        Returns:
+            True if auto_learning is enabled in configuration
+        """
+        return self._auto_learning
+
+    async def get_current_dead_time(self) -> float | None:
+        """Get the current learned dead time value.
+
+        Returns the dead time value persisted from auto-learning.
+
+        Returns:
+            Dead time in minutes, or None if not yet learned
+        """
+        _LOGGER.debug("Entering get_current_dead_time")
+
+        if not self._lhs_storage:
+            _LOGGER.debug("No LHS storage available")
+            return None
+
+        learned_dead_time = await self._lhs_storage.get_learned_dead_time()
+        _LOGGER.debug("Exiting get_current_dead_time: result=%s", learned_dead_time)
+        return learned_dead_time
+
     async def async_cleanup(self) -> None:
         """Cleanup coordinator resources.
 

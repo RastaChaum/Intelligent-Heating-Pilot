@@ -85,3 +85,25 @@ class ILhsStorage(ABC):
     @abstractmethod
     async def clear_contextual_cache(self) -> None:
         """Clear all cached contextual LHS entries."""
+        pass
+
+    @abstractmethod
+    async def get_learned_dead_time(self) -> float | None:
+        """Get the current learned dead time in minutes.
+
+        Dead time is the delay between starting heat output and when the
+        indoor temperature begins rising noticeably.
+
+        Returns:
+            The learned dead time in minutes, or None if not yet learned.
+        """
+        pass
+
+    @abstractmethod
+    async def set_learned_dead_time(self, dead_time: float | None) -> None:
+        """Persist the learned dead time value.
+
+        Args:
+            dead_time: The learned dead time in minutes, or None to clear.
+        """
+        pass

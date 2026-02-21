@@ -449,6 +449,24 @@ class HeatingCycleLifecycleManager:
             except Exception as exc:
                 _LOGGER.error("Error updating cycle cache: %s", exc)
 
+        # Calculate and persist learned dead time from cycles
+        if cycles and self._lhs_storage is not None:
+            try:
+                from ..domain.services import DeadTimeCalculationService
+
+                dead_time_calculator = DeadTimeCalculationService()
+                learned_dead_time = dead_time_calculator.calculate_average_dead_time(cycles)
+
+                if learned_dead_time is not None:
+                    await self._lhs_storage.set_learned_dead_time(learned_dead_time)
+                    _LOGGER.info(
+                        "Updated learned dead time from %d cycles: %.1f minutes",
+                        len(cycles),
+                        learned_dead_time,
+                    )
+            except Exception as exc:
+                _LOGGER.warning("Failed to calculate/persist dead time: %s", exc)
+
         # Note: ILhsStorage interface does not include save_heating_cycle()
         # Cycles are extracted from Home Assistant recorder, not persisted via this interface
 
