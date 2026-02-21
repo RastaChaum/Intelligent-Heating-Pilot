@@ -276,9 +276,7 @@ class IntelligentHeatingPilotGlobalLearnedSlopeSensor(IntelligentHeatingPilotSen
         current = self.native_value
         prev = self._last_lhs_displayed
         if (prev is None) != (current is None) or (
-            prev is not None
-            and current is not None
-            and abs(current - prev) >= 0.1
+            prev is not None and current is not None and abs(current - prev) >= 0.1
         ):
             self._last_lhs_displayed = current
             self.async_write_ha_state()
@@ -380,10 +378,10 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
 
         new_value = self.native_value
         prev = self._last_contextual_lhs_displayed
-        if schedule_context_changed or (prev is None) != (new_value is None) or (
-            prev is not None
-            and new_value is not None
-            and abs(new_value - prev) >= 0.1
+        if (
+            schedule_context_changed
+            or (prev is None) != (new_value is None)
+            or (prev is not None and new_value is not None and abs(new_value - prev) >= 0.1)
         ):
             self._last_contextual_lhs_displayed = new_value
             self.async_write_ha_state()

@@ -86,7 +86,7 @@ class HAEventBridge:
         # Deduplication: remember the last event data that was published so we
         # can skip firing when nothing meaningful has changed.
         self._last_published_data: dict | None = None
-    
+
     def setup_listeners(self) -> None:
         """Setup all event listeners."""
 
@@ -101,7 +101,7 @@ class HAEventBridge:
 
             if entity_id not in self._tracked_entities:
                 return
-            
+
             # VTherm-specific handling for slope learning
             if entity_id == self._vtherm_entity_id:
                 self._handle_vtherm_change(event)
@@ -115,7 +115,7 @@ class HAEventBridge:
                 self._trigger_recalculate_if_meaningful(
                     self._has_meaningful_monitored_change(event), entity_id
                 )
-        
+
         # Register state change listener
         unsub = async_track_state_change_event(
             self._hass, self._tracked_entities, _on_entity_changed
@@ -168,10 +168,7 @@ class HAEventBridge:
             return True
 
         # Target temperature / actions changed
-        if old_attrs.get("actions") != new_attrs.get("actions"):
-            return True
-
-        return False
+        return bool(old_attrs.get("actions") != new_attrs.get("actions"))
 
     def _has_meaningful_monitored_change(self, event: Event[EventStateChangedData]) -> bool:
         """Return True only when a monitored sensor value changed significantly.
@@ -198,12 +195,12 @@ class HAEventBridge:
             return False
 
         try:
-            old_val = float(old_state.state)
-            new_val = float(new_state.state)
+            old_val = float(str(old_state.state))
+            new_val = float(str(new_state.state))
             return abs(new_val - old_val) >= _MONITORED_ENTITY_CHANGE_THRESHOLD
         except (TypeError, ValueError):
             # Non-numeric state: trigger on any state string change
-            return old_state.state != new_state.state
+            return bool(old_state.state != new_state.state)
 
     def _is_meaningful_change_from_last(self, new_data: dict) -> bool:
         """Return True when *new_data* differs meaningfully from the last published event.
@@ -225,9 +222,8 @@ class HAEventBridge:
         # Transition between "no data" and a real temperature is always meaningful
         if (new_temp is None) != (last_temp is None):
             return True
-        if new_temp is not None and last_temp is not None:
-            if abs(new_temp - last_temp) >= 0.1:
-                return True
+        if new_temp is not None and last_temp is not None and abs(new_temp - last_temp) >= 0.1:
+            return True
 
         # Learned heating slope (0.05 °C/h tolerance)
         new_lhs = new_data.get("learned_heating_slope")
@@ -235,9 +231,8 @@ class HAEventBridge:
         # Transition between "no data" and a real slope is always meaningful
         if (new_lhs is None) != (last_lhs is None):
             return True
-        if new_lhs is not None and last_lhs is not None:
-            if abs(new_lhs - last_lhs) >= 0.05:
-                return True
+        if new_lhs is not None and last_lhs is not None and abs(new_lhs - last_lhs) >= 0.05:
+            return True
 
         # Anticipated start time (1-minute tolerance)
         new_start = new_data.get("anticipated_start_time")
@@ -253,7 +248,9 @@ class HAEventBridge:
 
         try:
             new_dt = dt_util.parse_datetime(new_start) if isinstance(new_start, str) else new_start
-            last_dt = dt_util.parse_datetime(last_start) if isinstance(last_start, str) else last_start
+            last_dt = (
+                dt_util.parse_datetime(last_start) if isinstance(last_start, str) else last_start
+            )
             if new_dt is None or last_dt is None:
                 return True
             if abs((new_dt - last_dt).total_seconds()) >= _ANTICIPATION_TIME_TOLERANCE_SECONDS:
@@ -265,7 +262,7 @@ class HAEventBridge:
 
     def _handle_vtherm_change(self, event: Event[EventStateChangedData]) -> None:
         """Handle VTherm state changes (temperature filter + recalculation trigger).
-        
+
         Args:
             event: State change event
         """
@@ -344,8 +341,10 @@ class HAEventBridge:
             self._last_published_data = event_data
             _LOGGER.debug("Published anticipation event for sensors (data changed)")
         else:
-            _LOGGER.debug("Skipped anticipation event: no meaningful change from last published data")
-    
+            _LOGGER.debug(
+                "Skipped anticipation event: no meaningful change from last published data"
+            )
+
     def ignore_vtherm_changes_for(self, seconds: int = 10) -> None:
         """Temporarily ignore VTherm changes (used after self-induced changes).
 

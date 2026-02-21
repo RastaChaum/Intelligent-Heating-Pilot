@@ -5,6 +5,7 @@ Two layers of tests:
 - Integration-style tests (with ``hass`` fixture): test the full event-bridge behavior
   against a real HA event bus, including regression coverage for bug #81.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -15,15 +16,14 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.intelligent_heating_pilot.application import HeatingOrchestrator
 from custom_components.intelligent_heating_pilot.infrastructure.event_bridge import (
-    HAEventBridge,
-    _ANTICIPATION_TIME_TOLERANCE_SECONDS,
     _MONITORED_ENTITY_CHANGE_THRESHOLD,
+    HAEventBridge,
 )
-
 
 # ---------------------------------------------------------------------------
 # Pure-unit helpers (no hass)
 # ---------------------------------------------------------------------------
+
 
 def _make_state(state_str: str, attributes: dict | None = None) -> Mock:
     """Return a lightweight mock of a HA State object."""
@@ -135,6 +135,7 @@ def _partial_anticipation_data(
 # _has_meaningful_scheduler_change
 # ===========================================================================
 
+
 class TestHasMeaningfulSchedulerChange:
     """Tests for scheduler entity change filtering."""
 
@@ -172,8 +173,12 @@ class TestHasMeaningfulSchedulerChange:
         new_actions = [{"entity_id": "climate.vtherm", "service_data": {"temperature": 21}}]
         event = _make_event(
             "switch.schedule_1",
-            _make_state("on", {"next_trigger": "2025-01-01T07:00:00+00:00", "actions": old_actions}),
-            _make_state("on", {"next_trigger": "2025-01-01T07:00:00+00:00", "actions": new_actions}),
+            _make_state(
+                "on", {"next_trigger": "2025-01-01T07:00:00+00:00", "actions": old_actions}
+            ),
+            _make_state(
+                "on", {"next_trigger": "2025-01-01T07:00:00+00:00", "actions": new_actions}
+            ),
         )
         assert bridge._has_meaningful_scheduler_change(event) is True
 
@@ -183,16 +188,22 @@ class TestHasMeaningfulSchedulerChange:
         actions = [{"entity_id": "climate.vtherm", "service_data": {"temperature": 21}}]
         event = _make_event(
             "switch.schedule_1",
-            _make_state("on", {
-                "next_trigger": "2025-01-01T07:00:00+00:00",
-                "actions": actions,
-                "last_triggered": "2025-01-01T06:55:00+00:00",
-            }),
-            _make_state("on", {
-                "next_trigger": "2025-01-01T07:00:00+00:00",
-                "actions": actions,
-                "last_triggered": "2025-01-01T07:00:00+00:00",
-            }),
+            _make_state(
+                "on",
+                {
+                    "next_trigger": "2025-01-01T07:00:00+00:00",
+                    "actions": actions,
+                    "last_triggered": "2025-01-01T06:55:00+00:00",
+                },
+            ),
+            _make_state(
+                "on",
+                {
+                    "next_trigger": "2025-01-01T07:00:00+00:00",
+                    "actions": actions,
+                    "last_triggered": "2025-01-01T07:00:00+00:00",
+                },
+            ),
         )
         assert bridge._has_meaningful_scheduler_change(event) is False
 
@@ -210,6 +221,7 @@ class TestHasMeaningfulSchedulerChange:
 # ===========================================================================
 # _has_meaningful_monitored_change
 # ===========================================================================
+
 
 class TestHasMeaningfulMonitoredChange:
     """Tests for monitored entity (humidity / cloud coverage) change filtering."""
@@ -276,6 +288,7 @@ class TestHasMeaningfulMonitoredChange:
 # ===========================================================================
 # _is_meaningful_change_from_last
 # ===========================================================================
+
 
 class TestIsMeaningfulChangeFromLast:
     """Tests for output-data deduplication logic."""
@@ -457,6 +470,7 @@ class TestIsMeaningfulChangeFromLast:
 # _recalculate_and_publish – deduplication (pure unit)
 # ===========================================================================
 
+
 class TestRecalculateAndPublishDeduplication:
     """Verify that _recalculate_and_publish deduplicates identical data."""
 
@@ -464,9 +478,7 @@ class TestRecalculateAndPublishDeduplication:
         hass = Mock()
         hass.bus = Mock()
         orchestrator = AsyncMock()
-        orchestrator.calculate_and_schedule_anticipation = AsyncMock(
-            return_value=anticipation_data
-        )
+        orchestrator.calculate_and_schedule_anticipation = AsyncMock(return_value=anticipation_data)
         return HAEventBridge(
             hass=hass,
             orchestrator=orchestrator,
@@ -523,9 +535,7 @@ class TestRecalculateAndPublishDeduplication:
         await bridge._recalculate_and_publish()
 
         data = self._anticipation_data()
-        bridge._orchestrator.calculate_and_schedule_anticipation = AsyncMock(
-            return_value=data
-        )
+        bridge._orchestrator.calculate_and_schedule_anticipation = AsyncMock(return_value=data)
         bridge._hass.bus.async_fire.reset_mock()
         await bridge._recalculate_and_publish()
         bridge._hass.bus.async_fire.assert_called_once()
@@ -657,7 +667,9 @@ class TestFullDataPublishing:
         mock_async_fire.assert_called_once()
         event_data = mock_async_fire.call_args[0][1]
         assert event_data["entry_id"] == "test_entry"
-        assert event_data["anticipated_start_time"] == full_data["anticipated_start_time"].isoformat()
+        assert (
+            event_data["anticipated_start_time"] == full_data["anticipated_start_time"].isoformat()
+        )
         assert event_data["next_schedule_time"] == full_data["next_schedule_time"].isoformat()
         assert event_data["next_target_temperature"] == 21.0
         assert "clear_values" not in event_data
