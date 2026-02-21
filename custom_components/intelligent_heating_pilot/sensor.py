@@ -23,6 +23,7 @@ from .const import (
     ATTR_NEXT_TARGET_TEMP,
     CONF_NAME,
     DOMAIN,
+    EVENT_DEAD_TIME_UPDATED,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -545,6 +546,7 @@ class IntelligentHeatingPilotDeadTimeSensor(SensorEntity):
     ) -> None:
         """Initialize the sensor."""
         self._coordinator = coordinator
+        self._config_entry = config_entry
         self._attr_unique_id = f"{config_entry.entry_id}_dead_time"
 
         # Device info
@@ -578,8 +580,26 @@ class IntelligentHeatingPilotDeadTimeSensor(SensorEntity):
         """When entity is added to Home Assistant."""
         await super().async_added_to_hass()
 
-        # Load initial effective dead time value from coordinator
+        await self._async_refresh_dead_time()
+
+        @callback
+        def handle_dead_time_updated(event) -> None:
+            """Handle dead time update events."""
+            data = event.data or {}
+            if data.get("entry_id") != self._config_entry.entry_id:
+                return
+            if self.hass is None:
+                return
+            self.hass.async_create_task(self._async_refresh_dead_time())
+
+        if self.hass is not None:
+            self.async_on_remove(
+                self.hass.bus.async_listen(EVENT_DEAD_TIME_UPDATED, handle_dead_time_updated)
+            )
+
+    async def _async_refresh_dead_time(self) -> None:
+        """Refresh effective dead time from coordinator."""
         dead_time = await self._coordinator.get_effective_dead_time()
-        if dead_time is not None:
-            self._dead_time = dead_time
+        self._dead_time = dead_time if dead_time is not None else None
+        if self.hass is not None:
             self.async_write_ha_state()

@@ -24,7 +24,7 @@ from .application.use_cases import (
     ScheduleAnticipationActionUseCase,
     UpdateCacheDataUseCase,
 )
-from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN
+from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN, EVENT_DEAD_TIME_UPDATED
 from .domain.interfaces.device_config_reader_interface import DeviceConfig
 from .domain.services import (
     ContextualLHSCalculatorService,
@@ -196,6 +196,7 @@ class HeatingApplication:
             cycle_cache=self._cycle_storage,
             timer_scheduler=self._timer_scheduler,
             model_storage=self._lhs_storage,
+            dead_time_updated_callback=self._fire_dead_time_updated_event,
         )
 
         self._lhs_manager = LhsLifecycleManagerFactory.create(
@@ -530,6 +531,21 @@ class HeatingApplication:
                         "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
                     },
                 )
+
+    def _fire_dead_time_updated_event(self, learned_dead_time: float) -> None:
+        """Publish an event when learned dead time is persisted."""
+        _LOGGER.debug(
+            "Publishing dead time update for entry_id=%s: %.1f minutes",
+            self._device_id,
+            learned_dead_time,
+        )
+        self.hass.bus.async_fire(
+            EVENT_DEAD_TIME_UPDATED,
+            {
+                "entry_id": self._device_id,
+                "learned_dead_time": learned_dead_time,
+            },
+        )
 
     async def refresh_caches(self) -> None:
         """Refresh cached LHS value used by sensors.

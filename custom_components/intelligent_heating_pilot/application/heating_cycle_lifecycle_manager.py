@@ -64,6 +64,7 @@ class HeatingCycleLifecycleManager:
         timer_scheduler: ITimerScheduler | None,
         lhs_storage: ILhsStorage | None,
         lhs_lifecycle_manager: LhsLifecycleManager | None,
+        dead_time_updated_callback: Callable[[float], None] | None = None,
     ) -> None:
         """Initialize the lifecycle manager.
 
@@ -86,6 +87,7 @@ class HeatingCycleLifecycleManager:
         self._timer_scheduler = timer_scheduler
         self._lhs_storage = lhs_storage
         self._lhs_lifecycle_manager = lhs_lifecycle_manager
+        self._dead_time_updated_callback = dead_time_updated_callback
 
         # In-memory cache for fast repeated lookups
         # Key: (device_id, target_date) → list[HeatingCycle]
@@ -129,7 +131,11 @@ class HeatingCycleLifecycleManager:
 
         try:
             # Step 1: Extract and persist cycles (writes to storage)
-            cycles = await self.update_cycles_for_window(device_id, start_time, end_time)
+            cycles = await self.update_cycles_for_window(
+                start_time=start_time,
+                end_time=end_time,
+                device_id=device_id,
+            )
 
             # Step 2: Cascade to LHS lifecycle manager to update LHS caches
             await self._trigger_lhs_cascade(cycles)
@@ -207,9 +213,9 @@ class HeatingCycleLifecycleManager:
         start_time = end_time - timedelta(days=new_retention_days)
 
         cycles = await self.update_cycles_for_window(
-            self._device_config.device_id,
-            start_time,
-            end_time,
+            start_time=start_time,
+            end_time=end_time,
+            device_id=self._device_config.device_id,
         )
         _LOGGER.debug("Re-extracted %d cycles for new retention window", len(cycles))
 
@@ -249,9 +255,9 @@ class HeatingCycleLifecycleManager:
 
             # Step 2: Extract and persist cycles (writes to storage)
             cycles = await self.update_cycles_for_window(
-                self._device_config.device_id,
-                start_time,
-                end_time,
+                start_time=start_time,
+                end_time=end_time,
+                device_id=self._device_config.device_id,
             )
             _LOGGER.info("24h refresh complete: extracted %d cycles", len(cycles))
 
@@ -401,9 +407,9 @@ class HeatingCycleLifecycleManager:
 
     async def update_cycles_for_window(
         self,
-        device_id: str,
         start_time: datetime,
         end_time: datetime,
+        device_id: str | None = None,
     ) -> list[HeatingCycle]:
         """Extract and persist cycles for a specific window.
 
@@ -421,26 +427,31 @@ class HeatingCycleLifecycleManager:
         - on_24h_timer(): Periodic refresh
 
         Args:
-            device_id: Device identifier used for history queries and cache keys.
             start_time: Start of the extraction window.
             end_time: End of the extraction window.
+            device_id: Device identifier used for history queries and cache keys.
+                Defaults to the configured device_id.
 
         Returns:
             Newly extracted heating cycles for the window.
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager.update_cycles_for_window")
+        effective_device_id = device_id or self._device_config.device_id
         _LOGGER.debug(
-            "Updating cycles for device=%s from %s to %s", device_id, start_time, end_time
+            "Updating cycles for device=%s from %s to %s",
+            effective_device_id,
+            start_time,
+            end_time,
         )
 
         # Extract cycles
-        cycles = await self._extract_cycles(device_id, start_time, end_time)
+        cycles = await self._extract_cycles(effective_device_id, start_time, end_time)
 
         # Update cache if available
         if self._heating_cycle_storage is not None and cycles:
             try:
                 await self._heating_cycle_storage.append_cycles(
-                    device_id,
+                    effective_device_id,
                     cycles,
                     end_time,
                     self._device_config.lhs_retention_days,
@@ -450,7 +461,7 @@ class HeatingCycleLifecycleManager:
                 _LOGGER.error("Error updating cycle cache: %s", exc)
 
         # Calculate and persist learned dead time from cycles
-        if cycles and self._lhs_storage is not None:
+        if cycles and self._lhs_storage is not None and self._device_config.auto_learning:
             try:
                 from ..domain.services import DeadTimeCalculationService
 
@@ -464,8 +475,18 @@ class HeatingCycleLifecycleManager:
                         len(cycles),
                         learned_dead_time,
                     )
+                    if self._dead_time_updated_callback is not None:
+                        try:
+                            self._dead_time_updated_callback(learned_dead_time)
+                        except Exception as exc:
+                            _LOGGER.warning("Dead time update callback failed: %s", exc)
             except Exception as exc:
                 _LOGGER.warning("Failed to calculate/persist dead time: %s", exc)
+        elif cycles and self._lhs_storage is not None and not self._device_config.auto_learning:
+            _LOGGER.debug(
+                "Auto-learning disabled; skipping dead time persistence for device=%s",
+                effective_device_id,
+            )
 
         # Note: ILhsStorage interface does not include save_heating_cycle()
         # Cycles are extracted from Home Assistant recorder, not persisted via this interface

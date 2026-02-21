@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from ..domain.interfaces.device_config_reader_interface import DeviceConfig
@@ -61,6 +62,7 @@ class HeatingCycleLifecycleManagerFactory:
         timer_scheduler: ITimerScheduler | None = None,
         model_storage: ILhsStorage | None = None,
         lhs_lifecycle_manager: LhsLifecycleManager | None = None,
+        dead_time_updated_callback: Callable[[float], None] | None = None,
     ) -> HeatingCycleLifecycleManager:
         """Create or return existing HeatingCycleLifecycleManager for device_id.
 
@@ -84,6 +86,7 @@ class HeatingCycleLifecycleManagerFactory:
             timer_scheduler: Optional scheduler for periodic 24h refresh.
             model_storage: Optional persistent storage for individual cycle records.
             lhs_lifecycle_manager: Optional LHS manager for cascade updates.
+            dead_time_updated_callback: Optional callback fired after dead time persistence.
 
         Returns:
             Singleton HeatingCycleLifecycleManager instance for the device_id.
@@ -132,6 +135,7 @@ class HeatingCycleLifecycleManagerFactory:
             timer_scheduler=timer_scheduler,
             lhs_storage=model_storage,
             lhs_lifecycle_manager=lhs_lifecycle_manager,
+            dead_time_updated_callback=dead_time_updated_callback,
         )
 
         # Store in registry
