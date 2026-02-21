@@ -26,6 +26,12 @@ class AttributeConcept(Enum):
     # For entities that expose hvac_action as a string
     HVAC_ACTION = "hvac_action"
 
+    # Environmental sensor data
+    INDOOR_HUMIDITY = "indoor_humidity"
+    OUTDOOR_TEMPERATURE = "outdoor_temperature"
+    OUTDOOR_HUMIDITY = "outdoor_humidity"
+    CLOUD_COVERAGE = "cloud_coverage"
+
 
 @dataclass(frozen=True)
 class AttributePath:

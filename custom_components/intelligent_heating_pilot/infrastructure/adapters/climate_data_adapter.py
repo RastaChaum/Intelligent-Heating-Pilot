@@ -29,6 +29,10 @@ DATA_KEY_TO_CONCEPT: dict[HistoricalDataKey, AttributeConcept] = {
     HistoricalDataKey.INDOOR_TEMP: AttributeConcept.CURRENT_TEMPERATURE,
     HistoricalDataKey.TARGET_TEMP: AttributeConcept.TARGET_TEMPERATURE,
     HistoricalDataKey.HEATING_STATE: AttributeConcept.HVAC_ACTION,
+    HistoricalDataKey.INDOOR_HUMIDITY: AttributeConcept.INDOOR_HUMIDITY,
+    HistoricalDataKey.OUTDOOR_TEMP: AttributeConcept.OUTDOOR_TEMPERATURE,
+    HistoricalDataKey.OUTDOOR_HUMIDITY: AttributeConcept.OUTDOOR_HUMIDITY,
+    HistoricalDataKey.CLOUD_COVERAGE: AttributeConcept.CLOUD_COVERAGE,
 }
 
 
@@ -97,8 +101,19 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
         # Map the data_key to a domain concept
         concept = DATA_KEY_TO_CONCEPT.get(data_key)
         if not concept:
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "No concept mapping for data_key %s, skipping",
+                data_key.value,
+            )
+            return HistoricalDataSet(data={})
+
+        # Check if mapper supports this concept before fetching history
+        supported_concepts = mapper.get_supported_concepts()
+        if concept not in supported_concepts:
+            _LOGGER.debug(
+                "Mapper %s does not support concept %s for data_key %s, skipping",
+                type(mapper).__name__,
+                concept.value,
                 data_key.value,
             )
             return HistoricalDataSet(data={})
