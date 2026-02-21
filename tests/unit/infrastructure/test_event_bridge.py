@@ -397,6 +397,63 @@ class TestIsMeaningfulChangeFromLast:
         assert bridge._is_meaningful_change_from_last(new_data) is True
 
 
+    # ------------------------------------------------------------------
+    # None-transition tests for current_temp and learned_heating_slope
+    # ------------------------------------------------------------------
+
+    def test_current_temp_none_to_value_is_meaningful(self):
+        """Sensor becoming available (None → value) must be considered meaningful."""
+        bridge = _make_bridge()
+        base = dict(self._base_data())
+        base["current_temp"] = None
+        bridge._last_published_data = base
+        new_data = dict(self._base_data())
+        assert bridge._is_meaningful_change_from_last(new_data) is True
+
+    def test_current_temp_value_to_none_is_meaningful(self):
+        """Sensor becoming unavailable (value → None) must be considered meaningful."""
+        bridge = _make_bridge()
+        bridge._last_published_data = self._base_data()
+        new_data = dict(self._base_data())
+        new_data["current_temp"] = None
+        assert bridge._is_meaningful_change_from_last(new_data) is True
+
+    def test_current_temp_both_none_is_not_meaningful(self):
+        """Both current_temp values being None means no change."""
+        bridge = _make_bridge()
+        base = dict(self._base_data())
+        base["current_temp"] = None
+        bridge._last_published_data = base
+        new_data = dict(base)
+        assert bridge._is_meaningful_change_from_last(new_data) is False
+
+    def test_lhs_none_to_value_is_meaningful(self):
+        """LHS sensor becoming available (None → value) must be considered meaningful."""
+        bridge = _make_bridge()
+        base = dict(self._base_data())
+        base["learned_heating_slope"] = None
+        bridge._last_published_data = base
+        new_data = dict(self._base_data())
+        assert bridge._is_meaningful_change_from_last(new_data) is True
+
+    def test_lhs_value_to_none_is_meaningful(self):
+        """LHS sensor becoming unavailable (value → None) must be considered meaningful."""
+        bridge = _make_bridge()
+        bridge._last_published_data = self._base_data()
+        new_data = dict(self._base_data())
+        new_data["learned_heating_slope"] = None
+        assert bridge._is_meaningful_change_from_last(new_data) is True
+
+    def test_lhs_both_none_is_not_meaningful(self):
+        """Both learned_heating_slope values being None means no change."""
+        bridge = _make_bridge()
+        base = dict(self._base_data())
+        base["learned_heating_slope"] = None
+        bridge._last_published_data = base
+        new_data = dict(base)
+        assert bridge._is_meaningful_change_from_last(new_data) is False
+
+
 # ===========================================================================
 # _recalculate_and_publish – deduplication (pure unit)
 # ===========================================================================

@@ -244,6 +244,8 @@ class IntelligentHeatingPilotGlobalLearnedSlopeSensor(IntelligentHeatingPilotSen
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, name)
         self._attr_unique_id = f"{config_entry.entry_id}_global_learned_heating_slope"
+        # Tracks the last LHS value written to HA state for threshold comparison.
+        self._last_lhs_displayed: float | None = None
 
     @property
     def native_value(self) -> float | None:
@@ -265,9 +267,21 @@ class IntelligentHeatingPilotGlobalLearnedSlopeSensor(IntelligentHeatingPilotSen
         }
 
     def _handle_anticipation_result(self, data: dict) -> None:
-        """Refresh state when anticipation event received."""
-        # Force state update on anticipation event
-        self.async_write_ha_state()
+        """Refresh state only when global LHS changed by >= 0.1 °C/h.
+
+        The coordinator is already updated when this event fires, so we compare
+        native_value (current coordinator value) against the last displayed value
+        rather than relying on the base class's before/after snapshot.
+        """
+        current = self.native_value
+        prev = self._last_lhs_displayed
+        if (prev is None) != (current is None) or (
+            prev is not None
+            and current is not None
+            and abs(current - prev) >= 0.1
+        ):
+            self._last_lhs_displayed = current
+            self.async_write_ha_state()
 
 
 class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilotSensorBase):
@@ -283,6 +297,8 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
         super().__init__(coordinator, config_entry, name)
         self._attr_unique_id = f"{config_entry.entry_id}_contextual_learned_heating_slope"
         self._next_schedule_time: datetime | None = None
+        # Tracks the last contextual LHS value written to HA state for threshold comparison.
+        self._last_contextual_lhs_displayed: float | None = None
 
     @property
     def native_value(self) -> float | None:
@@ -333,7 +349,14 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
         }
 
     def _handle_anticipation_result(self, data: dict) -> None:
-        """Refresh state when anticipation event received."""
+        """Refresh state only when contextual LHS changed by >= 0.1 °C/h.
+
+        Captures the current schedule hour BEFORE updating _next_schedule_time
+        so we can detect a context change (different scheduled hour) and always
+        write state when the LHS context changes.
+        """
+        old_schedule_hour = self._next_schedule_time.hour if self._next_schedule_time else None
+
         # Update next_schedule_time from event
         next_schedule = data.get(ATTR_NEXT_SCHEDULE_TIME)
         if next_schedule is None:
@@ -351,8 +374,18 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
             else:
                 self._next_schedule_time = next_schedule
 
-        # Force state update
-        self.async_write_ha_state()
+        new_schedule_hour = self._next_schedule_time.hour if self._next_schedule_time else None
+        schedule_context_changed = old_schedule_hour != new_schedule_hour
+
+        new_value = self.native_value
+        prev = self._last_contextual_lhs_displayed
+        if schedule_context_changed or (prev is None) != (new_value is None) or (
+            prev is not None
+            and new_value is not None
+            and abs(new_value - prev) >= 0.1
+        ):
+            self._last_contextual_lhs_displayed = new_value
+            self.async_write_ha_state()
 
 
 class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBase):
