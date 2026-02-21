@@ -105,22 +105,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Setup event listeners
     coordinator.setup_listeners()
 
-    # Wait for HA to be fully started before first update
-    # This ensures all entities (especially scheduler entities) are available
+    # Wait for HA to be fully started before initializing cycle extraction and first update
+    # This ensures all entities (especially VTherm and scheduler entities) are available
     @callback
     def _ha_started(_event):
-        _LOGGER.info("[%s] HA started, triggering initial update", entry.entry_id)
+        _LOGGER.info(
+            "[%s] HA started, initializing cycle extraction and triggering updates", entry.entry_id
+        )
+        hass.async_create_task(coordinator.async_initialize_cycle_extraction())
         hass.async_create_task(coordinator.async_update())
 
-    # Schedule initial update asynchronously to avoid blocking config flow
+    # Schedule initial tasks asynchronously to avoid blocking config flow
     # This prevents HA watchdog restart during device creation with scheduler
     if hass.is_running:
         _LOGGER.debug(
-            "[%s] HA already running, scheduling non-blocking async update", entry.entry_id
+            "[%s] HA already running, scheduling cycle extraction and async update", entry.entry_id
         )
+        hass.async_create_task(coordinator.async_initialize_cycle_extraction())
         hass.async_create_task(coordinator.async_update())
     else:
-        _LOGGER.debug("[%s] Waiting for HA start event before first update", entry.entry_id)
+        _LOGGER.debug("[%s] Waiting for HA start event before initialization", entry.entry_id)
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started)
 
     # Small delayed update for late attribute population

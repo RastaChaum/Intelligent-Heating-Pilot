@@ -2,6 +2,7 @@
 
 VERSION = "0.4.4"
 DOMAIN = "intelligent_heating_pilot"
+EVENT_DEAD_TIME_UPDATED = f"{DOMAIN}_dead_time_updated"
 # Configuration keys
 CONF_NAME = "name"
 CONF_VTHERM_ENTITY = "vtherm_entity_id"

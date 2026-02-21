@@ -24,7 +24,7 @@ from .application.use_cases import (
     ScheduleAnticipationActionUseCase,
     UpdateCacheDataUseCase,
 )
-from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN
+from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN, EVENT_DEAD_TIME_UPDATED
 from .domain.interfaces.device_config_reader_interface import DeviceConfig
 from .domain.services import (
     ContextualLHSCalculatorService,
@@ -196,6 +196,7 @@ class HeatingApplication:
             cycle_cache=self._cycle_storage,
             timer_scheduler=self._timer_scheduler,
             model_storage=self._lhs_storage,
+            dead_time_updated_callback=self._fire_dead_time_updated_event,
         )
 
         self._lhs_manager = LhsLifecycleManagerFactory.create(
@@ -283,14 +284,10 @@ class HeatingApplication:
             # Also load contextual LHS cache for all hours
             await self._load_contextual_lhs_cache()
 
-        # Initialize cycle refresh (extraction + 24h periodic)
-        if self._data_retention_days > 0:
-            await self._initialize_cycle_refresh()
-        else:
-            _LOGGER.debug(
-                "Cycle extraction disabled (history_lookback_days=%d)",
-                self._data_retention_days,
-            )
+        # NOTE: Cycle extraction is deferred to async_initialize_cycle_extraction()
+        # which is called after HA fully started (EVENT_HOMEASSISTANT_STARTED)
+        # to ensure VTherm entity is available before querying its history.
+        # See __init__.py async_setup_entry for the deferred initialization logic.
 
         _LOGGER.info(
             "[%s] Coordinator initialized (VTherm: %s, Schedulers: %d)",
@@ -345,18 +342,29 @@ class HeatingApplication:
         if self._event_bridge:
             self._event_bridge.setup_listeners()
 
-    async def _initialize_cycle_refresh(self) -> None:
+    async def async_initialize_cycle_extraction(self) -> None:
         """Initialize cycle extraction and schedule 24h periodic refresh.
 
+        This method MUST be called after EVENT_HOMEASSISTANT_STARTED to ensure
+        the VTherm entity is available before querying its history.
+
         This method:
-        - Creates ExtractHeatingCyclesUseCase via factory
+        - Verifies VTherm entity is available
         - Performs initial extraction over retention window
         - Schedules 24h periodic refresh timer
         - Logs initialization with retention days
         """
-        _LOGGER.debug("Entering _initialize_cycle_refresh for device=%s", self._device_id)
+        _LOGGER.debug("Entering async_initialize_cycle_extraction for device=%s", self._device_id)
 
         try:
+            # Check if cycle extraction is enabled
+            if self._data_retention_days <= 0:
+                _LOGGER.debug(
+                    "Cycle extraction disabled (history_lookback_days=%d)",
+                    self._data_retention_days,
+                )
+                return
+
             # Sanity checks
             if not self._device_config:
                 _LOGGER.warning("Cannot initialize cycle refresh: device_config not available")
@@ -364,6 +372,16 @@ class HeatingApplication:
 
             if not self._heating_cycle_manager:
                 _LOGGER.warning("Cannot initialize cycle refresh: manager not available")
+                return
+
+            # Verify VTherm entity exists before attempting to query its history
+            vtherm_state = self.hass.states.get(self._vtherm_id)
+            if vtherm_state is None:
+                _LOGGER.error(
+                    "Cannot initialize cycle extraction: VTherm entity %s not found. "
+                    "Ensure the climate entity is loaded before IHP starts.",
+                    self._vtherm_id,
+                )
                 return
 
             # Calculate initial extraction window
@@ -396,10 +414,17 @@ class HeatingApplication:
                 len(extracted_cycles),
             )
 
-            _LOGGER.debug("Exiting _initialize_cycle_refresh for device=%s", self._device_id)
+            _LOGGER.debug(
+                "Exiting async_initialize_cycle_extraction for device=%s", self._device_id
+            )
 
         except Exception as err:  # pylint: disable=broad-except
-            _LOGGER.warning("Failed to initialize cycle extraction: %s", err, exc_info=True)
+            _LOGGER.error(
+                "Failed to initialize cycle extraction for %s: %s",
+                self._vtherm_id,
+                err,
+                exc_info=True,
+            )
 
     async def _update_global_lhs_from_cycles(self, cycles: list) -> None:
         """Update global LHS in model storage from extracted cycles.
@@ -481,7 +506,7 @@ class HeatingApplication:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
 
             # Reload contextual LHS cache for the scheduled hour only (optimization)
-            if anticipation_data and not anticipation_data.get("clear_values"):
+            if anticipation_data and anticipation_data.get("next_schedule_time") is not None:
                 next_schedule_time = anticipation_data.get("next_schedule_time")
                 if next_schedule_time:
                     scheduled_hour = next_schedule_time.hour
@@ -502,34 +527,42 @@ class HeatingApplication:
 
         # Fire event for sensors
         if anticipation_data:
-            # Check if this is a "clear values" event (no scheduler configured)
-            if anticipation_data.get("clear_values"):
-                _LOGGER.debug("No scheduler configured - firing clear_values event for sensors")
-                self.hass.bus.async_fire(
-                    f"{DOMAIN}_anticipation_calculated",
-                    {
-                        "entry_id": self._device_id,
-                        "clear_values": True,
-                    },
-                )
-            else:
-                # Normal anticipation data
-                self.hass.bus.async_fire(
-                    f"{DOMAIN}_anticipation_calculated",
-                    {
-                        "entry_id": self._device_id,
-                        "anticipated_start_time": anticipation_data[
-                            "anticipated_start_time"
-                        ].isoformat(),
-                        "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
-                        "next_target_temperature": anticipation_data["next_target_temperature"],
-                        "anticipation_minutes": anticipation_data["anticipation_minutes"],
-                        "current_temp": anticipation_data["current_temp"],
-                        "learned_heating_slope": anticipation_data["learned_heating_slope"],
-                        "confidence_level": anticipation_data["confidence_level"],
-                        "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
-                    },
-                )
+            # Always publish complete structure with None values for missing data
+            anticipated_start = anticipation_data.get("anticipated_start_time")
+            next_schedule = anticipation_data.get("next_schedule_time")
+
+            event_data = {
+                "entry_id": self._device_id,
+                "anticipated_start_time": anticipated_start.isoformat()
+                if anticipated_start
+                else None,
+                "next_schedule_time": next_schedule.isoformat() if next_schedule else None,
+                "next_target_temperature": anticipation_data.get("next_target_temperature"),
+                "anticipation_minutes": anticipation_data.get("anticipation_minutes"),
+                "current_temp": anticipation_data.get("current_temp"),
+                "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
+                "confidence_level": anticipation_data.get("confidence_level"),
+                "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
+            }
+            self.hass.bus.async_fire(
+                f"{DOMAIN}_anticipation_calculated",
+                event_data,
+            )
+
+    def _fire_dead_time_updated_event(self, learned_dead_time: float) -> None:
+        """Publish an event when learned dead time is persisted."""
+        _LOGGER.debug(
+            "Publishing dead time update for entry_id=%s: %.1f minutes",
+            self._device_id,
+            learned_dead_time,
+        )
+        self.hass.bus.async_fire(
+            EVENT_DEAD_TIME_UPDATED,
+            {
+                "entry_id": self._device_id,
+                "learned_dead_time": learned_dead_time,
+            },
+        )
 
     async def refresh_caches(self) -> None:
         """Refresh cached LHS value used by sensors.
@@ -610,6 +643,64 @@ class HeatingApplication:
     def get_scheduler_entities(self) -> list[str]:
         """Get scheduler entity IDs."""
         return self._scheduler_ids[:]
+
+    def is_auto_learning_enabled(self) -> bool:
+        """Check if auto-learning is enabled.
+
+        Returns:
+            True if auto_learning is enabled in configuration
+        """
+        return self._auto_learning
+
+    async def get_current_dead_time(self) -> float | None:
+        """Get the current learned dead time value.
+
+        Returns the dead time value persisted from auto-learning.
+
+        Returns:
+            Dead time in minutes, or None if not yet learned
+        """
+        _LOGGER.debug("Entering get_current_dead_time")
+
+        if not self._lhs_storage:
+            _LOGGER.debug("No LHS storage available")
+            return None
+
+        learned_dead_time = await self._lhs_storage.get_learned_dead_time()
+        _LOGGER.debug("Exiting get_current_dead_time: result=%s", learned_dead_time)
+        return learned_dead_time
+
+    async def get_effective_dead_time(self) -> float:
+        """Get the effective dead time for heating predictions.
+
+        Returns either the auto-learned value or the user-configured value
+        depending on the auto_learning configuration flag.
+
+        Returns:
+            Dead time in minutes (configured value or learned value)
+        """
+        _LOGGER.debug(
+            "Entering get_effective_dead_time: auto_learning=%s, configured=%.1f",
+            self._auto_learning,
+            self._dead_time_minutes,
+        )
+
+        if self._auto_learning:
+            # Use learned value if available, fall back to configured
+            learned_dead_time = await self.get_current_dead_time()
+            if learned_dead_time is not None:
+                _LOGGER.debug(
+                    "Exiting get_effective_dead_time: using learned value=%.1f",
+                    learned_dead_time,
+                )
+                return learned_dead_time
+
+        # Fall back to configured value (either auto_learning=False or no learned value yet)
+        _LOGGER.debug(
+            "Exiting get_effective_dead_time: using configured value=%.1f",
+            self._dead_time_minutes,
+        )
+        return self._dead_time_minutes
 
     async def async_cleanup(self) -> None:
         """Cleanup coordinator resources.
