@@ -14,6 +14,9 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.climate_data_adapter import (
     ClimateDataAdapter,
 )
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.generic_climate_attribute_mapper import (
+    GenericClimateAttributeMapper,
+)
 from tests.unit.domain.fixtures import (
     MOCK_CLIMATE_HISTORY_RESPONSE,
     TEST_ENTITY_ID,
@@ -32,8 +35,21 @@ class TestClimateDataAdapter:
 
     @pytest.fixture
     def adapter(self, mock_hass):
-        """Create a ClimateDataAdapter instance."""
-        return ClimateDataAdapter(mock_hass)
+        """Create a ClimateDataAdapter instance with mocked mapper registry."""
+        adapter = ClimateDataAdapter(mock_hass)
+
+        # Replace the mapper registry with a mock that returns our test mapper
+        # This avoids the real entity detection process while using real mapping logic
+        mock_registry = MagicMock()
+
+        # Use the real GenericClimateAttributeMapper for proper logic
+        # but bypass the entity detection that requires real Home Assistant state
+        real_mapper = GenericClimateAttributeMapper(mock_hass)
+        mock_registry.get_mapper_for_entity.return_value = real_mapper
+
+        adapter._mapper_registry = mock_registry
+
+        return adapter
 
     @pytest.mark.asyncio
     async def test_fetch_historical_data_returns_dataset(self, adapter):
