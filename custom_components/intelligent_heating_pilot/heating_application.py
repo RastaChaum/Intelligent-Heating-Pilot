@@ -130,7 +130,8 @@ class HeatingApplication:
 
         # Cached data for sensors (refreshed by application service)
         self._last_anticipation_data: dict[str, Any] | None = None
-        self._lhs_cache: float = 2.0  # Default
+        self._lhs_cache: float = 2.0  # Default global LHS
+        self._contextual_lhs_cache: dict[int, float] = {}  # Contextual LHS by hour (0-23)
 
         # Config entry for options updates (set later via setup_config_entry_access)
         self._config_entry: ConfigEntry | None = None
@@ -279,6 +280,8 @@ class HeatingApplication:
         # Load initial data
         if self._lhs_manager:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
+            # Also load contextual LHS cache for all hours
+            await self._load_contextual_lhs_cache()
 
         # Initialize cycle refresh (extraction + 24h periodic)
         if self._data_retention_days > 0:
@@ -299,6 +302,32 @@ class HeatingApplication:
         # NOTE: Initial update is now deferred to async_setup_entry to avoid blocking
         # the config flow during device creation (prevents HA watchdog restart).
         # See async_setup_entry for the deferred update logic.
+
+    async def _load_contextual_lhs_cache(self) -> None:
+        """Load contextual LHS values for all hours from storage.
+
+        This populates the synchronous cache with contextual LHS values
+        that were previously calculated and stored.
+        """
+        if not self._lhs_manager:
+            return
+
+        try:
+            # Load contextual LHS for all 24 hours
+            for hour in range(24):
+                contextual_lhs = await self._lhs_manager.get_contextual_lhs(
+                    target_time=dt_util.now().replace(hour=hour, minute=0, second=0, microsecond=0),
+                    cycles=[],  # Empty cycles - will use stored cache
+                )
+                if contextual_lhs is not None and contextual_lhs != 2.0:  # 2.0 is default value
+                    self._contextual_lhs_cache[hour] = contextual_lhs
+                    _LOGGER.debug(
+                        "Loaded contextual LHS from storage: hour %d = %.2f °C/h",
+                        hour,
+                        contextual_lhs,
+                    )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("Failed to load contextual LHS cache: %s", exc, exc_info=True)
 
     def setup_config_entry_access(self, config_entry: ConfigEntry) -> None:
         """Set config_entry reference for options updates.
@@ -447,9 +476,29 @@ class HeatingApplication:
         # Cache for sensors
         self._last_anticipation_data = anticipation_data
 
-        # Refresh LHS cache
+        # Refresh LHS caches
         if self._lhs_manager:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
+
+            # Reload contextual LHS cache for the scheduled hour only (optimization)
+            if anticipation_data and not anticipation_data.get("clear_values"):
+                next_schedule_time = anticipation_data.get("next_schedule_time")
+                if next_schedule_time:
+                    scheduled_hour = next_schedule_time.hour
+                    try:
+                        contextual_lhs = await self._lhs_manager.get_contextual_lhs(
+                            target_time=next_schedule_time,
+                            cycles=[],  # Empty cycles - will use stored cache
+                        )
+                        if contextual_lhs is not None and contextual_lhs != 2.0:
+                            self._contextual_lhs_cache[scheduled_hour] = contextual_lhs
+                            _LOGGER.debug(
+                                "Updated contextual LHS cache: hour %d = %.2f °C/h",
+                                scheduled_hour,
+                                contextual_lhs,
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        _LOGGER.debug("Failed to update contextual LHS cache: %s", exc)
 
         # Fire event for sensors
         if anticipation_data:
@@ -503,25 +552,34 @@ class HeatingApplication:
         return self._lhs_cache
 
     def get_contextual_learned_heating_slope(self, hour: int) -> float | None:
-        """Get contextual LHS for a specific hour (synchronous fallback).
+        """Get contextual LHS for a specific hour (from cache).
 
-        Since _get_contextual_lhs is async and sensors need sync accessors,
-        this returns the global LHS as fallback. In production, this should be
-        enhanced with a cached contextual LHS lookup.
+        This returns the contextual LHS from the synchronously-accessible cache.
+        Falls back to global LHS if no contextual data is available for the hour.
 
         Args:
             hour: Hour of day (0-23)
 
         Returns:
-            Global LHS (contextual not available synchronously)
+            Contextual LHS for the hour, or global LHS as fallback
         """
+        if hour < 0 or hour > 23:
+            return self.get_learned_heating_slope()
+
         try:
-            # For now, return global LHS as fallback
-            # In future: implement LHS_BY_HOUR cache for proper contextual values
+            # Check contextual LHS cache first
+            if hour in self._contextual_lhs_cache:
+                contextual_value = self._contextual_lhs_cache[hour]
+                # Return None only if truly no data (None in cache means no contextual data for this hour)
+                if contextual_value is None:
+                    return self.get_learned_heating_slope()  # Fallback to global
+                return contextual_value
+
+            # Not in cache, fallback to global LHS
             return self.get_learned_heating_slope()
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to get LHS for hour %d", hour, exc_info=True)
-            return None
+            return self.get_learned_heating_slope()
 
     def is_ihp_enabled(self) -> bool:
         """Get IHP enabled state."""
