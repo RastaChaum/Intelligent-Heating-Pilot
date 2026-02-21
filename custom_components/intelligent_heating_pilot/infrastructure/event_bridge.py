@@ -220,33 +220,49 @@ class HAEventBridge:
                 return True
 
         # Current indoor temperature (0.1 °C tolerance)
-        new_temp = new_data.get("current_temp") or 0.0
-        last_temp = last.get("current_temp") or 0.0
-        if abs(new_temp - last_temp) >= 0.1:
+        new_temp = new_data.get("current_temp")
+        last_temp = last.get("current_temp")
+        # Transition between "no data" and a real temperature is always meaningful
+        if (new_temp is None) != (last_temp is None):
             return True
+        if new_temp is not None and last_temp is not None:
+            if abs(new_temp - last_temp) >= 0.1:
+                return True
 
         # Learned heating slope (0.05 °C/h tolerance)
-        new_lhs = new_data.get("learned_heating_slope") or 0.0
-        last_lhs = last.get("learned_heating_slope") or 0.0
-        if abs(new_lhs - last_lhs) >= 0.05:
+        new_lhs = new_data.get("learned_heating_slope")
+        last_lhs = last.get("learned_heating_slope")
+        # Transition between "no data" and a real slope is always meaningful
+        if (new_lhs is None) != (last_lhs is None):
             return True
+        if new_lhs is not None and last_lhs is not None:
+            if abs(new_lhs - last_lhs) >= 0.05:
+                return True
 
         # Anticipated start time (1-minute tolerance)
         new_start = new_data.get("anticipated_start_time")
         last_start = last.get("anticipated_start_time")
-        if new_start != last_start:
-            try:
-                new_dt = dt_util.parse_datetime(new_start) if isinstance(new_start, str) else new_start
-                last_dt = dt_util.parse_datetime(last_start) if isinstance(last_start, str) else last_start
-                if new_dt is None or last_dt is None:
-                    return True
-                if abs((new_dt - last_dt).total_seconds()) >= _ANTICIPATION_TIME_TOLERANCE_SECONDS:
-                    return True
-            except (TypeError, ValueError, AttributeError):
+
+        # If both are equal (including both None or identical strings/datetimes), no meaningful change
+        if new_start == last_start:
+            return False
+
+        # If one is None and the other is not, this is a meaningful change
+        if new_start is None or last_start is None:
+            return True
+
+        try:
+            new_dt = dt_util.parse_datetime(new_start) if isinstance(new_start, str) else new_start
+            last_dt = dt_util.parse_datetime(last_start) if isinstance(last_start, str) else last_start
+            if new_dt is None or last_dt is None:
                 return True
+            if abs((new_dt - last_dt).total_seconds()) >= _ANTICIPATION_TIME_TOLERANCE_SECONDS:
+                return True
+        except (TypeError, ValueError, AttributeError):
+            return True
 
         return False
-    
+
     def _handle_vtherm_change(self, event: Event[EventStateChangedData]) -> None:
         """Handle VTherm state changes (temperature filter + recalculation trigger).
         
