@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from ..domain.interfaces.device_config_reader_interface import DeviceConfig
 from ..domain.interfaces.historical_data_adapter_interface import IHistoricalDataAdapter
+from ..infrastructure.adapters.climate_data_adapter import ClimateDataAdapter
 from .heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
 
 if TYPE_CHECKING:
@@ -95,11 +96,17 @@ class HeatingCycleLifecycleManagerFactory:
         # Create new instance
         _LOGGER.debug("Creating new HeatingCycleLifecycleManager for device_id=%s", device_id)
 
-        # TODO: Wire historical_adapters from hass infrastructure
-        # For now, this is a placeholder - implementation will need:
-        # 1. Create HistoricalDataAdapter instances from hass
-        # 2. Pass them to the manager
-        historical_adapters: list[IHistoricalDataAdapter] = []  # Placeholder
+        # Wire historical data adapters from hass infrastructure
+        _LOGGER.debug(
+            "Setting up historical data adapters for device_id=%s", device_config.device_id
+        )
+        climate_adapter = ClimateDataAdapter(hass)
+        historical_adapters: list[IHistoricalDataAdapter] = [climate_adapter]
+        _LOGGER.debug(
+            "Configured %d historical adapter(s) for device_id=%s",
+            len(historical_adapters),
+            device_config.device_id,
+        )
 
         manager = HeatingCycleLifecycleManager(
             device_config=device_config,

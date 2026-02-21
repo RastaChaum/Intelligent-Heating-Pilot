@@ -608,6 +608,22 @@ class HeatingCycleLifecycleManager:
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager._extract_cycles")
 
+        # Diagnostic logs for troubleshooting empty data issue
+        _LOGGER.debug(
+            "Extracting cycles for device_id=%s, time window: %s to %s",
+            device_id,
+            start_time.isoformat(),
+            end_time.isoformat(),
+        )
+        _LOGGER.debug("Number of historical adapters available: %d", len(self._historical_adapters))
+        if not self._historical_adapters:
+            _LOGGER.warning(
+                "No historical adapters configured for device_id=%s. "
+                "This will result in empty historical data. "
+                "Check factory initialization.",
+                device_id,
+            )
+
         # Load historical data from all adapters
         combined_data: HistoricalDataSet = HistoricalDataSet(data={})
 
@@ -622,10 +638,18 @@ class HeatingCycleLifecycleManager:
                         end_time=end_time,
                     )
                     # Merge adapter data into combined_data
-                    if adapter_data is not None:
-                        if data_key not in combined_data.data:
-                            combined_data.data[data_key] = []
-                        combined_data.data[data_key].extend(adapter_data.data[data_key])
+                    if adapter_data is not None and adapter_data.data:
+                        # Only extend if this data_key exists in the adapter response
+                        if data_key in adapter_data.data:
+                            if data_key not in combined_data.data:
+                                combined_data.data[data_key] = []
+                            combined_data.data[data_key].extend(adapter_data.data[data_key])
+                        else:
+                            _LOGGER.debug(
+                                "Data key %s not found in adapter response for entity %s",
+                                data_key.value,
+                                device_id,
+                            )
             except Exception as exc:
                 _LOGGER.error("Error loading data from adapter: %s", exc)
                 raise
