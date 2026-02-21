@@ -1,7 +1,6 @@
-"""Climate data adapter for Home Assistant historical data.
+"""Home Assistant weather data reader adapter.
 
-Converts Home Assistant climate entity history into HistoricalDataSet,
-using flexible attribute mappers to support multiple entity types.
+Provides historical data access for weather entities via HA Recorder.
 """
 
 from __future__ import annotations
@@ -16,8 +15,6 @@ from ...domain.value_objects import (
     HistoricalDataSet,
     HistoricalMeasurement,
 )
-from ...domain.value_objects.entity_attribute_mapping import AttributeConcept
-from .entity_attribute_mapper_registry import EntityAttributeMapperRegistry
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -26,43 +23,27 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Mapping from HistoricalDataKey to the corresponding domain concept
-DATA_KEY_TO_CONCEPT: dict[HistoricalDataKey, AttributeConcept] = {
-    HistoricalDataKey.INDOOR_TEMP: AttributeConcept.CURRENT_TEMPERATURE,
-    HistoricalDataKey.TARGET_TEMP: AttributeConcept.TARGET_TEMPERATURE,
-    HistoricalDataKey.HEATING_STATE: AttributeConcept.HVAC_ACTION,
-    HistoricalDataKey.INDOOR_HUMIDITY: AttributeConcept.INDOOR_HUMIDITY,
-    HistoricalDataKey.OUTDOOR_TEMP: AttributeConcept.OUTDOOR_TEMPERATURE,
-    HistoricalDataKey.OUTDOOR_HUMIDITY: AttributeConcept.OUTDOOR_HUMIDITY,
-    HistoricalDataKey.CLOUD_COVERAGE: AttributeConcept.CLOUD_COVERAGE,
-}
 
+class HAWeatherDataReader(IHistoricalDataAdapter):
+    """Adapter for reading historical weather data from Home Assistant.
 
-class ClimateDataAdapter(IHistoricalDataAdapter):
-    """Adapter for converting Home Assistant climate entity history to HistoricalDataSet.
+    Weather entities provide temperature, humidity, cloud coverage, etc.
 
-    Uses flexible attribute mappers to support multiple entity types (VTherm,
-    generic climate entities, etc.) with different attribute structures.
-
-    Instead of hardcoding attribute names, this adapter:
-    1. Detects the entity type automatically
-    2. Uses the appropriate attribute mapper
-    3. Extracts values based on domain concepts
+    Uses RecorderAccessQueue (MANDATORY) to serialize database access and prevent
+    Home Assistant performance degradation when multiple IHP instances query
+    historical data simultaneously.
     """
 
-    def __init__(
-        self, hass: HomeAssistant, recorder_queue: RecorderAccessQueue | None = None
-    ) -> None:
-        """Initialize the climate data adapter.
+    def __init__(self, hass: HomeAssistant, recorder_queue: RecorderAccessQueue) -> None:
+        """Initialize the weather data reader.
 
         Args:
             hass: Home Assistant instance
-            recorder_queue: Optional shared queue to serialize recorder access
+            recorder_queue: Shared FIFO queue to serialize recorder access (MANDATORY)
         """
         self._hass = hass
         self._recorder_queue = recorder_queue
-        self._mapper_registry = EntityAttributeMapperRegistry(hass)
-        _LOGGER.debug("Initialized ClimateDataAdapter with EntityAttributeMapperRegistry")
+        _LOGGER.debug("Initialized HAWeatherDataReader with mandatory RecorderAccessQueue")
 
     async def fetch_historical_data(
         self,
@@ -71,61 +52,31 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
         start_time: datetime,
         end_time: datetime,
     ) -> HistoricalDataSet:
-        """Fetch historical data for a climate entity.
+        """Fetch historical data for a weather entity.
 
-        Uses flexible attribute mapping to extract the requested data
-        from the entity's attributes, regardless of entity type.
+        USES RecorderAccessQueue to serialize database access.
 
         Args:
-            entity_id: The climate entity ID (e.g., "climate.living_room")
-            data_key: The HistoricalDataKey to use (INDOOR_TEMP, TARGET_TEMP, HEATING_STATE)
+            entity_id: Weather entity ID (e.g., "weather.home")
+            data_key: HistoricalDataKey (typically OUTDOOR_TEMP, OUTDOOR_HUMIDITY, CLOUD_COVERAGE)
             start_time: Start of historical period
             end_time: End of historical period
 
         Returns:
-            HistoricalDataSet with extracted climate data
+            HistoricalDataSet with extracted weather data
 
         Raises:
-            ValueError: If entity_id is invalid or has missing required attributes
+            ValueError: If entity_id is invalid or history cannot be retrieved
         """
         _LOGGER.debug(
-            "Fetching climate history for %s (data_key: %s) from %s to %s",
+            "Fetching weather history for %s from %s to %s",
             entity_id,
-            data_key.value,
             start_time,
             end_time,
         )
 
-        # Get mapper for this entity
         try:
-            mapper = self._mapper_registry.get_mapper_for_entity(entity_id)
-            _LOGGER.debug("Using mapper: %s", type(mapper).__name__)
-        except ValueError as err:
-            _LOGGER.error("Cannot select mapper for %s: %s", entity_id, err)
-            raise
-
-        # Map the data_key to a domain concept
-        concept = DATA_KEY_TO_CONCEPT.get(data_key)
-        if not concept:
-            _LOGGER.debug(
-                "No concept mapping for data_key %s, skipping",
-                data_key.value,
-            )
-            return HistoricalDataSet(data={})
-
-        # Check if mapper supports this concept before fetching history
-        supported_concepts = mapper.get_supported_concepts()
-        if concept not in supported_concepts:
-            _LOGGER.debug(
-                "Mapper %s does not support concept %s for data_key %s, skipping",
-                type(mapper).__name__,
-                concept.value,
-                data_key.value,
-            )
-            return HistoricalDataSet(data={})
-
-        # Get historical data from Home Assistant
-        try:
+            # Get historical data from Home Assistant
             historical_records = await self._fetch_history(
                 entity_id,
                 start_time,
@@ -143,32 +94,45 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
 
         for record in historical_records:
             timestamp = self._parse_timestamp(record)
+            state = record.get("state", "")
             attributes = record.get("attributes", {})
             entity_id_from_record = record.get("entity_id", entity_id)
 
-            # Extract value using the flexible mapper
-            try:
-                value = mapper.extract_attribute_value(attributes, concept)
-            except ValueError:
-                _LOGGER.debug("Could not extract %s from attributes", concept.value)
-                value = None
+            # Create attributes dict with weather state
+            enriched_attributes = {**attributes, "weather_state": state}
+
+            # Extract data based on requested data_key
+            value = None
+            if data_key == HistoricalDataKey.OUTDOOR_TEMP:
+                # Extract outdoor temperature
+                if "temperature" in attributes:
+                    value = self._safe_float(attributes["temperature"])
+
+            elif data_key == HistoricalDataKey.OUTDOOR_HUMIDITY:
+                # Extract outdoor humidity
+                if "humidity" in attributes:
+                    value = self._safe_float(attributes["humidity"])
+
+            elif data_key == HistoricalDataKey.CLOUD_COVERAGE:
+                # Extract cloud coverage
+                if "cloud_coverage" in attributes:
+                    value = self._safe_float(attributes["cloud_coverage"])
+
+            else:
+                _LOGGER.warning(
+                    "Weather adapter does not support data_key %s for entity %s",
+                    data_key,
+                    entity_id,
+                )
+                continue
 
             # Add measurement if value was extracted
             if value is not None:
-                # For float concepts, ensure we have a numeric value
-                if concept in [
-                    AttributeConcept.CURRENT_TEMPERATURE,
-                    AttributeConcept.TARGET_TEMPERATURE,
-                ]:
-                    value = self._safe_float(value)
-                    if value is None:
-                        continue
-
                 measurements.append(
                     HistoricalMeasurement(
                         timestamp=timestamp,
                         value=value,
-                        attributes=attributes,
+                        attributes=enriched_attributes,
                         entity_id=entity_id_from_record,
                     )
                 )
@@ -179,11 +143,10 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
             data[data_key] = measurements
 
         _LOGGER.debug(
-            "Extracted %d measurements for %s with key %s using %s",
+            "Extracted %d measurements for %s with key %s",
             len(measurements),
             entity_id,
-            data_key.value,
-            type(mapper).__name__,
+            data_key,
         )
 
         return HistoricalDataSet(data=data)
@@ -198,12 +161,10 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
         Returns:
             Parsed datetime object
         """
-        # Home Assistant provides ISO format string timestamps
         timestamp_str = record.get("last_changed", record.get("last_updated"))
 
         if isinstance(timestamp_str, str):
-            # Parse ISO format string (e.g., "2024-01-15T12:00:00+00:00")
-            # Remove timezone info for simplicity
+            # Parse ISO format string
             if "+" in timestamp_str:
                 timestamp_str = timestamp_str.split("+")[0]
             elif "Z" in timestamp_str:
@@ -239,11 +200,11 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
         start_time: datetime,
         end_time: datetime,
     ) -> list[dict[str, Any]]:
-        """Fetch historical data from Home Assistant.
+        """Fetch historical data from Home Assistant Recorder.
 
-        This is a separate method to make it easily mockable in tests.
-        When a RecorderAccessQueue is provided, acquires the shared lock
-        to serialize recorder access across all IHP instances (FIFO).
+        CRITICAL: Uses RecorderAccessQueue to serialize database access.
+        This is a FIFO queue shared across all IHP instances to prevent
+        overwhelming the recorder during startup or cache refresh.
 
         Args:
             entity_id: The entity ID
@@ -268,14 +229,9 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
             entity_ids=[entity_id],
         )
 
-        # Serialize recorder access via shared FIFO queue if available
-        if self._recorder_queue is not None:
-            async with self._recorder_queue.lock:
-                _LOGGER.debug("Acquired recorder lock for climate entity %s", entity_id)
-                history_dict = await get_instance(self._hass).async_add_executor_job(
-                    get_states_func
-                )
-        else:
+        # Serialize recorder access via shared FIFO queue (MANDATORY)
+        async with self._recorder_queue.lock:
+            _LOGGER.debug("Acquired recorder lock for weather entity %s", entity_id)
             history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
 
         # Extract records for our entity - returns list of State objects or dicts

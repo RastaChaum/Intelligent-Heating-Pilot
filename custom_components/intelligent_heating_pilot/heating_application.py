@@ -173,7 +173,12 @@ class HeatingApplication:
             humidity_out_entity_id=self._humidity_out_id,
             cloud_cover_entity_id=self._cloud_cover_id,
         )
-        self._climate_data_reader = HAClimateDataReader(self.hass, self._vtherm_id)
+        # Import recorder queue for HAClimateDataReader
+        from .infrastructure.recorder_queue import get_recorder_queue
+
+        self._climate_data_reader = HAClimateDataReader(
+            self.hass, get_recorder_queue(self.hass), self._vtherm_id
+        )
 
         # Create timer scheduler adapter
         self._timer_scheduler = HATimerScheduler(self.hass)

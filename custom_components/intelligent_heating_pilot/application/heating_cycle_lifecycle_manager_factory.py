@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from ..domain.interfaces.device_config_reader_interface import DeviceConfig
 from ..domain.interfaces.historical_data_adapter_interface import IHistoricalDataAdapter
-from ..infrastructure.adapters.climate_data_adapter import ClimateDataAdapter
+from ..infrastructure.adapters.climate_data_reader import HAClimateDataReader
 from ..infrastructure.adapters.entity_attribute_mapper_registry import (
     EntityAttributeMapperRegistry,
 )
@@ -120,7 +120,7 @@ class HeatingCycleLifecycleManagerFactory:
             entity_type,
         )
 
-        climate_adapter = ClimateDataAdapter(hass, get_recorder_queue(hass))
+        climate_adapter = HAClimateDataReader(hass, get_recorder_queue(hass), vtherm_entity_id)
         historical_adapters: list[IHistoricalDataAdapter] = [climate_adapter]
         _LOGGER.debug(
             "Configured %d historical adapter(s) for device_id=%s with dynamic entity detection",

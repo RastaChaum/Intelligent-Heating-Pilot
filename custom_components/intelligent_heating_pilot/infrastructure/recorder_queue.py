@@ -66,4 +66,5 @@ def get_recorder_queue(hass: HomeAssistant) -> RecorderAccessQueue:
         domain_data[RECORDER_QUEUE_KEY] = RecorderAccessQueue()
         _LOGGER.debug("Created shared RecorderAccessQueue in hass.data[%s]", DOMAIN)
 
-    return domain_data[RECORDER_QUEUE_KEY]
+    # Type cast for mypy since domain_data is typed as dict[str, Any]
+    return domain_data[RECORDER_QUEUE_KEY]  # type: ignore[no-any-return]

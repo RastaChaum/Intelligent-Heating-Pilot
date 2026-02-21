@@ -1,6 +1,6 @@
-"""Weather data adapter for Home Assistant historical data.
+"""Home Assistant sensor data reader adapter.
 
-Converts Home Assistant weather entity history into HistoricalDataSet.
+Provides historical data access for sensor entities via HA Recorder.
 """
 
 from __future__ import annotations
@@ -24,28 +24,27 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class WeatherDataAdapter(IHistoricalDataAdapter):
-    """Adapter for converting Home Assistant weather entity history to HistoricalDataSet.
+class HASensorDataReader(IHistoricalDataAdapter):
+    """Adapter for reading historical sensor data from Home Assistant.
 
-    Weather entities provide:
-    - state: current weather condition (sunny, cloudy, rainy, etc.)
-    - temperature: Outdoor temperature
-    - humidity: Outdoor humidity
-    - cloud_coverage: Cloud coverage percentage
+    Generic adapter supporting any sensor type (temperature, humidity, etc.)
+    mapped to appropriate HistoricalDataKey values.
+
+    Uses RecorderAccessQueue (MANDATORY) to serialize database access and prevent
+    Home Assistant performance degradation when multiple IHP instances query
+    historical data simultaneously.
     """
 
-    def __init__(
-        self, hass: HomeAssistant, recorder_queue: RecorderAccessQueue | None = None
-    ) -> None:
-        """Initialize the weather data adapter.
+    def __init__(self, hass: HomeAssistant, recorder_queue: RecorderAccessQueue) -> None:
+        """Initialize the sensor data reader.
 
         Args:
             hass: Home Assistant instance
-            recorder_queue: Optional shared queue to serialize recorder access
+            recorder_queue: Shared FIFO queue to serialize recorder access (MANDATORY)
         """
         self._hass = hass
         self._recorder_queue = recorder_queue
-        _LOGGER.debug("Initialized WeatherDataAdapter")
+        _LOGGER.debug("Initialized HASensorDataReader with mandatory RecorderAccessQueue")
 
     async def fetch_historical_data(
         self,
@@ -54,22 +53,24 @@ class WeatherDataAdapter(IHistoricalDataAdapter):
         start_time: datetime,
         end_time: datetime,
     ) -> HistoricalDataSet:
-        """Fetch historical data for a weather entity.
+        """Fetch historical data for a sensor entity.
+
+        USES RecorderAccessQueue to serialize database access.
 
         Args:
-            entity_id: The weather entity ID (e.g., "weather.home")
-            data_key: The HistoricalDataKey to use (typically OUTDOOR_TEMP, OUTDOOR_HUMIDITY, or CLOUD_COVERAGE)
+            entity_id: Sensor entity ID (e.g., "sensor.indoor_temperature")
+            data_key: HistoricalDataKey (e.g., OUTDOOR_TEMP, INDOOR_HUMIDITY)
             start_time: Start of historical period
             end_time: End of historical period
 
         Returns:
-            HistoricalDataSet with extracted weather data
+            HistoricalDataSet with extracted sensor data
 
         Raises:
             ValueError: If entity_id is invalid or history cannot be retrieved
         """
         _LOGGER.debug(
-            "Fetching weather history for %s from %s to %s",
+            "Fetching sensor history for %s from %s to %s",
             entity_id,
             start_time,
             end_time,
@@ -90,63 +91,45 @@ class WeatherDataAdapter(IHistoricalDataAdapter):
             _LOGGER.warning("No history found for %s", entity_id)
             return HistoricalDataSet(data={})
 
+        # Use the provided data_key to categorize measurements
         measurements: list[HistoricalMeasurement] = []
 
         for record in historical_records:
             timestamp = self._parse_timestamp(record)
-            state = record.get("state", "")
+            state = record.get("state")
             attributes = record.get("attributes", {})
             entity_id_from_record = record.get("entity_id", entity_id)
 
-            # Create attributes dict with weather state
-            enriched_attributes = {**attributes, "weather_state": state}
-
-            # Extract data based on requested data_key
-            value = None
-            if data_key == HistoricalDataKey.OUTDOOR_TEMP:
-                # Extract outdoor temperature
-                if "temperature" in attributes:
-                    value = self._safe_float(attributes["temperature"])
-
-            elif data_key == HistoricalDataKey.OUTDOOR_HUMIDITY:
-                # Extract outdoor humidity
-                if "humidity" in attributes:
-                    value = self._safe_float(attributes["humidity"])
-
-            elif data_key == HistoricalDataKey.CLOUD_COVERAGE:
-                # Extract cloud coverage
-                if "cloud_coverage" in attributes:
-                    value = self._safe_float(attributes["cloud_coverage"])
-
-            else:
-                _LOGGER.warning(
-                    "Weather adapter does not support data_key %s for entity %s",
-                    data_key,
+            # Try to convert state to numeric value - skip if not convertible
+            numeric_value = self._safe_float(state)
+            if numeric_value is None:
+                _LOGGER.debug(
+                    "Skipping non-numeric sensor state '%s' for %s at %s",
+                    state,
                     entity_id,
+                    timestamp,
                 )
                 continue
 
-            # Add measurement if value was extracted
-            if value is not None:
-                measurements.append(
-                    HistoricalMeasurement(
-                        timestamp=timestamp,
-                        value=value,
-                        attributes=enriched_attributes,
-                        entity_id=entity_id_from_record,
-                    )
+            measurements.append(
+                HistoricalMeasurement(
+                    timestamp=timestamp,
+                    value=numeric_value,
+                    attributes=attributes,
+                    entity_id=entity_id_from_record,
                 )
+            )
 
         # Build result
         data: dict[HistoricalDataKey, list[HistoricalMeasurement]] = {}
+
         if measurements:
             data[data_key] = measurements
 
         _LOGGER.debug(
-            "Extracted %d measurements for %s with key %s",
+            "Extracted %d sensor measurements for %s",
             len(measurements),
             entity_id,
-            data_key,
         )
 
         return HistoricalDataSet(data=data)
@@ -200,11 +183,11 @@ class WeatherDataAdapter(IHistoricalDataAdapter):
         start_time: datetime,
         end_time: datetime,
     ) -> list[dict[str, Any]]:
-        """Fetch historical data from Home Assistant.
+        """Fetch historical data from Home Assistant Recorder.
 
-        This is a separate method to make it easily mockable in tests.
-        When a RecorderAccessQueue is provided, acquires the shared lock
-        to serialize recorder access across all IHP instances (FIFO).
+        CRITICAL: Uses RecorderAccessQueue to serialize database access.
+        This is a FIFO queue shared across all IHP instances to prevent
+        overwhelming the recorder during startup or cache refresh.
 
         Args:
             entity_id: The entity ID
@@ -229,14 +212,9 @@ class WeatherDataAdapter(IHistoricalDataAdapter):
             entity_ids=[entity_id],
         )
 
-        # Serialize recorder access via shared FIFO queue if available
-        if self._recorder_queue is not None:
-            async with self._recorder_queue.lock:
-                _LOGGER.debug("Acquired recorder lock for weather entity %s", entity_id)
-                history_dict = await get_instance(self._hass).async_add_executor_job(
-                    get_states_func
-                )
-        else:
+        # Serialize recorder access via shared FIFO queue (MANDATORY)
+        async with self._recorder_queue.lock:
+            _LOGGER.debug("Acquired recorder lock for sensor entity %s", entity_id)
             history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
 
         # Extract records for our entity - returns list of State objects or dicts

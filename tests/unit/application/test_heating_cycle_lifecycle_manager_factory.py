@@ -47,7 +47,9 @@ class TestHeatingCycleLifecycleManagerFactory:
     @pytest.fixture
     def mock_hass(self) -> Mock:
         """Mock Home Assistant instance."""
-        return Mock()
+        mock = Mock()
+        mock.data = {}
+        return mock
 
     @pytest.fixture
     def mock_dependencies(self) -> dict:
