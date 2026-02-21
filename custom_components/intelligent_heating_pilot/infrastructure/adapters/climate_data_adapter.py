@@ -22,6 +22,8 @@ from .entity_attribute_mapper_registry import EntityAttributeMapperRegistry
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+    from ..recorder_queue import RecorderAccessQueue
+
 _LOGGER = logging.getLogger(__name__)
 
 # Mapping from HistoricalDataKey to the corresponding domain concept
@@ -48,13 +50,17 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
     3. Extracts values based on domain concepts
     """
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(
+        self, hass: HomeAssistant, recorder_queue: RecorderAccessQueue | None = None
+    ) -> None:
         """Initialize the climate data adapter.
 
         Args:
             hass: Home Assistant instance
+            recorder_queue: Optional shared queue to serialize recorder access
         """
         self._hass = hass
+        self._recorder_queue = recorder_queue
         self._mapper_registry = EntityAttributeMapperRegistry(hass)
         _LOGGER.debug("Initialized ClimateDataAdapter with EntityAttributeMapperRegistry")
 
@@ -236,6 +242,8 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
         """Fetch historical data from Home Assistant.
 
         This is a separate method to make it easily mockable in tests.
+        When a RecorderAccessQueue is provided, acquires the shared lock
+        to serialize recorder access across all IHP instances (FIFO).
 
         Args:
             entity_id: The entity ID
@@ -259,7 +267,16 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
             end_time,
             entity_ids=[entity_id],
         )
-        history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
+
+        # Serialize recorder access via shared FIFO queue if available
+        if self._recorder_queue is not None:
+            async with self._recorder_queue.lock:
+                _LOGGER.debug("Acquired recorder lock for climate entity %s", entity_id)
+                history_dict = await get_instance(self._hass).async_add_executor_job(
+                    get_states_func
+                )
+        else:
+            history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
 
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])

@@ -13,6 +13,7 @@ from ..infrastructure.adapters.entity_attribute_mapper_registry import (
     EntityAttributeMapperRegistry,
 )
 from ..infrastructure.adapters.vtherm_attribute_mapper import VThermAttributeMapper
+from ..infrastructure.recorder_queue import get_recorder_queue
 from .heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
 
 if TYPE_CHECKING:
@@ -119,7 +120,7 @@ class HeatingCycleLifecycleManagerFactory:
             entity_type,
         )
 
-        climate_adapter = ClimateDataAdapter(hass)
+        climate_adapter = ClimateDataAdapter(hass, get_recorder_queue(hass))
         historical_adapters: list[IHistoricalDataAdapter] = [climate_adapter]
         _LOGGER.debug(
             "Configured %d historical adapter(s) for device_id=%s with dynamic entity detection",

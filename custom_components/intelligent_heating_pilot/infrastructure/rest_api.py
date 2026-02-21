@@ -279,8 +279,9 @@ async def debug_heating_state_handler(request: Request) -> Response:
         from .adapters.climate_data_adapter import (
             ClimateDataAdapter,
         )
+        from .recorder_queue import get_recorder_queue
 
-        climate_adapter = ClimateDataAdapter(hass)
+        climate_adapter = ClimateDataAdapter(hass, get_recorder_queue(hass))
         heating_state_data = await climate_adapter.fetch_historical_data(
             coordinator.config.data.get("vtherm_entity_id"),
             HistoricalDataKey.HEATING_STATE,
