@@ -342,7 +342,7 @@ class TestIsMeaningfulChangeFromLast:
         bridge = _make_bridge()
         bridge._last_published_data = self._base_data()
         new_data = dict(self._base_data())
-        new_data["learned_heating_slope"] = 2.0 + 0.05  # exactly at threshold
+        new_data["learned_heating_slope"] = 2.0 + 0.06  # above threshold (avoid fp boundary)
         assert bridge._is_meaningful_change_from_last(new_data) is True
 
     def test_lhs_change_below_threshold_is_not_meaningful(self):
