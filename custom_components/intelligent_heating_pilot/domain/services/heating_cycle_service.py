@@ -742,7 +742,7 @@ class HeatingCycleService(IHeatingCycleService):
             history_data_set: Dataset to validate
 
         Raises:
-            ValueError: If any critical key is missing
+            ValueError: If any critical key is missing with detailed diagnostic info
         """
         required_keys = [
             HistoricalDataKey.INDOOR_TEMP,
@@ -753,13 +753,19 @@ class HeatingCycleService(IHeatingCycleService):
 
         if missing_keys:
             missing_values = [k.value for k in missing_keys]
+            available_keys = list(history_data_set.data.keys())
             _LOGGER.error(
-                "Cannot extract cycles: missing REQUIRED keys: %s",
+                "Cannot extract cycles: missing REQUIRED data keys %s. Available keys: %s",
                 missing_values,
+                [k.value for k in available_keys],
             )
             raise ValueError(
                 f"Missing critical historical data keys: {missing_values}. "
-                f"VTherm entity may not have these attributes in Home Assistant history."
+                f"Available data: {[k.value for k in available_keys]}. "
+                f"Ensure the climate entity has required attributes: "
+                f"current_temperature, target_temperature, and hvac_action. "
+                f"For VTherm entities, ensure it's properly configured and attributes are accessible. "
+                f"If the entity uses custom attributes, configure attribute mapping in the integration settings."
             )
 
     def _get_temperatures_at(

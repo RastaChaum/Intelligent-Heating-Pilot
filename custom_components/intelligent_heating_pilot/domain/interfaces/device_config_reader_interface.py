@@ -48,6 +48,7 @@ class DeviceConfig:
     scheduler_entities: list[str]
     humidity_in_entity_id: str | None = None
     humidity_out_entity_id: str | None = None
+    temperature_out_entity_id: str | None = None
     cloud_cover_entity_id: str | None = None
 
     # Learning and data retention

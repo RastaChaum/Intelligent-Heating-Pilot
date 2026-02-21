@@ -1,7 +1,7 @@
-"""Home Assistant event bridge - translates HA events to application service calls.
+"""Home Assistant event bridge - translates HA events to orchestrator calls.
 
 This infrastructure component listens to HA entity state changes and delegates
-to the application service.
+to the orchestrator.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from .vtherm_compat import get_vtherm_attribute
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ..application import HeatingApplicationService
+    from ..application import HeatingOrchestrator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class HAEventBridge:
     def __init__(
         self,
         hass: HomeAssistant,
-        application_service: HeatingApplicationService,
+        orchestrator: HeatingOrchestrator,
         vtherm_entity_id: str,
         scheduler_entity_ids: list[str],
         monitored_entity_ids: list[str] | None = None,
@@ -48,7 +48,7 @@ class HAEventBridge:
 
         Args:
             hass: Home Assistant instance
-            application_service: Application service to delegate to
+            orchestrator: Orchestrator to delegate to
             vtherm_entity_id: VTherm entity to monitor for slopes
             scheduler_entity_ids: Scheduler entities to monitor
             monitored_entity_ids: Additional entities to monitor (humidity, etc.)
@@ -56,7 +56,7 @@ class HAEventBridge:
             get_ihp_enabled_func: Callback function to get current IHP enabled state
         """
         self._hass = hass
-        self._app_service = application_service
+        self._orchestrator = orchestrator
         self._vtherm_entity_id = vtherm_entity_id
         self._scheduler_entity_ids = scheduler_entity_ids
         self._monitored_entity_ids = monitored_entity_ids or []
@@ -79,19 +79,19 @@ class HAEventBridge:
 
         @callback
         def _on_entity_changed(event: Event[EventStateChangedData]) -> None:
-            """Handle entity state change events."""
+            """Handle entity state change events.
+
+            All listened entities trigger _recalculate_and_publish(), which routes
+            to appropriate orchestrator method based on event source.
+            """
             entity_id = event.data.get("entity_id")
 
             if entity_id not in self._tracked_entities:
                 return
 
-            # VTherm-specific handling for slope learning
-            if entity_id == self._vtherm_entity_id:
-                self._handle_vtherm_change(event)
-            else:
-                # Other entities just trigger recalculation
-                _LOGGER.debug("Entity %s changed, triggering update", entity_id)
-                self._hass.async_create_task(self._recalculate_and_publish())
+            _LOGGER.debug("Entity %s changed, triggering recalculation", entity_id)
+            # Centralized routing: all entities call same method with event context
+            self._hass.async_create_task(self._recalculate_and_publish(event))
 
         # Register state change listener
         unsub = async_track_state_change_event(
@@ -101,67 +101,70 @@ class HAEventBridge:
 
         _LOGGER.debug("Event bridge tracking %d entities", len(self._tracked_entities))
 
-    def _handle_vtherm_change(self, event: Event[EventStateChangedData]) -> None:
-        """Handle VTherm state changes (slope learning + update).
-
-        Args:
-            event: State change event
-        """
-        old_state = event.data["old_state"]
-        new_state = event.data["new_state"]
-
-        if not old_state or not new_state:
-            return
-
-        # Check if we should ignore (self-induced change)
-        if self._ignore_vtherm_until and dt_util.now() < self._ignore_vtherm_until:
-            _LOGGER.debug("Ignoring self-induced VTherm change")
-            return
-
-        # Extract temperature changes (v8.0.0+ compatible)
-        old_temp = get_vtherm_attribute(old_state, "current_temperature")
-        new_temp = get_vtherm_attribute(new_state, "current_temperature")
-
-        temp_changed = old_temp != new_temp
-
-        if not (temp_changed):
-            return
-
-        if temp_changed:
-            _LOGGER.debug("VTherm temperature changed: %s -> %s", old_temp, new_temp)
-
-        # Trigger recalculation and publish to sensors
-        self._hass.async_create_task(self._recalculate_and_publish())
-
-    async def _recalculate_and_publish(self) -> None:
+    async def _recalculate_and_publish(
+        self, event: Event[EventStateChangedData] | None = None
+    ) -> None:
         """Recalculate anticipation and publish event for sensors.
 
-        Handles three response cases from application service:
-        1. None or empty dict: No data available, publish clear event
-        2. {"clear_values": True}: Signal to clear sensors, publish clear event
-        3. Full data dict: Publish complete anticipation data with all fields
+        Routes to appropriate orchestrator method based on event source:
+        - VTherm changes: Check for temperature changes, handle ignoring
+        - Scheduler changes: Direct recalculation
+        - Environment changes: Direct recalculation
+
+        Always publishes data structure (with None values if calculation fails).
+
+        Args:
+            event: State change event (None for manual calls)
         """
         _LOGGER.debug("Recalculating anticipation and publishing update")
 
-        anticipation_data = await self._app_service.calculate_and_schedule_anticipation(
+        # Event-based routing logic
+        if event is not None:
+            entity_id = event.data.get("entity_id")
+
+            # VTherm-specific handling for slope learning
+            if entity_id == self._vtherm_entity_id:
+                old_state = event.data.get("old_state")
+                new_state = event.data.get("new_state")
+
+                if not old_state or not new_state:
+                    return
+
+                # Check if we should ignore (self-induced change)
+                if self._ignore_vtherm_until and dt_util.now() < self._ignore_vtherm_until:
+                    _LOGGER.debug("Ignoring self-induced VTherm change")
+                    return
+
+                # Extract temperature changes (v8.0.0+ compatible)
+                old_temp = get_vtherm_attribute(old_state, "current_temperature")
+                new_temp = get_vtherm_attribute(new_state, "current_temperature")
+
+                if old_temp == new_temp:
+                    _LOGGER.debug("VTherm change but temperature unchanged, skipping")
+                    return
+
+                _LOGGER.debug("VTherm temperature changed: %s -> %s", old_temp, new_temp)
+
+        # Call orchestrator to calculate and schedule
+        anticipation_data = await self._orchestrator.calculate_and_schedule_anticipation(
             ihp_enabled=self._get_ihp_enabled()
         )
 
-        # Handle three distinct cases explicitly (bug #81 fix)
-        # Check: is data missing OR is this a clear_values signal?
-        if not anticipation_data or "clear_values" in anticipation_data:
-            # Case 1 & 2: No data (None or empty dict) OR clear signal
-            _LOGGER.debug("Publishing clear event (no data or clear signal)")
-            self._hass.bus.async_fire(
-                "intelligent_heating_pilot_anticipation_calculated",
-                {
-                    "entry_id": self._entry_id,
-                    "clear_values": True,
-                },
-            )
-        else:
-            # Case 3: Full anticipation data available
-            _LOGGER.debug("Publishing anticipation data with all fields")
+        # ALWAYS publish data structure (with None values if needed)
+        # Per review feedback: never skip publishing, always return structure
+        if not anticipation_data:
+            _LOGGER.warning("Orchestrator returned None/empty - this should not happen")
+            anticipation_data = {}
+
+        # Check if we have complete data or need to publish partial/None values
+        has_complete_data = (
+            anticipation_data.get("anticipated_start_time") is not None
+            and anticipation_data.get("next_schedule_time") is not None
+        )
+
+        if has_complete_data:
+            # Case: Full anticipation data available
+            _LOGGER.debug("Publishing complete anticipation data")
             self._hass.bus.async_fire(
                 "intelligent_heating_pilot_anticipation_calculated",
                 {
@@ -170,15 +173,32 @@ class HAEventBridge:
                         "anticipated_start_time"
                     ].isoformat(),
                     "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
-                    "next_target_temperature": anticipation_data["next_target_temperature"],
-                    "anticipation_minutes": anticipation_data["anticipation_minutes"],
-                    "current_temp": anticipation_data["current_temp"],
-                    "learned_heating_slope": anticipation_data["learned_heating_slope"],
-                    "confidence_level": anticipation_data["confidence_level"],
-                    "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
+                    "next_target_temperature": anticipation_data.get("next_target_temperature"),
+                    "anticipation_minutes": anticipation_data.get("anticipation_minutes"),
+                    "current_temp": anticipation_data.get("current_temp"),
+                    "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
+                    "confidence_level": anticipation_data.get("confidence_level"),
+                    "scheduler_entity": anticipation_data.get("scheduler_entity"),
                 },
             )
-            _LOGGER.debug("Published anticipation event with data")
+        else:
+            # Case: Partial data (minimal values like current_temp and LHS only)
+            # Still publish the structure with available values
+            _LOGGER.debug("Publishing partial anticipation data (minimal values)")
+            self._hass.bus.async_fire(
+                "intelligent_heating_pilot_anticipation_calculated",
+                {
+                    "entry_id": self._entry_id,
+                    "anticipated_start_time": None,
+                    "next_schedule_time": None,
+                    "next_target_temperature": None,
+                    "anticipation_minutes": None,
+                    "current_temp": anticipation_data.get("current_temp"),
+                    "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
+                    "confidence_level": None,
+                    "scheduler_entity": None,
+                },
+            )
 
     def ignore_vtherm_changes_for(self, seconds: int = 10) -> None:
         """Temporarily ignore VTherm changes (used after self-induced changes).

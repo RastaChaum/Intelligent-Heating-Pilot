@@ -1,4 +1,4 @@
-"""Coordinator for Intelligent Heating Pilot integration."""
+"""Heating application entry point and DI container for Intelligent Heating Pilot."""
 
 from __future__ import annotations
 
@@ -10,17 +10,33 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .application import HeatingApplicationService
 from .application.heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
 from .application.heating_cycle_lifecycle_manager_factory import (
     HeatingCycleLifecycleManagerFactory,
 )
 from .application.lhs_lifecycle_manager import LhsLifecycleManager
 from .application.lhs_lifecycle_manager_factory import LhsLifecycleManagerFactory
+from .application.orchestrator import HeatingOrchestrator
+from .application.use_cases import (
+    CalculateAnticipationUseCase,
+    CheckOvershootRiskUseCase,
+    ControlPreheatingUseCase,
+    ScheduleAnticipationActionUseCase,
+    UpdateCacheDataUseCase,
+)
 from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN
 from .domain.interfaces.device_config_reader_interface import DeviceConfig
+from .domain.services import (
+    ContextualLHSCalculatorService,
+    DeadTimeCalculationService,
+    GlobalLHSCalculatorService,
+    HeatingCycleService,
+    PredictionService,
+)
 from .infrastructure.adapters import (
     HAClimateCommander,
+    HAClimateDataReader,
+    HAContextReader,
     HAEnvironmentReader,
     HAHeatingCycleStorage,
     HALhsStorage,
@@ -33,10 +49,10 @@ from .infrastructure.event_bridge import HAEventBridge
 _LOGGER = logging.getLogger(__name__)
 
 
-class IntelligentHeatingPilotCoordinator:
-    """Lightweight coordinator for DDD architecture.
+class HeatingApplication:
+    """Heating application entry point and DI container.
 
-    This coordinator:
+    This class:
     - Creates and wires adapters
     - Creates application service
     - Setups event bridge
@@ -61,21 +77,22 @@ class IntelligentHeatingPilotCoordinator:
         - All configuration comes from the value object (DeviceConfig)
         - For entry_id-based operations, use device_config.device_id
         """
-        _LOGGER.debug("Initializing IntelligentHeatingPilotCoordinator with injected DeviceConfig")
+        _LOGGER.debug("Initializing HeatingApplication with injected DeviceConfig")
 
         self.hass = hass
-        self._entry_id = device_config.device_id  # Store entry ID for adapter creation
+        self._device_id = device_config.device_id  # Store entry ID for adapter creation
 
         # Store immutable device configuration
         self._device_config = device_config
 
         # Extract configuration from DeviceConfig (NOT from config_entry!)
         # This is the key change: we read from the injected value object
-        self._vtherm_entity = device_config.vtherm_entity_id
-        self._scheduler_entities = device_config.scheduler_entities
-        self._humidity_in = device_config.humidity_in_entity_id
-        self._humidity_out = device_config.humidity_out_entity_id
-        self._cloud_cover = device_config.cloud_cover_entity_id
+        self._vtherm_id = device_config.vtherm_entity_id
+        self._scheduler_ids = device_config.scheduler_entities
+        self._humidity_in_id = device_config.humidity_in_entity_id
+        self._humidity_out_id = device_config.humidity_out_entity_id
+        self._temperature_out_id = device_config.temperature_out_entity_id
+        self._cloud_cover_id = device_config.cloud_cover_entity_id
         self._data_retention_days = device_config.lhs_retention_days
         self._decision_mode = DECISION_MODE_SIMPLE
 
@@ -91,16 +108,18 @@ class IntelligentHeatingPilotCoordinator:
         self._ihp_enabled = device_config.ihp_enabled
 
         # Infrastructure adapters
-        self._model_storage: HALhsStorage | None = None
-        self._cycle_cache: HAHeatingCycleStorage | None = None
+        self._lhs_storage: HALhsStorage | None = None
+        self._cycle_storage: HAHeatingCycleStorage | None = None
         self._scheduler_reader: HASchedulerReader | None = None
         self._scheduler_commander: HASchedulerCommander | None = None
         self._climate_commander: HAClimateCommander | None = None
         self._environment_reader: HAEnvironmentReader | None = None
+        self._context_reader: HAContextReader | None = None
+        self._climate_data_reader: HAClimateDataReader | None = None
         self._timer_scheduler: HATimerScheduler | None = None
 
-        # Application service
-        self._app_service: HeatingApplicationService | None = None
+        # Orchestrator (coordinates use cases)
+        self._orchestrator: Any | None = None
 
         # Lifecycle managers
         self._heating_cycle_manager: HeatingCycleLifecycleManager | None = None
@@ -111,7 +130,8 @@ class IntelligentHeatingPilotCoordinator:
 
         # Cached data for sensors (refreshed by application service)
         self._last_anticipation_data: dict[str, Any] | None = None
-        self._lhs_cache: float = 2.0  # Default
+        self._lhs_cache: float = 2.0  # Default global LHS
+        self._contextual_lhs_cache: dict[int, float] = {}  # Contextual LHS by hour (0-23)
 
         # Config entry for options updates (set later via setup_config_entry_access)
         self._config_entry: ConfigEntry | None = None
@@ -120,98 +140,148 @@ class IntelligentHeatingPilotCoordinator:
     async def async_load(self) -> None:
         """Load and initialize all components."""
         # Create infrastructure adapters
-        self._model_storage = HALhsStorage(
-            self.hass, self._entry_id, retention_days=self._data_retention_days
+        self._lhs_storage = HALhsStorage(
+            self.hass, self._device_id, retention_days=self._data_retention_days
         )
 
         # Create cycle cache for incremental cycle extraction
-        self._cycle_cache = HAHeatingCycleStorage(
-            self.hass, self._entry_id, retention_days=self._data_retention_days
+        self._cycle_storage = HAHeatingCycleStorage(
+            self.hass, self._device_id, retention_days=self._data_retention_days
         )
 
         self._scheduler_reader = HASchedulerReader(
             self.hass,
-            self._scheduler_entities,
-            vtherm_entity_id=self._vtherm_entity,
+            self._scheduler_ids,
+            vtherm_entity_id=self._vtherm_id,
         )
 
         self._scheduler_commander = HASchedulerCommander(self.hass)
 
-        self._climate_commander = HAClimateCommander(self.hass, self._vtherm_entity)
+        self._climate_commander = HAClimateCommander(self.hass, self._vtherm_id)
         self._environment_reader = HAEnvironmentReader(
             self.hass,
-            self._vtherm_entity,
-            outdoor_temp_entity_id=None,  # TODO: Add to config
-            humidity_in_entity_id=self._humidity_in,
-            humidity_out_entity_id=self._humidity_out,
-            cloud_cover_entity_id=self._cloud_cover,
+            self._vtherm_id,
+            outdoor_temp_entity_id=self._temperature_out_id,
+            humidity_in_entity_id=self._humidity_in_id,
+            humidity_out_entity_id=self._humidity_out_id,
+            cloud_cover_entity_id=self._cloud_cover_id,
         )
+        self._context_reader = HAContextReader(
+            self.hass,
+            outdoor_temp_entity_id=self._temperature_out_id,
+            humidity_in_entity_id=self._humidity_in_id,
+            humidity_out_entity_id=self._humidity_out_id,
+            cloud_cover_entity_id=self._cloud_cover_id,
+        )
+        self._climate_data_reader = HAClimateDataReader(self.hass, self._vtherm_id)
 
         # Create timer scheduler adapter
         self._timer_scheduler = HATimerScheduler(self.hass)
 
-        # Create application service
-        self._app_service = HeatingApplicationService(
-            scheduler_reader=self._scheduler_reader,
-            model_storage=self._model_storage,
-            scheduler_commander=self._scheduler_commander,
-            climate_commander=self._climate_commander,
-            environment_reader=self._environment_reader,
-            timer_scheduler=self._timer_scheduler,
-            cycle_cache=self._cycle_cache,
-            history_lookback_days=self._data_retention_days,
-            decision_mode=self._decision_mode,
+        # Create domain services (they're stateless, can be created once)
+        heating_cycle_service = HeatingCycleService(
             temp_delta_threshold=self._temp_delta_threshold,
             cycle_split_duration_minutes=self._cycle_split_duration_minutes,
             min_cycle_duration_minutes=self._min_cycle_duration_minutes,
             max_cycle_duration_minutes=self._max_cycle_duration_minutes,
-            dead_time_minutes=self._dead_time_minutes,
-            auto_learning=self._auto_learning,
-            on_lhs_changed=self.refresh_caches,
         )
+        global_lhs_calculator = GlobalLHSCalculatorService()
+        contextual_lhs_calculator = ContextualLHSCalculatorService()
 
         # Create lifecycle managers
         self._heating_cycle_manager = HeatingCycleLifecycleManagerFactory.create(
             hass=self.hass,
             device_config=self._device_config,
-            heating_cycle_service=self._app_service.get_heating_cycle_service(),
-            cycle_cache=self._cycle_cache,
+            heating_cycle_service=heating_cycle_service,
+            cycle_cache=self._cycle_storage,
             timer_scheduler=self._timer_scheduler,
-            model_storage=self._model_storage,
+            model_storage=self._lhs_storage,
         )
 
         self._lhs_manager = LhsLifecycleManagerFactory.create(
-            model_storage=self._model_storage,
-            global_lhs_calculator=self._app_service.get_global_lhs_calculator(),
-            contextual_lhs_calculator=self._app_service.get_contextual_lhs_calculator(),
+            model_storage=self._lhs_storage,
+            global_lhs_calculator=global_lhs_calculator,
+            contextual_lhs_calculator=contextual_lhs_calculator,
             timer_scheduler=self._timer_scheduler,
         )
 
-        self._app_service.set_heating_cycle_lifecycle_manager(self._heating_cycle_manager)
-        self._app_service.set_lhs_lifecycle_manager(self._lhs_manager)
+        # Create use cases for orchestrator
+        _LOGGER.debug("Creating use cases for orchestrator")
+
+        # Create services directly (they're simple domain services, not state-dependent)
+        prediction_service = PredictionService()
+        dead_time_calculator = DeadTimeCalculationService()
+
+        calculate_anticipation = CalculateAnticipationUseCase(
+            scheduler_reader=self._scheduler_reader,
+            environment_reader=self._environment_reader,
+            climate_data_reader=self._climate_data_reader,
+            heating_cycle_manager=self._heating_cycle_manager,
+            lhs_lifecycle_manager=self._lhs_manager,
+            prediction_service=prediction_service,
+            dead_time_calculator=dead_time_calculator,
+            auto_learning=self._auto_learning,
+            default_dead_time_minutes=self._dead_time_minutes,
+        )
+
+        control_preheating = ControlPreheatingUseCase(
+            scheduler_commander=self._scheduler_commander,
+        )
+
+        schedule_anticipation_action = ScheduleAnticipationActionUseCase(
+            scheduler_reader=self._scheduler_reader,
+            scheduler_commander=self._scheduler_commander,
+            timer_scheduler=self._timer_scheduler,
+            control_preheating_use_case=control_preheating,  # Delegate state management
+        )
+
+        check_overshoot_risk = CheckOvershootRiskUseCase(
+            scheduler_reader=self._scheduler_reader,
+            environment_reader=self._environment_reader,
+            climate_data_reader=self._climate_data_reader,
+            control_preheating=control_preheating,
+        )
+
+        update_cache = UpdateCacheDataUseCase(
+            cycle_storage=self._cycle_storage,
+            lhs_storage=self._lhs_storage,
+            lhs_lifecycle_manager=self._lhs_manager,
+        )
+
+        # Create orchestrator
+        self._orchestrator = HeatingOrchestrator(
+            calculate_anticipation=calculate_anticipation,
+            control_preheating=control_preheating,
+            schedule_anticipation_action=schedule_anticipation_action,
+            check_overshoot_risk=check_overshoot_risk,
+            update_cache=update_cache,
+        )
+        _LOGGER.debug("Orchestrator created successfully")
 
         # Create event bridge
         monitored_entities = []
-        if self._humidity_in:
-            monitored_entities.append(self._humidity_in)
-        if self._humidity_out:
-            monitored_entities.append(self._humidity_out)
-        if self._cloud_cover:
-            monitored_entities.append(self._cloud_cover)
+        if self._humidity_in_id:
+            monitored_entities.append(self._humidity_in_id)
+        if self._humidity_out_id:
+            monitored_entities.append(self._humidity_out_id)
+        if self._cloud_cover_id:
+            monitored_entities.append(self._cloud_cover_id)
 
         self._event_bridge = HAEventBridge(
             self.hass,
-            self._app_service,
-            self._vtherm_entity,
-            self._scheduler_entities,
+            self._orchestrator,
+            self._vtherm_id,
+            self._scheduler_ids,
             monitored_entities,
-            entry_id=self._entry_id,
+            entry_id=self._device_id,
             get_ihp_enabled_func=self.is_ihp_enabled,
         )
 
         # Load initial data
         if self._lhs_manager:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
+            # Also load contextual LHS cache for all hours
+            await self._load_contextual_lhs_cache()
 
         # Initialize cycle refresh (extraction + 24h periodic)
         if self._data_retention_days > 0:
@@ -224,14 +294,40 @@ class IntelligentHeatingPilotCoordinator:
 
         _LOGGER.info(
             "[%s] Coordinator initialized (VTherm: %s, Schedulers: %d)",
-            self._entry_id,
-            self._vtherm_entity,
-            len(self._scheduler_entities),
+            self._device_id,
+            self._vtherm_id,
+            len(self._scheduler_ids),
         )
 
         # NOTE: Initial update is now deferred to async_setup_entry to avoid blocking
         # the config flow during device creation (prevents HA watchdog restart).
         # See async_setup_entry for the deferred update logic.
+
+    async def _load_contextual_lhs_cache(self) -> None:
+        """Load contextual LHS values for all hours from storage.
+
+        This populates the synchronous cache with contextual LHS values
+        that were previously calculated and stored.
+        """
+        if not self._lhs_manager:
+            return
+
+        try:
+            # Load contextual LHS for all 24 hours
+            for hour in range(24):
+                contextual_lhs = await self._lhs_manager.get_contextual_lhs(
+                    target_time=dt_util.now().replace(hour=hour, minute=0, second=0, microsecond=0),
+                    cycles=[],  # Empty cycles - will use stored cache
+                )
+                if contextual_lhs is not None and contextual_lhs != 2.0:  # 2.0 is default value
+                    self._contextual_lhs_cache[hour] = contextual_lhs
+                    _LOGGER.debug(
+                        "Loaded contextual LHS from storage: hour %d = %.2f °C/h",
+                        hour,
+                        contextual_lhs,
+                    )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("Failed to load contextual LHS cache: %s", exc, exc_info=True)
 
     def setup_config_entry_access(self, config_entry: ConfigEntry) -> None:
         """Set config_entry reference for options updates.
@@ -258,18 +354,12 @@ class IntelligentHeatingPilotCoordinator:
         - Schedules 24h periodic refresh timer
         - Logs initialization with retention days
         """
-        _LOGGER.debug("Entering _initialize_cycle_refresh for device=%s", self._entry_id)
+        _LOGGER.debug("Entering _initialize_cycle_refresh for device=%s", self._device_id)
 
         try:
             # Sanity checks
             if not self._device_config:
                 _LOGGER.warning("Cannot initialize cycle refresh: device_config not available")
-                return
-
-            if not self._app_service:
-                _LOGGER.warning(
-                    "Cannot initialize cycle refresh: application service not available"
-                )
                 return
 
             if not self._heating_cycle_manager:
@@ -306,7 +396,7 @@ class IntelligentHeatingPilotCoordinator:
                 len(extracted_cycles),
             )
 
-            _LOGGER.debug("Exiting _initialize_cycle_refresh for device=%s", self._entry_id)
+            _LOGGER.debug("Exiting _initialize_cycle_refresh for device=%s", self._device_id)
 
         except Exception as err:  # pylint: disable=broad-except
             _LOGGER.warning("Failed to initialize cycle extraction: %s", err, exc_info=True)
@@ -375,20 +465,40 @@ class IntelligentHeatingPilotCoordinator:
 
     async def async_update(self) -> None:
         """Trigger anticipation calculation and cache results for sensors."""
-        if not self._app_service:
+        if not self._orchestrator:
             return
 
-        # Calculate and schedule via application service (passing IHP enabled state)
-        anticipation_data = await self._app_service.calculate_and_schedule_anticipation(
+        # Calculate and schedule via orchestrator (passing IHP enabled state)
+        anticipation_data = await self._orchestrator.calculate_and_schedule_anticipation(
             ihp_enabled=self._ihp_enabled
         )
 
         # Cache for sensors
         self._last_anticipation_data = anticipation_data
 
-        # Refresh LHS cache
+        # Refresh LHS caches
         if self._lhs_manager:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
+
+            # Reload contextual LHS cache for the scheduled hour only (optimization)
+            if anticipation_data and not anticipation_data.get("clear_values"):
+                next_schedule_time = anticipation_data.get("next_schedule_time")
+                if next_schedule_time:
+                    scheduled_hour = next_schedule_time.hour
+                    try:
+                        contextual_lhs = await self._lhs_manager.get_contextual_lhs(
+                            target_time=next_schedule_time,
+                            cycles=[],  # Empty cycles - will use stored cache
+                        )
+                        if contextual_lhs is not None and contextual_lhs != 2.0:
+                            self._contextual_lhs_cache[scheduled_hour] = contextual_lhs
+                            _LOGGER.debug(
+                                "Updated contextual LHS cache: hour %d = %.2f °C/h",
+                                scheduled_hour,
+                                contextual_lhs,
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        _LOGGER.debug("Failed to update contextual LHS cache: %s", exc)
 
         # Fire event for sensors
         if anticipation_data:
@@ -398,7 +508,7 @@ class IntelligentHeatingPilotCoordinator:
                 self.hass.bus.async_fire(
                     f"{DOMAIN}_anticipation_calculated",
                     {
-                        "entry_id": self._entry_id,
+                        "entry_id": self._device_id,
                         "clear_values": True,
                     },
                 )
@@ -407,7 +517,7 @@ class IntelligentHeatingPilotCoordinator:
                 self.hass.bus.async_fire(
                     f"{DOMAIN}_anticipation_calculated",
                     {
-                        "entry_id": self._entry_id,
+                        "entry_id": self._device_id,
                         "anticipated_start_time": anticipation_data[
                             "anticipated_start_time"
                         ].isoformat(),
@@ -442,25 +552,34 @@ class IntelligentHeatingPilotCoordinator:
         return self._lhs_cache
 
     def get_contextual_learned_heating_slope(self, hour: int) -> float | None:
-        """Get contextual LHS for a specific hour (synchronous fallback).
+        """Get contextual LHS for a specific hour (from cache).
 
-        Since _get_contextual_lhs is async and sensors need sync accessors,
-        this returns the global LHS as fallback. In production, this should be
-        enhanced with a cached contextual LHS lookup.
+        This returns the contextual LHS from the synchronously-accessible cache.
+        Falls back to global LHS if no contextual data is available for the hour.
 
         Args:
             hour: Hour of day (0-23)
 
         Returns:
-            Global LHS (contextual not available synchronously)
+            Contextual LHS for the hour, or global LHS as fallback
         """
+        if hour < 0 or hour > 23:
+            return self.get_learned_heating_slope()
+
         try:
-            # For now, return global LHS as fallback
-            # In future: implement LHS_BY_HOUR cache for proper contextual values
+            # Check contextual LHS cache first
+            if hour in self._contextual_lhs_cache:
+                contextual_value = self._contextual_lhs_cache[hour]
+                # Return None only if truly no data (None in cache means no contextual data for this hour)
+                if contextual_value is None:
+                    return self.get_learned_heating_slope()  # Fallback to global
+                return contextual_value
+
+            # Not in cache, fallback to global LHS
             return self.get_learned_heating_slope()
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to get LHS for hour %d", hour, exc_info=True)
-            return None
+            return self.get_learned_heating_slope()
 
     def is_ihp_enabled(self) -> bool:
         """Get IHP enabled state."""
@@ -486,11 +605,11 @@ class IntelligentHeatingPilotCoordinator:
 
     def get_vtherm_entity(self) -> str:
         """Get VTherm entity ID."""
-        return self._vtherm_entity
+        return self._vtherm_id
 
     def get_scheduler_entities(self) -> list[str]:
         """Get scheduler entity IDs."""
-        return self._scheduler_entities[:]
+        return self._scheduler_ids[:]
 
     async def async_cleanup(self) -> None:
         """Cleanup coordinator resources.

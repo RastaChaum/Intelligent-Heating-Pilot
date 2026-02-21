@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from ..domain.interfaces.device_config_reader_interface import DeviceConfig
 from ..domain.interfaces.heating_cycle_service_interface import IHeatingCycleService
@@ -608,24 +609,54 @@ class HeatingCycleLifecycleManager:
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager._extract_cycles")
 
+        # Diagnostic logs for troubleshooting empty data issue
+        _LOGGER.debug(
+            "Extracting cycles for device_id=%s, time window: %s to %s",
+            device_id,
+            start_time.isoformat(),
+            end_time.isoformat(),
+        )
+        _LOGGER.debug("Number of historical adapters available: %d", len(self._historical_adapters))
+        if not self._historical_adapters:
+            _LOGGER.warning(
+                "No historical adapters configured for device_id=%s. "
+                "This will result in empty historical data. "
+                "Check factory initialization.",
+                device_id,
+            )
+
         # Load historical data from all adapters
         combined_data: HistoricalDataSet = HistoricalDataSet(data={})
 
         for adapter in self._historical_adapters:
             try:
                 # Call the interface method to fetch historical data for each data key
+                # Use the configured VTherm entity ID from device_config, not the device_id
+                vtherm_entity_id = self._device_config.vtherm_entity_id
+                _LOGGER.debug(
+                    "Fetching historical data from adapter for entity_id=%s",
+                    vtherm_entity_id,
+                )
                 for data_key in HistoricalDataKey:
                     adapter_data = await adapter.fetch_historical_data(
-                        entity_id=device_id,
+                        entity_id=vtherm_entity_id,
                         data_key=data_key,
                         start_time=start_time,
                         end_time=end_time,
                     )
                     # Merge adapter data into combined_data
-                    if adapter_data is not None:
-                        if data_key not in combined_data.data:
-                            combined_data.data[data_key] = []
-                        combined_data.data[data_key].extend(adapter_data.data[data_key])
+                    if adapter_data is not None and adapter_data.data:
+                        # Only extend if this data_key exists in the adapter response
+                        if data_key in adapter_data.data:
+                            if data_key not in combined_data.data:
+                                combined_data.data[data_key] = []
+                            combined_data.data[data_key].extend(adapter_data.data[data_key])
+                        else:
+                            _LOGGER.debug(
+                                "Data key %s not found in adapter response for entity %s",
+                                data_key.value,
+                                device_id,
+                            )
             except Exception as exc:
                 _LOGGER.error("Error loading data from adapter: %s", exc)
                 raise

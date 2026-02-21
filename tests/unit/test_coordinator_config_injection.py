@@ -1,8 +1,8 @@
-"""Unit tests for Coordinator DeviceConfig injection refactoring.
+"""Unit tests for HeatingApplication DeviceConfig injection refactoring.
 
 Phase: TDD RED - These tests are written BEFORE implementation and should FAIL.
 
-Objective: Validate that the refactored Coordinator correctly receives and uses
+Objective: Validate that the refactored HeatingApplication correctly receives and uses
 DeviceConfig via dependency injection instead of reading config_entry directly.
 
 This eliminates code duplication (_get_config_value) and respects DDD principles
@@ -93,12 +93,12 @@ class TestCoordinatorAcceptsDeviceConfig:
         FAILS with current code: Coordinator requires config_entry parameter
         PASSES with fix: Coordinator only requires hass and device_config
         """
-        from custom_components.intelligent_heating_pilot import (
-            IntelligentHeatingPilotCoordinator,
+        from custom_components.intelligent_heating_pilot.heating_application import (
+            HeatingApplication,
         )
 
         # WHEN: Creating coordinator with ONLY hass and device_config (NO config_entry!)
-        coordinator = IntelligentHeatingPilotCoordinator(
+        coordinator = HeatingApplication(
             hass=mock_hass,
             device_config=sample_device_config,  # ONLY: Injected config
         )
@@ -116,12 +116,12 @@ class TestCoordinatorAcceptsDeviceConfig:
         FAILS with current code: Coordinator doesn't have _device_config attribute
         PASSES with fix: Coordinator stores frozen DeviceConfig
         """
-        from custom_components.intelligent_heating_pilot import (
-            IntelligentHeatingPilotCoordinator,
+        from custom_components.intelligent_heating_pilot.heating_application import (
+            HeatingApplication,
         )
 
         # WHEN: Creating coordinator with only hass and device_config
-        coordinator = IntelligentHeatingPilotCoordinator(
+        coordinator = HeatingApplication(
             hass=mock_hass,
             device_config=sample_device_config,
         )
@@ -153,8 +153,8 @@ class TestCoordinatorUsesInjectedConfig:
         FAILS with current code: Coordinator extracts from config_entry, not DeviceConfig
         PASSES with fix: self._vtherm_entity comes from device_config.vtherm_entity_id
         """
-        from custom_components.intelligent_heating_pilot import (
-            IntelligentHeatingPilotCoordinator,
+        from custom_components.intelligent_heating_pilot.heating_application import (
+            HeatingApplication,
         )
 
         # GIVEN: DeviceConfig with specific vtherm entity
@@ -168,13 +168,13 @@ class TestCoordinatorUsesInjectedConfig:
         mock_config_entry.data[CONF_VTHERM_ENTITY] = "climate.config_entry_vtherm"
 
         # WHEN: Creating coordinator with injected DeviceConfig (no config_entry needed)
-        coordinator = IntelligentHeatingPilotCoordinator(
+        coordinator = HeatingApplication(
             hass=mock_hass,
             device_config=device_config,
         )
 
         # THEN: Coordinator should use value from DeviceConfig
-        assert coordinator._vtherm_entity == "climate.injected_vtherm"
+        assert coordinator._vtherm_id == "climate.injected_vtherm"
 
     def test_coordinator_extracts_scheduler_entities_from_device_config(
         self, mock_hass: Mock, mock_config_entry: Mock, sample_device_config: DeviceConfig
@@ -184,8 +184,8 @@ class TestCoordinatorUsesInjectedConfig:
         FAILS with current code: Coordinator calls _get_scheduler_entities()
         PASSES with fix: self._scheduler_entities comes from device_config.scheduler_entities
         """
-        from custom_components.intelligent_heating_pilot import (
-            IntelligentHeatingPilotCoordinator,
+        from custom_components.intelligent_heating_pilot.heating_application import (
+            HeatingApplication,
         )
 
         # GIVEN: DeviceConfig with specific scheduler entities
@@ -199,13 +199,13 @@ class TestCoordinatorUsesInjectedConfig:
         mock_config_entry.data[CONF_SCHEDULER_ENTITIES] = ["switch.config_entry_1"]
 
         # WHEN: Creating coordinator (only hass and device_config)
-        coordinator = IntelligentHeatingPilotCoordinator(
+        coordinator = HeatingApplication(
             hass=mock_hass,
             device_config=device_config,
         )
 
         # THEN: Should use DeviceConfig values
-        assert coordinator._scheduler_entities == ["switch.injected_1", "switch.injected_2"]
+        assert coordinator._scheduler_ids == ["switch.injected_1", "switch.injected_2"]
 
     def test_coordinator_extracts_all_optional_sensors_from_device_config(
         self, mock_hass: Mock, mock_config_entry: Mock
@@ -215,8 +215,8 @@ class TestCoordinatorUsesInjectedConfig:
         FAILS with current code: Coordinator reads from config_entry
         PASSES with fix: All sensor IDs come from device_config
         """
-        from custom_components.intelligent_heating_pilot import (
-            IntelligentHeatingPilotCoordinator,
+        from custom_components.intelligent_heating_pilot.heating_application import (
+            HeatingApplication,
         )
 
         # GIVEN: DeviceConfig with all optional sensors
@@ -239,15 +239,15 @@ class TestCoordinatorUsesInjectedConfig:
         )
 
         # WHEN: Creating coordinator (clean DDD - no config_entry)
-        coordinator = IntelligentHeatingPilotCoordinator(
+        coordinator = HeatingApplication(
             hass=mock_hass,
             device_config=device_config,
         )
 
         # THEN: Should use DeviceConfig values
-        assert coordinator._humidity_in == "sensor.injected_humidity_in"
-        assert coordinator._humidity_out == "sensor.injected_humidity_out"
-        assert coordinator._cloud_cover == "sensor.injected_cloud_cover"
+        assert coordinator._humidity_in_id == "sensor.injected_humidity_in"
+        assert coordinator._humidity_out_id == "sensor.injected_humidity_out"
+        assert coordinator._cloud_cover_id == "sensor.injected_cloud_cover"
 
 
 class TestCoordinatorUsesAllDeviceConfigParameters:
@@ -270,8 +270,8 @@ class TestCoordinatorUsesAllDeviceConfigParameters:
         FAILS with current code: Reads from config_entry
         PASSES with fix: Uses device_config.lhs_retention_days
         """
-        from custom_components.intelligent_heating_pilot import (
-            IntelligentHeatingPilotCoordinator,
+        from custom_components.intelligent_heating_pilot.heating_application import (
+            HeatingApplication,
         )
 
         # GIVEN: DeviceConfig with specific retention days
@@ -286,7 +286,7 @@ class TestCoordinatorUsesAllDeviceConfigParameters:
         mock_config_entry.data[CONF_LHS_RETENTION_DAYS] = 30
 
         # WHEN: Creating coordinator
-        coordinator = IntelligentHeatingPilotCoordinator(
+        coordinator = HeatingApplication(
             hass=mock_hass,
             device_config=device_config,
         )
@@ -302,8 +302,8 @@ class TestCoordinatorUsesAllDeviceConfigParameters:
         FAILS with current code: Reads from config_entry
         PASSES with fix: Uses device_config.dead_time_minutes
         """
-        from custom_components.intelligent_heating_pilot import (
-            IntelligentHeatingPilotCoordinator,
+        from custom_components.intelligent_heating_pilot.heating_application import (
+            HeatingApplication,
         )
 
         # GIVEN: DeviceConfig with specific dead time
@@ -315,7 +315,7 @@ class TestCoordinatorUsesAllDeviceConfigParameters:
         )
 
         # WHEN: Creating coordinator
-        coordinator = IntelligentHeatingPilotCoordinator(
+        coordinator = HeatingApplication(
             hass=mock_hass,
             device_config=device_config,
         )
@@ -331,8 +331,8 @@ class TestCoordinatorUsesAllDeviceConfigParameters:
         FAILS with current code: Reads from config_entry
         PASSES with fix: Uses device_config.auto_learning
         """
-        from custom_components.intelligent_heating_pilot import (
-            IntelligentHeatingPilotCoordinator,
+        from custom_components.intelligent_heating_pilot.heating_application import (
+            HeatingApplication,
         )
 
         # GIVEN: DeviceConfig with auto_learning disabled
@@ -347,7 +347,7 @@ class TestCoordinatorUsesAllDeviceConfigParameters:
         mock_config_entry.data[CONF_AUTO_LEARNING] = True
 
         # WHEN: Creating coordinator
-        coordinator = IntelligentHeatingPilotCoordinator(
+        coordinator = HeatingApplication(
             hass=mock_hass,
             device_config=device_config,
         )
@@ -378,12 +378,12 @@ class TestCoordinatorDoesNotCallGetConfigValue:
         FAILS with current code: _get_config_value method exists and is called
         PASSES with fix: _get_config_value method is completely removed
         """
-        from custom_components.intelligent_heating_pilot import (
-            IntelligentHeatingPilotCoordinator,
+        from custom_components.intelligent_heating_pilot.heating_application import (
+            HeatingApplication,
         )
 
         # WHEN: Creating coordinator with DeviceConfig
-        coordinator = IntelligentHeatingPilotCoordinator(
+        coordinator = HeatingApplication(
             hass=mock_hass,
             device_config=sample_device_config,
         )
@@ -419,8 +419,8 @@ class TestCoordinatorAsyncLoadUsesDeviceConfig:
         execution is tested in integration tests. Here we verify that all parameters
         from DeviceConfig are stored as instance variables for async_load to use.
         """
-        from custom_components.intelligent_heating_pilot import (
-            IntelligentHeatingPilotCoordinator,
+        from custom_components.intelligent_heating_pilot.heating_application import (
+            HeatingApplication,
         )
 
         # GIVEN: DeviceConfig with specific values
@@ -435,16 +435,16 @@ class TestCoordinatorAsyncLoadUsesDeviceConfig:
         )
 
         # WHEN: Creating coordinator (only hass and device_config)
-        coordinator = IntelligentHeatingPilotCoordinator(
+        coordinator = HeatingApplication(
             hass=mock_hass,
             device_config=device_config,
         )
 
         # THEN: Coordinator should store all DeviceConfig values as instance variables
         # which will be used by async_load to create adapters with correct parameters
-        assert coordinator._vtherm_entity == "climate.specific_vtherm"
-        assert coordinator._scheduler_entities == ["switch.specific_schedule"]
-        assert coordinator._humidity_in == "sensor.specific_humidity_in"
+        assert coordinator._vtherm_id == "climate.specific_vtherm"
+        assert coordinator._scheduler_ids == ["switch.specific_schedule"]
+        assert coordinator._humidity_in_id == "sensor.specific_humidity_in"
         assert coordinator._data_retention_days == 90  # From lhs_retention_days
         assert coordinator._dead_time_minutes == 25.0
         assert coordinator._auto_learning is True
@@ -474,14 +474,14 @@ class TestCoordinatorBackwardCompatibility:
 
         This test ensures DeviceConfig is mandatory (no fallback to config_entry).
         """
-        from custom_components.intelligent_heating_pilot import (
-            IntelligentHeatingPilotCoordinator,
+        from custom_components.intelligent_heating_pilot.heating_application import (
+            HeatingApplication,
         )
 
         # WHEN: Creating coordinator WITHOUT DeviceConfig
         # THEN: Should raise TypeError (missing required argument)
         with pytest.raises(TypeError, match="device_config"):
-            IntelligentHeatingPilotCoordinator(
+            HeatingApplication(
                 hass=mock_hass,
                 # device_config NOT provided - this is required!
             )  # type: ignore
