@@ -396,7 +396,6 @@ class TestIsMeaningfulChangeFromLast:
         new_data = dict(self._base_data())
         assert bridge._is_meaningful_change_from_last(new_data) is True
 
-
     # ------------------------------------------------------------------
     # None-transition tests for current_temp and learned_heating_slope
     # ------------------------------------------------------------------

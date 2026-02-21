@@ -244,7 +244,7 @@ class IntelligentHeatingPilotGlobalLearnedSlopeSensor(IntelligentHeatingPilotSen
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry, name)
         self._attr_unique_id = f"{config_entry.entry_id}_global_learned_heating_slope"
-        # Tracks the last LHS value written to HA state for threshold comparison.
+        # Tracks the last value written to HA state for threshold comparison.
         self._last_lhs_displayed: float | None = None
 
     @property
@@ -269,9 +269,9 @@ class IntelligentHeatingPilotGlobalLearnedSlopeSensor(IntelligentHeatingPilotSen
     def _handle_anticipation_result(self, data: dict) -> None:
         """Refresh state only when global LHS changed by >= 0.1 °C/h.
 
-        The coordinator is already updated when this event fires, so we compare
-        native_value (current coordinator value) against the last displayed value
-        rather than relying on the base class's before/after snapshot.
+        The coordinator is updated before this event fires, so we compare the
+        current native_value against the last value written to HA state.
+        Availability transitions (None ↔ value) always trigger a state write.
         """
         current = self.native_value
         prev = self._last_lhs_displayed
@@ -297,7 +297,7 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
         super().__init__(coordinator, config_entry, name)
         self._attr_unique_id = f"{config_entry.entry_id}_contextual_learned_heating_slope"
         self._next_schedule_time: datetime | None = None
-        # Tracks the last contextual LHS value written to HA state for threshold comparison.
+        # Tracks the last value written to HA state for threshold comparison.
         self._last_contextual_lhs_displayed: float | None = None
 
     @property
@@ -351,9 +351,10 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
     def _handle_anticipation_result(self, data: dict) -> None:
         """Refresh state only when contextual LHS changed by >= 0.1 °C/h.
 
-        Captures the current schedule hour BEFORE updating _next_schedule_time
-        so we can detect a context change (different scheduled hour) and always
-        write state when the LHS context changes.
+        Captures the current schedule hour BEFORE updating _next_schedule_time so
+        we can detect a context change (different scheduled hour) and always write
+        state when the LHS context changes, regardless of the value delta.
+        Availability transitions (None ↔ value) always trigger a state write.
         """
         old_schedule_hour = self._next_schedule_time.hour if self._next_schedule_time else None
 
