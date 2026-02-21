@@ -506,7 +506,10 @@ class IntelligentHeatingPilotPredictionConfidenceSensor(IntelligentHeatingPilotS
 
         confidence = data.get("confidence_level")
         if confidence is not None:
-            self._confidence = float(confidence)
+            confidence_value = float(confidence)
+            if confidence_value > 1.0:
+                confidence_value = confidence_value / 100.0
+            self._confidence = confidence_value
             self._attributes = {
                 ATTR_LEARNED_HEATING_SLOPE: data.get(ATTR_LEARNED_HEATING_SLOPE),
                 "anticipation_minutes": data.get("anticipation_minutes"),
