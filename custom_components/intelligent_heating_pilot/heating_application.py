@@ -506,7 +506,7 @@ class HeatingApplication:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
 
             # Reload contextual LHS cache for the scheduled hour only (optimization)
-            if anticipation_data and not anticipation_data.get("clear_values"):
+            if anticipation_data and anticipation_data.get("next_schedule_time") is not None:
                 next_schedule_time = anticipation_data.get("next_schedule_time")
                 if next_schedule_time:
                     scheduled_hour = next_schedule_time.hour
@@ -527,34 +527,27 @@ class HeatingApplication:
 
         # Fire event for sensors
         if anticipation_data:
-            # Check if this is a "clear values" event (no scheduler configured)
-            if anticipation_data.get("clear_values"):
-                _LOGGER.debug("No scheduler configured - firing clear_values event for sensors")
-                self.hass.bus.async_fire(
-                    f"{DOMAIN}_anticipation_calculated",
-                    {
-                        "entry_id": self._device_id,
-                        "clear_values": True,
-                    },
-                )
-            else:
-                # Normal anticipation data
-                self.hass.bus.async_fire(
-                    f"{DOMAIN}_anticipation_calculated",
-                    {
-                        "entry_id": self._device_id,
-                        "anticipated_start_time": anticipation_data[
-                            "anticipated_start_time"
-                        ].isoformat(),
-                        "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
-                        "next_target_temperature": anticipation_data["next_target_temperature"],
-                        "anticipation_minutes": anticipation_data["anticipation_minutes"],
-                        "current_temp": anticipation_data["current_temp"],
-                        "learned_heating_slope": anticipation_data["learned_heating_slope"],
-                        "confidence_level": anticipation_data["confidence_level"],
-                        "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
-                    },
-                )
+            # Always publish complete structure with None values for missing data
+            anticipated_start = anticipation_data.get("anticipated_start_time")
+            next_schedule = anticipation_data.get("next_schedule_time")
+
+            event_data = {
+                "entry_id": self._device_id,
+                "anticipated_start_time": anticipated_start.isoformat()
+                if anticipated_start
+                else None,
+                "next_schedule_time": next_schedule.isoformat() if next_schedule else None,
+                "next_target_temperature": anticipation_data.get("next_target_temperature"),
+                "anticipation_minutes": anticipation_data.get("anticipation_minutes"),
+                "current_temp": anticipation_data.get("current_temp"),
+                "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
+                "confidence_level": anticipation_data.get("confidence_level"),
+                "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
+            }
+            self.hass.bus.async_fire(
+                f"{DOMAIN}_anticipation_calculated",
+                event_data,
+            )
 
     def _fire_dead_time_updated_event(self, learned_dead_time: float) -> None:
         """Publish an event when learned dead time is persisted."""

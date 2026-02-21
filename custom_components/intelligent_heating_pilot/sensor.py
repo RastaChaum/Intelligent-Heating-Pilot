@@ -131,13 +131,13 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
         """Handle new anticipation result."""
         # Clear sensor values when scheduler is disabled or no timeslot is available
         # This sets the sensor to 'unknown' state and clears all attributes
-        if data.get("clear_values"):
+        anticipated_start = data.get(ATTR_ANTICIPATED_START_TIME)
+        if anticipated_start is None:
             self._anticipated_start = None
             self._attributes = {}
             _LOGGER.info("Anticipated start time cleared (scheduler disabled or no timeslot)")
             return
 
-        anticipated_start = data.get(ATTR_ANTICIPATED_START_TIME)
         if anticipated_start:
             # Event carries ISO string; accept datetime too
             if isinstance(anticipated_start, str):
@@ -201,13 +201,13 @@ class IntelligentHeatingPilotAnticipationTimeHmsSensor(IntelligentHeatingPilotSe
         return self._attributes
 
     def _handle_anticipation_result(self, data: dict) -> None:
-        # Check if this is a clear event
-        if data.get("clear_values"):
+        # Check if anticipated start time is available
+        value = data.get(ATTR_ANTICIPATED_START_TIME)
+        if value is None:
             self._time_str = None
             self._attributes = {}
             return
 
-        value = data.get(ATTR_ANTICIPATED_START_TIME)
         dt_val: datetime | None = None
         if isinstance(value, str):
             dt_val = dt_util.parse_datetime(value) or None
@@ -331,22 +331,21 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
     def _handle_anticipation_result(self, data: dict) -> None:
         """Refresh state when anticipation event received."""
         # Update next_schedule_time from event
-        if data.get("clear_values"):
+        next_schedule = data.get(ATTR_NEXT_SCHEDULE_TIME)
+        if next_schedule is None:
             self._next_schedule_time = None
         else:
-            next_schedule = data.get(ATTR_NEXT_SCHEDULE_TIME)
-            if next_schedule:
-                # Event carries ISO string; accept datetime too
-                if isinstance(next_schedule, str):
-                    parsed = dt_util.parse_datetime(next_schedule)
-                    if parsed is None:
-                        try:
-                            parsed = datetime.fromisoformat(next_schedule)
-                        except ValueError:
-                            parsed = None
-                    self._next_schedule_time = parsed
-                else:
-                    self._next_schedule_time = next_schedule
+            # Event carries ISO string; accept datetime too
+            if isinstance(next_schedule, str):
+                parsed = dt_util.parse_datetime(next_schedule)
+                if parsed is None:
+                    try:
+                        parsed = datetime.fromisoformat(next_schedule)
+                    except ValueError:
+                        parsed = None
+                self._next_schedule_time = parsed
+            else:
+                self._next_schedule_time = next_schedule
 
         # Force state update
         self.async_write_ha_state()
@@ -383,14 +382,14 @@ class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBas
 
     def _handle_anticipation_result(self, data: dict) -> None:
         """Handle new anticipation result."""
-        # Check if this is a clear event
-        if data.get("clear_values"):
+        # Check if scheduler is disabled or no timeslot is available
+        next_schedule = data.get(ATTR_NEXT_SCHEDULE_TIME)
+        if next_schedule is None:
             self._next_schedule = None
             self._attributes = {}
             _LOGGER.info("Next schedule time cleared (scheduler disabled or no timeslot)")
             return
 
-        next_schedule = data.get(ATTR_NEXT_SCHEDULE_TIME)
         if next_schedule:
             # Event carries ISO string; accept datetime too
             if isinstance(next_schedule, str):
@@ -436,13 +435,13 @@ class IntelligentHeatingPilotNextScheduleHmsSensor(IntelligentHeatingPilotSensor
         return self._attributes
 
     def _handle_anticipation_result(self, data: dict) -> None:
-        # Check if this is a clear event
-        if data.get("clear_values"):
+        # Clear when no next schedule time is available
+        value = data.get(ATTR_NEXT_SCHEDULE_TIME)
+        if value is None:
             self._time_str = None
             self._attributes = {}
             return
 
-        value = data.get(ATTR_NEXT_SCHEDULE_TIME)
         dt_val: datetime | None = None
         if isinstance(value, str):
             dt_val = dt_util.parse_datetime(value) or None
@@ -500,28 +499,27 @@ class IntelligentHeatingPilotPredictionConfidenceSensor(IntelligentHeatingPilotS
 
     def _handle_anticipation_result(self, data: dict) -> None:
         """Handle new anticipation result."""
-        # Check if this is a clear event
-        if data.get("clear_values"):
+        # Clear when no confidence level is available
+        confidence = data.get("confidence_level")
+        if confidence is None:
             self._confidence = None
             self._attributes = {}
             _LOGGER.info("Prediction confidence cleared (scheduler disabled or no timeslot)")
             return
 
-        confidence = data.get("confidence_level")
-        if confidence is not None:
-            confidence_value = float(confidence)
-            if confidence_value > 1.0:
-                confidence_value = confidence_value / 100.0
-            self._confidence = confidence_value
-            self._attributes = {
-                ATTR_LEARNED_HEATING_SLOPE: data.get(ATTR_LEARNED_HEATING_SLOPE),
-                "anticipation_minutes": data.get("anticipation_minutes"),
-                "environmental_data_available": {
-                    "humidity": data.get("humidity") is not None,
-                    "cloud_coverage": data.get("cloud_coverage") is not None,
-                },
-            }
-            _LOGGER.info("Prediction confidence updated: %.1f%%", self._confidence * 100)
+        confidence_value = float(confidence)
+        if confidence_value > 1.0:
+            confidence_value = confidence_value / 100.0
+        self._confidence = confidence_value
+        self._attributes = {
+            ATTR_LEARNED_HEATING_SLOPE: data.get(ATTR_LEARNED_HEATING_SLOPE),
+            "anticipation_minutes": data.get("anticipation_minutes"),
+            "environmental_data_available": {
+                "humidity": data.get("humidity") is not None,
+                "cloud_coverage": data.get("cloud_coverage") is not None,
+            },
+        }
+        _LOGGER.info("Prediction confidence updated: %.1f%%", self._confidence * 100)
 
 
 class IntelligentHeatingPilotDeadTimeSensor(SensorEntity):

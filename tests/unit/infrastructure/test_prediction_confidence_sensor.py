@@ -56,12 +56,12 @@ class TestPredictionConfidenceSensor:
         confidence_sensor._handle_anticipation_result({"confidence_level": 85.0})
         assert confidence_sensor.native_value == 85.0
 
-    def test_clear_values_resets_state(
+    def test_none_confidence_resets_state(
         self, confidence_sensor: IntelligentHeatingPilotPredictionConfidenceSensor
     ) -> None:
-        """Ensure clear event resets sensor state."""
+        """Ensure None confidence_level resets sensor state."""
         confidence_sensor._handle_anticipation_result({"confidence_level": 0.5})
         assert confidence_sensor.native_value == 50.0
 
-        confidence_sensor._handle_anticipation_result({"clear_values": True})
+        confidence_sensor._handle_anticipation_result({"confidence_level": None})
         assert confidence_sensor.native_value is None

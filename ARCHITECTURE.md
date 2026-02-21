@@ -64,17 +64,19 @@ Infrastructure Layer (HA-specific):
 
 ## 🔁 Event Bridge Signal Pattern
 
-The event bridge handles three response cases from the application layer to keep domain logic clean and infrastructure behavior explicit:
+The event bridge publishes a **uniform data structure** to keep things simple and predictable:
 
-1. **Clear values**: `{ "clear_values": True }`
-    - Sent when the app determines anticipation data should be cleared (e.g., no scheduler configured)
-    - Infrastructure translates this into `unknown` sensor states without raising errors
-2. **Full data payload**: `{ "anticipated_start_time": ..., "anticipation_duration_minutes": ..., ... }`
-    - Normal path when prediction data is available
+1. **Complete structure with None values**: `{ "anticipated_start_time": None, "next_schedule_time": None, ... }`
+    - Published when anticipation data cannot be calculated (e.g., no scheduler configured, no timeslot available)
+    - Contains all expected fields, with None values for unavailable data
+    - Sensors receive the None values and clear their state to `unknown`
+2. **Complete structure with data**: `{ "anticipated_start_time": "2026-02-21T14:30:00", "next_schedule_time": "...", ... }`
+    - Published when full prediction data is available
+    - All fields contain real values and can be used as-is
 3. **No publish**: `None`
-    - Used when no update is needed
+    - Used when no update is needed (no change from previous state)
 
-This pattern keeps business decisions in the application layer while the infrastructure layer focuses on signal handling and Home Assistant state updates.
+This pattern keeps the infrastructure simple: **always publish the same structure**, with None values indicating missing data. Sensors handle the None values naturally and update their state as needed.
 
 ## 📦 Value Objects (Immutable Data Carriers)
 
