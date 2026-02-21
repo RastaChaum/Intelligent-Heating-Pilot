@@ -578,8 +578,8 @@ class IntelligentHeatingPilotDeadTimeSensor(SensorEntity):
         """When entity is added to Home Assistant."""
         await super().async_added_to_hass()
 
-        # Load initial value from storage
-        dead_time = await self._coordinator.get_current_dead_time()
+        # Load initial effective dead time value from coordinator
+        dead_time = await self._coordinator.get_effective_dead_time()
         if dead_time is not None:
             self._dead_time = dead_time
             self.async_write_ha_state()

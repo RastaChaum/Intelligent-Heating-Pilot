@@ -637,6 +637,38 @@ class HeatingApplication:
         _LOGGER.debug("Exiting get_current_dead_time: result=%s", learned_dead_time)
         return learned_dead_time
 
+    async def get_effective_dead_time(self) -> float:
+        """Get the effective dead time for heating predictions.
+
+        Returns either the auto-learned value or the user-configured value
+        depending on the auto_learning configuration flag.
+
+        Returns:
+            Dead time in minutes (configured value or learned value)
+        """
+        _LOGGER.debug(
+            "Entering get_effective_dead_time: auto_learning=%s, configured=%.1f",
+            self._auto_learning,
+            self._dead_time_minutes,
+        )
+
+        if self._auto_learning:
+            # Use learned value if available, fall back to configured
+            learned_dead_time = await self.get_current_dead_time()
+            if learned_dead_time is not None:
+                _LOGGER.debug(
+                    "Exiting get_effective_dead_time: using learned value=%.1f",
+                    learned_dead_time,
+                )
+                return learned_dead_time
+
+        # Fall back to configured value (either auto_learning=False or no learned value yet)
+        _LOGGER.debug(
+            "Exiting get_effective_dead_time: using configured value=%.1f",
+            self._dead_time_minutes,
+        )
+        return self._dead_time_minutes
+
     async def async_cleanup(self) -> None:
         """Cleanup coordinator resources.
 
