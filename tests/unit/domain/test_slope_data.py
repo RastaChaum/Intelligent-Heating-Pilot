@@ -1,22 +1,12 @@
 """Tests for SlopeData value object."""
+
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timezone
 
 import pytest
 
-# Add custom_components to path
-sys.path.insert(
-    0,
-    os.path.join(
-        os.path.dirname(__file__),
-        "../../../custom_components/intelligent_heating_pilot",
-    ),
-)
-
-from domain.value_objects import SlopeData
+from custom_components.intelligent_heating_pilot.domain.value_objects import SlopeData
 
 
 def test_slope_data_creation() -> None:
@@ -26,6 +16,7 @@ def test_slope_data_creation() -> None:
 
     assert slope_data.slope_value == 2.5
     assert slope_data.timestamp == timestamp
+
 
 def test_slope_data_rejects_negative_slope() -> None:
     """Test that negative slopes are rejected."""
@@ -79,4 +70,3 @@ def test_slope_data_inequality_different_value() -> None:
     slope_data2 = SlopeData(slope_value=3.0, timestamp=timestamp)
 
     assert slope_data1 != slope_data2
-

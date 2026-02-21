@@ -1,11 +1,13 @@
-"""Home Assistant event bridge - translates HA events to application service calls.
+"""Home Assistant event bridge - translates HA events to orchestrator calls.
 
 This infrastructure component listens to HA entity state changes and delegates
-to the application service.
+to the orchestrator.
 """
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
@@ -16,8 +18,8 @@ from .vtherm_compat import get_vtherm_attribute
 
 if TYPE_CHECKING:
     from datetime import datetime
-    
-    from ..application import HeatingApplicationService
+
+    from ..application import HeatingOrchestrator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,47 +34,52 @@ _ANTICIPATION_TIME_TOLERANCE_SECONDS = 60
 
 class HAEventBridge:
     """Bridges Home Assistant events to application service.
-    
+
     This infrastructure component:
     - Listens to relevant HA entity state changes
     - Translates events to application service calls
     - Manages state change listeners lifecycle
-    
+
     NO business logic - pure event routing.
     """
-    
+
     def __init__(
         self,
         hass: HomeAssistant,
-        application_service: "HeatingApplicationService",
+        orchestrator: HeatingOrchestrator,
         vtherm_entity_id: str,
         scheduler_entity_ids: list[str],
         monitored_entity_ids: list[str] | None = None,
         entry_id: str | None = None,
+        get_ihp_enabled_func: Callable[[], bool] | None = None,
     ) -> None:
         """Initialize the event bridge.
-        
+
         Args:
             hass: Home Assistant instance
-            application_service: Application service to delegate to
+            orchestrator: Orchestrator to delegate to
             vtherm_entity_id: VTherm entity to monitor for slopes
             scheduler_entity_ids: Scheduler entities to monitor
             monitored_entity_ids: Additional entities to monitor (humidity, etc.)
             entry_id: Config entry ID for event filtering
+            get_ihp_enabled_func: Callback function to get current IHP enabled state
         """
         self._hass = hass
-        self._app_service = application_service
+        self._orchestrator = orchestrator
         self._vtherm_entity_id = vtherm_entity_id
         self._scheduler_entity_ids = scheduler_entity_ids
         self._monitored_entity_ids = monitored_entity_ids or []
+        self._get_ihp_enabled = get_ihp_enabled_func or (lambda: True)
         self._entry_id = entry_id
-        
+
         # Track all entities that should trigger updates
-        self._tracked_entities = [vtherm_entity_id] + scheduler_entity_ids + self._monitored_entity_ids
-        
+        self._tracked_entities = (
+            [vtherm_entity_id] + scheduler_entity_ids + self._monitored_entity_ids
+        )
+
         # Listener cleanup callbacks
         self._listeners: list = []
-        
+
         # Debouncing state
         self._ignore_vtherm_until: datetime | None = None
 
@@ -83,11 +90,16 @@ class HAEventBridge:
     
     def setup_listeners(self) -> None:
         """Setup all event listeners."""
+
         @callback
         def _on_entity_changed(event: Event[EventStateChangedData]) -> None:
-            """Handle entity state change events."""
+            """Handle entity state change events.
+
+            All listened entities trigger _recalculate_and_publish(), which routes
+            to appropriate orchestrator method based on event source.
+            """
             entity_id = event.data.get("entity_id")
-            
+
             if entity_id not in self._tracked_entities:
                 return
             
@@ -107,12 +119,10 @@ class HAEventBridge:
         
         # Register state change listener
         unsub = async_track_state_change_event(
-            self._hass,
-            self._tracked_entities,
-            _on_entity_changed
+            self._hass, self._tracked_entities, _on_entity_changed
         )
         self._listeners.append(unsub)
-        
+
         _LOGGER.debug("Event bridge tracking %d entities", len(self._tracked_entities))
 
     # ------------------------------------------------------------------
@@ -242,34 +252,52 @@ class HAEventBridge:
         """Handle VTherm state changes (slope learning + update).
         
         Args:
-            event: State change event
+            event: State change event (None for manual calls)
         """
-        old_state = event.data["old_state"]
-        new_state = event.data["new_state"]
-        
-        if not old_state or not new_state:
-            return
-        
-        # Check if we should ignore (self-induced change)
-        if self._ignore_vtherm_until and dt_util.now() < self._ignore_vtherm_until:
-            _LOGGER.debug("Ignoring self-induced VTherm change")
-            return
-        
-        # Extract temperature changes (v8.0.0+ compatible)
-        old_temp = get_vtherm_attribute(old_state, "current_temperature")
-        new_temp = get_vtherm_attribute(new_state, "current_temperature")
-        
-        temp_changed = old_temp != new_temp
-        
-        if not (temp_changed):
-            return       
+        _LOGGER.debug("Recalculating anticipation and publishing update")
 
-        if temp_changed:
-            _LOGGER.debug("VTherm temperature changed: %s -> %s", old_temp, new_temp)
-        
-        # Trigger recalculation and publish to sensors
-        self._hass.async_create_task(
-            self._recalculate_and_publish()
+        # Event-based routing logic
+        if event is not None:
+            entity_id = event.data.get("entity_id")
+
+            # VTherm-specific handling for slope learning
+            if entity_id == self._vtherm_entity_id:
+                old_state = event.data.get("old_state")
+                new_state = event.data.get("new_state")
+
+                if not old_state or not new_state:
+                    return
+
+                # Check if we should ignore (self-induced change)
+                if self._ignore_vtherm_until and dt_util.now() < self._ignore_vtherm_until:
+                    _LOGGER.debug("Ignoring self-induced VTherm change")
+                    return
+
+                # Extract temperature changes (v8.0.0+ compatible)
+                old_temp = get_vtherm_attribute(old_state, "current_temperature")
+                new_temp = get_vtherm_attribute(new_state, "current_temperature")
+
+                if old_temp == new_temp:
+                    _LOGGER.debug("VTherm change but temperature unchanged, skipping")
+                    return
+
+                _LOGGER.debug("VTherm temperature changed: %s -> %s", old_temp, new_temp)
+
+        # Call orchestrator to calculate and schedule
+        anticipation_data = await self._orchestrator.calculate_and_schedule_anticipation(
+            ihp_enabled=self._get_ihp_enabled()
+        )
+
+        # ALWAYS publish data structure (with None values if needed)
+        # Per review feedback: never skip publishing, always return structure
+        if not anticipation_data:
+            _LOGGER.warning("Orchestrator returned None/empty - this should not happen")
+            anticipation_data = {}
+
+        # Check if we have complete data or need to publish partial/None values
+        has_complete_data = (
+            anticipation_data.get("anticipated_start_time") is not None
+            and anticipation_data.get("next_schedule_time") is not None
         )
     
     async def _recalculate_and_publish(self) -> None:
@@ -317,13 +345,14 @@ class HAEventBridge:
     
     def ignore_vtherm_changes_for(self, seconds: int = 10) -> None:
         """Temporarily ignore VTherm changes (used after self-induced changes).
-        
+
         Args:
             seconds: How long to ignore changes
         """
         from datetime import timedelta
+
         self._ignore_vtherm_until = dt_util.now() + timedelta(seconds=seconds)
-    
+
     def cleanup(self) -> None:
         """Cleanup all event listeners."""
         for unsub in self._listeners:

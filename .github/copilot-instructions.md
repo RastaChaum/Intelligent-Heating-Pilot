@@ -1,5 +1,19 @@
 # GitHub Copilot Instructions - Intelligent Heating Pilot (IHP)
 
+## 📖 Using These Instructions
+
+**This document is for direct Copilot interactions.** For team-based development:
+
+- **See [`.github/agents/`](./agents/README.md)** for specialized agent roles and orchestration workflow
+- **See [`.github/CONTRIBUTOR_STANDARDS.md`](./CONTRIBUTOR_STANDARDS.md)** for practical development standards
+
+## 🤖 Local Agent Invocation
+
+When delegating work to specialized agents in this local environment:
+
+- **Use `runSubagent` only** to invoke agents
+- **Do NOT use `@developer`, `@qa-engineer`, or any `@...` mentions** (these do not work locally)
+
 ## 🎯 Project Overview
 
 The Intelligent Heating Pilot (IHP) is a Home Assistant integration that intelligently preheats homes using predictive algorithms and machine learning. This document defines the architectural principles and development practices that **must** be followed by all AI-assisted code generation.
@@ -42,11 +56,44 @@ The **infrastructure layer** bridges the domain to Home Assistant:
 3. **Thin adapters** - Minimal logic, just translation between HA and domain
 4. **No business logic** - Delegate all decisions to domain layer
 
-## 🧪 Test-Driven Development (TDD) Standard
+## 🧪 Test-Driven Development (TDD) + Behavior-Driven Development (BDD)
 
-All new features must be developed using TDD:
+All new features must be developed using **Hybrid BDD/TDD strategy** to avoid redundancy and maximize clarity.
 
-### Unit Testing Requirements
+**⚠️ MANDATORY**: Agents MUST follow the comprehensive testing strategy defined in [`.github/agents/TESTING_STRATEGY.md`](.github/agents/TESTING_STRATEGY.md)
+
+### Quick Decision Guide
+
+**Use Pytest-BDD (Gherkin)** for:
+- Business-observable behavior (Black Box)
+- Happy paths and user scenarios
+- Features a Product Owner can understand
+- High-level interaction validation
+
+**Use Pytest Unitaires (TDD)** for:
+- Edge cases (None, empty, overflow)
+- Exception handling (errors, timeouts, failures)
+- Algorithmic correctness (calculations, FIFO, sorting)
+- Technical robustness (type validation, memory limits)
+
+**❌ DO NOT DUPLICATE**: If a happy path is covered by BDD, do NOT create equivalent unit test (unless type/performance validation is required).
+
+### BDD: Gherkin Feature Files
+
+Write business scenarios in `tests/features/*.feature`:
+
+```gherkin
+Feature: Heating Cycle Cache Management
+  Scenario: Cache stores LHS slope after heating cycle
+    Given a heating cycle is running
+    When the cycle completes
+    Then cache stores the measured LHS slope
+    And next preheating uses the cached slope
+```
+
+Convert to pytest using **pytest-bdd** fixtures and step definitions.
+
+### TDD: Unit Testing Requirements
 
 1. **Domain-first testing** - Write domain layer tests BEFORE implementation
 2. **Mock external dependencies** - Use mocks for all infrastructure interactions
@@ -54,8 +101,25 @@ All new features must be developed using TDD:
 4. **Centralized fixtures** - Use a centralized `fixtures.py` file for test data (DRY principle)
 5. **High coverage** - Aim for >80% coverage of domain logic
 6. **Fast tests** - Domain tests should run in milliseconds (no HA, no I/O)
+7. **Non-redundancy** - Do NOT create unit tests for scenarios already covered by BDD
 
-### Logging Standards
+### Testing Structure
+
+```python
+tests/
+├── features/            # BDD acceptance criteria (Gherkin)
+│   ├── heating_cache.feature
+│   └── conftest.py      # pytest-bdd fixtures and step definitions
+├── unit/
+│   ├── domain/          # Pure domain logic tests (no mocks needed for value objects)
+│   │   ├── test_value_objects.py
+│   │   ├── test_pilot_controller.py
+│   │   └── test_domain_services.py
+│   └── infrastructure/  # Adapter tests (with mocked HA)
+│       ├── test_scheduler_reader.py
+│       └── test_climate_commander.py
+└── integration/         # End-to-end tests (optional, slower)
+```
 
 1. **Method Entry/Exit Logging** - All public methods in the domain and application layers must log at `DEBUG` level on entry and exit.
 2. **State Changes and Results** - Use `INFO` level ONLY for:
@@ -77,21 +141,7 @@ All new features must be developed using TDD:
 1. **No unsolicited documentation** - Do NOT create markdown files to document changes, summarize work, or write reports UNLESS explicitly requested by the user.
 2. **Code-level documentation required** - Docstrings and inline comments are mandatory and should be maintained.
 3. **PR descriptions only** - Summaries of work belong in pull request descriptions or conversation responses, not in repository markdown files.
-
-### Testing Structure
-
-```python
-tests/
-├── unit/
-│   ├── domain/          # Pure domain logic tests (no mocks needed for value objects)
-│   │   ├── test_value_objects.py
-│   │   ├── test_pilot_controller.py
-│   │   └── test_domain_services.py
-│   └── infrastructure/  # Adapter tests (with mocked HA)
-│       ├── test_scheduler_reader.py
-│       └── test_climate_commander.py
-└── integration/         # End-to-end tests (optional, slower)
-```
+4. **CONTRIBUTOR_STANDARDS.md** - This is the single source of truth for development standards (see `.github/CONTRIBUTOR_STANDARDS.md`). Keep it updated with team learnings.
 
 ### Example: Testing with Interfaces
 
@@ -108,18 +158,18 @@ class ISchedulerReader(ABC):
 
 # tests/unit/domain/test_pilot_controller.py
 from unittest.mock import Mock
-from domain.interfaces.scheduler_reader import ISchedulerReader
+from domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from domain.entities.pilot_controller import PilotController
 
 def test_pilot_decides_to_preheat():
     # GIVEN: Mock scheduler reader
     mock_scheduler = Mock(spec=ISchedulerReader)
     mock_scheduler.get_next_event.return_value = ScheduleEvent(...)
-    
+
     # WHEN: Controller makes decision
     controller = PilotController(scheduler_reader=mock_scheduler)
     decision = controller.decide_action()
-    
+
     # THEN: Should preheat
     assert decision.action_type == "start_heating"
 ```
@@ -160,14 +210,14 @@ class PredictionResult:
 ### B. The Pilot Controller (Aggregate Root)
 
 ```python
-from domain.interfaces.scheduler_reader import ISchedulerReader
-from domain.interfaces.model_storage import IModelStorage
-from domain.interfaces.climate_commander import IClimateCommander
+from domain.interfaces.scheduler_reader_interface import ISchedulerReader
+from domain.interfaces.model_storage_interface import IModelStorage
+from domain.interfaces.climate_commander_interface import IClimateCommander
 from domain.value_objects import EnvironmentState, HeatingDecision
 
 class PilotController:
     """Coordinates heating decisions for a single VTherm."""
-    
+
     def __init__(
         self,
         scheduler_reader: ISchedulerReader,
@@ -177,9 +227,9 @@ class PilotController:
         self._scheduler = scheduler_reader
         self._storage = model_storage
         self._commander = climate_commander
-    
+
     async def decide_heating_action(
-        self, 
+        self,
         environment: EnvironmentState
     ) -> HeatingDecision:
         """Decide whether to start/stop heating based on predictions."""
@@ -192,45 +242,45 @@ class PilotController:
 Define clear contracts for all external interactions:
 
 ```python
-# domain/interfaces/scheduler_reader.py
+# domain/interfaces/scheduler_reader_interface.py
 from abc import ABC, abstractmethod
 from domain.value_objects import ScheduleEvent
 
 class ISchedulerReader(ABC):
     """Contract for reading scheduled events."""
-    
+
     @abstractmethod
     async def get_next_event(self) -> ScheduleEvent | None:
         """Read the next scheduled heating event."""
         pass
 
-# domain/interfaces/model_storage.py
+# domain/interfaces/model_storage_interface.py
 from abc import ABC, abstractmethod
 
 class IModelStorage(ABC):
     """Contract for persisting learning data."""
-    
+
     @abstractmethod
     async def save_learned_slope(self, slope: float) -> None:
         """Persist a learned heating slope."""
         pass
-    
+
     @abstractmethod
     async def get_learned_slopes(self) -> list[float]:
         """Retrieve historical learned slopes."""
         pass
 
-# domain/interfaces/climate_commander.py
+# domain/interfaces/climate_commander_interface.py
 from abc import ABC, abstractmethod
 
 class IClimateCommander(ABC):
     """Contract for climate control actions."""
-    
+
     @abstractmethod
     async def start_heating(self, target_temp: float) -> None:
         """Start heating to reach target temperature."""
         pass
-    
+
     @abstractmethod
     async def stop_heating(self) -> None:
         """Stop heating."""
@@ -280,7 +330,7 @@ class IClimateCommander(ABC):
    def calculate_preheat(self, hass: HomeAssistant):
        vtherm_state = hass.states.get("climate.vtherm")
    ```
-   
+
    ✅ **Good: Clean separation**
    ```python
    # GOOD: Domain receives value objects
@@ -297,7 +347,7 @@ class IClimateCommander(ABC):
            if event.temp > 20:  # Business rule!
                return None
    ```
-   
+
    ✅ **Good: Infrastructure only translates**
    ```python
    # GOOD: Adapter just translates
@@ -315,7 +365,7 @@ class IClimateCommander(ABC):
        if state.temperature < 20:
            hass.services.call("climate", "turn_on")
    ```
-   
+
    ✅ **Good: Testable with interfaces**
    ```python
    # GOOD: Easily mockable
@@ -355,3 +405,108 @@ Before submitting any AI-generated code, verify:
 > "The domain is our valuable intellectual property. It must be protected from infrastructure concerns, testable in isolation, and clear in its intent. When Home Assistant changes, our domain logic remains stable. When we change our domain logic, tests catch regressions immediately."
 
 **Focus on defining clear boundaries and interfaces first.** The quality of abstractions determines the quality of the entire system.
+
+---
+
+## 🧪 QA Engineer Guidelines - Test Coverage Excellence
+
+### Critical Rule: Insufficient Coverage Detection
+
+**⚠️ MUST READ:** When all tests pass but a bug is discovered in production/integration testing, this indicates **insufficient test coverage**, not test quality failure.
+
+#### Required Response Protocol
+
+When a bug is discovered despite passing test suites:
+
+1. **Immediately Write Regression Tests**
+   - Create new test cases that would have caught the bug
+   - These tests MUST use the pattern: "Test FAILS with buggy code, PASSES with fix"
+
+2. **Test Design Requirements**
+   - Tests should comprehensively cover all code paths that the bug exposed
+   - Include all relevant state transitions (enabled→disabled→enabled, etc.)
+   - Test both normal and edge case scenarios
+   - Document in test docstrings which bug they prevent
+
+3. **Coverage Improvement Metrics**
+   - Count tests added for the specific bug
+   - Verify each test independently validates one aspect of the fix
+   - Ensure new tests integrate seamlessly with existing test suite
+
+#### Example Pattern
+
+```python
+class TestHAEventBridgeIHPEnabled:
+    """Regression tests for HAEventBridge race condition bug.
+
+    Bug: When IHP disabled via switch, event-driven updates did not pass
+    ihp_enabled=False, causing preheating to continue.
+
+    These tests would have caught this bug and prevent regression.
+    """
+
+    @pytest.mark.asyncio
+    async def test_event_driven_recalc_respects_ihp_disabled(self):
+        """Test that event-driven recalc passes ihp_enabled=False when disabled.
+
+        FAILS with buggy code (ihp_enabled parameter missing)
+        PASSES with fix (ihp_enabled parameter correctly passed)
+        """
+        # Setup: IHP disabled
+        get_ihp_enabled_mock.return_value = False
+
+        # Trigger: Event that calls _recalculate_and_publish()
+        hass.states.async_set("switch.scheduler", "on")
+        await hass.async_block_till_done()
+
+        # Verify: ihp_enabled=False was passed
+        app_service.calculate_and_schedule_anticipation.assert_called_once()
+        call_kwargs = app_service.calculate_and_schedule_anticipation.call_args[1]
+        assert call_kwargs["ihp_enabled"] is False
+```
+
+### Test-Driven Bug Investigation
+
+When investigating a reported bug:
+
+1. **Don't just replay existing tests** - Verify they pass/fail to understand coverage
+2. **Write tests that expose the bug** - The test should FAIL before applying the fix
+3. **Verify fix makes tests pass** - Then confirm existing tests still pass
+4. **Document the coverage gap** - Record which tests were missing
+
+### Standards for QA Investigation
+
+When reporting on test coverage status:
+
+```markdown
+## Coverage Analysis
+
+### Existing Test Status
+- ✓ All 208 existing tests pass
+- ⚠️ Bug discovered despite passing tests = Coverage gap identified
+
+### New Tests Written
+- Count: 14 new tests added
+- Classes: TestEventBridgeIHPEnabled, TestEventBridgeStateTransitions, etc.
+- Validation: Tests FAIL with buggy code, PASS with fix
+
+### Coverage Improvement
+- Before: HAEventBridge had no direct unit tests
+- After: 14 comprehensive tests covering event-driven scenarios
+- Scoped: All event types, state transitions, edge cases, race conditions
+```
+
+### Prevention of False Confidence
+
+✓ **DO:** Report test suite status as "Comprehensive with recent improvements"
+✗ **DON'T:** Say "All tests pass" without mentioning coverage gaps
+✓ **DO:** Add regression tests when bugs are found
+✗ **DON'T:** Simply re-run existing tests to validate fixes
+
+### Metrics to Track
+
+For each bug-driven test addition, record:
+- Number of new test cases added
+- Coverage categories (state transitions, edge cases, race conditions, etc.)
+- Verification: Bug-triggered tests FAIL on original, PASS on fix
+- Integration: New tests work seamlessly with existing suite

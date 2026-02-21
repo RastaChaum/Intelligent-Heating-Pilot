@@ -2,16 +2,17 @@
 
 Converts Home Assistant sensor entity history into HistoricalDataSet.
 """
+
 from __future__ import annotations
 
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from ...domain.interfaces.historical_data_adapter import IHistoricalDataAdapter
+from ...domain.interfaces.historical_data_adapter_interface import IHistoricalDataAdapter
 from ...domain.value_objects import (
-    HistoricalDataSet,
     HistoricalDataKey,
+    HistoricalDataSet,
     HistoricalMeasurement,
 )
 
@@ -23,17 +24,17 @@ _LOGGER = logging.getLogger(__name__)
 
 class SensorDataAdapter(IHistoricalDataAdapter):
     """Adapter for converting Home Assistant sensor entity history to HistoricalDataSet.
-    
+
     Sensor entities provide numeric or string state values with optional attributes
     like unit_of_measurement, device_class, etc.
-    
+
     This adapter is generic and can handle any sensor type, mapping them to
     appropriate HistoricalDataKey values based on device_class or configuration.
     """
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the sensor data adapter.
-        
+
         Args:
             hass: Home Assistant instance
         """
@@ -48,16 +49,16 @@ class SensorDataAdapter(IHistoricalDataAdapter):
         end_time: datetime,
     ) -> HistoricalDataSet:
         """Fetch historical data for a sensor entity.
-        
+
         Args:
             entity_id: The sensor entity ID (e.g., "sensor.indoor_temperature")
             data_key: The HistoricalDataKey to use (e.g., OUTDOOR_TEMP, INDOOR_HUMIDITY)
             start_time: Start of historical period
             end_time: End of historical period
-            
+
         Returns:
             HistoricalDataSet with extracted sensor data
-            
+
         Raises:
             ValueError: If entity_id is invalid or history cannot be retrieved
         """
@@ -114,7 +115,7 @@ class SensorDataAdapter(IHistoricalDataAdapter):
 
         # Build result
         data: dict[HistoricalDataKey, list[HistoricalMeasurement]] = {}
-        
+
         if measurements:
             data[data_key] = measurements
 
@@ -129,38 +130,38 @@ class SensorDataAdapter(IHistoricalDataAdapter):
     @staticmethod
     def _parse_timestamp(record: dict[str, Any]) -> datetime:
         """Parse timestamp from history record.
-        
+
         Args:
             record: Historical record from Home Assistant
-            
+
         Returns:
             Parsed datetime object
         """
         timestamp_str = record.get("last_changed", record.get("last_updated"))
-        
+
         if isinstance(timestamp_str, str):
             # Parse ISO format string
             if "+" in timestamp_str:
                 timestamp_str = timestamp_str.split("+")[0]
             elif "Z" in timestamp_str:
                 timestamp_str = timestamp_str.replace("Z", "")
-            
+
             return datetime.fromisoformat(timestamp_str)
-        
+
         # If already a datetime, return as-is
         if isinstance(timestamp_str, datetime):
             return timestamp_str
-        
+
         # Fallback: return current time if no timestamp found
         return datetime.now()
 
     @staticmethod
     def _safe_float(value: Any) -> float | None:
         """Safely convert value to float.
-        
+
         Args:
             value: Value to convert
-            
+
         Returns:
             Float value or None if conversion fails
         """
@@ -176,20 +177,21 @@ class SensorDataAdapter(IHistoricalDataAdapter):
         end_time: datetime,
     ) -> list[dict[str, Any]]:
         """Fetch historical data from Home Assistant.
-        
+
         This is a separate method to make it easily mockable in tests.
-        
+
         Args:
             entity_id: The entity ID
             start_time: Start of historical period
             end_time: End of historical period
-            
+
         Returns:
             List of historical records from Home Assistant
         """
-        from homeassistant.components.recorder import get_instance, history
         from functools import partial
-        
+
+        from homeassistant.components.recorder import get_instance, history
+
         # Use Home Assistant's get_significant_states function from recorder
         # Must run in recorder executor to avoid blocking and comply with HA best practices
         # Use partial to properly pass keyword arguments
@@ -201,10 +203,10 @@ class SensorDataAdapter(IHistoricalDataAdapter):
             entity_ids=[entity_id],
         )
         history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
-        
+
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])
-        
+
         # Convert State objects to dicts for consistent interface
         result = []
         for state in state_list:
@@ -213,11 +215,13 @@ class SensorDataAdapter(IHistoricalDataAdapter):
                 result.append(state)
             else:
                 # State object - convert to dict
-                result.append({
-                    "entity_id": state.entity_id,
-                    "state": state.state,
-                    "attributes": state.attributes,
-                    "last_changed": state.last_changed,
-                    "last_updated": state.last_updated,
-                })
+                result.append(
+                    {
+                        "entity_id": state.entity_id,
+                        "state": state.state,
+                        "attributes": state.attributes,
+                        "last_changed": state.last_changed,
+                        "last_updated": state.last_updated,
+                    }
+                )
         return result
