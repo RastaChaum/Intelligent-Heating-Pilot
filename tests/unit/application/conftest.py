@@ -357,6 +357,123 @@ def lhs_manager_with_timer(
     )
 
 
+# ===== Dead Time Learning Fixtures =====
+
+
+@pytest.fixture
+def sample_heating_cycles_with_dead_time(
+    base_datetime: datetime, heating_cycle_builder: Any
+) -> list[HeatingCycle]:
+    """Provide heating cycles with dead_time_cycle_minutes for testing.
+
+    Creates realistic cycles with varying dead_time values for averaging tests.
+    """
+    cycles = [
+        heating_cycle_builder(
+            base_datetime - timedelta(days=3), duration_hours=1, temp_increase=2.5
+        ),
+        heating_cycle_builder(
+            base_datetime - timedelta(days=2), duration_hours=1.2, temp_increase=2.8
+        ),
+        heating_cycle_builder(
+            base_datetime - timedelta(days=1), duration_hours=1.5, temp_increase=3.0
+        ),
+    ]
+
+    # Add dead_time_cycle_minutes to each cycle
+    for i, cycle in enumerate(cycles):
+        # Create new cycle with dead_time set
+        updated_cycle = HeatingCycle(
+            device_id=cycle.device_id,
+            start_time=cycle.start_time,
+            end_time=cycle.end_time,
+            target_temp=cycle.target_temp,
+            end_temp=cycle.end_temp,
+            start_temp=cycle.start_temp,
+            tariff_details=cycle.tariff_details,
+            dead_time_cycle_minutes=8.0 + i,  # 8.0, 9.0, 10.0
+        )
+        cycles[i] = updated_cycle
+
+    return cycles
+
+
+@pytest.fixture
+def device_config_with_dead_time_learning(
+    device_config: DeviceConfig,
+) -> DeviceConfig:
+    """Create device config with auto_learning and dead_time enabled.
+
+    Extends base device_config with dead_time-specific settings.
+    """
+    return DeviceConfig(
+        device_id=device_config.device_id,
+        vtherm_entity_id=device_config.vtherm_entity_id,
+        scheduler_entities=device_config.scheduler_entities,
+        humidity_in_entity_id=device_config.humidity_in_entity_id,
+        humidity_out_entity_id=device_config.humidity_out_entity_id,
+        temperature_out_entity_id=device_config.temperature_out_entity_id,
+        cloud_cover_entity_id=device_config.cloud_cover_entity_id,
+        lhs_retention_days=device_config.lhs_retention_days,
+        dead_time_minutes=5.0,  # Configured fallback value
+        auto_learning=True,  # Enable dead time learning
+        temp_delta_threshold=device_config.temp_delta_threshold,
+        cycle_split_duration_minutes=device_config.cycle_split_duration_minutes,
+        min_cycle_duration_minutes=device_config.min_cycle_duration_minutes,
+        max_cycle_duration_minutes=device_config.max_cycle_duration_minutes,
+        ihp_enabled=device_config.ihp_enabled,
+    )
+
+
+@pytest.fixture
+def device_config_without_dead_time_learning(
+    device_config: DeviceConfig,
+) -> DeviceConfig:
+    """Create device config with auto_learning disabled.
+
+    For testing fallback behavior to configured value.
+    """
+    return DeviceConfig(
+        device_id=device_config.device_id,
+        vtherm_entity_id=device_config.vtherm_entity_id,
+        scheduler_entities=device_config.scheduler_entities,
+        humidity_in_entity_id=device_config.humidity_in_entity_id,
+        humidity_out_entity_id=device_config.humidity_out_entity_id,
+        temperature_out_entity_id=device_config.temperature_out_entity_id,
+        cloud_cover_entity_id=device_config.cloud_cover_entity_id,
+        lhs_retention_days=device_config.lhs_retention_days,
+        dead_time_minutes=5.0,
+        auto_learning=False,  # Learning disabled
+        temp_delta_threshold=device_config.temp_delta_threshold,
+        cycle_split_duration_minutes=device_config.cycle_split_duration_minutes,
+        min_cycle_duration_minutes=device_config.min_cycle_duration_minutes,
+        max_cycle_duration_minutes=device_config.max_cycle_duration_minutes,
+        ihp_enabled=device_config.ihp_enabled,
+    )
+
+
+@pytest.fixture
+def mock_lhs_storage_with_dead_time() -> Mock:
+    """Create mock ILhsStorage with dead time methods.
+
+    Extends base mock_model_storage with dead_time-specific methods.
+    """
+    storage = Mock()
+    # Dead time methods
+    storage.get_learned_dead_time = AsyncMock(return_value=None)
+    storage.set_learned_dead_time = AsyncMock()
+    # Existing LHS methods
+    storage.get_learned_heating_slope = AsyncMock(return_value=2.5)
+    storage.get_heating_cycles = AsyncMock(return_value=[])
+    storage.save_heating_cycle = AsyncMock()
+    storage.delete_heating_cycles_before = AsyncMock()
+    storage.get_cached_global_lhs = AsyncMock(return_value=None)
+    storage.set_cached_global_lhs = AsyncMock()
+    storage.get_cached_contextual_lhs = AsyncMock(return_value=None)
+    storage.set_cached_contextual_lhs = AsyncMock()
+    return storage
+
+
 # ===== Factory Reset Utilities =====
 
 
