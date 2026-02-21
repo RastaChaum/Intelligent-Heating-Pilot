@@ -284,14 +284,10 @@ class HeatingApplication:
             # Also load contextual LHS cache for all hours
             await self._load_contextual_lhs_cache()
 
-        # Initialize cycle refresh (extraction + 24h periodic)
-        if self._data_retention_days > 0:
-            await self._initialize_cycle_refresh()
-        else:
-            _LOGGER.debug(
-                "Cycle extraction disabled (history_lookback_days=%d)",
-                self._data_retention_days,
-            )
+        # NOTE: Cycle extraction is deferred to async_initialize_cycle_extraction()
+        # which is called after HA fully started (EVENT_HOMEASSISTANT_STARTED)
+        # to ensure VTherm entity is available before querying its history.
+        # See __init__.py async_setup_entry for the deferred initialization logic.
 
         _LOGGER.info(
             "[%s] Coordinator initialized (VTherm: %s, Schedulers: %d)",
@@ -346,18 +342,29 @@ class HeatingApplication:
         if self._event_bridge:
             self._event_bridge.setup_listeners()
 
-    async def _initialize_cycle_refresh(self) -> None:
+    async def async_initialize_cycle_extraction(self) -> None:
         """Initialize cycle extraction and schedule 24h periodic refresh.
 
+        This method MUST be called after EVENT_HOMEASSISTANT_STARTED to ensure
+        the VTherm entity is available before querying its history.
+
         This method:
-        - Creates ExtractHeatingCyclesUseCase via factory
+        - Verifies VTherm entity is available
         - Performs initial extraction over retention window
         - Schedules 24h periodic refresh timer
         - Logs initialization with retention days
         """
-        _LOGGER.debug("Entering _initialize_cycle_refresh for device=%s", self._device_id)
+        _LOGGER.debug("Entering async_initialize_cycle_extraction for device=%s", self._device_id)
 
         try:
+            # Check if cycle extraction is enabled
+            if self._data_retention_days <= 0:
+                _LOGGER.debug(
+                    "Cycle extraction disabled (history_lookback_days=%d)",
+                    self._data_retention_days,
+                )
+                return
+
             # Sanity checks
             if not self._device_config:
                 _LOGGER.warning("Cannot initialize cycle refresh: device_config not available")
@@ -365,6 +372,16 @@ class HeatingApplication:
 
             if not self._heating_cycle_manager:
                 _LOGGER.warning("Cannot initialize cycle refresh: manager not available")
+                return
+
+            # Verify VTherm entity exists before attempting to query its history
+            vtherm_state = self.hass.states.get(self._vtherm_id)
+            if vtherm_state is None:
+                _LOGGER.error(
+                    "Cannot initialize cycle extraction: VTherm entity %s not found. "
+                    "Ensure the climate entity is loaded before IHP starts.",
+                    self._vtherm_id,
+                )
                 return
 
             # Calculate initial extraction window
@@ -397,10 +414,17 @@ class HeatingApplication:
                 len(extracted_cycles),
             )
 
-            _LOGGER.debug("Exiting _initialize_cycle_refresh for device=%s", self._device_id)
+            _LOGGER.debug(
+                "Exiting async_initialize_cycle_extraction for device=%s", self._device_id
+            )
 
         except Exception as err:  # pylint: disable=broad-except
-            _LOGGER.warning("Failed to initialize cycle extraction: %s", err, exc_info=True)
+            _LOGGER.error(
+                "Failed to initialize cycle extraction for %s: %s",
+                self._vtherm_id,
+                err,
+                exc_info=True,
+            )
 
     async def _update_global_lhs_from_cycles(self, cycles: list) -> None:
         """Update global LHS in model storage from extracted cycles.
