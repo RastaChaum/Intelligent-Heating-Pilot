@@ -86,7 +86,6 @@ class HAEventBridge:
         # Deduplication: remember the last event data that was published so we
         # can skip firing when nothing meaningful has changed.
         self._last_published_data: dict | None = None
-        self._last_clear_published: bool = False
     
     def setup_listeners(self) -> None:
         """Setup all event listeners."""
@@ -249,99 +248,87 @@ class HAEventBridge:
         return False
     
     def _handle_vtherm_change(self, event: Event[EventStateChangedData]) -> None:
-        """Handle VTherm state changes (slope learning + update).
+        """Handle VTherm state changes (temperature filter + recalculation trigger).
         
         Args:
-            event: State change event (None for manual calls)
+            event: State change event
         """
-        _LOGGER.debug("Recalculating anticipation and publishing update")
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
 
-        # Event-based routing logic
-        if event is not None:
-            entity_id = event.data.get("entity_id")
+        if not old_state or not new_state:
+            return
 
-            # VTherm-specific handling for slope learning
-            if entity_id == self._vtherm_entity_id:
-                old_state = event.data.get("old_state")
-                new_state = event.data.get("new_state")
+        # Check if we should ignore (self-induced change)
+        if self._ignore_vtherm_until and dt_util.now() < self._ignore_vtherm_until:
+            _LOGGER.debug("Ignoring self-induced VTherm change")
+            return
 
-                if not old_state or not new_state:
-                    return
+        # Extract temperature changes (v8.0.0+ compatible)
+        old_temp = get_vtherm_attribute(old_state, "current_temperature")
+        new_temp = get_vtherm_attribute(new_state, "current_temperature")
 
-                # Check if we should ignore (self-induced change)
-                if self._ignore_vtherm_until and dt_util.now() < self._ignore_vtherm_until:
-                    _LOGGER.debug("Ignoring self-induced VTherm change")
-                    return
+        if old_temp == new_temp:
+            _LOGGER.debug("VTherm change but temperature unchanged, skipping")
+            return
 
-                # Extract temperature changes (v8.0.0+ compatible)
-                old_temp = get_vtherm_attribute(old_state, "current_temperature")
-                new_temp = get_vtherm_attribute(new_state, "current_temperature")
+        _LOGGER.debug("VTherm temperature changed: %s -> %s", old_temp, new_temp)
+        self._hass.async_create_task(self._recalculate_and_publish())
 
-                if old_temp == new_temp:
-                    _LOGGER.debug("VTherm change but temperature unchanged, skipping")
-                    return
+    async def _recalculate_and_publish(self) -> None:
+        """Recalculate anticipation and publish event for sensors if data changed.
 
-                _LOGGER.debug("VTherm temperature changed: %s -> %s", old_temp, new_temp)
-
-        # Call orchestrator to calculate and schedule
+        Always fires the same unified event structure. Scheduling/clearing is
+        expressed via None values (never a ``clear_values`` flag) so that all
+        sensors share a single, consistent event shape.
+        """
         anticipation_data = await self._orchestrator.calculate_and_schedule_anticipation(
             ihp_enabled=self._get_ihp_enabled()
         )
 
-        # ALWAYS publish data structure (with None values if needed)
-        # Per review feedback: never skip publishing, always return structure
         if not anticipation_data:
-            _LOGGER.warning("Orchestrator returned None/empty - this should not happen")
             anticipation_data = {}
 
-        # Check if we have complete data or need to publish partial/None values
+        # Build unified event structure (same keys always, None for missing values)
         has_complete_data = (
             anticipation_data.get("anticipated_start_time") is not None
             and anticipation_data.get("next_schedule_time") is not None
         )
-    
-    async def _recalculate_and_publish(self) -> None:
-        """Recalculate anticipation and publish event for sensors if data changed."""
-        anticipation_data = await self._app_service.calculate_and_schedule_anticipation()
 
-        if anticipation_data:
+        if has_complete_data:
             event_data: dict = {
                 "entry_id": self._entry_id,
                 "anticipated_start_time": anticipation_data["anticipated_start_time"].isoformat(),
                 "next_schedule_time": anticipation_data["next_schedule_time"].isoformat(),
-                "next_target_temperature": anticipation_data["next_target_temperature"],
-                "anticipation_minutes": anticipation_data["anticipation_minutes"],
-                "current_temp": anticipation_data["current_temp"],
-                "learned_heating_slope": anticipation_data["learned_heating_slope"],
-                "confidence_level": anticipation_data["confidence_level"],
-                "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
+                "next_target_temperature": anticipation_data.get("next_target_temperature"),
+                "anticipation_minutes": anticipation_data.get("anticipation_minutes"),
+                "current_temp": anticipation_data.get("current_temp"),
+                "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
+                "confidence_level": anticipation_data.get("confidence_level"),
+                "scheduler_entity": anticipation_data.get("scheduler_entity"),
+            }
+        else:
+            event_data = {
+                "entry_id": self._entry_id,
+                "anticipated_start_time": None,
+                "next_schedule_time": None,
+                "next_target_temperature": None,
+                "anticipation_minutes": None,
+                "current_temp": anticipation_data.get("current_temp"),
+                "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
+                "confidence_level": None,
+                "scheduler_entity": None,
             }
 
-            if self._is_meaningful_change_from_last(event_data):
-                self._hass.bus.async_fire(
-                    "intelligent_heating_pilot_anticipation_calculated",
-                    event_data,
-                )
-                self._last_published_data = event_data
-                self._last_clear_published = False
-                _LOGGER.debug("Published anticipation event for sensors (data changed)")
-            else:
-                _LOGGER.debug("Skipped anticipation event: no meaningful change from last published data")
+        if self._is_meaningful_change_from_last(event_data):
+            self._hass.bus.async_fire(
+                "intelligent_heating_pilot_anticipation_calculated",
+                event_data,
+            )
+            self._last_published_data = event_data
+            _LOGGER.debug("Published anticipation event for sensors (data changed)")
         else:
-            # Only publish the clear event once until data becomes available again
-            if not self._last_clear_published:
-                self._hass.bus.async_fire(
-                    "intelligent_heating_pilot_anticipation_calculated",
-                    {
-                        "entry_id": self._entry_id,
-                        "clear_values": True,  # Signal to sensors to clear their values
-                    },
-                )
-                self._last_published_data = None
-                self._last_clear_published = True
-                _LOGGER.debug("Published clear event for sensors")
-            else:
-                _LOGGER.debug("Skipped clear event: already published")
+            _LOGGER.debug("Skipped anticipation event: no meaningful change from last published data")
     
     def ignore_vtherm_changes_for(self, seconds: int = 10) -> None:
         """Temporarily ignore VTherm changes (used after self-induced changes).
