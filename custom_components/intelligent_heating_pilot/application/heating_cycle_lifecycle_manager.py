@@ -724,3 +724,112 @@ class HeatingCycleLifecycleManager:
         _LOGGER.debug("Extracted %d cycles from historical data", len(cycles))
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager._extract_cycles")
         return cycles
+
+    # ------------------------------------------------------------------
+    # Async Incremental Extraction Integration Methods
+    # ------------------------------------------------------------------
+    # These methods orchestrate the incremental daily extraction using
+    # RecordingExtractionQueue to load data asynchronously without freezing
+    # Home Assistant.
+
+    async def _trigger_incremental_extraction(
+        self,
+        device_id: str,
+        extraction_start_date: date,
+        extraction_end_date: date,
+    ) -> None:
+        """Trigger asynchronous incremental extraction for a date range.
+
+        Creates a RecordingExtractionQueue instance, populates it with daily
+        tasks, and runs extraction asynchronously in the background. As each
+        day completes, extracted cycles are fed into the cycle storage cache
+        and cascade updates to LhsLifecycleManager.
+
+        This method does NOT block and returns immediately. The extraction
+        continues asynchronously in the background, keeping Home Assistant
+        responsive during the large historical data load.
+
+        Args:
+            device_id: Device identifier for extraction
+            extraction_start_date: Start date for extraction (inclusive)
+            extraction_end_date: End date for extraction (inclusive)
+
+        Returns:
+            None (extraction runs asynchronously in background)
+        """
+        ...
+
+    async def _on_incremental_extraction_day_complete(
+        self,
+        cycles: list[HeatingCycle],
+    ) -> None:
+        """Callback invoked after each day's extraction completes.
+
+        This callback is called by RecordingExtractionQueue after successfully
+        extracting cycles for a single day. Responsibility:
+        1. Save extracted cycles to persistent storage
+        2. Cascade update to LhsLifecycleManager with new cycles
+        3. Update in-memory cache to avoid immediate re-query
+
+        This enables progressive model availability: after 1-2 days of extraction,
+        the ML model becomes usable even if the full ~90 days haven't loaded yet.
+
+        Args:
+            cycles: List of extracted HeatingCycle objects from one day
+
+        Returns:
+            None
+        """
+        raise NotImplementedError("on_demand_extraction is not implemented yet")
+
+    async def can_cancel_extraction(self) -> bool:
+        """Check if there is an ongoing extraction that can be cancelled.
+
+        Returns True if an extraction queue is currently running and can be
+        stopped via cancel_extraction().
+
+        Returns:
+            True if extraction is running, False otherwise
+        """
+        raise NotImplementedError("on_demand_extraction is not implemented yet")
+
+    async def cancel_extraction(self) -> None:
+        """Cancel an ongoing incremental extraction gracefully.
+
+        If an extraction is running via RecordingExtractionQueue, this method
+        requests cancellation. The queue will finish the current day's extraction
+        and then stop without processing remaining days.
+
+        Has no effect if no extraction is currently running.
+
+        Returns:
+            None
+        """
+        raise NotImplementedError("on_demand_extraction is not implemented yet")
+
+    async def on_demand_extraction(
+        self,
+        device_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> list[HeatingCycle]:
+        """Trigger on-demand extraction for a custom date range.
+
+        This method allows explicit extraction of a specific date range outside
+        the normal startup/refresh cycle. Useful for:
+        - Manual cache refresh
+        - Recovery from extraction failures
+        - User-triggered data loads
+
+        The extraction runs asynchronously and returns a list of cycles extracted
+        during this request.
+
+        Args:
+            device_id: Device identifier
+            start_date: Start date for extraction (inclusive)
+            end_date: End date for extraction (inclusive)
+
+        Returns:
+            List of all HeatingCycle objects extracted for the date range
+        """
+        raise NotImplementedError("on_demand_extraction is not implemented yet")
