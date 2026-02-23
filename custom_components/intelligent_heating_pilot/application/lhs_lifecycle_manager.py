@@ -148,7 +148,7 @@ class LhsLifecycleManager:
 
             # Lazy Loading: Load contextual LHS for current hour ONLY
             # Other hours will be loaded on-demand via get_contextual_lhs() or ensure_contextual_lhs_populated()
-            current_hour = datetime.now().hour if dt_util is None else dt_util.now().hour
+            current_hour = dt_util.now().hour if dt_util is not None else datetime.now().hour
             _LOGGER.debug(
                 "Loading contextual LHS for current hour: %d (lazy loading enabled)", current_hour
             )
