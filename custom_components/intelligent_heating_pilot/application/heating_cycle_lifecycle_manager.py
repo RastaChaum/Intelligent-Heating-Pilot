@@ -1032,7 +1032,9 @@ class HeatingCycleLifecycleManager:
         Returns:
             None (extraction runs asynchronously in background)
         """
-        raise NotImplementedError("_trigger_incremental_extraction is not implemented yet")
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager._trigger_incremental_extraction")
+        await self._launch_extraction_for_ranges([(extraction_start_date, extraction_end_date)])
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager._trigger_incremental_extraction")
 
     async def _on_incremental_extraction_day_complete(
         self,
@@ -1055,7 +1057,13 @@ class HeatingCycleLifecycleManager:
         Returns:
             None
         """
-        raise NotImplementedError("_on_incremental_extraction_day_complete is not implemented yet")
+        _LOGGER.debug(
+            "Entering HeatingCycleLifecycleManager._on_incremental_extraction_day_complete"
+        )
+        await self._on_cycles_extracted(cycles)
+        _LOGGER.debug(
+            "Exiting HeatingCycleLifecycleManager._on_incremental_extraction_day_complete"
+        )
 
     async def can_cancel_extraction(self) -> bool:
         """Check if there is an ongoing extraction that can be cancelled.
@@ -1066,7 +1074,18 @@ class HeatingCycleLifecycleManager:
         Returns:
             True if extraction is running, False otherwise
         """
-        raise NotImplementedError("can_cancel_extraction is not implemented yet")
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager.can_cancel_extraction")
+        if self._extraction_queue is None or self._extraction_task is None:
+            _LOGGER.debug("No extraction running (queue or task is None)")
+            _LOGGER.debug("Exiting HeatingCycleLifecycleManager.can_cancel_extraction")
+            return False
+        if self._extraction_task.done():
+            _LOGGER.debug("Extraction task is already done")
+            _LOGGER.debug("Exiting HeatingCycleLifecycleManager.can_cancel_extraction")
+            return False
+        _, _, is_running = await self._extraction_queue.get_progress()
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.can_cancel_extraction")
+        return is_running
 
     async def cancel_extraction(self) -> None:
         """Cancel an ongoing incremental extraction gracefully.
@@ -1080,7 +1099,16 @@ class HeatingCycleLifecycleManager:
         Returns:
             None
         """
-        raise NotImplementedError("cancel_extraction is not implemented yet")
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager.cancel_extraction")
+        if self._extraction_queue is not None:
+            _LOGGER.info("Cancelling ongoing incremental extraction")
+            try:
+                await self._extraction_queue.cancel_queue()
+            except Exception as exc:
+                _LOGGER.warning("Error requesting extraction queue cancellation: %s", exc)
+        else:
+            _LOGGER.debug("No extraction queue to cancel")
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.cancel_extraction")
 
     async def on_demand_extraction(
         self,
@@ -1107,4 +1135,42 @@ class HeatingCycleLifecycleManager:
         Returns:
             List of all HeatingCycle objects extracted for the date range
         """
-        raise NotImplementedError("on_demand_extraction is not implemented yet")
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager.on_demand_extraction")
+        _LOGGER.info(
+            "On-demand extraction requested: device=%s from %s to %s",
+            device_id,
+            start_date,
+            end_date,
+        )
+
+        collected_cycles: list[HeatingCycle] = []
+
+        async def _collect(cycles: list[HeatingCycle]) -> None:
+            """Collect cycles from each day's extraction and update caches."""
+            collected_cycles.extend(cycles)
+            # Also persist and cascade LHS as with background extraction
+            await self._on_cycles_extracted(cycles)
+
+        # Create a dedicated queue (does not replace the background queue)
+        demand_queue = RecordingExtractionQueue(
+            device_id=device_id,
+            climate_entity_id=self._device_config.vtherm_entity_id,
+            historical_adapters=self._historical_adapters,
+            heating_cycle_service=self._heating_cycle_service,
+            on_cycles_extracted=_collect,
+        )
+
+        try:
+            await demand_queue.populate_queue(start_date, end_date)
+            # Run synchronously (await): caller expects cycles in the return value
+            await demand_queue.run_queue()
+        except Exception as exc:
+            _LOGGER.error("On-demand extraction failed: %s", exc)
+
+        _LOGGER.info(
+            "On-demand extraction complete: extracted %d cycles for device=%s",
+            len(collected_cycles),
+            device_id,
+        )
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.on_demand_extraction")
+        return collected_cycles
