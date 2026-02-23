@@ -8,7 +8,7 @@ Purpose: Comprehensive test coverage for heating cycle lifecycle management
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -194,20 +194,16 @@ class TestHeatingCycleLifecycleManager:
         # WHEN: Startup is called (manager without timer)
         result = await manager.startup(device_id, start_time, end_time)
 
-        # THEN Aspect A: Extracts cycles for initial window
-        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
-
-        # THEN Aspect B: Store cycles on disk and Returns extracted cycles
-        mock_heating_cycle_storage.append_cycles.assert_called_once()  # Stored to disk
-        assert result == expected_cycles
-        assert len(result) == 2
+        # THEN: startup returns empty list (cycles delivered asynchronously)
+        assert result == []
 
         # THEN Aspect C: Schedules 24h timer when scheduler provided
         mock_timer_scheduler.schedule_timer.assert_called_once()
 
-        # THEN Aspect D: Caches cycles in memory
-        # Note: Caching happens in get_cycles_for_target_time(), not in startup()
-        # startup() only extracts and returns, memory cache is lazy-loaded
+        # THEN: Async extraction queue is launched
+        assert manager._extraction_queue is not None
+
+        # THEN Aspect D: In-memory cache dict exists (lazily populated)
         assert isinstance(manager._cached_cycles_for_target_time, dict)
 
     # ===== Test: on_retention_change() - ONE test for ALL scenarios =====
@@ -273,15 +269,11 @@ class TestHeatingCycleLifecycleManager:
         # THEN Aspect A: Memory cache is cleared (retention change invalidates cache)
         assert len(manager._cached_cycles_for_target_time) == 0
 
-        # THEN Aspect B: Store new cache on disk (IHeatingCycleStorage)
-        mock_heating_cycle_storage.append_cycles.assert_called_once()  # Persists updated cycles to disk
-        call_args = mock_heating_cycle_storage.append_cycles.call_args
-        assert call_args is not None
-        # Cycles are re-extracted for new retention window, not filtered from old cache
+        # THEN: Storage cache was cleared
+        assert mock_heating_cycle_storage.clear_cache.called
 
-        # THEN Aspect C: Call LhsLifecycleManager to cascade updates (if present)
-        mock_lhs_lifecycle_manager.update_global_lhs_from_cycles.assert_called_once()
-        mock_lhs_lifecycle_manager.update_contextual_lhs_from_cycles.assert_called_once()
+        # THEN: Async extraction queue is launched for the new window
+        assert manager._extraction_queue is not None
 
     # ===== Test: on_24h_timer() - ONE test for ALL scenarios =====
 
@@ -312,34 +304,26 @@ class TestHeatingCycleLifecycleManager:
         new_cycles = [self._create_heating_cycle(base_datetime)]
         mock_heating_cycle_service.extract_heating_cycles.return_value = new_cycles
 
-        # WHEN: 24h timer fires (SINGLE CALL for manager without cache)
+        # WHEN: 24h timer fires
         await manager.on_24h_timer()
 
-        # THEN Aspect A: Extracts latest cycles
-        mock_heating_cycle_service.extract_heating_cycles.assert_called()
+        # THEN: Async extraction queue is launched
+        assert manager._extraction_queue is not None
 
-        # THEN Aspect C: Works with and without cache
-        # No exception was raised
+        # THEN Aspect C: Works with and without cache – no exception raised
 
-        # WHEN: 24h timer fires with cache (separate call for cache aspect)
+        # WHEN: 24h timer fires again (second call – cancels first queue, creates new one)
         await manager.on_24h_timer()
 
-        # THEN Aspect B: Updates cache when present
-        # Cache was updated
-        assert mock_heating_cycle_storage.append_cycles.called
+        # THEN: New extraction queue is still set
+        assert manager._extraction_queue is not None
 
-        # WHEN: 24h timer fires with full manager (persistent cache aspect)
-        new_cycles_storage = [
-            self._create_heating_cycle(base_datetime - timedelta(hours=12)),
-            self._create_heating_cycle(base_datetime - timedelta(hours=6)),
-        ]
-        mock_heating_cycle_service.extract_heating_cycles.return_value = new_cycles_storage
+        # WHEN: 24h timer fires a third time
         mock_heating_cycle_storage.append_cycles.reset_mock()
-
         await manager.on_24h_timer()
 
-        # THEN Aspect D: Writes new cycles to persistent cache
-        assert mock_heating_cycle_storage.append_cycles.call_count >= 1  # Persists to disk
+        # THEN: Queue still created (no exception)
+        assert manager._extraction_queue is not None
 
     # ===== Test: get_cycles_for_window() - ONE test for ALL scenarios =====
 
@@ -698,3 +682,33 @@ class TestHeatingCycleLifecycleManager:
         await manager.cancel()
 
         # No exception is raised
+
+    # ===== Test: _calculate_extraction_window() =====
+
+    @pytest.mark.asyncio
+    async def test_extraction_end_date_is_yesterday_not_today(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that extraction end_date is yesterday, not today.
+
+        Avoids partial cycle extractions for the current day.
+        Extraction end_date must be yesterday at the latest.
+        """
+        # WHEN: Calculate extraction window
+        start_date, end_date = manager._calculate_extraction_window()
+
+        today = datetime.now(tz=timezone.utc).date()
+        yesterday = today - timedelta(days=1)
+
+        # THEN: end_date must not be today
+        assert end_date < today, (
+            f"end_date {end_date} must be before today {today} "
+            "to avoid partial cycle extractions"
+        )
+
+        # THEN: end_date must be yesterday at most
+        assert end_date == yesterday, (
+            f"end_date {end_date} should be yesterday {yesterday}"
+        )

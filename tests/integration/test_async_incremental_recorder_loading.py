@@ -30,7 +30,7 @@ Critical Assertions That Will FAIL With Stubs:
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -243,7 +243,10 @@ async def test_startup_schedules_24h_timer():
     when_arg = call_args[0][0] if call_args[0] else None
     assert isinstance(when_arg, datetime)
     # Should be approximately 24 hours in the future
-    assert when_arg > now
+    # Use timezone-aware now for comparison since startup uses dt_util.now() when available
+    now_aware = datetime.now(tz=timezone.utc)
+    when_naive = when_arg.replace(tzinfo=None) if when_arg.tzinfo else when_arg
+    assert when_naive > now
 
 
 # ============================================================================
@@ -687,18 +690,15 @@ async def test_retention_change_invalidates_caches_and_reextracts():
         mock_storage.clear_cache.called
     ), "WeakPoint: storage.clear_cache() not called during retention change."
 
-    # VERIFY #3: New extraction must be called
-    assert len(extract_calls) > 0, "WeakPoint: No extraction triggered after retention change."
-
-    # VERIFY #4: Extraction window must be 180 days
-    start_time, end_time = extract_calls[0]
-    now = datetime.now()
-    now - timedelta(days=180)
-
-    window_days = (end_time - start_time).days
+    # VERIFY #3: New async extraction must be launched
     assert (
-        178 <= window_days <= 182
-    ), f"WeakPoint: Extraction window is {window_days} days, expected ~180."
+        lifecycle._extraction_queue is not None
+    ), "WeakPoint: No extraction queue created after retention change."
+
+    # VERIFY #4: Retention must be updated to the new value
+    assert (
+        lifecycle._device_config.lhs_retention_days == 180
+    ), f"WeakPoint: Retention not updated, got {lifecycle._device_config.lhs_retention_days}."
 
 
 # ============================================================================
@@ -765,3 +765,56 @@ async def test_queue_progress_reporting_works():
     extracted_final, total_final, is_running_final = await queue.get_progress()
     assert extracted_final == 10, f"WeakPoint: Final count {extracted_final}, expected 10."
     assert is_running_final is False, "WeakPoint: Queue still marked as running after completion."
+
+
+# ============================================================================
+# Test: Startup extraction end_date is yesterday
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_startup_end_date_is_yesterday():
+    """CRITICAL TEST: Startup extraction end_date MUST be yesterday, not today.
+
+    Prevents partial cycle extractions for the current day.
+    GIVEN: HeatingCycleLifecycleManager with any retention
+    WHEN: startup() is called
+    THEN: Extraction end_date must be yesterday, not today
+    """
+    device_config = DeviceConfig(
+        device_id="climate.living_room",
+        vtherm_entity_id="climate.living_room",
+        scheduler_entities=["calendar.schedule"],
+        lhs_retention_days=30,
+    )
+
+    mock_service = Mock(spec=IHeatingCycleService)
+    mock_service.extract_heating_cycles = AsyncMock(return_value=[])
+
+    lifecycle = HeatingCycleLifecycleManager(
+        device_config=device_config,
+        heating_cycle_service=mock_service,
+        historical_adapters=[],
+        heating_cycle_storage=None,
+        timer_scheduler=None,
+        lhs_storage=None,
+        lhs_lifecycle_manager=None,
+    )
+
+    # Get the extraction window
+    start_date, end_date = lifecycle._calculate_extraction_window()
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    # VERIFY: end_date must be yesterday, not today
+    assert end_date == yesterday, (
+        f"WeakPoint: end_date is {end_date}, expected yesterday {yesterday}. "
+        "Extraction must not include today to avoid partial cycles."
+    )
+    assert end_date < today, (
+        f"WeakPoint: end_date {end_date} is not before today {today}. "
+        "Must be yesterday at the latest."
+    )
+
+    await lifecycle.cancel()
