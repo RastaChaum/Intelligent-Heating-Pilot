@@ -133,7 +133,7 @@ class HeatingCycleLifecycleManager:
         try:
             # Step 1: Schedule 24h timer at now() + 24H regardless of end_time
             if self._timer_scheduler is not None:
-                now = self._get_current_time_for_extraction(None)
+                now = self._get_current_time_for_extraction(None)  # None = use current wall-clock time
                 next_refresh = now + timedelta(hours=24)
                 self._timer_cancel_func = self._timer_scheduler.schedule_timer(
                     next_refresh, self.on_24h_timer
@@ -246,7 +246,7 @@ class HeatingCycleLifecycleManager:
 
             # Step 4: Prune old cycles from storage cache
             if self._heating_cycle_storage is not None:
-                now = self._get_current_time_for_extraction(None)
+                now = self._get_current_time_for_extraction(None)  # None = use current wall-clock time
                 await self._heating_cycle_storage.prune_old_cycles(
                     self._device_config.device_id, now
                 )
@@ -254,7 +254,7 @@ class HeatingCycleLifecycleManager:
 
             # Step 5: Reschedule timer at now() + 24H (not based on end_time)
             if self._timer_scheduler is not None:
-                now = self._get_current_time_for_extraction(None)
+                now = self._get_current_time_for_extraction(None)  # None = use current wall-clock time
                 next_refresh = now + timedelta(hours=24)
                 self._timer_cancel_func = self._timer_scheduler.schedule_timer(
                     next_refresh, self.on_24h_timer
@@ -576,7 +576,7 @@ class HeatingCycleLifecycleManager:
 
             # Update heating cycle storage cache (synchronous cache update)
             if self._heating_cycle_storage is not None:
-                now = self._get_current_time_for_extraction(None)
+                now = self._get_current_time_for_extraction(None)  # None = use current wall-clock time
                 await self._heating_cycle_storage.append_cycles(
                     self._device_config.device_id,
                     cycles,
@@ -751,7 +751,10 @@ class HeatingCycleLifecycleManager:
                 await self._extraction_task
             self._extraction_task = None
 
-        # Merge all missing ranges into one contiguous range
+        # Merge all missing ranges into one bounding range (min start → max end).
+        # This may include already-cached days between gaps but avoids complex
+        # multi-queue orchestration; extra-extracted days are deduplicated by
+        # append_cycles() in the storage layer.
         start_date = min(r[0] for r in missing_ranges)
         end_date = max(r[1] for r in missing_ranges)
 

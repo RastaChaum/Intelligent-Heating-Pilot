@@ -804,7 +804,7 @@ async def test_startup_end_date_is_yesterday():
     # Get the extraction window
     start_date, end_date = lifecycle._calculate_extraction_window()
 
-    today = date.today()
+    today = datetime.now(tz=timezone.utc).date()
     yesterday = today - timedelta(days=1)
 
     # VERIFY: end_date must be yesterday, not today
