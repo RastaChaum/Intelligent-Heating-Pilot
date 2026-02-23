@@ -45,9 +45,15 @@ class ExtractionDateRangeCalculator:
 
         Returns:
             A tuple of (start_date, end_date) both inclusive, both as datetime.date objects
+        Raises:
+            ValueError: If retention_days is negative.
         """
         if current_time is None:
             current_time = datetime.now()
+
+        if retention_days < 0:
+            _LOGGER.error("retention_days must be non-negative, got %d", retention_days)
+            raise ValueError(f"retention_days must be non-negative, got {retention_days}")
 
         # Fixed boundary: start of retention window
         retention_boundary = current_time - timedelta(days=retention_days)

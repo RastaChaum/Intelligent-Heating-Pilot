@@ -650,7 +650,9 @@ class TestRecordingExtractionQueueStateConsistency:
         # Second run: populate with different range
         await extraction_queue.populate_queue(date(2024, 2, 1), date(2024, 2, 5))
         await extraction_queue.run_queue()
-        assert extraction_queue._extracted_count == 5  # 3 from before + 5 new... wait no
+        assert (
+            extraction_queue._extracted_count == 5
+        )  # counter reset on populate; 5 new extractions
 
     @pytest.mark.asyncio
     async def test_queue_state_after_cancellation(

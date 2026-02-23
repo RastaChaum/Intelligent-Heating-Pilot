@@ -359,28 +359,26 @@ class TestExtractionDateRangeCalculatorCrossMonthBoundaries:
 class TestExtractionDateRangeCalculatorInputValidation:
     """Test input validation and error handling."""
 
-    def test_calculate_range_with_negative_retention_days_treated_as_current(self) -> None:
-        """Test behavior with negative retention days.
+    def test_calculate_range_with_negative_retention_days_raises_error(self) -> None:
+        """Test that negative retention days raises ValueError.
 
-        Note: Current implementation doesn't validate negative, but it should
-        be handled gracefully. Negative days would create a future boundary.
+        Negative retention days are invalid and should be rejected.
         """
         # GIVEN
         current_time = datetime(2024, 1, 15, 12, 0, 0)
-        retention_days = -5  # Invalid, but test behavior
+        retention_days = -5  # Invalid
 
-        # WHEN
-        start_date, end_date = ExtractionDateRangeCalculator.calculate_extraction_range(
-            retention_days=retention_days,
-            oldest_cycle_in_cache=None,
-            current_time=current_time,
-        )
-
-        # THEN
-        # With negative days, boundary becomes future date
-        # The implemented behavior will create a future boundary
-        expected_start = date(2024, 1, 20)  # 5 days in future
-        assert start_date == expected_start
+        # WHEN/THEN
+        try:
+            ExtractionDateRangeCalculator.calculate_extraction_range(
+                retention_days=retention_days,
+                oldest_cycle_in_cache=None,
+                current_time=current_time,
+            )
+            raise AssertionError("Should have raised ValueError for negative retention_days")
+        except ValueError:
+            # Expected behavior
+            pass
 
 
 class TestExtractionDateRangeCalculatorTimezoneAwareness:
