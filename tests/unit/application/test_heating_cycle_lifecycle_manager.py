@@ -699,7 +699,7 @@ class TestHeatingCycleLifecycleManager:
         # WHEN: Calculate extraction window
         start_date, end_date = manager._calculate_extraction_window()
 
-        today = datetime.now(tz=timezone.utc).date()
+        today = datetime.now().date()
         yesterday = today - timedelta(days=1)
 
         # THEN: end_date must not be today

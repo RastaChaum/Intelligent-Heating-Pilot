@@ -243,8 +243,7 @@ async def test_startup_schedules_24h_timer():
     when_arg = call_args[0][0] if call_args[0] else None
     assert isinstance(when_arg, datetime)
     # Should be approximately 24 hours in the future
-    # Use timezone-aware now for comparison since startup uses dt_util.now() when available
-    now_aware = datetime.now(tz=timezone.utc)
+    # Strip timezone info for comparison since 'now' is timezone-naive
     when_naive = when_arg.replace(tzinfo=None) if when_arg.tzinfo else when_arg
     assert when_naive > now
 
