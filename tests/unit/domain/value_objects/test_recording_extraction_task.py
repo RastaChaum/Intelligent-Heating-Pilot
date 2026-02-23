@@ -55,7 +55,7 @@ class TestRecordingExtractionTaskImmutability:
 
 
 class TestRecordingExtractionTaskHashability:
-    """Test that RecordingExtractionTask is hashable."""
+    """Test that RecordingExtractionTask is hashable and deduplicates correctly."""
 
     def test_task_is_hashable(self) -> None:
         """Test that task can be hashed."""
@@ -88,7 +88,11 @@ class TestRecordingExtractionTaskHashability:
         assert task2 in task_set
 
     def test_task_hash_consistent_with_equality(self) -> None:
-        """Test that equal tasks have the same hash."""
+        """Test that equal tasks have the same hash (state-agnostic equality).
+
+        This validates task deduplication: two tasks with same date and device_id
+        are considered equal regardless of state or climate entity.
+        """
         task1 = RecordingExtractionTask(
             extraction_date=date(2024, 1, 15),
             device_id="sensor.test_device",
@@ -268,3 +272,163 @@ class TestRecordingExtractionTaskAttributes:
         assert "RecordingExtractionTask" in repr_str
         assert "datetime.date(2024, 1, 15)" in repr_str
         assert "sensor.test_device" in repr_str
+
+
+class TestRecordingExtractionTaskDeduplicationSemantics:
+    """Test that task equality and hashing enforce proper deduplication.
+
+    Critical feature: Same (date, device_id) with different state or climate entity
+    should be treated as IDENTICAL for set operations (no duplicates).
+    """
+
+    def test_task_set_deduplication_with_state_changes(self) -> None:
+        """Verify set properly deduplicates tasks with different states.
+
+        This is CRITICAL: A retry scenario where task progresses from
+        PENDING → EXTRACTING → COMPLETED should still be ONE entry in cache tracking.
+        """
+        # Create tasks representing same extraction with different states
+        task_pending = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.test_device",
+            climate_entity_id="climate.living_room",
+            state=ExtractionTaskState.PENDING,
+        )
+        task_extracting = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.test_device",
+            climate_entity_id="climate.garage",  # Different entity doesn't matter
+            state=ExtractionTaskState.EXTRACTING,
+        )
+        task_completed = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.test_device",
+            climate_entity_id="climate.bathroom",  # Different entity doesn't matter
+            state=ExtractionTaskState.COMPLETED,
+        )
+
+        # All three tasks must deduplicate to ONE set entry
+        task_set = {task_pending, task_extracting, task_completed}
+        assert len(task_set) == 1, (
+            "Tasks with same date+device must be equal regardless of state or climate_entity. "
+            f"Expected 1 unique task, got {len(task_set)}"
+        )
+
+        # Verify hashes are identical for deduplication
+        assert hash(task_pending) == hash(task_extracting) == hash(task_completed)
+
+    def test_task_equality_ignores_climate_entity_id(self) -> None:
+        """Verify equality does NOT depend on climate_entity_id.
+
+        This allows a single device to have multiple climate entities,
+        but still be tracked as same task (by device + date).
+        """
+        task_a = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.device1",
+            climate_entity_id="climate.living_room",
+        )
+        task_b = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.device1",
+            climate_entity_id="climate.garage",  # Completely different
+        )
+
+        # Must be equal even with different climate entity
+        assert task_a == task_b, "Equality must ignore climate_entity_id"
+        assert hash(task_a) == hash(task_b), "Hash must ignore climate_entity_id"
+
+    def test_task_inequality_with_different_device_same_date(self) -> None:
+        """Verify tasks with same date but different devices are NOT equal."""
+        task_device1 = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.device1",
+            climate_entity_id="climate.living_room",
+        )
+        task_device2 = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.device2",  # Different device
+            climate_entity_id="climate.living_room",
+        )
+
+        assert task_device1 != task_device2, "Different devices must NOT be equal"
+        assert hash(task_device1) != hash(
+            task_device2
+        ), "Different devices must have different hashes"
+
+        # Verify they create two distinct set entries
+        task_set = {task_device1, task_device2}
+        assert len(task_set) == 2, "Different devices should create separate set entries"
+
+    def test_task_inequality_with_different_date_same_device(self) -> None:
+        """Verify tasks with same device but different dates are NOT equal."""
+        task_date1 = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.test_device",
+            climate_entity_id="climate.living_room",
+        )
+        task_date2 = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 16),  # Different date
+            device_id="sensor.test_device",
+            climate_entity_id="climate.living_room",
+        )
+
+        assert task_date1 != task_date2, "Different dates must NOT be equal"
+        assert hash(task_date1) != hash(task_date2), "Different dates must have different hashes"
+
+        # Verify they create two distinct set entries
+        task_set = {task_date1, task_date2}
+        assert len(task_set) == 2, "Different dates should create separate set entries"
+
+    def test_task_error_message_does_not_affect_equality(self) -> None:
+        """Verify error message doesn't affect equality (for deduplication).
+
+        A failed and a retried task should be considered same for tracking.
+        """
+        task_failed_reason1 = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.test_device",
+            climate_entity_id="climate.living_room",
+            state=ExtractionTaskState.FAILED,
+            error="Connection timeout",
+        )
+        task_failed_reason2 = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.test_device",
+            climate_entity_id="climate.garage",
+            state=ExtractionTaskState.FAILED,
+            error="Entity not found",  # Different error
+        )
+
+        # Must be equal despite different error messages
+        assert task_failed_reason1 == task_failed_reason2
+        assert hash(task_failed_reason1) == hash(task_failed_reason2)
+
+    def test_task_set_preservation_of_arbitrary_entry(self) -> None:
+        """Verify set preserves one arbitrary entry when duplicates exist.
+
+        Python sets keep only ONE of equal objects. Test verifies this behavior
+        for our task equality semantics.
+        """
+        task_pending = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.test_device",
+            climate_entity_id="climate.living_room",
+            state=ExtractionTaskState.PENDING,
+        )
+        task_completed = RecordingExtractionTask(
+            extraction_date=date(2024, 1, 15),
+            device_id="sensor.test_device",
+            climate_entity_id="climate.garage",
+            state=ExtractionTaskState.COMPLETED,
+        )
+
+        task_set = {task_pending, task_completed}
+        assert len(task_set) == 1
+
+        # Set contains exactly ONE of the two (which one is unpredictable, but only one)
+        retrieved_task = task_set.pop()
+        assert retrieved_task == task_pending
+        assert retrieved_task == task_completed
+        assert retrieved_task.device_id == "sensor.test_device"
+        assert retrieved_task.extraction_date == date(2024, 1, 15)

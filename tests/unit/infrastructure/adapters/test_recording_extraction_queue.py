@@ -688,3 +688,407 @@ class TestRecordingExtractionQueueStateConsistency:
 
         # THEN
         mock_extract_day.assert_not_called()
+
+
+# ============================================================================
+# Critical Sequential Execution Tests (TDD Reinforcement)
+# ============================================================================
+
+
+class TestRecordingExtractionQueueSequentialityValidation:
+    """Critical tests to VALIDATE true sequential execution (not just mocked order)."""
+
+    @pytest.mark.asyncio
+    async def test_sequential_execution_with_timing_verification(
+        self, extraction_queue: RecordingExtractionQueue
+    ) -> None:
+        """Validate REAL sequential execution by tracking start and completion times.
+
+        CRITICAL TEST: If implementation runs tasks in parallel, this will FAIL.
+        Each task MUST complete before next one starts.
+        """
+        # GIVEN: Populate with 3 days
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+
+        execution_timeline = []
+
+        async def mock_extract_with_timing(extraction_date: date) -> list[HeatingCycle]:
+            """Track when each task starts and ends."""
+            execution_timeline.append(("start", extraction_date))
+            await asyncio.sleep(0.01)  # Simulate work (important for parallelism detection)
+            execution_timeline.append(("end", extraction_date))
+            return []
+
+        extraction_queue._extract_day = mock_extract_with_timing
+
+        # WHEN
+        await extraction_queue.run_queue()
+
+        # THEN: Verify STRICT sequential pattern
+        # Pattern MUST be: start_d1, end_d1, start_d2, end_d2, start_d3, end_d3
+        # If parallel: start_d1, start_d2, start_d3, end_d1, end_d2, end_d3 ❌ FAILS THIS TEST
+        expected_timeline = [
+            ("start", date(2024, 1, 10)),
+            ("end", date(2024, 1, 10)),
+            ("start", date(2024, 1, 11)),
+            ("end", date(2024, 1, 11)),
+            ("start", date(2024, 1, 12)),
+            ("end", date(2024, 1, 12)),
+        ]
+        assert execution_timeline == expected_timeline, (
+            f"Tasks must be sequential (start→end→start→end→...). " f"Got: {execution_timeline}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_overlapping_task_execution(
+        self, extraction_queue: RecordingExtractionQueue
+    ) -> None:
+        """Verify that no two tasks execute simultaneously (strict serialization).
+
+        This detects if implementation uses asyncio.gather or similar parallel approaches.
+        """
+        # GIVEN
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+
+        active_tasks = []
+        max_concurrent = 0
+
+        async def mock_extract_track_concurrency(extraction_date: date) -> list[HeatingCycle]:
+            nonlocal max_concurrent
+            active_tasks.append(extraction_date)
+            current_concurrent = len(active_tasks)
+            max_concurrent = max(max_concurrent, current_concurrent)
+
+            await asyncio.sleep(0.01)
+
+            active_tasks.remove(extraction_date)
+            return []
+
+        extraction_queue._extract_day = mock_extract_track_concurrency
+
+        # WHEN
+        await extraction_queue.run_queue()
+
+        # THEN: Never more than 1 task active at a time
+        assert max_concurrent == 1, (
+            f"Tasks must NOT overlap. Maximum concurrent tasks was {max_concurrent}, " f"expected 1"
+        )
+
+    @pytest.mark.asyncio
+    async def test_tasks_execute_in_queued_order(
+        self, extraction_queue: RecordingExtractionQueue
+    ) -> None:
+        """Verify tasks execute in the exact order they were queued.
+
+        This validates FIFO semantics: first populated task must execute first.
+        """
+        # GIVEN: Populate 5 tasks
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 14))
+
+        execution_order = []
+
+        async def mock_extract_track_order(extraction_date: date) -> list[HeatingCycle]:
+            execution_order.append(extraction_date)
+            return []
+
+        extraction_queue._extract_day = mock_extract_track_order
+
+        # WHEN
+        await extraction_queue.run_queue()
+
+        # THEN: Exact order, not shuffled or randomized
+        expected_order = [
+            date(2024, 1, 10),
+            date(2024, 1, 11),
+            date(2024, 1, 12),
+            date(2024, 1, 13),
+            date(2024, 1, 14),
+        ]
+        assert execution_order == expected_order, (
+            f"Tasks must execute in queue order (FIFO). "
+            f"Expected: {expected_order}, Got: {execution_order}"
+        )
+
+
+# ============================================================================
+# Callback Validation Tests (TDD Reinforcement)
+# ============================================================================
+
+
+class TestRecordingExtractionQueueCallbackValidation:
+    """Critical tests to VALIDATE callback receives correct cycles with correct dates."""
+
+    @pytest.mark.asyncio
+    async def test_callback_receives_correct_cycles_for_each_date(
+        self, extraction_queue: RecordingExtractionQueue
+    ) -> None:
+        """Verify callback receives the EXACT cycles extracted for each date.
+
+        CRITICAL: Callback must NOT mix cycles from different dates.
+        """
+        callbacks_received = []
+
+        def on_cycles(cycles: list[HeatingCycle]) -> None:
+            """Track what cycles callback received (synchronous)."""
+            callbacks_received.append(list(cycles))
+
+        extraction_queue._on_cycles_extracted = on_cycles
+
+        # GIVEN: Create mock cycles with date markers in their contents
+        cycle_jan10_a = HeatingCycle(
+            device_id="sensor.test_device",
+            start_time=datetime(2024, 1, 10, 8, 0),
+            end_time=datetime(2024, 1, 10, 9, 0),
+            target_temp=21.0,
+            end_temp=20.5,
+            start_temp=18.0,
+            tariff_details=None,
+        )
+        cycle_jan10_b = HeatingCycle(
+            device_id="sensor.test_device",
+            start_time=datetime(2024, 1, 10, 10, 0),
+            end_time=datetime(2024, 1, 10, 11, 0),
+            target_temp=21.0,
+            end_temp=20.6,
+            start_temp=18.5,
+            tariff_details=None,
+        )
+        cycle_jan11 = HeatingCycle(
+            device_id="sensor.test_device",
+            start_time=datetime(2024, 1, 11, 8, 0),
+            end_time=datetime(2024, 1, 11, 9, 0),
+            target_temp=21.0,
+            end_temp=20.7,
+            start_temp=18.2,
+            tariff_details=None,
+        )
+
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 11))
+
+        async def mock_extract_returns_cycles(extraction_date: date) -> list[HeatingCycle]:
+            if extraction_date == date(2024, 1, 10):
+                return [cycle_jan10_a, cycle_jan10_b]
+            elif extraction_date == date(2024, 1, 11):
+                return [cycle_jan11]
+            return []
+
+        extraction_queue._extract_day = mock_extract_returns_cycles
+
+        # WHEN
+        await extraction_queue.run_queue()
+
+        # THEN: Callback received correct cycles in order
+        assert (
+            len(callbacks_received) == 2
+        ), f"Expected 2 callback invocations, got {len(callbacks_received)}"
+
+        # First callback: Jan 10 cycles
+        assert (
+            len(callbacks_received[0]) == 2
+        ), f"First callback should have 2 cycles, got {len(callbacks_received[0])}"
+        assert callbacks_received[0][0] == cycle_jan10_a
+        assert callbacks_received[0][1] == cycle_jan10_b
+
+        # Second callback: Jan 11 cycles
+        assert (
+            len(callbacks_received[1]) == 1
+        ), f"Second callback should have 1 cycle, got {len(callbacks_received[1])}"
+        assert callbacks_received[1][0] == cycle_jan11
+
+    @pytest.mark.asyncio
+    async def test_callback_not_invoked_for_empty_extraction_days(
+        self,
+        extraction_queue: RecordingExtractionQueue,
+        mock_on_cycles_extracted: Mock,
+    ) -> None:
+        """Verify callback is ONLY invoked when cycles are actually extracted.
+
+        Days with no cycles should NOT trigger callback (empty list not passed).
+        """
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+
+        async def mock_extract_sparse(extraction_date: date) -> list[HeatingCycle]:
+            """Only Jan 11 has cycles; others are empty."""
+            if extraction_date == date(2024, 1, 11):
+                return [
+                    HeatingCycle(
+                        device_id="sensor.test_device",
+                        start_time=datetime(2024, 1, 11, 8, 0),
+                        end_time=datetime(2024, 1, 11, 9, 0),
+                        target_temp=21.0,
+                        end_temp=20.5,
+                        start_temp=18.0,
+                        tariff_details=None,
+                    )
+                ]
+            return []  # Jan 10 and 12 have no cycles
+
+        extraction_queue._extract_day = mock_extract_sparse
+        mock_on_cycles_extracted.reset_mock()
+
+        # WHEN
+        await extraction_queue.run_queue()
+
+        # THEN: Callback invoked exactly once (only for Jan 11)
+        assert mock_on_cycles_extracted.call_count == 1, (
+            f"Callback should be invoked for 1 day with cycles, "
+            f"got {mock_on_cycles_extracted.call_count} invocations"
+        )
+
+        # Verify the call received 1 cycle
+        call_args = mock_on_cycles_extracted.call_args[0]
+        cycles_passed = call_args[0]
+        assert len(cycles_passed) == 1
+
+
+# ============================================================================
+# Cancellation Validation Tests (TDD Reinforcement)
+# ============================================================================
+
+
+class TestRecordingExtractionQueueCancellationValidation:
+    """Critical tests to VALIDATE cancellation truly stops the queue."""
+
+    @pytest.mark.asyncio
+    async def test_cancellation_stops_at_task_boundary(
+        self, extraction_queue: RecordingExtractionQueue
+    ) -> None:
+        """Verify cancellation stops cleanly at task boundaries (no partial tasks).
+
+        CRITICAL: Current task must complete, but no new task should start.
+        """
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+
+        task_executions = []
+
+        async def mock_extract_cancel_on_third(extraction_date: date) -> list[HeatingCycle]:
+            task_executions.append(extraction_date)
+
+            # Request cancellation after third task
+            if len(task_executions) == 3:
+                await extraction_queue.cancel_queue()
+
+            return []
+
+        extraction_queue._extract_day = mock_extract_cancel_on_third
+
+        # WHEN
+        await extraction_queue.run_queue()
+
+        # THEN: Should have processed exactly 3 tasks before stopping
+        assert len(task_executions) == 3, (
+            f"Expected 3 tasks executed before cancellation, " f"got {len(task_executions)}"
+        )
+        assert task_executions == [date(2024, 1, 10), date(2024, 1, 11), date(2024, 1, 12)]
+
+    @pytest.mark.asyncio
+    async def test_cancellation_with_partial_extraction_preserves_count(
+        self, extraction_queue: RecordingExtractionQueue
+    ) -> None:
+        """Verify extraction count is accurate even after cancellation.
+
+        If 3 of 6 tasks completed before cancel, extracted_count must be 3.
+        """
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+
+        processed = 0
+
+        async def mock_extract_cancel_early(extraction_date: date) -> list[HeatingCycle]:
+            nonlocal processed
+            processed += 1
+
+            # Request cancel after 2nd task
+            if processed == 2:
+                asyncio.create_task(extraction_queue.cancel_queue())
+
+            return []
+
+        extraction_queue._extract_day = mock_extract_cancel_early
+
+        # WHEN
+        await extraction_queue.run_queue()
+
+        # THEN
+        assert extraction_queue._extracted_count == 2, (
+            f"Extracted count should be 2 (tasks completed before cancel), "
+            f"got {extraction_queue._extracted_count}"
+        )
+        assert extraction_queue._failed_count == 0
+        assert extraction_queue._cancel_requested is True
+
+
+# ============================================================================
+# Progress Tracking Accuracy Tests (TDD Reinforcement)
+# ============================================================================
+
+
+class TestRecordingExtractionQueueProgressAccuracy:
+    """Critical tests to VALIDATE progress counters are accurate."""
+
+    @pytest.mark.asyncio
+    async def test_progress_total_count_accuracy_during_extraction(
+        self, extraction_queue: RecordingExtractionQueue
+    ) -> None:
+        """Verify total count remains accurate throughout extraction.
+
+        total = extracted + failed + remaining_in_queue
+        """
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+
+        async def mock_extract_simple(extraction_date: date) -> list[HeatingCycle]:
+            # Simple mock that returns empty cycles
+            return []
+
+        extraction_queue._extract_day = mock_extract_simple
+
+        # WHEN
+        await extraction_queue.run_queue()
+
+        # THEN: Verify final state is accurate
+        extracted, total, is_running = await extraction_queue.get_progress()
+
+        # All 6 tasks should be extracted (6 extracted + 0 failed + 0 remaining = 6 total)
+        assert extracted == 6, f"Expected 6 extracted tasks, got {extracted}"
+        assert total == 6, f"Expected total count of 6, got {total}"
+        assert is_running is False, "Queue should not be running after completion"
+
+        # Verify counters directly
+        assert extraction_queue._extracted_count == 6
+        assert extraction_queue._failed_count == 0
+
+    @pytest.mark.asyncio
+    async def test_progress_count_survives_partial_failures(
+        self, extraction_queue: RecordingExtractionQueue
+    ) -> None:
+        """Verify progress is accurate when some extractions fail.
+
+        GIVEN: 6 tasks, 2 fail (of which 1 actually-fails, 1 times out)
+        EXPECTED: extracted=4, failed=2, total=6
+        """
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+
+        failure_dates = {date(2024, 1, 11), date(2024, 1, 14)}
+
+        async def mock_extract_with_failures(extraction_date: date) -> list[HeatingCycle]:
+            if extraction_date in failure_dates:
+                raise ValueError(f"Extraction failed for {extraction_date}")
+            return []
+
+        extraction_queue._extract_day = mock_extract_with_failures
+
+        # WHEN
+        await extraction_queue.run_queue()
+
+        # THEN
+        assert extraction_queue._extracted_count == 4, (
+            f"Expected 4 successful extractions, " f"got {extraction_queue._extracted_count}"
+        )
+        assert extraction_queue._failed_count == 2, (
+            f"Expected 2 failed extractions, " f"got {extraction_queue._failed_count}"
+        )
+
+        # Progress should reflect this
+        extracted, total, is_running = await extraction_queue.get_progress()
+        assert extracted == 4
+        assert total == 6  # 4 + 2 + 0
+        assert is_running is False

@@ -46,12 +46,13 @@ def lhs_lifecycle_manager_configured(lhs_context):
 
     mock_contextual_calculator = Mock()
     # The method is calculate_all_contextual_lhs and returns a dict
-    mock_contextual_calculator.calculate_all_contextual_lhs = Mock(
+    # Use AsyncMock to properly track async calls
+    mock_contextual_calculator.calculate_all_contextual_lhs = AsyncMock(
         return_value={h: 2.5 for h in range(24)}
     )
 
     mock_global_calculator = Mock()
-    mock_global_calculator.calculate_global_lhs = Mock(return_value=3.0)
+    mock_global_calculator.calculate_global_lhs = AsyncMock(return_value=3.0)
 
     # Create the actual manager with mocked dependencies
     manager = LhsLifecycleManagerFactory.create(
@@ -136,6 +137,7 @@ def ensure_contextual_lhs_populated_called(lhs_context, hour, recalc=None):
     import asyncio
 
     manager = lhs_context["manager"]
+    manager._contextual_lhs_calculator = lhs_context["contextual_calculator"]
     cycles = lhs_context.get("cycles", [])
 
     # Handle both decorator cases: with and without force_recalculate parameter
