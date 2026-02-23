@@ -51,5 +51,5 @@ class RecordingExtractionTask:
     def __eq__(self, other: object) -> bool:
         """Compare tasks by extraction_date and device_id."""
         if not isinstance(other, RecordingExtractionTask):
-            return NotImplemented
+            return False
         return self.extraction_date == other.extraction_date and self.device_id == other.device_id

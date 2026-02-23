@@ -960,7 +960,7 @@ class HeatingCycleLifecycleManager:
         Returns:
             None (extraction runs asynchronously in background)
         """
-        ...
+        raise NotImplementedError("_trigger_incremental_extraction is not implemented yet")
 
     async def _on_incremental_extraction_day_complete(
         self,
@@ -983,7 +983,7 @@ class HeatingCycleLifecycleManager:
         Returns:
             None
         """
-        raise NotImplementedError("on_demand_extraction is not implemented yet")
+        raise NotImplementedError("_on_incremental_extraction_day_complete is not implemented yet")
 
     async def can_cancel_extraction(self) -> bool:
         """Check if there is an ongoing extraction that can be cancelled.
@@ -994,7 +994,7 @@ class HeatingCycleLifecycleManager:
         Returns:
             True if extraction is running, False otherwise
         """
-        raise NotImplementedError("on_demand_extraction is not implemented yet")
+        raise NotImplementedError("can_cancel_extraction is not implemented yet")
 
     async def cancel_extraction(self) -> None:
         """Cancel an ongoing incremental extraction gracefully.
@@ -1008,7 +1008,7 @@ class HeatingCycleLifecycleManager:
         Returns:
             None
         """
-        raise NotImplementedError("on_demand_extraction is not implemented yet")
+        raise NotImplementedError("cancel_extraction is not implemented yet")
 
     async def on_demand_extraction(
         self,

@@ -145,10 +145,18 @@ class RecordingExtractionQueue:
     async def run_queue(self) -> None:
         """Execute all queued extraction tasks sequentially.
 
-        This method runs asynchronously and does NOT block. Each day's extraction
-        is performed one at a time, and extracted cycles are passed to the
-        callback function (if provided) for progressive cache population.
+        This is an asynchronous, long-running operation. When awaited, it will
+        process the entire queue (or until cancelled) before returning, while
+        cooperatively yielding control to the event loop between tasks to keep
+        Home Assistant responsive.
 
+        Callers that must not be blocked until the queue completes should
+        schedule this method as a background task, for example:
+
+            asyncio.create_task(queue.run_queue())
+
+        Extracted cycles for each day are passed to the callback function (if
+        provided) for progressive cache population.
         Raises:
             RuntimeError: If extraction is already running
         """
