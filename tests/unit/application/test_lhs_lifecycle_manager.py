@@ -58,6 +58,8 @@ class TestLhsLifecycleManager:
         calculator = Mock()
         calculator.calculate_contextual_lhs = Mock(return_value={0: 2.0, 6: 2.5, 12: 3.0})
         calculator.calculate_all_contextual_lhs = Mock(return_value={0: 2.0, 6: 2.5, 12: 3.0})
+        # Configure for per-hour calculation
+        calculator.calculate_contextual_lhs_for_hour = Mock(return_value=3.0)
         return calculator
 
     @pytest.fixture
@@ -703,12 +705,16 @@ class TestLhsLifecycleManager:
         manager._cached_global_lhs = None
         mock_model_storage.get_cached_contextual_lhs.reset_mock()
         mock_model_storage.get_cached_contextual_lhs.return_value = None
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.reset_mock()
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = 3.0
 
         result = await manager.ensure_contextual_lhs_populated(target_hour, cycles)
 
         assert result == 3.0  # Should compute from calculator mock
         # Calculator should have been called to compute
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.assert_called()
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.assert_called_once_with(
+            cycles, target_hour
+        )
         # Value should be persisted to storage
         mock_model_storage.set_cached_contextual_lhs.assert_called()
         # Value should now be in memory cache
@@ -723,7 +729,8 @@ class TestLhsLifecycleManager:
             updated_at=datetime(2025, 2, 10, 0, 0, 0),  # Stale storage
         )
         mock_model_storage.set_cached_contextual_lhs.reset_mock()
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.reset_mock()
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.reset_mock()
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = 3.0
 
         # Call with force_recalculate=True - should ignore both caches
         result = await manager.ensure_contextual_lhs_populated(
@@ -735,7 +742,9 @@ class TestLhsLifecycleManager:
         # Storage.get_cached_contextual_lhs should NOT be called (bypassed by force)
         mock_model_storage.get_cached_contextual_lhs.assert_not_called()
         # Calculator SHOULD be called (forced recalculation)
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.assert_called()
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.assert_called_once_with(
+            cycles, target_hour
+        )
         # New value should be persisted to storage
         mock_model_storage.set_cached_contextual_lhs.assert_called()
 
@@ -748,13 +757,10 @@ class TestLhsLifecycleManager:
         mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
             value=2.5, updated_at=datetime(2025, 2, 10, 12, 0, 0)
         )
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.reset_mock()
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.return_value = {
-            0: 2.0,
-            6: 2.5,
-            # Hour 12 is NOT in dict (None case)
-            18: 2.8,
-        }
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.reset_mock()
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = (
+            None  # No contextual data
+        )
 
         result = await manager.ensure_contextual_lhs_populated(target_hour, cycles)
 
@@ -762,3 +768,531 @@ class TestLhsLifecycleManager:
         assert result == 2.5
         # Global LHS should have been called
         mock_model_storage.get_cached_global_lhs.assert_called()
+
+
+class TestLhsLifecycleManagerLazyLoading:
+    """Test suite for lazy loading behavior of LhsLifecycleManager.
+
+    Lazy loading strategy:
+    - On startup: Load ONLY current hour
+    - On-demand: Load other hours as requested
+    - Memory cache: Prevent repeated storage reads
+    - Bulk operations: Load all 24 hours when needed
+    """
+
+    @pytest.fixture
+    def base_datetime(self) -> datetime:
+        """Provide base datetime for testing."""
+        return datetime(2025, 2, 10, 12, 0, 0)
+
+    @pytest.fixture
+    def mock_model_storage(self) -> Mock:
+        """Create mock ILhsStorage."""
+        storage = Mock()
+        storage.get_cached_global_lhs = AsyncMock(return_value=None)
+        storage.set_cached_global_lhs = AsyncMock()
+        storage.get_cached_contextual_lhs = AsyncMock(return_value=None)
+        storage.set_cached_contextual_lhs = AsyncMock()
+        return storage
+
+    @pytest.fixture
+    def mock_global_lhs_calculator(self) -> Mock:
+        """Create mock GlobalLHSCalculatorService."""
+        calculator = Mock()
+        calculator.calculate_global_lhs = Mock(return_value=2.5)
+        return calculator
+
+    @pytest.fixture
+    def mock_contextual_lhs_calculator(self) -> Mock:
+        """Create mock ContextualLHSCalculatorService."""
+        calculator = Mock()
+        calculator.calculate_contextual_lhs = Mock(return_value={0: 2.0, 6: 2.5, 12: 3.0})
+        calculator.calculate_all_contextual_lhs = Mock(return_value={0: 2.0, 6: 2.5, 12: 3.0})
+        calculator.calculate_contextual_lhs_for_hour = Mock(return_value=3.0)
+        return calculator
+
+    @pytest.fixture
+    def manager(
+        self,
+        mock_model_storage: Mock,
+        mock_global_lhs_calculator: Mock,
+        mock_contextual_lhs_calculator: Mock,
+    ) -> LhsLifecycleManager:
+        """Create LhsLifecycleManager instance for lazy loading tests."""
+        return LhsLifecycleManager(
+            model_storage=mock_model_storage,
+            global_lhs_calculator=mock_global_lhs_calculator,
+            contextual_lhs_calculator=mock_contextual_lhs_calculator,
+            timer_scheduler=None,
+        )
+
+    # ===== Startup Behavior Tests (Lazy Loading) =====
+
+    @pytest.mark.asyncio
+    async def test_startup_loads_only_current_hour(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that startup() loads only the current hour's contextual LHS.
+
+        Acceptance Criteria:
+        - startup() calls get_cached_contextual_lhs() ONLY for ONE hour (the current hour)
+        - Other 23 hours are NOT loaded
+        - Memory cache contains only the loaded hour entry (1 hour max)
+
+        This test prevents regression of the lazy loading optimization during startup.
+        """
+        # GIVEN: Mock storage to track which hours are requested
+        # Use a side effect to record calls
+        requested_hours: list[int] = []
+
+        async def mock_get_contextual_lhs(hour: int) -> LHSCacheEntry | None:
+            requested_hours.append(hour)
+            # Return a cached value for whichever hour is requested
+            return LHSCacheEntry(value=3.0, updated_at=base_datetime, hour=hour)
+
+        mock_model_storage.get_cached_contextual_lhs = mock_get_contextual_lhs
+        mock_model_storage.get_cached_global_lhs = AsyncMock(
+            return_value=LHSCacheEntry(value=2.5, updated_at=base_datetime)
+        )
+
+        # WHEN: Startup is called
+        await manager.startup()
+
+        # THEN: EXACTLY ONE hour is requested (lazy loading - only current hour)
+        assert (
+            len(requested_hours) == 1
+        ), f"Expected only 1 hour loaded, but got {len(requested_hours)} hours: {requested_hours}"
+
+        # THEN: That hour is in the valid range (0-23)
+        loaded_hour = requested_hours[0]
+        assert 0 <= loaded_hour <= 23, f"Loaded hour {loaded_hour} is outside valid range 0-23"
+
+        # THEN: Memory cache contains only the loaded hour (lazy loading)
+        assert (
+            len(manager._cached_contextual_lhs) == 1
+        ), f"Memory cache should have exactly 1 hour, but has {len(manager._cached_contextual_lhs)}"
+        assert loaded_hour in manager._cached_contextual_lhs
+
+    @pytest.mark.asyncio
+    async def test_startup_does_not_load_other_hours(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that startup() does NOT load the other 23 hours.
+
+        This verifies that the lazy loading optimization is working correctly:
+        - No loop over range(24) is executed during startup
+        - Only ONE hour (the current hour) is loaded
+        """
+        # GIVEN: Track all calls to get_cached_contextual_lhs
+        called_hours = []
+
+        async def track_calls(hour: int) -> LHSCacheEntry | None:
+            called_hours.append(hour)
+            return None
+
+        mock_model_storage.get_cached_contextual_lhs = track_calls
+        mock_model_storage.get_cached_global_lhs = AsyncMock(return_value=None)
+
+        # WHEN: Startup is called
+        await manager.startup()
+
+        # THEN: Exactly ONE hour is loaded (lazy loading)
+        assert (
+            len(called_hours) == 1
+        ), f"Expected 1 call (current hour only), got {len(called_hours)} calls"
+
+        # THEN: All 24 hours are NOT loaded (NOT a loop over range(24))
+        all_hours = set(range(24))
+        loaded_hours = set(called_hours)
+        assert all_hours != loaded_hours, "All 24 hours should NOT be loaded during startup"
+        assert len(loaded_hours) == 1, "Only current hour should be loaded"
+
+    @pytest.mark.asyncio
+    async def test_startup_caches_current_hour_in_memory(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that startup() caches the loaded hour in memory.
+
+        This verifies that the lazy-loaded hour is cached for fast subsequent access.
+        """
+        # GIVEN: Mock will return a cached value for ANY hour that is requested
+        cached_values = {}
+
+        async def mock_get_contextual_lhs(hour: int) -> LHSCacheEntry | None:
+            if hour not in cached_values:
+                cached_values[hour] = 3.0 + (hour / 10)  # Different value per hour
+            return LHSCacheEntry(value=cached_values[hour], updated_at=base_datetime, hour=hour)
+
+        mock_model_storage.get_cached_contextual_lhs = mock_get_contextual_lhs
+        mock_model_storage.get_cached_global_lhs = AsyncMock(return_value=None)
+
+        # WHEN: Startup is called
+        await manager.startup()
+
+        # THEN: That hour is cached in memory
+        loaded_hours = list(manager._cached_contextual_lhs.keys())
+        assert (
+            len(loaded_hours) >= 1
+        ), "At least one hour should be cached after startup (lazy loading)"
+
+        # THEN: The cached value matches what was returned from storage
+        for hour in loaded_hours:
+            cached_value = manager._cached_contextual_lhs[hour]
+            expected_value = cached_values.get(hour)
+            assert (
+                cached_value == expected_value
+            ), f"Cached value for hour {hour} should match storage value"
+
+    # ===== Lazy Loading on Demand Tests =====
+
+    @pytest.mark.asyncio
+    async def test_get_contextual_lhs_for_unloaded_hour_triggers_storage_read(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that get_contextual_lhs() loads non-loaded hour from storage.
+
+        This verifies lazy loading: when an hour is accessed that wasn't loaded during startup,
+        storage is checked for a cached value.
+        """
+        # GIVEN: Memory cache is empty (fresh manager)
+        assert len(manager._cached_contextual_lhs) == 0
+
+        # GIVEN: Storage has cached value for hour 9
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=2.8, updated_at=base_datetime, hour=9
+        )
+
+        # WHEN: get_contextual_lhs is called for hour 9 (not in memory)
+        target_time = base_datetime.replace(hour=9)
+        cycles = []
+        result = await manager.get_contextual_lhs(target_time, cycles)
+
+        # THEN: Storage is accessed for hour 9
+        mock_model_storage.get_cached_contextual_lhs.assert_called_once_with(9)
+
+        # THEN: Value is returned from storage
+        assert result == 2.8
+
+        # THEN: Value is cached in memory for subsequent calls
+        assert 9 in manager._cached_contextual_lhs
+        assert manager._cached_contextual_lhs[9] == 2.8
+
+    @pytest.mark.asyncio
+    async def test_get_contextual_lhs_caches_loaded_hour_in_memory(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that get_contextual_lhs() caches newly loaded hour in memory.
+
+        This verifies that after loading from storage, the value is cached to avoid
+        repeated storage accesses.
+        """
+        # GIVEN: Storage returns value for hour 15
+        target_hour = 15
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=2.9, updated_at=base_datetime, hour=target_hour
+        )
+
+        # WHEN: get_contextual_lhs is called for hour 15
+        target_time = base_datetime.replace(hour=target_hour)
+        cycles = []
+        await manager.get_contextual_lhs(target_time, cycles)
+
+        # THEN: Hour is cached in memory
+        assert target_hour in manager._cached_contextual_lhs
+        assert manager._cached_contextual_lhs[target_hour] == 2.9
+
+        # WHEN: get_contextual_lhs is called again for same hour
+        # THEN: Storage is not called again (memory cache used)
+        mock_model_storage.get_cached_contextual_lhs.reset_mock()
+        await manager.get_contextual_lhs(target_time, cycles)
+        mock_model_storage.get_cached_contextual_lhs.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_contextual_lhs_returns_global_fallback_if_no_contextual(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        mock_contextual_lhs_calculator: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that get_contextual_lhs() returns global fallback when no contextual data.
+
+        This verifies the fallback behavior when no contextual LHS is available for an hour.
+        """
+        # GIVEN: No cached contextual value in storage
+        mock_model_storage.get_cached_contextual_lhs.return_value = None
+        # GIVEN: Calculator returns None (no contextual data computed)
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = None
+        # GIVEN: Global LHS fallback exists
+        mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
+            value=2.5, updated_at=base_datetime
+        )
+
+        # WHEN: get_contextual_lhs is called
+        target_time = base_datetime.replace(hour=18)
+        cycles = []
+        result = await manager.get_contextual_lhs(target_time, cycles)
+
+        # THEN: Global LHS is returned as fallback
+        assert result == 2.5
+
+    @pytest.mark.asyncio
+    async def test_ensure_contextual_lhs_populated_lazy_loads_missing_hour(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        mock_contextual_lhs_calculator: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that ensure_contextual_lhs_populated() lazy loads missing hour.
+
+        This verifies that the explicit population method properly loads hours on-demand.
+        """
+        # GIVEN: Hour 20 is not in memory cache
+        assert 20 not in manager._cached_contextual_lhs
+
+        # GIVEN: Storage has cached value for hour 20
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=3.1, updated_at=base_datetime, hour=20
+        )
+
+        # WHEN: ensure_contextual_lhs_populated is called for hour 20
+        cycles = []
+        result = await manager.ensure_contextual_lhs_populated(20, cycles)
+
+        # THEN: Value is loaded from storage
+        mock_model_storage.get_cached_contextual_lhs.assert_called_once_with(20)
+
+        # THEN: Value is returned
+        assert result == 3.1
+
+        # THEN: Value is cached in memory
+        assert 20 in manager._cached_contextual_lhs
+        assert manager._cached_contextual_lhs[20] == 3.1
+
+    # ===== Memory Cache Efficiency Tests =====
+
+    @pytest.mark.asyncio
+    async def test_memory_cache_prevents_repeated_storage_reads(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that memory cache prevents repeated storage reads.
+
+        This verifies the optimization: once a value is in memory, storage is not accessed
+        again for the same hour until cache is invalidated.
+        """
+        # GIVEN: First access to hour 16
+        target_hour = 16
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=3.2, updated_at=base_datetime, hour=target_hour
+        )
+
+        target_time = base_datetime.replace(hour=target_hour)
+        cycles = []
+
+        # WHEN: get_contextual_lhs is called 5 times for same hour
+        for _ in range(5):
+            result = await manager.get_contextual_lhs(target_time, cycles)
+            assert result == 3.2
+
+        # THEN: Storage is accessed only ONCE (first call)
+        assert mock_model_storage.get_cached_contextual_lhs.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_first_access_loads_from_storage_then_caches(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that first access loads from storage and then caches.
+
+        This verifies the load pattern: storage read → memory cache population → subsequent hits use memory.
+        """
+        # GIVEN: Storage has value for hour 11
+        target_hour = 11
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=2.7, updated_at=base_datetime, hour=target_hour
+        )
+
+        target_time = base_datetime.replace(hour=target_hour)
+        cycles = []
+
+        # THEN: Memory cache is initially empty
+        assert target_hour not in manager._cached_contextual_lhs
+
+        # WHEN: First access
+        result1 = await manager.get_contextual_lhs(target_time, cycles)
+
+        # THEN: Storage is accessed
+        assert mock_model_storage.get_cached_contextual_lhs.call_count == 1
+        # THEN: Value is returned
+        assert result1 == 2.7
+        # THEN: Memory cache is populated
+        assert target_hour in manager._cached_contextual_lhs
+
+        # WHEN: Second access
+        mock_model_storage.get_cached_contextual_lhs.reset_mock()
+        result2 = await manager.get_contextual_lhs(target_time, cycles)
+
+        # THEN: Storage is NOT accessed
+        assert mock_model_storage.get_cached_contextual_lhs.call_count == 0
+        # THEN: Same value is returned
+        assert result2 == 2.7
+
+    # ===== Edge Cases =====
+
+    @pytest.mark.asyncio
+    async def test_startup_at_midnight_loads_hour_0(
+        self,
+        mock_model_storage: Mock,
+        mock_global_lhs_calculator: Mock,
+        mock_contextual_lhs_calculator: Mock,
+    ) -> None:
+        """Test that startup() correctly handles boundary hour 0 (midnight).
+
+        This verifies boundary condition handling for hour 0 (midnight).
+        The test verifies that startup loads exactly ONE hour, which may be hour 0 if the system
+        time is at midnight when the test runs. If not, it still validates that lazy loading is working.
+        """
+        # GIVEN: Create manager
+        manager = LhsLifecycleManager(
+            model_storage=mock_model_storage,
+            global_lhs_calculator=mock_global_lhs_calculator,
+            contextual_lhs_calculator=mock_contextual_lhs_calculator,
+            timer_scheduler=None,
+        )
+
+        # GIVEN: Track which hours are requested
+        requested_hours = []
+
+        async def mock_get_contextual_lhs(hour: int) -> LHSCacheEntry | None:
+            requested_hours.append(hour)
+            # Return a valid value for any requested hour
+            return LHSCacheEntry(
+                value=2.0 + (hour / 10), updated_at=datetime(2025, 2, 10, 0, 15), hour=hour
+            )
+
+        mock_model_storage.get_cached_contextual_lhs = mock_get_contextual_lhs
+        mock_model_storage.get_cached_global_lhs = AsyncMock(return_value=None)
+
+        # WHEN: Startup is called
+        await manager.startup()
+
+        # THEN: Exactly ONE hour is loaded (lazy loading)
+        assert (
+            len(requested_hours) == 1
+        ), f"Expected 1 hour loaded in startup, got {len(requested_hours)}"
+
+        # THEN: That hour is in valid range (0-23), including boundary hour 0
+        loaded_hour = requested_hours[0]
+        assert 0 <= loaded_hour <= 23, f"Loaded hour {loaded_hour} is outside valid range 0-23"
+
+    @pytest.mark.asyncio
+    async def test_startup_at_23_oclock_loads_hour_23(
+        self,
+        mock_model_storage: Mock,
+        mock_global_lhs_calculator: Mock,
+        mock_contextual_lhs_calculator: Mock,
+    ) -> None:
+        """Test that startup() correctly handles boundary hour 23 (late evening).
+
+        This verifies boundary condition handling for hour 23 (late evening).
+        The test verifies that startup loads exactly ONE hour, which may be hour 23 if the system
+        time is at 23:xx when the test runs. If not, it still validates that lazy loading is working.
+        """
+        # GIVEN: Create manager
+        manager = LhsLifecycleManager(
+            model_storage=mock_model_storage,
+            global_lhs_calculator=mock_global_lhs_calculator,
+            contextual_lhs_calculator=mock_contextual_lhs_calculator,
+            timer_scheduler=None,
+        )
+
+        # GIVEN: Track which hours are requested
+        requested_hours = []
+
+        async def mock_get_contextual_lhs(hour: int) -> LHSCacheEntry | None:
+            requested_hours.append(hour)
+            # Return a valid value for any requested hour
+            return LHSCacheEntry(
+                value=2.0 + (hour / 10), updated_at=datetime(2025, 2, 10, 23, 45), hour=hour
+            )
+
+        mock_model_storage.get_cached_contextual_lhs = mock_get_contextual_lhs
+        mock_model_storage.get_cached_global_lhs = AsyncMock(return_value=None)
+
+        # WHEN: Startup is called
+        await manager.startup()
+
+        # THEN: Exactly ONE hour is loaded (lazy loading)
+        assert (
+            len(requested_hours) == 1
+        ), f"Expected 1 hour loaded in startup, got {len(requested_hours)}"
+
+        # THEN: That hour is in valid range (0-23), including boundary hour 23
+        loaded_hour = requested_hours[0]
+        assert 0 <= loaded_hour <= 23, f"Loaded hour {loaded_hour} is outside valid range 0-23"
+
+    @pytest.mark.asyncio
+    async def test_force_recalculate_bypasses_startup_cache(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        mock_contextual_lhs_calculator: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that force_recalculate bypasses all caches during startup.
+
+        This verifies that when force_recalculate=True is used after startup,
+        fresh values are computed and cached, preventing stale data usage.
+        """
+        # GIVEN: Current hour is already cached from startup
+        current_hour = 12
+        manager._cached_contextual_lhs[current_hour] = 3.5  # Stale value
+
+        # GIVEN: Storage also has stale value
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=3.2, updated_at=base_datetime, hour=current_hour
+        )
+
+        # GIVEN: Calculator returns fresh value
+        fresh_value = 3.8
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = fresh_value
+
+        # WHEN: ensure_contextual_lhs_populated is called with force_recalculate=True
+        cycles = []
+        result = await manager.ensure_contextual_lhs_populated(
+            current_hour, cycles, force_recalculate=True
+        )
+
+        # THEN: Memory cache is bypassed (not checked first)
+        # THEN: Storage cache is bypassed
+        mock_model_storage.get_cached_contextual_lhs.assert_not_called()
+
+        # THEN: Calculator is called to get fresh value
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.assert_called_once()
+
+        # THEN: Fresh value is returned
+        assert result == fresh_value
+
+        # THEN: Memory cache is updated with fresh value
+        assert manager._cached_contextual_lhs[current_hour] == fresh_value

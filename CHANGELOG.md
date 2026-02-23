@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 >>>>>>> integration
 
 ### Changed
+- **Contextual LHS Lazy Loading at Startup** ([#103](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/103)) – Refactored `LhsLifecycleManager` to use lazy loading for contextual LHS, reducing startup I/O and memory overhead
+  - At startup, only the current hour's contextual LHS is loaded (instead of all 24 hours)
+  - Other hours are loaded on-demand via `get_contextual_lhs()` or `ensure_contextual_lhs_populated()` when first requested
+  - Replaced `calculate_all_contextual_lhs()` with `calculate_contextual_lhs_for_hour()` for per-hour on-demand computation
+  - Bulk updates (`on_retention_change()`, `on_24h_timer()`) still recalculate and cache all 24 hours as before
 - **Coordinator Architecture Refactoring** – Improved code organization and DDD compliance
   - Extracted `IntelligentHeatingPilotCoordinator` from `__init__.py` into dedicated `coordinator.py` module for better maintainability
   - Consolidated `_as_bool()` utility function into `utils/config_helpers.py` to eliminate code duplication
