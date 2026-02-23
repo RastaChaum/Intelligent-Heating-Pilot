@@ -11,20 +11,24 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from collections.abc import Awaitable, Callable
+from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
 
+from ...domain.value_objects.historical_data import HistoricalDataKey, HistoricalDataSet
 from ...domain.value_objects.recording_extraction_task import (
     ExtractionTaskState,
     RecordingExtractionTask,
 )
 
 if TYPE_CHECKING:
+    from ...domain.interfaces.heating_cycle_service_interface import IHeatingCycleService
     from ...domain.interfaces.historical_data_adapter_interface import IHistoricalDataAdapter
     from ...domain.value_objects.heating import HeatingCycle
 
 _LOGGER = logging.getLogger(__name__)
+
+QUEUE_YIELD_SECONDS = 0.005
 
 
 class RecordingExtractionQueue:
@@ -52,7 +56,8 @@ class RecordingExtractionQueue:
         device_id: str,
         climate_entity_id: str,
         historical_adapters: list[IHistoricalDataAdapter],
-        on_cycles_extracted: Callable[[list[HeatingCycle]], None] | None = None,
+        heating_cycle_service: IHeatingCycleService | None = None,
+        on_cycles_extracted: Callable[[list[HeatingCycle]], Awaitable[None] | None] | None = None,
     ) -> None:
         """Initialize the extraction queue.
 
@@ -66,6 +71,7 @@ class RecordingExtractionQueue:
         self._device_id = device_id
         self._climate_entity_id = climate_entity_id
         self._historical_adapters = historical_adapters
+        self._heating_cycle_service = heating_cycle_service
         self._on_cycles_extracted = on_cycles_extracted
 
         self._queue: deque[RecordingExtractionTask] = deque()
@@ -160,6 +166,9 @@ class RecordingExtractionQueue:
             self._extraction_end_date,
         )
 
+        # Yield once to ensure the task is visible as running before processing.
+        await asyncio.sleep(0)
+
         try:
             while self._queue and not self._cancel_requested:
                 # Get next task
@@ -185,7 +194,11 @@ class RecordingExtractionQueue:
 
                     # Callback to progressively feed cache
                     if self._on_cycles_extracted and cycles:
-                        self._on_cycles_extracted(cycles)
+                        # Support both sync and async callbacks
+                        if asyncio.iscoroutinefunction(self._on_cycles_extracted):
+                            await self._on_cycles_extracted(cycles)
+                        else:
+                            self._on_cycles_extracted(cycles)
 
                 except Exception as exc:
                     self._failed_count += 1
@@ -199,7 +212,7 @@ class RecordingExtractionQueue:
                     continue
 
                 # Small async checkpoint to let HA process other tasks
-                await asyncio.sleep(0)
+                await asyncio.sleep(QUEUE_YIELD_SECONDS)
 
             if self._cancel_requested:
                 _LOGGER.info("Extraction queue cancelled by user")
@@ -235,33 +248,80 @@ class RecordingExtractionQueue:
         return self._extracted_count, total_count, self._is_running
 
     async def _extract_day(self, extraction_date: date) -> list[HeatingCycle]:
-        """Extract climate and environment data for a single day.
-
-        This is a private method that performs the actual data extraction
-        from Home Assistant adapters for one specific date.
+        """Extract climate and environment data for a single day from Recorder.
 
         Args:
-            extraction_date: Date to extract
+            extraction_date: Date to extract (YYYY-MM-DD)
 
         Returns:
-            List of extracted heating cycles for the day
+            List of extracted HeatingCycle objects for the day
 
         Raises:
-            ValueError: If extraction fails
+            Exception: If extraction fails (will be caught by run_queue())
         """
-        _LOGGER.debug("Extracting data for date=%s", extraction_date)
-
-        # Define extraction window: start of day to end of day
-        start_time = datetime.combine(extraction_date, datetime.min.time())
-        end_time = datetime.combine(
-            extraction_date, datetime.max.time()
-        )  # Note: This is placeholder - actual implementation will use adapters
-
-        # Placeholder: actual extraction would call heating_cycle_service
-        # after fetching historical data from adapters
         _LOGGER.debug(
-            "Extracted data window: %s to %s", start_time.isoformat(), end_time.isoformat()
+            "Extracting data from Recorder for date=%s, device=%s, climate=%s",
+            extraction_date,
+            self._device_id,
+            self._climate_entity_id,
         )
 
-        # Return empty list for now - actual cycles come from extract loop
-        return []
+        if self._heating_cycle_service is None:
+            raise RuntimeError("HeatingCycleService is required for extraction")
+
+        try:
+            # Create time window for this day with UTC timezone
+            start_time = datetime.combine(extraction_date, time.min).replace(tzinfo=timezone.utc)
+            end_time = datetime.combine(extraction_date, time.max).replace(tzinfo=timezone.utc)
+
+            combined_data: HistoricalDataSet = HistoricalDataSet(data={})
+
+            for adapter in self._historical_adapters:
+                try:
+                    for data_key in HistoricalDataKey:
+                        adapter_data = await adapter.fetch_historical_data(
+                            entity_id=self._climate_entity_id,
+                            data_key=data_key,
+                            start_time=start_time,
+                            end_time=end_time,
+                        )
+                        if (
+                            adapter_data is not None
+                            and adapter_data.data
+                            and data_key in adapter_data.data
+                        ):
+                            if data_key not in combined_data.data:
+                                combined_data.data[data_key] = []
+                            combined_data.data[data_key].extend(adapter_data.data[data_key])
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "Failed to fetch historical data from adapter for %s: %s",
+                        extraction_date,
+                        exc,
+                    )
+                    continue
+
+            historical_data_set = HistoricalDataSet(data=combined_data.data)
+
+            cycles = await self._heating_cycle_service.extract_heating_cycles(
+                device_id=self._device_id,
+                history_data_set=historical_data_set,
+                start_time=start_time,
+                end_time=end_time,
+            )
+
+            _LOGGER.debug(
+                "Extracted %d cycles from Recorder for %s",
+                len(cycles),
+                extraction_date,
+            )
+
+            return cycles
+
+        except Exception as exc:
+            _LOGGER.warning(
+                "Failed to extract cycles for date %s: %s",
+                extraction_date,
+                exc,
+            )
+            raise

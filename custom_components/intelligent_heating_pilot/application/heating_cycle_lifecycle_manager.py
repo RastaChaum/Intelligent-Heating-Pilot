@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from ..domain.interfaces.device_config_reader_interface import DeviceConfig
 from ..domain.interfaces.heating_cycle_service_interface import IHeatingCycleService
+from ..domain.services.extraction_date_range_calculator import ExtractionDateRangeCalculator
 from ..domain.value_objects.heating import HeatingCycle
 from ..domain.value_objects.historical_data import HistoricalDataKey, HistoricalDataSet
+from ..infrastructure.adapters.recording_extraction_queue import RecordingExtractionQueue
 
 if TYPE_CHECKING:
     from ..domain.interfaces import (
@@ -95,6 +99,10 @@ class HeatingCycleLifecycleManager:
         self._cached_cycles_for_target_time: dict[tuple[str, date], list[HeatingCycle]] = {}
         self._timer_cancel_func: Callable[[], None] | None = None
 
+        # Extraction queue for asynchronous incremental Recorder loading
+        self._extraction_queue: RecordingExtractionQueue | None = None
+        self._extraction_task: asyncio.Task | None = None
+
     async def startup(
         self,
         device_id: str,
@@ -142,15 +150,15 @@ class HeatingCycleLifecycleManager:
 
             # Step 3: Schedule 24h timer if scheduler provided
             if self._timer_scheduler is not None:
-                if dt_util is not None:
-                    next_refresh = dt_util.now() + timedelta(hours=24)
-                else:
-                    next_refresh = datetime.now() + timedelta(hours=24)
+                next_refresh = self._get_now_for_scheduling(end_time) + timedelta(hours=24)
 
                 self._timer_cancel_func = self._timer_scheduler.schedule_timer(
                     next_refresh, self.on_24h_timer
                 )
                 _LOGGER.debug("Scheduled 24h cycle refresh timer for %s", next_refresh.isoformat())
+
+            # Step 4: Launch asynchronous incremental recording extraction
+            await self._launch_extraction_queue()
 
             _LOGGER.info("Startup complete: extracted %d cycles and updated LHS", len(cycles))
             _LOGGER.debug("Exiting HeatingCycleLifecycleManager.startup")
@@ -273,10 +281,7 @@ class HeatingCycleLifecycleManager:
 
             # Step 5: Reschedule timer for next 24h refresh
             if self._timer_scheduler is not None:
-                if dt_util is not None:
-                    next_refresh = dt_util.now() + timedelta(hours=24)
-                else:
-                    next_refresh = datetime.now() + timedelta(hours=24)
+                next_refresh = self._get_now_for_scheduling(end_time) + timedelta(hours=24)
 
                 self._timer_cancel_func = self._timer_scheduler.schedule_timer(
                     next_refresh, self.on_24h_timer
@@ -521,6 +526,25 @@ class HeatingCycleLifecycleManager:
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager.cancel")
 
+        # Cancel extraction queue if running
+        if self._extraction_queue is not None:
+            _LOGGER.info("Cancelling extraction queue during shutdown")
+            try:
+                await self._extraction_queue.cancel_queue()
+            except Exception as exc:
+                _LOGGER.warning("Error cancelling extraction queue: %s", exc)
+
+        # Cancel extraction task
+        if self._extraction_task is not None:
+            _LOGGER.info("Cancelling extraction task")
+            self._extraction_task.cancel()
+            try:
+                await self._extraction_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                _LOGGER.warning("Error awaiting cancelled task: %s", exc)
+
         # Cancel timer if scheduled
         if self._timer_cancel_func is not None:
             try:
@@ -532,6 +556,165 @@ class HeatingCycleLifecycleManager:
                 self._timer_cancel_func = None
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.cancel")
+
+    async def _launch_extraction_queue(self) -> None:
+        """Launch the asynchronous recording extraction queue.
+
+        This creates a RecordingExtractionQueue and starts it running in the background
+        to extract data incrementally (one day at a time) from the Home Assistant Recorder.
+
+        Called during startup to populate cache with historical data without blocking.
+        """
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager._launch_extraction_queue")
+
+        try:
+            # Step 1: Create calculator to determine extraction range
+            calculator = ExtractionDateRangeCalculator()
+
+            # Get oldest cycle currently in cache
+            oldest_cycle = None
+            if self._lhs_storage is not None:
+                get_oldest_cycle = getattr(self._lhs_storage, "get_oldest_cycle", None)
+                if callable(get_oldest_cycle):
+                    oldest_cycle = await get_oldest_cycle()
+
+            # Calculate extraction range (respects retention window)
+            current_time = self._get_current_time_for_extraction(oldest_cycle)
+            start_date, end_date = calculator.calculate_extraction_range(
+                retention_days=self._device_config.lhs_retention_days,
+                oldest_cycle_in_cache=oldest_cycle,
+                current_time=current_time,
+            )
+
+            _LOGGER.info(
+                "Starting incremental recording extraction from %s to %s for device=%s",
+                start_date,
+                end_date,
+                self._device_config.device_id,
+            )
+
+            # Step 2: Create extraction queue instance
+            self._extraction_queue = RecordingExtractionQueue(
+                device_id=self._device_config.device_id,
+                climate_entity_id=self._device_config.vtherm_entity_id,
+                historical_adapters=self._historical_adapters,
+                heating_cycle_service=self._heating_cycle_service,
+                on_cycles_extracted=self._on_cycles_extracted,
+            )
+
+            # Step 3: Populate queue with daily tasks
+            task_count = await self._extraction_queue.populate_queue(start_date, end_date)
+            _LOGGER.info(
+                "Extraction queue populated with %d daily tasks (%d days)",
+                task_count,
+                (end_date - start_date).days + 1,
+            )
+
+            # Step 4: Launch queue execution asynchronously (don't await here!)
+            # This creates a background task that runs without blocking startup
+            self._extraction_task = asyncio.create_task(self._extraction_queue.run_queue())
+
+            _LOGGER.info("Extraction queue launched asynchronously (task will run in background)")
+
+            # Yield control to event loop to allow queue to start processing
+            await asyncio.sleep(0)
+
+        except Exception as exc:
+            _LOGGER.error("Failed to launch extraction queue: %s", exc)
+            # Don't fail startup - just warn and continue
+            # Cache will be incomplete but system still functional
+
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager._launch_extraction_queue")
+
+    async def _on_cycles_extracted(self, cycles: list[HeatingCycle]) -> None:
+        """Callback invoked by extraction queue after each day's extraction completes.
+
+        This method receives the extracted cycles and progressively feeds them into
+        the model storage cache, allowing ML models to start training earlier.
+
+        Args:
+            cycles: List of HeatingCycle objects extracted for one day
+        """
+        _LOGGER.debug(
+            "Entering HeatingCycleLifecycleManager._on_cycles_extracted (cycles=%d)",
+            len(cycles),
+        )
+
+        if not cycles:
+            _LOGGER.debug("No cycles extracted for this day, skipping cache update")
+            return
+
+        try:
+            # Feed cycles into cache storage
+            if self._lhs_storage is not None:
+                cache_heating_cycle = getattr(self._lhs_storage, "cache_heating_cycle", None)
+                if callable(cache_heating_cycle):
+                    for cycle in cycles:
+                        await cache_heating_cycle(cycle)
+
+                    _LOGGER.info(
+                        "Cached %d heating cycles from extraction queue",
+                        len(cycles),
+                    )
+
+        except Exception as exc:
+            _LOGGER.error("Failed to cache extracted cycles: %s", exc)
+            # Don't fail - just log and continue
+
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager._on_cycles_extracted")
+
+    async def trigger_24h_refresh(self) -> None:
+        """Trigger a 24-hour data refresh by launching a new extraction queue.
+
+        This is called periodically (or on-demand) to refresh the most recent
+        couple days of data without re-extracting all historical data.
+        """
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager.trigger_24h_refresh")
+
+        try:
+            # Step 1: Cancel existing queue if running
+            if self._extraction_queue is not None:
+                _LOGGER.info("Cancelling previous extraction queue for 24h refresh")
+                await self._extraction_queue.cancel_queue()
+
+            # Step 2: Calculate 24h range (yesterday + today only)
+            calculator = ExtractionDateRangeCalculator()
+            start_date, end_date = calculator.calculate_refresh_range(
+                current_time=self._get_current_time_for_extraction(None)
+            )
+
+            _LOGGER.info(
+                "Starting 24h refresh extraction from %s to %s",
+                start_date,
+                end_date,
+            )
+
+            # Step 3: Create NEW queue instance for refresh
+            self._extraction_queue = RecordingExtractionQueue(
+                device_id=self._device_config.device_id,
+                climate_entity_id=self._device_config.vtherm_entity_id,
+                historical_adapters=self._historical_adapters,
+                heating_cycle_service=self._heating_cycle_service,
+                on_cycles_extracted=self._on_cycles_extracted,
+            )
+
+            # Step 4: Populate with 2 days only
+            await self._extraction_queue.populate_queue(start_date, end_date)
+
+            # Step 5: Launch new task
+            if self._extraction_task is not None:
+                self._extraction_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._extraction_task
+
+            self._extraction_task = asyncio.create_task(self._extraction_queue.run_queue())
+
+            _LOGGER.info("24h refresh extraction queue launched")
+
+        except Exception as exc:
+            _LOGGER.error("Failed to trigger 24h refresh: %s", exc)
+
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.trigger_24h_refresh")
 
     async def _trigger_lhs_cascade(self, cycles: list[HeatingCycle]) -> None:
         """Trigger cascade update to LHS lifecycle manager with error isolation.
@@ -581,6 +764,26 @@ class HeatingCycleLifecycleManager:
             )
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager._trigger_lhs_cascade")
+
+    def _get_now_for_scheduling(self, reference_time: datetime) -> datetime:
+        """Return a now() timestamp aligned to the reference time's tz awareness."""
+        if reference_time.tzinfo is not None and reference_time.tzinfo.utcoffset(reference_time):
+            if dt_util is not None:
+                return cast(datetime, dt_util.now())
+            return datetime.now(tz=reference_time.tzinfo)
+        return datetime.now()
+
+    def _get_current_time_for_extraction(self, reference_time: datetime | None) -> datetime:
+        """Return a now() timestamp aligned for extraction range calculations."""
+        if (
+            reference_time is not None
+            and reference_time.tzinfo is not None
+            and reference_time.tzinfo.utcoffset(reference_time)
+        ):
+            if dt_util is not None:
+                return cast(datetime, dt_util.now())
+            return datetime.now(tz=reference_time.tzinfo)
+        return cast(datetime, dt_util.now()) if dt_util is not None else datetime.now()
 
     async def _evict_old_memory_cache_entries(self) -> None:
         """Evict oldest entries from memory cache if limit exceeded.
