@@ -60,7 +60,37 @@ class LhsLifecycleManager:
     2. Storage cache (ILhsStorage.get_cached_contextual_lhs): Single disk read
     3. Computation cache (calculate_contextual_lhs_for_hour): On-demand calculation
 
+    Lazy Loading Strategy:
+    ========================
+    This class implements LAZY LOADING for contextual LHS to optimize startup performance:
+
+    **Startup Phase:**
+    - Global LHS: Loaded eagerly (single read from storage)
+    - Contextual LHS: Loaded ONLY for current hour (datetime.now().hour)
+    - Other 23 hours: NOT loaded at startup (deferred to on-demand)
+
+    **On-Demand Loading:**
+    - get_contextual_lhs(): Loads requested hour from storage (if not in memory)
+    - ensure_contextual_lhs_populated(): Same lazy-load behavior with optional force_recalculate
+    - Per-hour memory caching: Each hour cached independently after first load
+
+    **Bulk Update Methods (intentionally load all 24 hours):**
+    - on_retention_change(): Recalculates and caches all 24 hours when retention changes
+    - on_24h_timer(): Recalculates and caches all 24 hours on periodic refresh
+    - update_contextual_lhs_from_cycles(): Persists all 24 hours when called
+
+    Cache Hierarchy (fastest to slowest):
+    1. Memory cache (_cached_contextual_lhs[hour]): O(1) lookup
+    2. Storage cache (ILhsStorage.get_cached_contextual_lhs): Single disk read
+    3. Computation cache (calculate_contextual_lhs_for_hour): On-demand calculation
+
     Lifecycle Events:
+    - startup(): Load global LHS + current hour contextual (lazy loading)
+    - on_retention_change(cycles): Recalculate ALL 24 hours with new retention window
+    - on_24h_timer(cycles): Recalculate ALL 24 hours on timer event
+    - update_global_lhs_from_cycles(cycles): Persist global LHS from cycles
+    - update_contextual_lhs_from_cycles(cycles): Persist ALL 24 contextual hours from cycles
+    - cancel(): Cleanup timers and release resources (keep cached data)
     - startup(): Load global LHS + current hour contextual (lazy loading)
     - on_retention_change(cycles): Recalculate ALL 24 hours with new retention window
     - on_24h_timer(cycles): Recalculate ALL 24 hours on timer event
