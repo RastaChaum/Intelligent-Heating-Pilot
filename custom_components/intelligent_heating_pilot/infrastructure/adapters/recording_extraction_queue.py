@@ -9,11 +9,17 @@ the initial cache population.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from collections import deque
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
+
+try:
+    from homeassistant.util import dt as dt_util
+except ImportError:
+    dt_util = None  # type: ignore[assignment]  # For testing without HA
 
 from ...domain.value_objects.historical_data import HistoricalDataKey, HistoricalDataSet
 from ...domain.value_objects.recording_extraction_task import (
@@ -200,13 +206,11 @@ class RecordingExtractionQueue:
                         len(cycles),
                     )
 
-                    # Callback to progressively feed cache
+                    # Callback to progressively feed cache (sync or async)
                     if self._on_cycles_extracted and cycles:
-                        # Support both sync and async callbacks
-                        if asyncio.iscoroutinefunction(self._on_cycles_extracted):
-                            await self._on_cycles_extracted(cycles)
-                        else:
-                            self._on_cycles_extracted(cycles)
+                        result = self._on_cycles_extracted(cycles)
+                        if inspect.isawaitable(result):
+                            await result
 
                 except Exception as exc:
                     self._failed_count += 1
@@ -278,9 +282,11 @@ class RecordingExtractionQueue:
             raise RuntimeError("HeatingCycleService is required for extraction")
 
         try:
-            # Create time window for this day with UTC timezone
-            start_time = datetime.combine(extraction_date, time.min).replace(tzinfo=timezone.utc)
-            end_time = datetime.combine(extraction_date, time.max).replace(tzinfo=timezone.utc)
+            # Create time window for this day using HA local timezone to avoid
+            # midnight boundary shifts on non-UTC installations.
+            local_tz = dt_util.get_default_time_zone() if dt_util is not None else timezone.utc
+            start_time = datetime.combine(extraction_date, time.min).replace(tzinfo=local_tz)
+            end_time = datetime.combine(extraction_date, time.max).replace(tzinfo=local_tz)
 
             combined_data: HistoricalDataSet = HistoricalDataSet(data={})
 
