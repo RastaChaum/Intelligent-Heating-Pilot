@@ -7,6 +7,7 @@ and HAClimateDataReader (real-time) into a single cohesive adapter.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -209,6 +210,14 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
                 start_time,
                 end_time,
             )
+        except asyncio.CancelledError:
+            # Shutdown in progress - abort gracefully
+            _LOGGER.debug("History fetch cancelled (shutdown in progress) for %s", entity_id)
+            raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
+        except asyncio.TimeoutError:
+            # Timeout waiting for database - likely DB is shutdown
+            _LOGGER.error("Timeout fetching history for %s (DB may be shutdown)", entity_id)
+            raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
         except Exception as exc:
             _LOGGER.error("Failed to fetch history for %s: %s", entity_id, exc)
             raise ValueError(f"Cannot fetch history for entity {entity_id}") from exc

@@ -87,6 +87,10 @@ class HAEventBridge:
         # can skip firing when nothing meaningful has changed.
         self._last_published_data: dict | None = None
 
+        # Track active tasks for proper shutdown
+        self._active_tasks: set = set()
+        self._is_shutting_down = False
+
     def setup_listeners(self) -> None:
         """Setup all event listeners."""
 
@@ -133,10 +137,12 @@ class HAEventBridge:
 
         Logs the outcome at DEBUG level to aid diagnostics without noise.
         """
-        if meaningful:
+        if meaningful and not self._is_shutting_down:
             _LOGGER.debug("Entity %s changed meaningfully, triggering update", entity_id)
-            self._hass.async_create_task(self._recalculate_and_publish())
-        else:
+            task = self._hass.async_create_task(self._recalculate_and_publish())
+            self._active_tasks.add(task)
+            task.add_done_callback(self._active_tasks.discard)
+        elif not meaningful:
             _LOGGER.debug("Entity %s change not actionable, skipping recalculation", entity_id)
 
     def _has_meaningful_scheduler_change(self, event: Event[EventStateChangedData]) -> bool:
@@ -266,6 +272,9 @@ class HAEventBridge:
         Args:
             event: State change event
         """
+        if self._is_shutting_down:
+            return
+
         old_state = event.data.get("old_state")
         new_state = event.data.get("new_state")
 
@@ -286,7 +295,9 @@ class HAEventBridge:
             return
 
         _LOGGER.debug("VTherm temperature changed: %s -> %s", old_temp, new_temp)
-        self._hass.async_create_task(self._recalculate_and_publish())
+        task = self._hass.async_create_task(self._recalculate_and_publish())
+        self._active_tasks.add(task)
+        task.add_done_callback(self._active_tasks.discard)
 
     async def _recalculate_and_publish(self) -> None:
         """Recalculate anticipation and publish event for sensors if data changed.
@@ -355,9 +366,56 @@ class HAEventBridge:
 
         self._ignore_vtherm_until = dt_util.now() + timedelta(seconds=seconds)
 
-    def cleanup(self) -> None:
-        """Cleanup all event listeners."""
+    async def async_cleanup(self) -> None:
+        """Cleanup all event listeners and cancel pending tasks.
+
+        This is called during integration unload to ensure:
+        1. No more events trigger new calculations
+        2. All pending tasks are cancelled with timeout
+        """
+        _LOGGER.debug("Starting event bridge cleanup with %d active tasks", len(self._active_tasks))
+        self._is_shutting_down = True
+
+        # Unsubscribe from all listeners to prevent new tasks
         for unsub in self._listeners:
             unsub()
         self._listeners.clear()
-        _LOGGER.debug("Event bridge cleaned up")
+
+        # Cancel all active tasks with timeout
+        if self._active_tasks:
+            import asyncio
+
+            _LOGGER.debug("Cancelling %d active recalculation tasks", len(self._active_tasks))
+            for task in self._active_tasks:
+                if not task.done():
+                    task.cancel()
+
+            # Wait for tasks to complete (with timeout to prevent hangs)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._active_tasks, return_exceptions=True),
+                    timeout=5.0,  # 5-second timeout for all tasks
+                )
+            except asyncio.TimeoutError:
+                _LOGGER.warning(
+                    "Timeout waiting for %d tasks to shutdown; forcing cleanup",
+                    len(self._active_tasks),
+                )
+            finally:
+                self._active_tasks.clear()
+
+        _LOGGER.debug("Event bridge cleanup completed")
+
+    def cleanup(self) -> None:
+        """Synchronous cleanup for backwards compatibility.
+
+        Note: This is called by code that doesn't support async, but doesn't
+        cancel pending tasks. Use async_cleanup() during normal unload.
+        """
+        if self._is_shutting_down:
+            return
+        self._is_shutting_down = True
+        for unsub in self._listeners:
+            unsub()
+        self._listeners.clear()
+        _LOGGER.debug("Event bridge cleaned up (sync mode)")

@@ -710,12 +710,17 @@ class HeatingApplication:
     async def async_cleanup(self) -> None:
         """Cleanup coordinator resources.
 
-        Cancels timers and stops cycle extraction.
+        Cancels timers, stops cycle extraction, and cleanup event bridge.
         Called when coordinator is being unloaded.
         """
         _LOGGER.debug("Cleaning up coordinator: device_id=%s", self._device_config.device_id)
 
         try:
+            # Clean up event bridge first (cancels pending tasks)
+            if self._event_bridge:
+                await self._event_bridge.async_cleanup()
+                _LOGGER.debug("Event bridge cleanup completed")
+
             # Stop cycle extraction and cancel timer
             if self._heating_cycle_manager:
                 await self._heating_cycle_manager.cancel()
