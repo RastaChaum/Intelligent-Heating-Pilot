@@ -9,6 +9,7 @@ Purpose: Comprehensive test coverage for heating cycle lifecycle management
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
 
@@ -180,9 +181,17 @@ class TestHeatingCycleLifecycleManager:
         - Aspect B: Async extraction queue is launched
         - Aspect C: Returns None (no return value)
         - Aspect D: In-memory cache dict exists (lazily populated)
+        - Aspect E: Queue has exactly as many tasks as distinct missing days
+                    (one task per day in [window_start, window_end])
         """
-        # GIVEN
-        mock_heating_cycle_service.extract_heating_cycles.return_value = []
+        # GIVEN: service returns actual HeatingCycle objects (not empty)
+        cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(days=1)),
+            self._create_heating_cycle(base_datetime - timedelta(days=2)),
+        ]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = cycles
+        # cache is empty → all window days are "missing" → queue covers full window
+        mock_heating_cycle_storage.get_cache_data.return_value = None
 
         # WHEN: refresh is called
         result = await manager.refresh_heating_cycle_cache()
@@ -198,6 +207,23 @@ class TestHeatingCycleLifecycleManager:
 
         # THEN Aspect D: In-memory cache dict exists (lazily populated)
         assert isinstance(manager._cached_cycles_for_target_time, dict)
+
+        # THEN Aspect E: queue task count == number of days in the extraction window
+        # window = [today - retention_days, yesterday] = lhs_retention_days days
+        expected_days = manager._device_config.lhs_retention_days  # 30 days
+        # Wait for the background extraction task to complete
+        assert manager._extraction_task is not None
+        try:
+            await asyncio.wait_for(manager._extraction_task, timeout=10.0)
+        except asyncio.TimeoutError:
+            manager._extraction_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await manager._extraction_task
+            pytest.fail("Background extraction task timed out")
+        # Verify the task completed without exception
+        assert not manager._extraction_task.cancelled()
+        # extract_heating_cycles is called once per day in the queue
+        assert mock_heating_cycle_service.extract_heating_cycles.call_count == expected_days
 
     # ===== Test: on_retention_change() - ONE test for ALL scenarios =====
 
@@ -268,6 +294,12 @@ class TestHeatingCycleLifecycleManager:
         # THEN: Async extraction queue is launched for missing ranges
         assert manager._extraction_queue is not None
 
+        # Cleanup: cancel background task to prevent lingering-task warnings
+        if manager._extraction_task is not None:
+            manager._extraction_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await manager._extraction_task
+
     # ===== Test: refresh_heating_cycle_cache() periodic =====
 
     @pytest.mark.asyncio
@@ -307,6 +339,12 @@ class TestHeatingCycleLifecycleManager:
 
         # THEN: Queue still created (no exception) – Aspect C
         assert manager._extraction_queue is not None
+
+        # Cleanup: cancel background task to prevent lingering-task warnings
+        if manager._extraction_task is not None:
+            manager._extraction_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await manager._extraction_task
 
     # ===== Test: get_cycles_for_window() - ONE test for ALL scenarios =====
 
