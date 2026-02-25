@@ -214,15 +214,10 @@ class TestLifecycleCascadeFlow:
         # WHEN: Retention change
         await manager.on_retention_change(14)
 
-        # THEN: Extraction queue created (async extraction launched)
+        # THEN: Extraction queue created (async extraction launched for missing ranges)
         assert manager._extraction_queue is not None
 
-        # THEN: LHS was triggered immediately with remaining cached cycles (may be empty)
-        assert mock_lhs_manager.update_global_lhs_from_cycles.called
-
-        # AND: Calling _on_cycles_extracted with newly extracted cycles triggers LHS again
-        mock_lhs_manager.update_global_lhs_from_cycles.reset_mock()
-        mock_lhs_manager.update_contextual_lhs_from_cycles.reset_mock()
+        # AND: Calling _on_cycles_extracted with newly extracted cycles triggers LHS
         await manager._on_cycles_extracted(new_cycles)
         mock_lhs_manager.update_global_lhs_from_cycles.assert_called_once_with(new_cycles)
         mock_lhs_manager.update_contextual_lhs_from_cycles.assert_called_once_with(new_cycles)

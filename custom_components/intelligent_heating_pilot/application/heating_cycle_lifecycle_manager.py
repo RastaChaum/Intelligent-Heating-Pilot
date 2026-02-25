@@ -152,12 +152,34 @@ class HeatingCycleLifecycleManager:
                 _LOGGER.info("Cache refresh: cache is up to date, no extraction needed")
 
             # Step 5: Prune cycles outside the retention window from persistent storage
+            # and recalculate LHS from the remaining cycles
             if self._heating_cycle_storage is not None:
                 now = dt_util.now() if dt_util is not None else datetime.now()
                 await self._heating_cycle_storage.prune_old_cycles(
                     self._device_config.device_id, now
                 )
                 _LOGGER.debug("Pruned old cycles from storage cache")
+
+                # Recalculate LHS from the cycles that remain after pruning
+                try:
+                    cache_data = await self._heating_cycle_storage.get_cache_data(
+                        self._device_config.device_id
+                    )
+                    remaining_cycles: list[HeatingCycle] = (
+                        list(cache_data.cycles) if cache_data is not None else []
+                    )
+                except Exception as exc:
+                    _LOGGER.warning("Error loading remaining cycles for LHS recalculation: %s", exc)
+                    remaining_cycles = []
+
+                if remaining_cycles:
+                    await self._trigger_lhs_cascade(remaining_cycles)
+                    _LOGGER.debug(
+                        "Recalculated LHS from %d remaining cycles after pruning",
+                        len(remaining_cycles),
+                    )
+                else:
+                    _LOGGER.debug("No remaining cycles after pruning — skipping LHS recalculation")
 
         except Exception as exc:
             _LOGGER.error("Error during heating cycle cache refresh: %s", exc)
@@ -167,15 +189,9 @@ class HeatingCycleLifecycleManager:
     async def on_retention_change(self, new_retention_days: int) -> None:
         """Handle retention configuration changes.
 
-        Lifecycle Event Flow:
-        1. Update device_config with new retention period
-        2. Clear in-memory cache (invalidated by retention change)
-        3. Prune cycles outside the new retention window from persistent storage
-           (only removes stale cycles; does NOT wipe the entire cache)
-        4. Recalculate LHS from the remaining cached cycles
-        5. Find missing date ranges for the new window and launch async extraction
-
-        Cycles are delivered asynchronously via the _on_cycles_extracted() callback.
+        Updates the device config with the new retention period, invalidates the
+        in-memory cache, then delegates all further processing (pruning, LHS
+        recalculation, missing-range extraction) to refresh_heating_cycle_cache().
 
         Args:
             new_retention_days: Updated retention window in days.
@@ -198,42 +214,9 @@ class HeatingCycleLifecycleManager:
         self._cached_cycles_for_target_time = {}
         _LOGGER.debug("Invalidated cycles in-memory cache due to retention change")
 
-        # Step 3: Prune cycles outside the new retention window (NOT a full wipe)
-        if self._heating_cycle_storage is not None:
-            now = dt_util.now() if dt_util is not None else datetime.now()
-            try:
-                await self._heating_cycle_storage.prune_old_cycles(
-                    self._device_config.device_id, now
-                )
-                _LOGGER.debug("Pruned cycles outside new retention window")
-            except Exception as exc:
-                _LOGGER.warning("Error pruning cycles after retention change: %s", exc)
-
-        # Step 4: Recalculate LHS from the remaining cached cycles
-        remaining_cycles: list[HeatingCycle] = []
-        if self._heating_cycle_storage is not None:
-            try:
-                cache_data = await self._heating_cycle_storage.get_cache_data(
-                    self._device_config.device_id
-                )
-                if cache_data is not None:
-                    remaining_cycles = list(cache_data.cycles)
-                    _LOGGER.debug(
-                        "Loaded %d remaining cycles for LHS recalculation", len(remaining_cycles)
-                    )
-            except Exception as exc:
-                _LOGGER.warning("Error loading remaining cycles for LHS: %s", exc)
-
-        await self._trigger_lhs_cascade(remaining_cycles)
-
-        # Step 5: Find missing date ranges for the new window and launch async extraction
-        start_date, end_date = self._calculate_extraction_window()
-        missing_ranges = await self._find_missing_date_ranges(start_date, end_date)
-        await self._launch_extraction_for_ranges(missing_ranges)
-        _LOGGER.info(
-            "Retention change: launched async extraction for %d missing range(s)",
-            len(missing_ranges),
-        )
+        # Step 3: Delegate to refresh — it handles pruning, LHS recalculation and
+        # async extraction of missing date ranges for the new retention window.
+        await self.refresh_heating_cycle_cache()
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.on_retention_change")
 
@@ -646,16 +629,18 @@ class HeatingCycleLifecycleManager:
     ) -> list[tuple[date, date]]:
         """Find date ranges within the window not yet covered by the cache.
 
-        Compares the desired window against cycles already stored in cache and
-        returns only the sub-ranges that need extraction.
+        Walks every day in [window_start, window_end] and checks whether at
+        least one cached cycle has its start_time or end_time on that day.
+        Consecutive uncovered days are merged into contiguous (start, end)
+        ranges to minimise the number of extraction tasks launched.
 
         Args:
-            window_start: Start of desired coverage window.
-            window_end: End of desired coverage window.
+            window_start: Start of desired coverage window (inclusive).
+            window_end: End of desired coverage window (inclusive).
 
         Returns:
             List of (start, end) date ranges that require extraction.
-            Empty list if cache fully covers the window.
+            Empty list if every day in the window is covered by the cache.
         """
         if self._heating_cycle_storage is None:
             return [(window_start, window_end)]
@@ -667,30 +652,52 @@ class HeatingCycleLifecycleManager:
         if cache_data is None or not cache_data.cycles:
             return [(window_start, window_end)]
 
-        # Find oldest and newest cycle dates in cache
-        oldest_date = min(cycle.start_time.date() for cycle in cache_data.cycles)
-        newest_date = max(cycle.start_time.date() for cycle in cache_data.cycles)
+        # Build a set of dates covered by at least one cached cycle.
+        # For each cycle, mark every calendar day from start_time to end_time
+        # (inclusive) so that multi-day cycles do not leave gaps.
+        covered_dates: set[date] = set()
+        one_day = timedelta(days=1)
+        for cycle in cache_data.cycles:
+            day = cycle.start_time.date()
+            end_day = cycle.end_time.date()
+            while day <= end_day:
+                covered_dates.add(day)
+                day += one_day
 
-        # Cache fully covers the window – nothing to extract
-        if oldest_date <= window_start and newest_date >= window_end:
+        # Walk day-by-day and collect contiguous gaps
+        missing_ranges: list[tuple[date, date]] = []
+        range_start: date | None = None
+        current_day = window_start
+
+        while current_day <= window_end:
+            if current_day not in covered_dates:
+                # Day is missing – start or extend a gap
+                if range_start is None:
+                    range_start = current_day
+            else:
+                # Day is covered – close any open gap
+                if range_start is not None:
+                    missing_ranges.append((range_start, current_day - one_day))
+                    range_start = None
+            current_day += one_day
+
+        # Close a gap that extends to window_end
+        if range_start is not None:
+            missing_ranges.append((range_start, window_end))
+
+        if missing_ranges:
             _LOGGER.debug(
-                "Cache fully covers window [%s, %s] (cache: [%s, %s])",
+                "Found %d missing range(s) in window [%s, %s]",
+                len(missing_ranges),
                 window_start,
                 window_end,
-                oldest_date,
-                newest_date,
             )
-            return []
-
-        missing_ranges: list[tuple[date, date]] = []
-
-        # Gap before the oldest cached cycle
-        if oldest_date > window_start:
-            missing_ranges.append((window_start, oldest_date - timedelta(days=1)))
-
-        # Gap after the newest cached cycle
-        if newest_date < window_end:
-            missing_ranges.append((newest_date + timedelta(days=1), window_end))
+        else:
+            _LOGGER.debug(
+                "Cache fully covers window [%s, %s] — no extraction needed",
+                window_start,
+                window_end,
+            )
 
         return missing_ranges
 
