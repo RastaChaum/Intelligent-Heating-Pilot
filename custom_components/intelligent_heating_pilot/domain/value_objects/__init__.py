@@ -11,6 +11,7 @@ from .heating import HeatingDecision, HeatingAction, HeatingCycle, TariffPeriodD
 from .slope_data import SlopeData
 from .historical_data import HistoricalDataKey, HistoricalDataSet, HistoricalMeasurement
 from .cycle_cache_data import CycleCacheData
+from .lhs_cache_entry import LHSCacheEntry
 
 __all__ = [
     "EnvironmentState",
@@ -25,4 +26,5 @@ __all__ = [
     "HistoricalDataSet",
     "HistoricalMeasurement",
     "CycleCacheData",
+    "LHSCacheEntry",
 ]

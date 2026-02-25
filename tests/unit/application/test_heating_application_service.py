@@ -5,7 +5,7 @@ scheduled state when conditions change (anticipated start time moves later).
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
@@ -547,3 +547,124 @@ class TestAdditionalScenarios:
 
         # Still only one trigger
         assert mock_adapters["scheduler_commander"].run_action.call_count == 1
+
+
+def _make_heating_cycle(hour: int = 7) -> HeatingCycle:
+    """Create a minimal HeatingCycle starting at the given hour (UTC)."""
+    start = datetime(2025, 1, 15, hour, 0, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=1)
+    return HeatingCycle(
+        device_id="climate.test",
+        start_time=start,
+        end_time=end,
+        start_temp=18.0,
+        end_temp=20.0,
+        target_temp=21.0,
+        tariff_details=None,
+    )
+
+
+class TestContextualLHSFallback:
+    """Tests for contextual LHS fallback to global LHS (regression fix).
+
+    Verifies that an invalid (None or <= 0) contextual LHS does not block
+    the prediction and instead falls back to the global learned LHS.
+    """
+
+    @pytest.mark.asyncio
+    async def test_contextual_lhs_none_falls_back_to_global_lhs(
+        self, app_service, mock_adapters
+    ):
+        """Case 1: contextual LHS = None -> global LHS is used.
+
+        When calculate_contextual_lhs returns None the method must call
+        get_learned_heating_slope and return that value instead.
+        """
+        target_time = make_aware(datetime(2025, 1, 15, 7, 0, 0))
+        cycles = [_make_heating_cycle(hour=6)]
+        global_lhs = 2.5
+
+        mock_adapters["environment_reader"].get_vtherm_entity_id = Mock(
+            return_value="climate.test"
+        )
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = global_lhs
+
+        with patch.object(
+            app_service,
+            "_extract_cycles_from_recorder",
+            new_callable=AsyncMock,
+            return_value=cycles,
+        ), patch.object(
+            app_service._lhs_calculation_service,
+            "calculate_contextual_lhs",
+            return_value=None,
+        ):
+            result = await app_service._get_contextual_lhs(target_time)
+
+        assert result == global_lhs
+        mock_adapters["model_storage"].get_learned_heating_slope.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_contextual_lhs_zero_falls_back_to_global_lhs(
+        self, app_service, mock_adapters
+    ):
+        """Case 2: contextual LHS = 0 -> global LHS is used.
+
+        When calculate_contextual_lhs returns 0 the method must call
+        get_learned_heating_slope and return that value instead.
+        """
+        target_time = make_aware(datetime(2025, 1, 15, 7, 0, 0))
+        cycles = [_make_heating_cycle(hour=6)]
+        global_lhs = 1.8
+
+        mock_adapters["environment_reader"].get_vtherm_entity_id = Mock(
+            return_value="climate.test"
+        )
+        mock_adapters["model_storage"].get_learned_heating_slope.return_value = global_lhs
+
+        with patch.object(
+            app_service,
+            "_extract_cycles_from_recorder",
+            new_callable=AsyncMock,
+            return_value=cycles,
+        ), patch.object(
+            app_service._lhs_calculation_service,
+            "calculate_contextual_lhs",
+            return_value=0.0,
+        ):
+            result = await app_service._get_contextual_lhs(target_time)
+
+        assert result == global_lhs
+        mock_adapters["model_storage"].get_learned_heating_slope.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_valid_contextual_lhs_is_used_directly(
+        self, app_service, mock_adapters
+    ):
+        """Case 3: contextual LHS > 0 -> contextual LHS is returned unchanged.
+
+        When calculate_contextual_lhs returns a valid positive value the
+        method must return it without falling back to the global LHS.
+        """
+        target_time = make_aware(datetime(2025, 1, 15, 7, 0, 0))
+        cycles = [_make_heating_cycle(hour=6)]
+        contextual_lhs = 3.2
+
+        mock_adapters["environment_reader"].get_vtherm_entity_id = Mock(
+            return_value="climate.test"
+        )
+
+        with patch.object(
+            app_service,
+            "_extract_cycles_from_recorder",
+            new_callable=AsyncMock,
+            return_value=cycles,
+        ), patch.object(
+            app_service._lhs_calculation_service,
+            "calculate_contextual_lhs",
+            return_value=contextual_lhs,
+        ):
+            result = await app_service._get_contextual_lhs(target_time)
+
+        assert result == contextual_lhs
+        mock_adapters["model_storage"].get_learned_heating_slope.assert_not_called()

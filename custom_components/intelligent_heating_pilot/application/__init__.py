@@ -201,18 +201,24 @@ class HeatingApplicationService:
                 heating_cycles=heating_cycles,
                 target_hour=target_hour,
             )
-            _LOGGER.info(
-                "Contextual LHS for hour %02d from %d cycles: %.2f°C/h",
+            if contextual_lhs is not None and contextual_lhs > 0:
+                _LOGGER.info(
+                    "Contextual LHS for hour %02d from %d cycles: %.2f°C/h",
+                    target_hour,
+                    len(heating_cycles),
+                    contextual_lhs,
+                )
+                return contextual_lhs
+            _LOGGER.debug(
+                "Contextual LHS for hour %02d is invalid (%.2f°C/h), falling back to global LHS",
                 target_hour,
-                len(heating_cycles),
-                contextual_lhs,
+                contextual_lhs if contextual_lhs is not None else 0.0,
             )
-            return contextual_lhs
 
-        # Fallback: if adapters unavailable or cycles empty, use global learned LHS
+        # Fallback: if adapters unavailable, cycles empty, or contextual LHS invalid
         global_lhs = await self._model_storage.get_learned_heating_slope()
         _LOGGER.warning(
-            "No HeatingCycles available, using global LHS: %.2f°C/h",
+            "Using global LHS fallback: %.2f°C/h",
             global_lhs,
         )
         return global_lhs
