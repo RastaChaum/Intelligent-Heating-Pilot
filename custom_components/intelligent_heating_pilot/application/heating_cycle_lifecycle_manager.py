@@ -545,14 +545,19 @@ class HeatingCycleLifecycleManager:
 
             # Update heating cycle storage cache (synchronous cache update)
             if self._heating_cycle_storage is not None:
-                now = self._get_current_time_for_extraction(None)  # None = use current wall-clock time
+                # Use a deterministic search_end_time tied to the extracted data
+                search_end_time = max(cycle.end_time for cycle in cycles)
                 await self._heating_cycle_storage.append_cycles(
                     self._device_config.device_id,
                     cycles,
-                    now,
+                    search_end_time,
                     self._device_config.lhs_retention_days,
                 )
-                _LOGGER.debug("Updated heating cycle storage with %d cycles", len(cycles))
+                _LOGGER.debug(
+                    "Updated heating cycle storage with %d cycles (search_end_time=%s)",
+                    len(cycles),
+                    search_end_time,
+                )
 
             # Trigger LHS recalculation (cascade update)
             await self._trigger_lhs_cascade(cycles)
