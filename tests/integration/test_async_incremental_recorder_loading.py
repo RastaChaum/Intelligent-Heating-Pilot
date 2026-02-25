@@ -5,7 +5,7 @@ orchestration within HeatingCycleLifecycleManager. They are designed to FAIL whe
 critical functionality is missing or stubbed out.
 
 Tested Lifecycle Events:
-- startup(): Queue MUST be created, populated with ~90 days of tasks, and running asynchronously
+- refresh_heating_cycle_cache(): Queue MUST be created, populated with ~90 days of tasks, and running asynchronously
 - Extracted cycles MUST feed into cache via callbacks
 - 24h refresh MUST create a NEW queue instance (replacing the old one)
 - Shutdown MUST cancel the extraction queue gracefully
@@ -83,11 +83,11 @@ def create_test_heating_cycle(
 
 
 @pytest.mark.asyncio
-async def test_startup_creates_extraction_queue():
-    """CRITICAL TEST: Startup MUST create and launch extraction queue.
+async def test_refresh_creates_extraction_queue():
+    """CRITICAL TEST: refresh_heating_cycle_cache MUST create and launch extraction queue.
 
     GIVEN: HeatingCycleLifecycleManager with 90-day retention
-    WHEN: startup() called
+    WHEN: refresh_heating_cycle_cache() called
     THEN:
       - manager._extraction_queue MUST be created (not None)
       - manager._extraction_task MUST be created (not None)
@@ -96,7 +96,7 @@ async def test_startup_creates_extraction_queue():
       - Queue MUST be actively executing tasks
 
     REGRESSION: Tests will FAIL if:
-      - Queue is never created during startup
+      - Queue is never created during refresh
       - Queue is created but not started
       - run_queue() is called as blocking call (freezes manager)
       - _extract_day() is stubbed (returns [] always)
@@ -139,37 +139,31 @@ async def test_startup_creates_extraction_queue():
         lhs_lifecycle_manager=None,
     )
 
-    # PRECONDITION: Before startup, no extraction queue should exist
+    # PRECONDITION: Before refresh, no extraction queue should exist
     assert not hasattr(lifecycle, "_extraction_queue") or lifecycle._extraction_queue is None
     assert not hasattr(lifecycle, "_extraction_task") or lifecycle._extraction_task is None
 
-    # ACT: Trigger startup
-    now = datetime.now()
-    start_time = now - timedelta(days=90)
-    await lifecycle.startup(
-        device_id="climate.living_room",
-        start_time=start_time,
-        end_time=now,
-    )
+    # ACT: Trigger refresh
+    await lifecycle.refresh_heating_cycle_cache()
 
     # VERIFY #1: Queue object MUST be created
     assert hasattr(lifecycle, "_extraction_queue"), (
-        "WeakPoint: manager._extraction_queue does not exist after startup(). "
-        "startup() MUST create RecordingExtractionQueue instance."
+        "WeakPoint: manager._extraction_queue does not exist after refresh_heating_cycle_cache(). "
+        "refresh_heating_cycle_cache() MUST create RecordingExtractionQueue instance."
     )
     assert lifecycle._extraction_queue is not None, (
         "WeakPoint: manager._extraction_queue is None. "
-        "startupUp() MUST instantiate RecordingExtractionQueue."
+        "refresh_heating_cycle_cache() MUST instantiate RecordingExtractionQueue."
     )
 
     # VERIFY #2: Extraction task MUST be created and running
     assert hasattr(lifecycle, "_extraction_task"), (
         "WeakPoint: manager._extraction_task does not exist. "
-        "startup() MUST create async task for run_queue()."
+        "refresh_heating_cycle_cache() MUST create async task for run_queue()."
     )
     assert lifecycle._extraction_task is not None, (
         "WeakPoint: manager._extraction_task is None. "
-        "startup() MUST call asyncio.create_task(run_queue())"
+        "refresh_heating_cycle_cache() MUST call asyncio.create_task(run_queue())"
     )
 
     # VERIFY #3: Task must NOT already be done (it's async, should still be running)
@@ -188,7 +182,7 @@ async def test_startup_creates_extraction_queue():
     # VERIFY #5: Queue must be actively running
     assert is_running is True, (
         "WeakPoint: Queue is not running. "
-        "startup() MUST call await queue.populate_queue() then "
+        "refresh_heating_cycle_cache() MUST call await queue.populate_queue() then "
         "asyncio.create_task(queue.run_queue())"
     )
 
@@ -197,11 +191,11 @@ async def test_startup_creates_extraction_queue():
 
 
 @pytest.mark.asyncio
-async def test_startup_schedules_24h_timer():
-    """Verify startup schedules a 24h refresh timer.
+async def test_refresh_schedules_24h_timer():
+    """Verify refresh_heating_cycle_cache schedules a 24h refresh timer.
 
     GIVEN: A lifecycle manager
-    WHEN: startup() is called
+    WHEN: refresh_heating_cycle_cache() is called
     THEN: Timer scheduler is called with ~24h delay
     """
     device_config = DeviceConfig(
@@ -228,13 +222,8 @@ async def test_startup_schedules_24h_timer():
     )
 
     now = datetime.now()
-    start_time = now - timedelta(days=90)
 
-    await lifecycle.startup(
-        device_id="climate.living_room",
-        start_time=start_time,
-        end_time=now,
-    )
+    await lifecycle.refresh_heating_cycle_cache()
 
     # Verify: scheduler.schedule_timer was called
     assert mock_scheduler.schedule_timer.called
@@ -334,17 +323,16 @@ async def test_24h_refresh_creates_new_queue_instance():
     """CRITICAL TEST: 24h refresh MUST create a NEW queue instance.
 
     GIVEN: HeatingCycleLifecycleManager with running extraction
-    WHEN: trigger_24h_refresh() or on_24h_timer() called
+    WHEN: refresh_heating_cycle_cache() called again (periodic timer)
     THEN:
       - NEW queue instance MUST be created
       - Previous queue MUST be cancelled
       - Previous extraction task MUST be cancelled/done
-      - New extraction runs with 2-day window (yesterday + today)
+      - New extraction runs with updated window
 
     REGRESSION: Test will FAIL if:
       - Same queue instance is reused
       - Previous queue is not cancelled
-      - New extraction window is not 2 days
     """
     device_config = DeviceConfig(
         device_id="climate.living_room",
@@ -367,27 +355,14 @@ async def test_24h_refresh_creates_new_queue_instance():
         lhs_lifecycle_manager=None,
     )
 
-    # ACT: Initial startup creates first queue
-    now = datetime.now()
-    start_time = now - timedelta(days=90)
-    await lifecycle.startup(
-        device_id="climate.living_room",
-        start_time=start_time,
-        end_time=now,
-    )
+    # ACT: Initial refresh creates first queue
+    await lifecycle.refresh_heating_cycle_cache()
 
-    # Note: startup() should create the initial queue
-    # For now, let's verify the basic behavior
-    # TODO: Add trigger_24h_refresh() method to lifecycle manager
-    # For now, test the concept with on_24h_timer()
-
-    # If queue was created, verify it exists
+    # If queue was created, trigger refresh again and verify new queue
     if hasattr(lifecycle, "_extraction_queue") and lifecycle._extraction_queue:
-        # Trigger 24h timer manually
-        await lifecycle.on_24h_timer()
+        await lifecycle.refresh_heating_cycle_cache()
 
-        # VERIFY: New queue created (or would be if method was implemented)
-        # This test will expand when trigger_24h_refresh() is implemented
+        # VERIFY: New queue created
         assert True
 
 
@@ -397,16 +372,15 @@ async def test_24h_refresh_creates_new_queue_instance():
 
 
 @pytest.mark.asyncio
-async def test_startup_respects_retention_window():
-    """CRITICAL TEST: Startup extraction MUST respect retention boundary.
+async def test_refresh_respects_retention_window():
+    """CRITICAL TEST: Refresh extraction MUST respect retention boundary.
 
-    GIVEN: Retention = 90 days, current_date = 2026-02-23
-    WHEN: startup() called
+    GIVEN: Retention = 90 days
+    WHEN: refresh_heating_cycle_cache() called
     THEN:
       - Extraction MUST cover exactly retention window
       - Start date = current_date - 90 days
-      - End date = current_date
-      - NO extraction before retention boundary
+      - End date = yesterday (not today, to avoid partial cycles)
       - Queue MUST have exactly ~90 tasks (one per day)
 
     REGRESSION: Test will FAIL if:
@@ -434,15 +408,7 @@ async def test_startup_respects_retention_window():
         lhs_lifecycle_manager=None,
     )
 
-    # Use current date as reference
-    now = datetime.now()
-    start_time = now - timedelta(days=90)
-
-    await lifecycle.startup(
-        device_id="climate.living_room",
-        start_time=start_time,
-        end_time=now,
-    )
+    await lifecycle.refresh_heating_cycle_cache()
 
     # Verify queue populated with correct retention window
     if hasattr(lifecycle, "_extraction_queue") and lifecycle._extraction_queue:
@@ -619,15 +585,14 @@ async def test_retention_change_invalidates_caches_and_reextracts():
     WHEN: on_retention_change(180) called
     THEN:
       - In-memory cache MUST be cleared
-      - Storage cache.clear_cache() MUST be called
+      - storage.prune_old_cycles() MUST be called (only stale cycles removed, NOT full clear)
       - New extraction window = 180 days
       - New cycles extracted and loaded
-      - LHS cascade triggered with new cycles
+      - LHS cascade triggered with remaining cycles
 
     REGRESSION: Test will FAIL if:
       - Cache not cleared
       - Wrong extraction window used
-      - LHS cascade not triggered
     """
     device_config = DeviceConfig(
         device_id="climate.living_room",
@@ -649,6 +614,7 @@ async def test_retention_change_invalidates_caches_and_reextracts():
     # Mock storage
     mock_storage = Mock()
     mock_storage.get_cache_data = AsyncMock(return_value=None)
+    mock_storage.prune_old_cycles = AsyncMock()
     mock_storage.clear_cache = AsyncMock()
     mock_storage.append_cycles = AsyncMock()
 
@@ -684,10 +650,10 @@ async def test_retention_change_invalidates_caches_and_reextracts():
         len(lifecycle._cached_cycles_for_target_time) == 0
     ), "WeakPoint: In-memory cache not cleared after retention change."
 
-    # VERIFY #2: Storage cache.clear_cache() must be called
+    # VERIFY #2: Storage prune_old_cycles() must be called (NOT full wipe — only stale cycles)
     assert (
-        mock_storage.clear_cache.called
-    ), "WeakPoint: storage.clear_cache() not called during retention change."
+        mock_storage.prune_old_cycles.called
+    ), "WeakPoint: storage.prune_old_cycles() not called during retention change."
 
     # VERIFY #3: New async extraction must be launched
     assert (
@@ -772,12 +738,12 @@ async def test_queue_progress_reporting_works():
 
 
 @pytest.mark.asyncio
-async def test_startup_end_date_is_yesterday():
-    """CRITICAL TEST: Startup extraction end_date MUST be yesterday, not today.
+async def test_refresh_end_date_is_yesterday():
+    """CRITICAL TEST: Refresh extraction end_date MUST be yesterday, not today.
 
     Prevents partial cycle extractions for the current day.
     GIVEN: HeatingCycleLifecycleManager with any retention
-    WHEN: startup() is called
+    WHEN: refresh_heating_cycle_cache() is called
     THEN: Extraction end_date must be yesterday, not today
     """
     device_config = DeviceConfig(

@@ -389,34 +389,19 @@ class HeatingApplication:
                 )
                 return
 
-            # Calculate initial extraction window
-            now = dt_util.utcnow()
-            start_time = now - timedelta(days=self._data_retention_days)
-
             _LOGGER.debug(
-                "Initializing cycle extraction: device_id=%s, window=%s to %s, retention=%d days",
+                "Initializing cycle extraction: device_id=%s, retention=%d days",
                 self._device_config.device_id,
-                start_time,
-                now,
                 self._data_retention_days,
             )
 
-            # Execute initial extraction + schedule 24h timer
-            extracted_cycles = await self._heating_cycle_manager.startup(
-                device_id=self._device_config.device_id,
-                start_time=start_time,
-                end_time=now,
-            )
-
-            # Update global LHS from extracted cycles (if any)
-            if extracted_cycles and self._lhs_manager:
-                await self._lhs_manager.update_global_lhs_from_cycles(extracted_cycles)
+            # Trigger cache refresh: schedules 24h timer and extracts missing days asynchronously
+            await self._heating_cycle_manager.refresh_heating_cycle_cache()
 
             _LOGGER.info(
-                "Cycle extraction initialized: device=%s, retention=%d days, cycles=%d",
+                "Cycle extraction initialized: device=%s, retention=%d days (async)",
                 self._device_config.device_id,
                 self._data_retention_days,
-                len(extracted_cycles),
             )
 
             _LOGGER.debug(

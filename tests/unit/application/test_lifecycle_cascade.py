@@ -59,23 +59,22 @@ class TestLifecycleCascadeFlow:
     # ===== Test: Startup Cascade =====
 
     @pytest.mark.asyncio
-    async def test_full_cascade_startup_extracts_cycles_and_updates_lhs(
+    async def test_full_cascade_refresh_extracts_cycles_and_updates_lhs(
         self,
         heating_cycle_manager_with_lhs_cascade: tuple,
         base_datetime: datetime,
     ) -> None:
-        """Test startup cascade: extract cycles → update LHS.
+        """Test refresh_heating_cycle_cache cascade: extract cycles → update LHS.
 
         GIVEN: HeatingCycleLifecycleManager with mocked LhsLifecycleManager
-        WHEN: startup() called with initial window
+        WHEN: refresh_heating_cycle_cache() called
         THEN:
-          - Cycles extracted and stored
           - LhsLifecycleManager.update_global_lhs_from_cycles() called with cycles
           - LhsLifecycleManager.update_contextual_lhs_from_cycles() called with cycles
         """
         manager, mock_lhs_manager = heating_cycle_manager_with_lhs_cascade
 
-        # GIVEN: Cycles will be extracted during startup
+        # GIVEN
         expected_cycles = [
             self._create_heating_cycle(base_datetime - timedelta(days=5)),
             self._create_heating_cycle(base_datetime - timedelta(days=2)),
@@ -84,15 +83,11 @@ class TestLifecycleCascadeFlow:
             return_value=expected_cycles
         )
 
-        device_id = "climate.test_vtherm"
-        start_time = base_datetime - timedelta(days=7)
-        end_time = base_datetime
+        # WHEN: refresh called (async design: returns None immediately)
+        result = await manager.refresh_heating_cycle_cache()
 
-        # WHEN: Startup is called (async design: returns [] immediately)
-        result = await manager.startup(device_id, start_time, end_time)
-
-        # THEN: startup returns empty list (cycles delivered async via callback)
-        assert result == []
+        # THEN: returns None
+        assert result is None
 
         # AND: Calling _on_cycles_extracted directly verifies LHS cascade
         await manager._on_cycles_extracted(expected_cycles)
@@ -100,14 +95,14 @@ class TestLifecycleCascadeFlow:
         mock_lhs_manager.update_contextual_lhs_from_cycles.assert_called_once_with(expected_cycles)
 
     @pytest.mark.asyncio
-    async def test_startup_cascade_parameters_correct(
+    async def test_refresh_cascade_parameters_correct(
         self,
         heating_cycle_manager_with_lhs_cascade: tuple,
         base_datetime: datetime,
     ) -> None:
-        """Test startup passes correct parameters to LHS cascade.
+        """Test refresh_heating_cycle_cache passes correct parameters to LHS cascade.
 
-        GIVEN: startup with specific time window
+        GIVEN: refresh with specific cycles
         WHEN: Cascade happens after extraction
         THEN: Exact cycles from extraction passed to LHS
         """
@@ -132,14 +127,14 @@ class TestLifecycleCascadeFlow:
         assert call_args_ctx[0][0] == test_cycles
 
     @pytest.mark.asyncio
-    async def test_startup_cascade_both_global_and_contextual(
+    async def test_refresh_cascade_both_global_and_contextual(
         self,
         heating_cycle_manager_with_lhs_cascade: tuple,
         base_datetime: datetime,
     ) -> None:
-        """Test startup cascade calls both global AND contextual LHS updates.
+        """Test refresh_heating_cycle_cache cascade calls both global AND contextual LHS updates.
 
-        GIVEN: startup with cycles
+        GIVEN: refresh with cycles
         WHEN: Cascade triggered
         THEN: BOTH update_global_lhs_from_cycles() AND update_contextual_lhs_from_cycles() called
         """
@@ -156,14 +151,14 @@ class TestLifecycleCascadeFlow:
         assert mock_lhs_manager.update_contextual_lhs_from_cycles.called
 
     @pytest.mark.asyncio
-    async def test_startup_cascade_order_global_then_contextual(
+    async def test_refresh_cascade_order_global_then_contextual(
         self,
         heating_cycle_manager_with_lhs_cascade: tuple,
         base_datetime: datetime,
     ) -> None:
-        """Test startup calls global LHS before contextual LHS.
+        """Test refresh_heating_cycle_cache calls global LHS before contextual LHS.
 
-        GIVEN: startup with cycles
+        GIVEN: refresh with cycles
         WHEN: Cascade happening
         THEN: update_global_lhs_from_cycles() called before update_contextual_lhs_from_cycles()
         """
@@ -222,7 +217,12 @@ class TestLifecycleCascadeFlow:
         # THEN: Extraction queue created (async extraction launched)
         assert manager._extraction_queue is not None
 
-        # AND: Calling _on_cycles_extracted triggers LHS cascade with new cycles
+        # THEN: LHS was triggered immediately with remaining cached cycles (may be empty)
+        assert mock_lhs_manager.update_global_lhs_from_cycles.called
+
+        # AND: Calling _on_cycles_extracted with newly extracted cycles triggers LHS again
+        mock_lhs_manager.update_global_lhs_from_cycles.reset_mock()
+        mock_lhs_manager.update_contextual_lhs_from_cycles.reset_mock()
         await manager._on_cycles_extracted(new_cycles)
         mock_lhs_manager.update_global_lhs_from_cycles.assert_called_once_with(new_cycles)
         mock_lhs_manager.update_contextual_lhs_from_cycles.assert_called_once_with(new_cycles)
@@ -297,18 +297,16 @@ class TestLifecycleCascadeFlow:
     # ===== Test: 24h Timer Cascade =====
 
     @pytest.mark.asyncio
-    async def test_24h_timer_cascade_refreshes_lhs(
+    async def test_refresh_cascade_refreshes_lhs(
         self,
         heating_cycle_manager_with_lhs_cascade: tuple,
         base_datetime: datetime,
     ) -> None:
-        """Test 24h timer cascade: refresh cycles → update LHS.
+        """Test refresh_heating_cycle_cache cascade: refresh cycles → update LHS.
 
         GIVEN: Manager with LHS cascade
-        WHEN: on_24h_timer() fired
-        THEN:
-          - Cycles refreshed/merged
-          - LhsLifecycleManager.update_*_lhs_from_cycles() called with merged cycles
+        WHEN: refresh_heating_cycle_cache() fired (periodic timer)
+        THEN: Extraction queue created (async extraction launched for missing ranges)
         """
         manager, mock_lhs_manager = heating_cycle_manager_with_lhs_cascade
 
@@ -321,22 +319,22 @@ class TestLifecycleCascadeFlow:
             return_value=refreshed_cycles
         )
 
-        # WHEN: 24h timer fires
-        await manager.on_24h_timer()
+        # WHEN: refresh fires
+        await manager.refresh_heating_cycle_cache()
 
         # THEN: Extraction queue created (async extraction launched for missing ranges)
         assert manager._extraction_queue is not None
 
     @pytest.mark.asyncio
-    async def test_24h_timer_reschedules_after_cascade(
+    async def test_refresh_reschedules_after_cascade(
         self,
         heating_cycle_manager_with_lhs_cascade: tuple,
         base_datetime: datetime,
     ) -> None:
-        """Test 24h timer reschedules after LHS cascade.
+        """Test refresh_heating_cycle_cache reschedules after LHS cascade.
 
-        GIVEN: 24h timer callback
-        WHEN: on_24h_timer() executes
+        GIVEN: refresh_heating_cycle_cache callback
+        WHEN: refresh_heating_cycle_cache() executes
         THEN: New timer scheduled for next 24h
         """
         manager, mock_lhs_manager = heating_cycle_manager_with_lhs_cascade
@@ -345,11 +343,10 @@ class TestLifecycleCascadeFlow:
         cycles = [self._create_heating_cycle(base_datetime)]
         manager._heating_cycle_service.extract_heating_cycles = AsyncMock(return_value=cycles)
 
-        # WHEN: 24h timer fires
-        await manager.on_24h_timer()
+        # WHEN: refresh fires
+        await manager.refresh_heating_cycle_cache()
 
-        # THEN: New timer scheduled (call count increased)
-        # Note: May be called from startup() already, so we check it was called
+        # THEN: New timer scheduled
         assert manager._timer_scheduler.schedule_timer.called
 
     # ===== Test: Cascade Error Handling =====
@@ -384,11 +381,9 @@ class TestLifecycleCascadeFlow:
         # THEN: contextual update was still called despite global LHS failure
         assert mock_lhs_manager.update_contextual_lhs_from_cycles.called
 
-        # AND: startup returns [] (async design - completes without raising)
-        result = await manager.startup(
-            "climate.test_vtherm", base_datetime - timedelta(days=7), base_datetime
-        )
-        assert result == []
+        # AND: refresh_heating_cycle_cache completes without raising
+        result = await manager.refresh_heating_cycle_cache()
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_cascade_with_empty_cycles(
@@ -416,28 +411,26 @@ class TestLifecycleCascadeFlow:
         mock_lhs_manager.update_global_lhs_from_cycles.assert_not_called()
         mock_lhs_manager.update_contextual_lhs_from_cycles.assert_not_called()
 
-        # AND: startup returns [] (async design)
-        result = await manager.startup(
-            "climate.test_vtherm", base_datetime - timedelta(days=7), base_datetime
-        )
-        assert result == []
+        # AND: refresh_heating_cycle_cache returns None (async design)
+        result = await manager.refresh_heating_cycle_cache()
+        assert result is None
 
     # ===== Test: Cascade Without LHS Manager =====
 
     @pytest.mark.asyncio
-    async def test_startup_without_lhs_manager_no_cascade(
+    async def test_refresh_without_lhs_manager_no_cascade(
         self,
         heating_cycle_manager_full,
         base_datetime: datetime,
     ) -> None:
-        """Test startup completes successfully without LHS manager.
+        """Test refresh_heating_cycle_cache completes successfully without LHS manager.
 
         GIVEN: Manager without LHS cascade (lhs_lifecycle_manager=None)
-        WHEN: startup() called
+        WHEN: refresh_heating_cycle_cache() called
         THEN:
-          - Cycles extracted and stored normally
           - No cascade attempt
           - No errors
+          - Returns None
         """
         # heating_cycle_manager_full has no LHS manager by default
 
@@ -446,14 +439,11 @@ class TestLifecycleCascadeFlow:
             return_value=cycles
         )
 
-        # WHEN: Startup without LHS manager
-        result = await heating_cycle_manager_full.startup(
-            "climate.test_vtherm", base_datetime - timedelta(days=7), base_datetime
-        )
+        # WHEN: refresh without LHS manager
+        result = await heating_cycle_manager_full.refresh_heating_cycle_cache()
 
-        # THEN: startup returns [] (async design), no errors
-        assert result == []
-        # And no cascade was attempted (no LHS manager)
+        # THEN: returns None, no errors
+        assert result is None
 
     # ===== Test: Cascade Isolation per Device =====
 
@@ -554,8 +544,6 @@ class TestLifecycleCascadeFlow:
         assert len(call_args) == 2
         assert call_args == test_cycles
 
-        # AND: startup returns [] (async design)
-        result = await manager.startup(
-            "climate.test_vtherm", base_datetime - timedelta(days=7), base_datetime
-        )
-        assert result == []
+        # AND: refresh_heating_cycle_cache returns None (async design)
+        result = await manager.refresh_heating_cycle_cache()
+        assert result is None
