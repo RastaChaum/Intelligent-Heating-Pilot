@@ -53,9 +53,8 @@ class HeatingCycleLifecycleManager:
     - **Cascade to LHS**: When cycles update, triggers LHS recalculation
 
     Lifecycle Events:
-    - startup(): Initial load from storage → memory, schedule 24h timer, cascade LHS update
-    - on_retention_change(): Clear caches, reload with new retention, cascade LHS update
-    - on_24h_timer(): Refresh cycles for retention window, cascade LHS update
+    - refresh_heating_cycle_cache(): Initial load / periodic refresh, schedule 24h timer, cascade LHS update
+    - on_retention_change(): Prune stale cycles, reload LHS, cascade LHS update
     - cancel(): Cleanup timers and release resources
     """
 
@@ -99,97 +98,113 @@ class HeatingCycleLifecycleManager:
         self._cached_cycles_for_target_time: dict[tuple[str, date], list[HeatingCycle]] = {}
         self._timer_cancel_func: Callable[[], None] | None = None
 
-        # Extraction queue for asynchronous incremental Recorder loading
+        # Extraction queues for asynchronous incremental Recorder loading.
+        # One queue is created per missing date range; _extraction_queue is kept
+        # as a backward-compat alias pointing to the last created queue.
+        self._extraction_queues: list[RecordingExtractionQueue] = []
         self._extraction_queue: RecordingExtractionQueue | None = None
         self._extraction_task: asyncio.Task | None = None
 
-    async def startup(
-        self,
-        device_id: str,
-        start_time: datetime,
-        end_time: datetime,
-    ) -> list[HeatingCycle]:
-        """Run startup extraction and schedule periodic refresh.
+    async def refresh_heating_cycle_cache(self) -> None:
+        """Refresh the heating cycle cache and schedule the next 24h timer.
+
+        This is the single lifecycle entry point for both initial startup and
+        periodic 24h refresh. It performs the same cache-aware, async-only
+        extraction regardless of whether it is called at boot or from a timer.
 
         Lifecycle Event Flow:
-        1. Extract cycles from historical data for [start_time, end_time]
-        2. Save cycles to persistent storage (IHeatingCycleStorage + ILhsStorage)
-        3. Load cycles into in-memory cache for fast access
-        4. Cascade to LhsLifecycleManager to update LHS values
-        5. Schedule 24h timer for automatic refresh
+        1. Schedule next 24h timer at dt_util.now() + 24H
+        2. Calculate extraction window: start = now - retention_days, end = yesterday
+        3. Find missing date ranges vs current cache
+        4. Launch async extraction only for missing ranges
+        5. Prune cycles outside the retention window from persistent storage
 
-        Cache Strategy:
-        - **Reads from**: Historical data adapters via _extract_cycles()
-        - **Writes to**: Persistent storage via update_cycles_for_window()
-        - **Loads into memory**: Via get_cycles_for_target_time() on subsequent calls
-        - **Cascades to**: LHS manager to update global/contextual LHS
-
-        Args:
-            device_id: Device identifier used for history queries and cache keys.
-            start_time: Start of the extraction window (typically now - retention_days).
-            end_time: End of the extraction window (typically now).
+        Cycles are delivered asynchronously via the _on_cycles_extracted() callback.
 
         Returns:
-            Extracted heating cycles for the initial window.
+            None
         """
-        _LOGGER.debug("Entering HeatingCycleLifecycleManager.startup")
-        _LOGGER.debug(
-            "Startup extraction for device=%s from %s to %s", device_id, start_time, end_time
-        )
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager.refresh_heating_cycle_cache")
+        _LOGGER.info("Heating cycle cache refresh triggered for device=%s", self._device_config.device_id)
 
-        try:
-            # Step 1: Extract and persist cycles (writes to storage)
-            cycles = await self.update_cycles_for_window(
-                start_time=start_time,
-                end_time=end_time,
-                device_id=device_id,
+        # Step 1: Cancel previous timer, then schedule next one at dt_util.now() + 24H
+        if self._timer_cancel_func is not None:
+            try:
+                self._timer_cancel_func()
+                _LOGGER.debug("Cancelled previous 24h refresh timer")
+            except Exception as exc:
+                _LOGGER.warning("Error cancelling previous timer: %s", exc)
+            self._timer_cancel_func = None
+
+        if self._timer_scheduler is not None:
+            now = dt_util.now() if dt_util is not None else datetime.now()
+            next_refresh = now + timedelta(hours=24)
+            self._timer_cancel_func = self._timer_scheduler.schedule_timer(
+                next_refresh, self.refresh_heating_cycle_cache
             )
+            _LOGGER.debug("Scheduled 24h cycle refresh timer for %s", next_refresh.isoformat())
 
-            # Step 2: Cascade to LHS lifecycle manager to update LHS caches
-            await self._trigger_lhs_cascade(cycles)
+        # Step 2: Calculate extraction window (end = yesterday, not today)
+        start_date, end_date = self._calculate_extraction_window()
+        _LOGGER.debug("Extraction window: %s to %s", start_date, end_date)
 
-            # Step 3: Schedule 24h timer if scheduler provided
-            if self._timer_scheduler is not None:
-                next_refresh = self._get_now_for_scheduling(end_time) + timedelta(hours=24)
+        # Step 3: Prune cycles outside the retention window from persistent storage.
+        # Pruning happens BEFORE extraction to avoid concurrent storage mutations.
+        if self._heating_cycle_storage is not None:
+            now = dt_util.now() if dt_util is not None else datetime.now()
+            await self._heating_cycle_storage.prune_old_cycles(
+                self._device_config.device_id, now
+            )
+            _LOGGER.debug("Pruned old cycles from storage cache")
 
-                self._timer_cancel_func = self._timer_scheduler.schedule_timer(
-                    next_refresh, self.on_24h_timer
+            # Recalculate LHS from the cycles that remain after pruning
+            try:
+                cache_data = await self._heating_cycle_storage.get_cache_data(
+                    self._device_config.device_id
                 )
-                _LOGGER.debug("Scheduled 24h cycle refresh timer for %s", next_refresh.isoformat())
+                remaining_cycles: list[HeatingCycle] = (
+                    list(cache_data.cycles) if cache_data is not None else []
+                )
+            except Exception as exc:
+                _LOGGER.warning("Error loading remaining cycles for LHS recalculation: %s", exc)
+                remaining_cycles = []
 
-            # Step 4: Launch asynchronous incremental recording extraction
-            await self._launch_extraction_queue()
+            if remaining_cycles:
+                await self._trigger_lhs_cascade(remaining_cycles)
+                _LOGGER.debug(
+                    "Recalculated LHS from %d remaining cycles after pruning",
+                    len(remaining_cycles),
+                )
+            else:
+                _LOGGER.debug("No remaining cycles after pruning — skipping LHS recalculation")
 
-            _LOGGER.info("Startup complete: extracted %d cycles and updated LHS", len(cycles))
-            _LOGGER.debug("Exiting HeatingCycleLifecycleManager.startup")
-            return cycles
-        except Exception as exc:
-            _LOGGER.error("Error during startup: %s", exc)
-            raise
+        # Step 4: Find missing date ranges vs current (pruned) cache
+        missing_ranges = await self._find_missing_date_ranges(start_date, end_date)
+
+        # Step 5: Launch async extraction for missing ranges only
+        if missing_ranges:
+            await self._launch_extraction_for_ranges(missing_ranges)
+            _LOGGER.info(
+                "Cache refresh: launched async extraction for %d missing range(s)",
+                len(missing_ranges),
+            )
+        else:
+            _LOGGER.info("Cache refresh: cache is up to date, no extraction needed")
+
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.refresh_heating_cycle_cache")
 
     async def on_retention_change(self, new_retention_days: int) -> None:
         """Handle retention configuration changes.
 
-        Lifecycle Event Flow:
-        1. Update device_config with new retention period
-        2. Clear in-memory cache (invalidated by retention change)
-        3. Clear persistent storage cache (IHeatingCycleStorage)
-        4. Re-extract cycles for new retention window
-        5. Save new cycles to persistent storage
-        6. Cascade to LhsLifecycleManager to recalculate LHS with new window
-
-        Cache Strategy:
-        - **Invalidates memory**: Clears _cached_cycles_for_target_time
-        - **Invalidates storage**: Calls cycle_cache.clear_cache()
-        - **Reads from**: Historical data adapters for new window
-        - **Writes to**: Persistent storage via update_cycles_for_window()
-        - **Cascades to**: LHS manager with new cycles
+        Updates the device config with the new retention period, invalidates the
+        in-memory cache, then delegates all further processing (pruning, LHS
+        recalculation, missing-range extraction) to refresh_heating_cycle_cache().
 
         Args:
             new_retention_days: Updated retention window in days.
 
         Returns:
-            None.
+            None
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager.on_retention_change")
         _LOGGER.info("Retention changed to %d days", new_retention_days)
@@ -206,94 +221,11 @@ class HeatingCycleLifecycleManager:
         self._cached_cycles_for_target_time = {}
         _LOGGER.debug("Invalidated cycles in-memory cache due to retention change")
 
-        # Step 3: Clear persistent storage cache
-        if self._heating_cycle_storage is not None and hasattr(
-            self._heating_cycle_storage, "clear_cache"
-        ):
-            try:
-                await self._heating_cycle_storage.clear_cache(self._device_config.device_id)
-                _LOGGER.debug("Cleared storage cycle cache due to retention change")
-            except (AttributeError, TypeError):
-                pass
-
-        # Step 4: Re-extract cycles for new retention window
-        end_time = dt_util.now() if dt_util is not None else datetime.now()
-        start_time = end_time - timedelta(days=new_retention_days)
-
-        cycles = await self.update_cycles_for_window(
-            start_time=start_time,
-            end_time=end_time,
-            device_id=self._device_config.device_id,
-        )
-        _LOGGER.debug("Re-extracted %d cycles for new retention window", len(cycles))
-
-        # Step 5: Cascade to LHS lifecycle manager to recalculate with new window
-        await self._trigger_lhs_cascade(cycles)
+        # Step 3: Delegate to refresh — it handles pruning, LHS recalculation and
+        # async extraction of missing date ranges for the new retention window.
+        await self.refresh_heating_cycle_cache()
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.on_retention_change")
-
-    async def on_24h_timer(self) -> None:
-        """Handle periodic 24h refresh execution.
-
-        Lifecycle Event Flow:
-        1. Calculate new extraction window (now - retention_days to now)
-        2. Extract cycles from historical data
-        3. Save cycles to persistent storage (replacing old data outside retention)
-        4. Prune cycles older than retention period from storage
-        5. Cascade to LhsLifecycleManager to recalculate LHS
-        6. Update in-memory cache will happen on next get_cycles_for_target_time() call
-
-        Cache Strategy:
-        - **Reads from**: Historical data adapters for retention window
-        - **Writes to**: Persistent storage via update_cycles_for_window()
-        - **Prunes from storage**: Old cycles via cycle_cache.prune_old_cycles()
-        - **Memory cache**: Not updated here, will reload on next query
-        - **Cascades to**: LHS manager to update global/contextual LHS
-
-        Returns:
-            None.
-        """
-        _LOGGER.debug("Entering HeatingCycleLifecycleManager.on_24h_timer")
-        _LOGGER.info("24h cycle refresh timer triggered")
-
-        try:
-            # Step 1: Calculate extraction window for retention period
-            end_time = dt_util.now() if dt_util is not None else datetime.now()
-            start_time = end_time - timedelta(days=self._device_config.lhs_retention_days)
-
-            # Step 2: Extract and persist cycles (writes to storage)
-            cycles = await self.update_cycles_for_window(
-                start_time=start_time,
-                end_time=end_time,
-                device_id=self._device_config.device_id,
-            )
-            _LOGGER.info("24h refresh complete: extracted %d cycles", len(cycles))
-
-            # Step 3: Prune old cycles from storage cache
-            if self._heating_cycle_storage is not None:
-                await self._heating_cycle_storage.prune_old_cycles(
-                    self._device_config.device_id, end_time
-                )
-                _LOGGER.debug("Pruned old cycles from storage cache")
-
-            # Step 4: Cascade to LHS lifecycle manager to recalculate with fresh data
-            await self._trigger_lhs_cascade(cycles)
-
-            # Step 5: Reschedule timer for next 24h refresh
-            if self._timer_scheduler is not None:
-                next_refresh = self._get_now_for_scheduling(end_time) + timedelta(hours=24)
-
-                self._timer_cancel_func = self._timer_scheduler.schedule_timer(
-                    next_refresh, self.on_24h_timer
-                )
-                _LOGGER.debug(
-                    "Rescheduled 24h cycle refresh timer for %s", next_refresh.isoformat()
-                )
-
-        except Exception as exc:
-            _LOGGER.error("Error during 24h cycle refresh: %s", exc)
-
-        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.on_24h_timer")
 
     async def get_cycles_for_window(
         self,
@@ -526,11 +458,14 @@ class HeatingCycleLifecycleManager:
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager.cancel")
 
-        # Cancel extraction queue if running
-        if self._extraction_queue is not None:
+        # Cancel all active extraction queues
+        queues_to_cancel = self._extraction_queues or (
+            [self._extraction_queue] if self._extraction_queue is not None else []
+        )
+        for queue in queues_to_cancel:
             _LOGGER.info("Cancelling extraction queue during shutdown")
             try:
-                await self._extraction_queue.cancel_queue()
+                await queue.cancel_queue()
             except Exception as exc:
                 _LOGGER.warning("Error cancelling extraction queue: %s", exc)
 
@@ -560,77 +495,21 @@ class HeatingCycleLifecycleManager:
     async def _launch_extraction_queue(self) -> None:
         """Launch the asynchronous recording extraction queue.
 
-        This creates a RecordingExtractionQueue and starts it running in the background
-        to extract data incrementally (one day at a time) from the Home Assistant Recorder.
-
-        Called during startup to populate cache with historical data without blocking.
+        Delegates to _launch_extraction_for_ranges after computing the extraction
+        window and finding missing date ranges. Kept for backward compatibility.
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager._launch_extraction_queue")
 
-        try:
-            # Step 1: Create calculator to determine extraction range
-            calculator = ExtractionDateRangeCalculator()
-
-            # Get oldest cycle currently in cache
-            oldest_cycle = None
-            if self._lhs_storage is not None:
-                get_oldest_cycle = getattr(self._lhs_storage, "get_oldest_cycle", None)
-                if callable(get_oldest_cycle):
-                    oldest_cycle = await get_oldest_cycle()
-
-            # Calculate extraction range (respects retention window)
-            current_time = self._get_current_time_for_extraction(oldest_cycle)
-            start_date, end_date = calculator.calculate_extraction_range(
-                retention_days=self._device_config.lhs_retention_days,
-                oldest_cycle_in_cache=oldest_cycle,
-                current_time=current_time,
-            )
-
-            _LOGGER.info(
-                "Starting incremental recording extraction from %s to %s for device=%s",
-                start_date,
-                end_date,
-                self._device_config.device_id,
-            )
-
-            # Step 2: Create extraction queue instance
-            self._extraction_queue = RecordingExtractionQueue(
-                device_id=self._device_config.device_id,
-                climate_entity_id=self._device_config.vtherm_entity_id,
-                historical_adapters=self._historical_adapters,
-                heating_cycle_service=self._heating_cycle_service,
-                on_cycles_extracted=self._on_cycles_extracted,
-            )
-
-            # Step 3: Populate queue with daily tasks
-            task_count = await self._extraction_queue.populate_queue(start_date, end_date)
-            _LOGGER.info(
-                "Extraction queue populated with %d daily tasks (%d days)",
-                task_count,
-                (end_date - start_date).days + 1,
-            )
-
-            # Step 4: Launch queue execution asynchronously (don't await here!)
-            # This creates a background task that runs without blocking startup
-            self._extraction_task = asyncio.create_task(self._extraction_queue.run_queue())
-
-            _LOGGER.info("Extraction queue launched asynchronously (task will run in background)")
-
-            # Yield control to event loop to allow queue to start processing
-            await asyncio.sleep(0)
-
-        except Exception as exc:
-            _LOGGER.error("Failed to launch extraction queue: %s", exc)
-            # Don't fail startup - just warn and continue
-            # Cache will be incomplete but system still functional
+        start_date, end_date = self._calculate_extraction_window()
+        missing_ranges = await self._find_missing_date_ranges(start_date, end_date)
+        await self._launch_extraction_for_ranges(missing_ranges)
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager._launch_extraction_queue")
 
     async def _on_cycles_extracted(self, cycles: list[HeatingCycle]) -> None:
         """Callback invoked by extraction queue after each day's extraction completes.
 
-        This method receives the extracted cycles and progressively feeds them into
-        the model storage cache, allowing ML models to start training earlier.
+        Performs a synchronous cache update then triggers LHS recalculation cascade.
 
         Args:
             cycles: List of HeatingCycle objects extracted for one day
@@ -645,7 +524,7 @@ class HeatingCycleLifecycleManager:
             return
 
         try:
-            # Feed cycles into cache storage
+            # Feed cycles into lhs storage cache
             if self._lhs_storage is not None:
                 cache_heating_cycle = getattr(self._lhs_storage, "cache_heating_cycle", None)
                 if callable(cache_heating_cycle):
@@ -657,8 +536,27 @@ class HeatingCycleLifecycleManager:
                         len(cycles),
                     )
 
+            # Update heating cycle storage cache (synchronous cache update)
+            if self._heating_cycle_storage is not None:
+                # Use a deterministic search_end_time tied to the extracted data
+                search_end_time = max(cycle.end_time for cycle in cycles)
+                await self._heating_cycle_storage.append_cycles(
+                    self._device_config.device_id,
+                    cycles,
+                    search_end_time,
+                    self._device_config.lhs_retention_days,
+                )
+                _LOGGER.debug(
+                    "Updated heating cycle storage with %d cycles (search_end_time=%s)",
+                    len(cycles),
+                    search_end_time,
+                )
+
+            # Trigger LHS recalculation (cascade update)
+            await self._trigger_lhs_cascade(cycles)
+
         except Exception as exc:
-            _LOGGER.error("Failed to cache extracted cycles: %s", exc)
+            _LOGGER.error("Failed to process extracted cycles: %s", exc)
             # Don't fail - just log and continue
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager._on_cycles_extracted")
@@ -715,6 +613,175 @@ class HeatingCycleLifecycleManager:
             _LOGGER.error("Failed to trigger 24h refresh: %s", exc)
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.trigger_24h_refresh")
+
+    # ------------------------------------------------------------------
+    # Extraction Window Helpers
+    # ------------------------------------------------------------------
+
+    def _calculate_extraction_window(self) -> tuple[date, date]:
+        """Calculate the extraction window for heating cycles.
+
+        end_date is always yesterday (never today) to avoid partial cycle
+        extractions for the current day.
+
+        Returns:
+            Tuple of (start_date, end_date) for extraction.
+        """
+        now = self._get_current_time_for_extraction(None)
+        end_date = (now - timedelta(days=1)).date()
+        start_date = (now - timedelta(days=self._device_config.lhs_retention_days)).date()
+        return start_date, end_date
+
+    async def _find_missing_date_ranges(
+        self,
+        window_start: date,
+        window_end: date,
+    ) -> list[tuple[date, date]]:
+        """Find date ranges within the window not yet covered by the cache.
+
+        Walks every day in [window_start, window_end] and checks whether at
+        least one cached cycle has its start_time or end_time on that day.
+        Consecutive uncovered days are merged into contiguous (start, end)
+        ranges to minimise the number of extraction tasks launched.
+
+        Args:
+            window_start: Start of desired coverage window (inclusive).
+            window_end: End of desired coverage window (inclusive).
+
+        Returns:
+            List of (start, end) date ranges that require extraction.
+            Empty list if every day in the window is covered by the cache.
+        """
+        if self._heating_cycle_storage is None:
+            return [(window_start, window_end)]
+
+        cache_data = await self._heating_cycle_storage.get_cache_data(
+            self._device_config.device_id
+        )
+
+        if cache_data is None or not cache_data.cycles:
+            return [(window_start, window_end)]
+
+        # Build a set of dates covered by at least one cached cycle.
+        # For each cycle, mark every calendar day from start_time to end_time
+        # (inclusive) so that multi-day cycles do not leave gaps.
+        covered_dates: set[date] = set()
+        one_day = timedelta(days=1)
+        for cycle in cache_data.cycles:
+            day = cycle.start_time.date()
+            end_day = cycle.end_time.date()
+            while day <= end_day:
+                covered_dates.add(day)
+                day += one_day
+
+        # Walk day-by-day and collect contiguous gaps
+        missing_ranges: list[tuple[date, date]] = []
+        range_start: date | None = None
+        current_day = window_start
+
+        while current_day <= window_end:
+            if current_day not in covered_dates:
+                # Day is missing – start or extend a gap
+                if range_start is None:
+                    range_start = current_day
+            else:
+                # Day is covered – close any open gap
+                if range_start is not None:
+                    missing_ranges.append((range_start, current_day - one_day))
+                    range_start = None
+            current_day += one_day
+
+        # Close a gap that extends to window_end
+        if range_start is not None:
+            missing_ranges.append((range_start, window_end))
+
+        if missing_ranges:
+            _LOGGER.debug(
+                "Found %d missing range(s) in window [%s, %s]",
+                len(missing_ranges),
+                window_start,
+                window_end,
+            )
+        else:
+            _LOGGER.debug(
+                "Cache fully covers window [%s, %s] — no extraction needed",
+                window_start,
+                window_end,
+            )
+
+        return missing_ranges
+
+    async def _launch_extraction_for_ranges(
+        self,
+        missing_ranges: list[tuple[date, date]],
+    ) -> None:
+        """Launch async extraction for the given date ranges.
+
+        Cancels any running extraction, then creates one RecordingExtractionQueue
+        per missing range and calls populate_queue() once per range. All queues
+        are launched concurrently as a single background asyncio gather task.
+
+        Args:
+            missing_ranges: List of (start_date, end_date) ranges to extract.
+        """
+        if not missing_ranges:
+            _LOGGER.debug("No missing date ranges – skipping extraction launch")
+            return
+
+        # Cancel all existing queues gracefully
+        queues_to_cancel = self._extraction_queues or (
+            [self._extraction_queue] if self._extraction_queue is not None else []
+        )
+        for queue in queues_to_cancel:
+            _LOGGER.debug("Cancelling previous extraction queue before launching new ones")
+            try:
+                await queue.cancel_queue()
+            except Exception as exc:
+                _LOGGER.warning("Error cancelling extraction queue: %s", exc)
+        self._extraction_queues = []
+
+        if self._extraction_task is not None:
+            self._extraction_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._extraction_task
+            self._extraction_task = None
+
+        # Create one queue per missing range; call populate_queue() once per range
+        run_coroutines: list = []
+        for range_start, range_end in missing_ranges:
+            queue = RecordingExtractionQueue(
+                device_id=self._device_config.device_id,
+                climate_entity_id=self._device_config.vtherm_entity_id,
+                historical_adapters=self._historical_adapters,
+                heating_cycle_service=self._heating_cycle_service,
+                on_cycles_extracted=self._on_cycles_extracted,
+            )
+            task_count = await queue.populate_queue(range_start, range_end)
+            self._extraction_queues.append(queue)
+            run_coroutines.append(queue.run_queue())
+            _LOGGER.info(
+                "Queued extraction range %s to %s (%d tasks) for device=%s",
+                range_start,
+                range_end,
+                task_count,
+                self._device_config.device_id,
+            )
+
+        # Backward-compat alias: _extraction_queue points to the last created queue
+        self._extraction_queue = self._extraction_queues[-1] if self._extraction_queues else None
+
+        # Create individual tasks so each run_queue() is directly scheduled on the
+        # event loop (ensures _is_running is set after a single asyncio.sleep(0) yield).
+        range_tasks = [asyncio.create_task(coro) for coro in run_coroutines]
+
+        # _extraction_task tracks the combined completion of all range tasks.
+        async def _wait_all_ranges(tasks: list[asyncio.Task]) -> None:  # type: ignore[type-arg]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        self._extraction_task = asyncio.create_task(_wait_all_ranges(range_tasks))
+
+        # Yield control to allow each run_queue() task to begin processing
+        await asyncio.sleep(0)
 
     async def _trigger_lhs_cascade(self, cycles: list[HeatingCycle]) -> None:
         """Trigger cascade update to LHS lifecycle manager with error isolation.
@@ -960,7 +1027,9 @@ class HeatingCycleLifecycleManager:
         Returns:
             None (extraction runs asynchronously in background)
         """
-        raise NotImplementedError("_trigger_incremental_extraction is not implemented yet")
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager._trigger_incremental_extraction")
+        await self._launch_extraction_for_ranges([(extraction_start_date, extraction_end_date)])
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager._trigger_incremental_extraction")
 
     async def _on_incremental_extraction_day_complete(
         self,
@@ -983,7 +1052,13 @@ class HeatingCycleLifecycleManager:
         Returns:
             None
         """
-        raise NotImplementedError("_on_incremental_extraction_day_complete is not implemented yet")
+        _LOGGER.debug(
+            "Entering HeatingCycleLifecycleManager._on_incremental_extraction_day_complete"
+        )
+        await self._on_cycles_extracted(cycles)
+        _LOGGER.debug(
+            "Exiting HeatingCycleLifecycleManager._on_incremental_extraction_day_complete"
+        )
 
     async def can_cancel_extraction(self) -> bool:
         """Check if there is an ongoing extraction that can be cancelled.
@@ -994,7 +1069,17 @@ class HeatingCycleLifecycleManager:
         Returns:
             True if extraction is running, False otherwise
         """
-        raise NotImplementedError("can_cancel_extraction is not implemented yet")
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager.can_cancel_extraction")
+        if self._extraction_task is None:
+            _LOGGER.debug("No extraction running (task is None)")
+            _LOGGER.debug("Exiting HeatingCycleLifecycleManager.can_cancel_extraction")
+            return False
+        if self._extraction_task.done():
+            _LOGGER.debug("Extraction task is already done")
+            _LOGGER.debug("Exiting HeatingCycleLifecycleManager.can_cancel_extraction")
+            return False
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.can_cancel_extraction")
+        return True
 
     async def cancel_extraction(self) -> None:
         """Cancel an ongoing incremental extraction gracefully.
@@ -1008,7 +1093,20 @@ class HeatingCycleLifecycleManager:
         Returns:
             None
         """
-        raise NotImplementedError("cancel_extraction is not implemented yet")
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager.cancel_extraction")
+        queues_to_cancel = self._extraction_queues or (
+            [self._extraction_queue] if self._extraction_queue is not None else []
+        )
+        if queues_to_cancel:
+            _LOGGER.info("Cancelling ongoing incremental extraction (%d queue(s))", len(queues_to_cancel))
+            for queue in queues_to_cancel:
+                try:
+                    await queue.cancel_queue()
+                except Exception as exc:
+                    _LOGGER.warning("Error requesting extraction queue cancellation: %s", exc)
+        else:
+            _LOGGER.debug("No extraction queue to cancel")
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.cancel_extraction")
 
     async def on_demand_extraction(
         self,
@@ -1035,4 +1133,60 @@ class HeatingCycleLifecycleManager:
         Returns:
             List of all HeatingCycle objects extracted for the date range
         """
-        raise NotImplementedError("on_demand_extraction is not implemented yet")
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager.on_demand_extraction")
+
+        # Validate device_id matches this manager's device
+        if device_id != self._device_config.device_id:
+            raise ValueError(
+                f"on_demand_extraction called with device_id='{device_id}' but this manager "
+                f"is scoped to device_id='{self._device_config.device_id}'"
+            )
+
+        _LOGGER.info(
+            "On-demand extraction requested: device=%s from %s to %s",
+            device_id,
+            start_date,
+            end_date,
+        )
+
+        collected_cycles: list[HeatingCycle] = []
+
+        async def _collect(cycles: list[HeatingCycle]) -> None:
+            """Collect cycles from each day's extraction and update caches."""
+            collected_cycles.extend(cycles)
+            # Also persist and cascade LHS as with background extraction
+            await self._on_cycles_extracted(cycles)
+
+        # Create a dedicated queue (does not replace the background queue)
+        demand_queue = RecordingExtractionQueue(
+            device_id=device_id,
+            climate_entity_id=self._device_config.vtherm_entity_id,
+            historical_adapters=self._historical_adapters,
+            heating_cycle_service=self._heating_cycle_service,
+            on_cycles_extracted=_collect,
+        )
+
+        try:
+            await demand_queue.populate_queue(start_date, end_date)
+            # Run synchronously (await): caller expects cycles in the return value
+            await demand_queue.run_queue()
+        except Exception as exc:
+            _LOGGER.error("On-demand extraction failed: %s", exc)
+            raise
+
+        # Check for per-day failures that were swallowed inside run_queue()
+        extracted, total, _ = await demand_queue.get_progress()
+        failed = total - extracted
+        if failed > 0:
+            raise RuntimeError(
+                f"On-demand extraction had {failed}/{total} day(s) fail "
+                f"for device={device_id} ({start_date} to {end_date})"
+            )
+
+        _LOGGER.info(
+            "On-demand extraction complete: extracted %d cycles for device=%s",
+            len(collected_cycles),
+            device_id,
+        )
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.on_demand_extraction")
+        return collected_cycles
