@@ -8,6 +8,7 @@ Purpose: Comprehensive test coverage for heating cycle lifecycle management
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
 
@@ -802,12 +803,12 @@ class TestHeatingCycleLifecycleManager:
 
         Verified aspects:
         - Aspect A: No error when no extraction is running (idempotent)
-        - Aspect B: Sets cancel flag when extraction queue exists
+        - Aspect B: After cancel, queue is no longer cancellable (extraction stops)
         """
         # THEN Aspect A: safe to call even without active extraction
         await manager.cancel_extraction()  # Should not raise
 
-        # Setup: launch extraction
+        # Setup: launch extraction with enough days to stay running
         start_d = date(2026, 1, 1)
         end_d = date(2026, 1, 5)
         await manager._trigger_incremental_extraction(
@@ -819,8 +820,12 @@ class TestHeatingCycleLifecycleManager:
         # WHEN: cancel_extraction called
         await manager.cancel_extraction()
 
-        # THEN Aspect B: queue has cancel flag set
-        assert manager._extraction_queue._cancel_requested is True
+        # Allow the event loop to process the cancellation (background task stops)
+        await asyncio.sleep(0.1)
+
+        # THEN Aspect B: can_cancel_extraction returns False after cancellation
+        # (queue was asked to stop; is no longer meaningfully cancellable)
+        assert await manager.can_cancel_extraction() is False
 
         await manager.cancel()
 
@@ -840,6 +845,8 @@ class TestHeatingCycleLifecycleManager:
         - Aspect A: Returns all extracted cycles for the date range
         - Aspect B: Persists cycles in storage via callback
         - Aspect C: Empty range returns empty list
+        - Aspect D: Raises ValueError for mismatched device_id
+        - Aspect E: Re-raises exceptions from queue execution
         """
         # GIVEN: service returns a cycle per call
         cycle = self._create_heating_cycle(base_datetime - timedelta(days=1))
@@ -872,3 +879,22 @@ class TestHeatingCycleLifecycleManager:
 
         # THEN Aspect C: empty list returned
         assert result_empty == []
+
+        # THEN Aspect D: raises ValueError when device_id does not match manager's scope
+        with pytest.raises(ValueError, match="scoped to device_id"):
+            await manager.on_demand_extraction(
+                device_id="climate.wrong_device",
+                start_date=start_d,
+                end_date=end_d,
+            )
+
+        # THEN Aspect E: re-raises when there are per-day failures (queue swallows but on_demand checks)
+        mock_heating_cycle_service.extract_heating_cycles = AsyncMock(
+            side_effect=RuntimeError("Recorder unavailable")
+        )
+        with pytest.raises(RuntimeError, match="day.*fail"):
+            await manager.on_demand_extraction(
+                device_id=manager._device_config.device_id,
+                start_date=start_d,
+                end_date=end_d,
+            )

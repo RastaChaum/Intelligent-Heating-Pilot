@@ -1110,6 +1110,14 @@ class HeatingCycleLifecycleManager:
             List of all HeatingCycle objects extracted for the date range
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager.on_demand_extraction")
+
+        # Validate device_id matches this manager's device
+        if device_id != self._device_config.device_id:
+            raise ValueError(
+                f"on_demand_extraction called with device_id='{device_id}' but this manager "
+                f"is scoped to device_id='{self._device_config.device_id}'"
+            )
+
         _LOGGER.info(
             "On-demand extraction requested: device=%s from %s to %s",
             device_id,
@@ -1140,6 +1148,16 @@ class HeatingCycleLifecycleManager:
             await demand_queue.run_queue()
         except Exception as exc:
             _LOGGER.error("On-demand extraction failed: %s", exc)
+            raise
+
+        # Check for per-day failures that were swallowed inside run_queue()
+        extracted, total, _ = await demand_queue.get_progress()
+        failed = total - extracted
+        if failed > 0:
+            raise RuntimeError(
+                f"On-demand extraction had {failed}/{total} day(s) fail "
+                f"for device={device_id} ({start_date} to {end_date})"
+            )
 
         _LOGGER.info(
             "On-demand extraction complete: extracted %d cycles for device=%s",
