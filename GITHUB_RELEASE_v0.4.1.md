@@ -15,4 +15,3 @@
 
 - No breaking changes.
 - Automation will create a pre-release for `v0.4.1` and use these notes.
-

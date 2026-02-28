@@ -2,16 +2,17 @@
 
 Value objects are immutable data carriers that represent concepts in the domain.
 """
+
 from __future__ import annotations
 
 from .environment_state import EnvironmentState
-from .scheduled_timeslot import ScheduledTimeslot
-from .prediction_result import PredictionResult
-from .heating import HeatingDecision, HeatingAction, HeatingCycle, TariffPeriodDetail
-from .slope_data import SlopeData
+from .heating import HeatingAction, HeatingCycle, HeatingDecision, TariffPeriodDetail
+from .heating_cycle_cache_data import HeatingCycleCacheData
 from .historical_data import HistoricalDataKey, HistoricalDataSet, HistoricalMeasurement
-from .cycle_cache_data import CycleCacheData
-from .lhs_cache_entry import LHSCacheEntry
+from .prediction_result import PredictionResult
+from .recording_extraction_task import ExtractionTaskState, RecordingExtractionTask
+from .scheduled_timeslot import ScheduledTimeslot
+from .slope_data import SlopeData
 
 __all__ = [
     "EnvironmentState",
@@ -25,6 +26,7 @@ __all__ = [
     "HistoricalDataKey",
     "HistoricalDataSet",
     "HistoricalMeasurement",
-    "CycleCacheData",
-    "LHSCacheEntry",
+    "HeatingCycleCacheData",
+    "RecordingExtractionTask",
+    "ExtractionTaskState",
 ]

@@ -1,0 +1,110 @@
+name: Code Quality
+
+on:
+  pull_request:
+    branches:
+      - integration
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  quality-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Type checking with mypy
+        id: mypy
+        run: |
+          poetry run mypy custom_components/intelligent_heating_pilot/ --ignore-missing-imports --no-error-summary > mypy-output.txt 2>&1 || true
+          echo "exitcode=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Linting with pylint
+        id: pylint
+        run: |
+          poetry run pylint custom_components/intelligent_heating_pilot/ --fail-under=7.0 > pylint-output.txt 2>&1 || true
+          SCORE=$(grep -oP 'rated at \K[0-9.]+' pylint-output.txt || echo "0.0")
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "exitcode=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Check test coverage
+        id: coverage
+        run: |
+          poetry run pytest tests/unit --cov=custom_components/intelligent_heating_pilot --cov-report=term --cov-report=xml > coverage-output.txt 2>&1 || true
+          COVERAGE=$(poetry run coverage report | grep TOTAL | awk '{print $4}' | sed 's/%//')
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "exitcode=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Comment results on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MYPY_EXIT="${{ steps.mypy.outputs.exitcode }}"
+          PYLINT_EXIT="${{ steps.pylint.outputs.exitcode }}"
+          PYLINT_SCORE="${{ steps.pylint.outputs.score }}"
+          COVERAGE_EXIT="${{ steps.coverage.outputs.exitcode }}"
+          COVERAGE="${{ steps.coverage.outputs.coverage }}"
+
+          MESSAGE="## 📊 Code Quality Report\n\n"
+
+          # MyPy
+          MESSAGE+="### Type Checking (mypy)\n"
+          if [ "$MYPY_EXIT" == "0" ]; then
+            MESSAGE+="✅ **Passed** - No type errors detected\n\n"
+          else
+            MESSAGE+="⚠️ **Issues found** - Review type hints\n"
+            MESSAGE+="\`\`\`\n$(cat mypy-output.txt | head -20)\n\`\`\`\n\n"
+          fi
+
+          # Pylint
+          MESSAGE+="### Linting (pylint)\n"
+          if [ "$PYLINT_EXIT" == "0" ]; then
+            MESSAGE+="✅ **Passed** - Score: $PYLINT_SCORE/10\n\n"
+          else
+            MESSAGE+="⚠️ **Score below threshold** - Score: $PYLINT_SCORE/10 (minimum: 7.0)\n"
+            MESSAGE+="\`\`\`\n$(cat pylint-output.txt | tail -30)\n\`\`\`\n\n"
+          fi
+
+          # Coverage
+          MESSAGE+="### Test Coverage\n"
+          if [ "$COVERAGE_EXIT" == "0" ]; then
+            if [ "${COVERAGE%.*}" -ge "70" ]; then
+              MESSAGE+="✅ **Good coverage** - $COVERAGE%\n\n"
+            else
+              MESSAGE+="⚠️ **Coverage below recommended** - $COVERAGE% (recommended: >70%)\n\n"
+            fi
+          else
+            MESSAGE+="⚠️ **Could not calculate coverage**\n\n"
+          fi
+
+          MESSAGE+="---\n"
+          MESSAGE+="*These checks are informational and do not block the PR.*\n"
+          MESSAGE+="*Ensure code quality improvements are made before merging to integration.*\n"
+
+          echo -e "$MESSAGE" | gh pr comment ${{ github.event.pull_request.number }} --body-file -
+
+      - name: Summary
+        run: |
+          echo "### Code Quality Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- MyPy: ${{ steps.mypy.outputs.exitcode == '0' && '✅ Passed' || '⚠️ Issues' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Pylint: ${{ steps.pylint.outputs.score }}/10" >> $GITHUB_STEP_SUMMARY
+          echo "- Coverage: ${{ steps.coverage.outputs.coverage }}%" >> $GITHUB_STEP_SUMMARY

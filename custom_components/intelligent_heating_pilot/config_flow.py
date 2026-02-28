@@ -1,20 +1,20 @@
 """Config flow for Intelligent Heating Pilot integration."""
+
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
-from typing import cast
-
 from .const import (
+    CONF_AUTO_LEARNING,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
+    CONF_DEAD_TIME_MINUTES,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
@@ -24,7 +24,9 @@ from .const import (
     CONF_SCHEDULER_ENTITIES,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
+    DEFAULT_AUTO_LEARNING,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
+    DEFAULT_DEAD_TIME_MINUTES,
     DEFAULT_LHS_RETENTION_DAYS,
     DEFAULT_MAX_CYCLE_DURATION_MINUTES,
     DEFAULT_MIN_CYCLE_DURATION_MINUTES,
@@ -36,7 +38,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """Handle a config flow for Intelligent Heating Pilot."""
 
     VERSION = 1
@@ -46,9 +48,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         """Get the options flow for this handler."""
         return IntelligentHeatingPilotOptionsFlow()
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
 
@@ -73,10 +73,8 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             vtherm_val = processed.get(CONF_VTHERM_ENTITY)
             if not vtherm_val or (isinstance(vtherm_val, str) and vtherm_val.strip() == ""):
                 errors[CONF_VTHERM_ENTITY] = "required"
-            
-            schedulers_val = processed.get(CONF_SCHEDULER_ENTITIES)
-            if not schedulers_val or len(schedulers_val) == 0:
-                errors[CONF_SCHEDULER_ENTITIES] = "required"
+
+            # Scheduler is now optional - no validation needed
 
             if not errors:
                 _LOGGER.info("Creating entry with data: %s", processed)
@@ -96,10 +94,9 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             # Filter for scheduler entities (they typically have "schedule_" prefix or scheduler attributes)
             if "schedule" in state.entity_id.lower() or state.attributes.get("next_trigger"):
                 friendly_name = state.attributes.get("friendly_name", state.entity_id)
-                scheduler_options.append({
-                    "value": state.entity_id,
-                    "label": f"{friendly_name} ({state.entity_id})"
-                })
+                scheduler_options.append(
+                    {"value": state.entity_id, "label": f"{friendly_name} ({state.entity_id})"}
+                )
 
         # Sort by label for easier selection
         scheduler_options.sort(key=lambda x: x["label"])
@@ -111,15 +108,12 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                 selector.SelectSelectorConfig(
                     options=scheduler_options,
                     multiple=True,
-                    mode=selector.SelectSelectorMode.DROPDOWN
+                    mode=selector.SelectSelectorMode.DROPDOWN,
                 )
             )
             if scheduler_options
             else selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="switch",
-                    multiple=True
-                )
+                selector.EntitySelectorConfig(domain="switch", multiple=True)
             )
         )
 
@@ -128,86 +122,86 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                 vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
                 vol.Required(CONF_VTHERM_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(
-                        domain="climate",
-                        integration="versatile_thermostat"
+                        domain="climate", integration="versatile_thermostat"
                     )
                 ),
-                vol.Required(CONF_SCHEDULER_ENTITIES): scheduler_selector,
+                vol.Optional(CONF_SCHEDULER_ENTITIES): scheduler_selector,
                 vol.Optional(CONF_HUMIDITY_IN_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="sensor",
-                        device_class="humidity"
-                    )
+                    selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
                 ),
                 vol.Optional(CONF_HUMIDITY_OUT_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="sensor",
-                        device_class="humidity"
-                    )
+                    selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
                 ),
                 vol.Optional(CONF_CLOUD_COVER_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="sensor"
-                    )
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
                 vol.Optional(
-                    CONF_LHS_RETENTION_DAYS,
-                    default=DEFAULT_LHS_RETENTION_DAYS
+                    CONF_LHS_RETENTION_DAYS, default=DEFAULT_LHS_RETENTION_DAYS
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=7,
                         max=90,
                         step=1,
                         unit_of_measurement="days",
-                        mode=selector.NumberSelectorMode.BOX
+                        mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
                 vol.Optional(
-                    CONF_TEMP_DELTA_THRESHOLD,
-                    default=DEFAULT_TEMP_DELTA_THRESHOLD
+                    CONF_DEAD_TIME_MINUTES, default=DEFAULT_DEAD_TIME_MINUTES
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.0,
+                        max=60.0,
+                        step=1.0,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_AUTO_LEARNING, default=DEFAULT_AUTO_LEARNING
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_TEMP_DELTA_THRESHOLD, default=DEFAULT_TEMP_DELTA_THRESHOLD
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0.1,
                         max=1.0,
                         step=0.1,
                         unit_of_measurement="°C",
-                        mode=selector.NumberSelectorMode.BOX
+                        mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
                 vol.Optional(
-                    CONF_CYCLE_SPLIT_DURATION_MINUTES,
-                    default=DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
+                    CONF_CYCLE_SPLIT_DURATION_MINUTES, default=DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0,
                         max=120,
                         step=5,
                         unit_of_measurement="minutes",
-                        mode=selector.NumberSelectorMode.BOX
+                        mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
                 vol.Optional(
-                    CONF_MIN_CYCLE_DURATION_MINUTES,
-                    default=DEFAULT_MIN_CYCLE_DURATION_MINUTES
+                    CONF_MIN_CYCLE_DURATION_MINUTES, default=DEFAULT_MIN_CYCLE_DURATION_MINUTES
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1,
                         max=30,
                         step=1,
                         unit_of_measurement="minutes",
-                        mode=selector.NumberSelectorMode.BOX
+                        mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
                 vol.Optional(
-                    CONF_MAX_CYCLE_DURATION_MINUTES,
-                    default=DEFAULT_MAX_CYCLE_DURATION_MINUTES
+                    CONF_MAX_CYCLE_DURATION_MINUTES, default=DEFAULT_MAX_CYCLE_DURATION_MINUTES
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=15,
                         max=360,
                         step=5,
                         unit_of_measurement="minutes",
-                        mode=selector.NumberSelectorMode.BOX
+                        mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
             }
@@ -226,9 +220,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Intelligent Heating Pilot."""
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the options."""
         errors: dict[str, str] = {}
         normalized_input: dict[str, Any] = {}
@@ -242,7 +234,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             if not isinstance(sched_in, list):
                 sched_in = [sched_in] if sched_in else []
             normalized_input[CONF_SCHEDULER_ENTITIES] = sched_in
-            
+
             # For optional fields: if not in user_input OR empty, explicitly mark for deletion
             optional_entity_fields = [
                 CONF_HUMIDITY_IN_ENTITY,
@@ -254,7 +246,9 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 if field not in user_input:
                     # Field not submitted = user cleared it
                     fields_to_delete.append(field)
-                elif not user_input[field] or (isinstance(user_input[field], str) and user_input[field].strip() == ""):
+                elif not user_input[field] or (
+                    isinstance(user_input[field], str) and user_input[field].strip() == ""
+                ):
                     # Field submitted but empty
                     fields_to_delete.append(field)
 
@@ -262,9 +256,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             if not normalized_input.get(CONF_VTHERM_ENTITY):
                 errors[CONF_VTHERM_ENTITY] = "required"
 
-            schedulers_val = normalized_input.get(CONF_SCHEDULER_ENTITIES)
-            if not schedulers_val:
-                errors[CONF_SCHEDULER_ENTITIES] = "required"
+            # Scheduler is now optional - no validation needed
 
             if not errors:
                 # Merge with existing options
@@ -302,10 +294,9 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         for state in self.hass.states.async_all("switch"):
             if "schedule" in state.entity_id.lower() or state.attributes.get("next_trigger"):
                 friendly_name = state.attributes.get("friendly_name", state.entity_id)
-                scheduler_options.append({
-                    "value": state.entity_id,
-                    "label": f"{friendly_name} ({state.entity_id})"
-                })
+                scheduler_options.append(
+                    {"value": state.entity_id, "label": f"{friendly_name} ({state.entity_id})"}
+                )
         scheduler_options.sort(key=lambda x: x["label"])
 
         # Compute defaults for entity selectors
@@ -327,125 +318,154 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             else vol.Required(CONF_VTHERM_ENTITY)
         )
         schema_dict[vtherm_field] = selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain="climate",
-                integration="versatile_thermostat"
-            )
+            selector.EntitySelectorConfig(domain="climate", integration="versatile_thermostat")
         )
 
-        # Required: Schedulers (multiple, only set default if non-empty list)
+        # Optional: Schedulers (multiple, only set default if non-empty list)
         scheduler_selector = (
             selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=scheduler_options,
                     multiple=True,
-                    mode=selector.SelectSelectorMode.DROPDOWN
+                    mode=selector.SelectSelectorMode.DROPDOWN,
                 )
             )
             if scheduler_options
             else selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="switch",
-                    multiple=True
-                )
+                selector.EntitySelectorConfig(domain="switch", multiple=True)
             )
         )
         schedulers_field = (
-            vol.Required(CONF_SCHEDULER_ENTITIES, default=default_schedulers_list)
+            vol.Optional(CONF_SCHEDULER_ENTITIES, default=default_schedulers_list)
             if default_schedulers_list and len(default_schedulers_list) > 0
-            else vol.Required(CONF_SCHEDULER_ENTITIES)
+            else vol.Optional(CONF_SCHEDULER_ENTITIES)
         )
         schema_dict[schedulers_field] = scheduler_selector
 
         # Optional humidity/cloud fields: Use suggested_value to pre-fill while allowing clearing
-        schema_dict[vol.Optional(
-            CONF_HUMIDITY_IN_ENTITY, 
-            description={"suggested_value": hum_in_val} if hum_in_val and hum_in_val != "" else {}
-        )] = selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain="sensor",
-                device_class="humidity"
+        schema_dict[
+            vol.Optional(
+                CONF_HUMIDITY_IN_ENTITY,
+                description={"suggested_value": hum_in_val}
+                if hum_in_val and hum_in_val != ""
+                else {},
             )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
         )
 
-        schema_dict[vol.Optional(
-            CONF_HUMIDITY_OUT_ENTITY,
-            description={"suggested_value": hum_out_val} if hum_out_val and hum_out_val != "" else {}
-        )] = selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain="sensor",
-                device_class="humidity"
+        schema_dict[
+            vol.Optional(
+                CONF_HUMIDITY_OUT_ENTITY,
+                description={"suggested_value": hum_out_val}
+                if hum_out_val and hum_out_val != ""
+                else {},
             )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
         )
 
-        schema_dict[vol.Optional(
-            CONF_CLOUD_COVER_ENTITY,
-            description={"suggested_value": cloud_val} if cloud_val and cloud_val != "" else {}
-        )] = selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain="sensor"
+        schema_dict[
+            vol.Optional(
+                CONF_CLOUD_COVER_ENTITY,
+                description={"suggested_value": cloud_val} if cloud_val and cloud_val != "" else {},
             )
-        )
+        ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
 
         # Numeric fields
-        schema_dict[vol.Optional(
-            CONF_LHS_RETENTION_DAYS,
-            default=_opt_or_data(CONF_LHS_RETENTION_DAYS, DEFAULT_LHS_RETENTION_DAYS)
-        )] = selector.NumberSelector(
+        schema_dict[
+            vol.Optional(
+                CONF_LHS_RETENTION_DAYS,
+                default=_opt_or_data(CONF_LHS_RETENTION_DAYS, DEFAULT_LHS_RETENTION_DAYS),
+            )
+        ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=7,
                 max=90,
                 step=1,
                 unit_of_measurement="days",
-                mode=selector.NumberSelectorMode.BOX
+                mode=selector.NumberSelectorMode.BOX,
             )
         )
-        schema_dict[vol.Optional(
-            CONF_TEMP_DELTA_THRESHOLD,
-            default=_opt_or_data(CONF_TEMP_DELTA_THRESHOLD, DEFAULT_TEMP_DELTA_THRESHOLD)
-        )] = selector.NumberSelector(
+        schema_dict[
+            vol.Optional(
+                CONF_DEAD_TIME_MINUTES,
+                default=_opt_or_data(CONF_DEAD_TIME_MINUTES, DEFAULT_DEAD_TIME_MINUTES),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0.0,
+                max=60.0,
+                step=1.0,
+                unit_of_measurement="minutes",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        schema_dict[
+            vol.Optional(
+                CONF_AUTO_LEARNING, default=_opt_or_data(CONF_AUTO_LEARNING, DEFAULT_AUTO_LEARNING)
+            )
+        ] = selector.BooleanSelector()
+        schema_dict[
+            vol.Optional(
+                CONF_TEMP_DELTA_THRESHOLD,
+                default=_opt_or_data(CONF_TEMP_DELTA_THRESHOLD, DEFAULT_TEMP_DELTA_THRESHOLD),
+            )
+        ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.1,
                 max=1.0,
                 step=0.1,
                 unit_of_measurement="°C",
-                mode=selector.NumberSelectorMode.BOX
+                mode=selector.NumberSelectorMode.BOX,
             )
         )
-        schema_dict[vol.Optional(
-            CONF_CYCLE_SPLIT_DURATION_MINUTES,
-            default=_opt_or_data(CONF_CYCLE_SPLIT_DURATION_MINUTES, DEFAULT_CYCLE_SPLIT_DURATION_MINUTES)
-        )] = selector.NumberSelector(
+        schema_dict[
+            vol.Optional(
+                CONF_CYCLE_SPLIT_DURATION_MINUTES,
+                default=_opt_or_data(
+                    CONF_CYCLE_SPLIT_DURATION_MINUTES, DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
+                ),
+            )
+        ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0,
                 max=120,
                 step=5,
                 unit_of_measurement="minutes",
-                mode=selector.NumberSelectorMode.BOX
+                mode=selector.NumberSelectorMode.BOX,
             )
         )
-        schema_dict[vol.Optional(
-            CONF_MIN_CYCLE_DURATION_MINUTES,
-            default=_opt_or_data(CONF_MIN_CYCLE_DURATION_MINUTES, DEFAULT_MIN_CYCLE_DURATION_MINUTES)
-        )] = selector.NumberSelector(
+        schema_dict[
+            vol.Optional(
+                CONF_MIN_CYCLE_DURATION_MINUTES,
+                default=_opt_or_data(
+                    CONF_MIN_CYCLE_DURATION_MINUTES, DEFAULT_MIN_CYCLE_DURATION_MINUTES
+                ),
+            )
+        ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=1,
                 max=30,
                 step=1,
                 unit_of_measurement="minutes",
-                mode=selector.NumberSelectorMode.BOX
+                mode=selector.NumberSelectorMode.BOX,
             )
         )
-        schema_dict[vol.Optional(
-            CONF_MAX_CYCLE_DURATION_MINUTES,
-            default=_opt_or_data(CONF_MAX_CYCLE_DURATION_MINUTES, DEFAULT_MAX_CYCLE_DURATION_MINUTES)
-        )] = selector.NumberSelector(
+        schema_dict[
+            vol.Optional(
+                CONF_MAX_CYCLE_DURATION_MINUTES,
+                default=_opt_or_data(
+                    CONF_MAX_CYCLE_DURATION_MINUTES, DEFAULT_MAX_CYCLE_DURATION_MINUTES
+                ),
+            )
+        ] = selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=15,
                 max=360,
                 step=5,
                 unit_of_measurement="minutes",
-                mode=selector.NumberSelectorMode.BOX
+                mode=selector.NumberSelectorMode.BOX,
             )
         )
 

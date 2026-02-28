@@ -1,22 +1,22 @@
 """Unit tests for HeatingCycleService helper methods extracted during refactoring."""
-import sys
+
 from datetime import datetime, timedelta
-from pathlib import Path
+
 import pytest
 
-# Add domain to path WITHOUT loading infrastructure layer
-DOMAIN_PATH = Path(__file__).parent.parent.parent.parent.parent / "custom_components" / "intelligent_heating_pilot" / "domain"
-sys.path.insert(0, str(DOMAIN_PATH.parent))
-
-from domain.services.heating_cycle_service import HeatingCycleService
-from domain.value_objects.historical_data import (
+from custom_components.intelligent_heating_pilot.domain.services.heating_cycle_service import (
+    HeatingCycleService,
+)
+from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
     HistoricalDataKey,
     HistoricalDataSet,
     HistoricalMeasurement,
 )
 
 
-def m(timestamp: datetime, value: float | str | bool, device_id: str = "test.device") -> HistoricalMeasurement:
+def m(
+    timestamp: datetime, value: float | str | bool, device_id: str = "test.device"
+) -> HistoricalMeasurement:
     """Helper to create HistoricalMeasurement with empty attributes."""
     return HistoricalMeasurement(timestamp, value, {}, device_id)
 
@@ -26,7 +26,7 @@ def service():
     """Create HeatingCycleService instance for testing."""
     return HeatingCycleService(
         temp_delta_threshold=0.5,
-        cycle_split_duration_minutes=None,
+        cycle_split_duration_minutes=0,
     )
 
 
@@ -92,13 +92,15 @@ class TestComputeRuntimeMinutes:
         data = {
             HistoricalDataKey.HEATING_RUNTIME_SECONDS: [
                 m(start_time, 120.0),  # 120 sec on_time at 10:00
-                m(mid1, 180.0),        # 180 sec on_time at 10:05
-                m(mid2, 240.0),        # 240 sec on_time at 10:10
-                m(end_time, 150.0),    # 150 sec on_time at 10:15 (reset happened)
+                m(mid1, 180.0),  # 180 sec on_time at 10:05
+                m(mid2, 240.0),  # 240 sec on_time at 10:10
+                m(end_time, 150.0),  # 150 sec on_time at 10:15 (reset happened)
             ]
         }
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=60.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=60.0
+        )
 
         # Sum of all on_time_sec in range: 120 + 180 + 240 + 150 = 690 sec
         assert result == pytest.approx(690.0 / 60.0)  # 11.5 minutes
@@ -114,7 +116,9 @@ class TestComputeRuntimeMinutes:
             ]
         }
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=45.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=45.0
+        )
 
         assert result == 45.0
 
@@ -132,7 +136,9 @@ class TestComputeRuntimeMinutes:
             ]
         }
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=60.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=60.0
+        )
 
         # Sum of values in range: 200 + 150 + 175 = 525 sec
         assert result == pytest.approx(525.0 / 60.0)
@@ -143,7 +149,9 @@ class TestComputeRuntimeMinutes:
         end_time = base_time + timedelta(hours=1)
         data = {}
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=45.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=45.0
+        )
 
         assert result == 45.0
 
@@ -157,7 +165,9 @@ class TestComputeRuntimeMinutes:
             ]
         }
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=60.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=60.0
+        )
 
         assert result == pytest.approx(600.0 / 60.0)  # 10 minutes
 
@@ -172,7 +182,9 @@ class TestComputeRuntimeMinutes:
             ]
         }
 
-        result = service._compute_runtime_minutes(data, start_time, end_time, fallback_duration_minutes=50.0)
+        result = service._compute_runtime_minutes(
+            data, start_time, end_time, fallback_duration_minutes=50.0
+        )
 
         assert result == 50.0
 
@@ -194,8 +206,12 @@ class TestComputeTariffBreakdown:
         runtime_history = []
 
         cost, details = service._compute_tariff_breakdown(
-            tariff_history, energy_history, runtime_history,
-            start_time, end_time, fallback_energy_kwh=0.0
+            tariff_history,
+            energy_history,
+            runtime_history,
+            start_time,
+            end_time,
+            fallback_energy_kwh=0.0,
         )
 
         assert cost == pytest.approx(0.30)  # 2 kWh * 0.15 EUR/kWh
@@ -209,10 +225,10 @@ class TestComputeTariffBreakdown:
         start_time = base_time
         mid_time = base_time + timedelta(minutes=30)
         end_time = base_time + timedelta(hours=1)
-        
+
         tariff_history = [
             m(start_time, 0.10),  # 0.10 EUR/kWh
-            m(mid_time, 0.20),   # Price change at 30min
+            m(mid_time, 0.20),  # Price change at 30min
         ]
         energy_history = [
             m(start_time, 10.0),
@@ -222,8 +238,12 @@ class TestComputeTariffBreakdown:
         runtime_history = []
 
         cost, details = service._compute_tariff_breakdown(
-            tariff_history, energy_history, runtime_history,
-            start_time, end_time, fallback_energy_kwh=0.0
+            tariff_history,
+            energy_history,
+            runtime_history,
+            start_time,
+            end_time,
+            fallback_energy_kwh=0.0,
         )
 
         assert len(details) == 2
@@ -248,17 +268,21 @@ class TestComputeTariffBreakdown:
         ]
         energy_history = [
             m(start_time, 10.0),
-            m(end_time, 12.0),    # 2 kWh total
+            m(end_time, 12.0),  # 2 kWh total
         ]
         runtime_history = [
-            m(start_time, 600.0),    # 600 sec on_time at start
-            m(mid_time, 800.0),      # 800 sec on_time at mid
-            m(end_time, 700.0),      # 700 sec on_time at end (not included in segment)
+            m(start_time, 600.0),  # 600 sec on_time at start
+            m(mid_time, 800.0),  # 800 sec on_time at mid
+            m(end_time, 700.0),  # 700 sec on_time at end (not included in segment)
         ]
 
         cost, details = service._compute_tariff_breakdown(
-            tariff_history, energy_history, runtime_history,
-            start_time, end_time, fallback_energy_kwh=0.0
+            tariff_history,
+            energy_history,
+            runtime_history,
+            start_time,
+            end_time,
+            fallback_energy_kwh=0.0,
         )
 
         assert len(details) == 1
@@ -273,16 +297,14 @@ class TestComputeTariffBreakdown:
 
         # Missing tariff
         cost1, details1 = service._compute_tariff_breakdown(
-            [], [m(start_time, 10.0)], [],
-            start_time, end_time, fallback_energy_kwh=0.0
+            [], [m(start_time, 10.0)], [], start_time, end_time, fallback_energy_kwh=0.0
         )
         assert cost1 == 0.0
         assert details1 == []
 
         # Missing energy
         cost2, details2 = service._compute_tariff_breakdown(
-            [m(start_time, 0.15)], [], [],
-            start_time, end_time, fallback_energy_kwh=0.0
+            [m(start_time, 0.15)], [], [], start_time, end_time, fallback_energy_kwh=0.0
         )
         assert cost2 == 0.0
         assert details2 == []
@@ -313,7 +335,9 @@ class TestValidateCriticalData:
             }
         )
 
-        with pytest.raises(ValueError, match="Missing critical historical data for key: indoor_temp"):
+        with pytest.raises(
+            ValueError, match=r"Missing critical historical data keys: \['indoor_temp'\]"
+        ):
             service._validate_critical_data(dataset)
 
     def test_with_missing_heating_state_raises(self, service):
@@ -325,7 +349,9 @@ class TestValidateCriticalData:
             }
         )
 
-        with pytest.raises(ValueError, match="Missing critical historical data for key: heating_state"):
+        with pytest.raises(
+            ValueError, match=r"Missing critical historical data keys: \['heating_state'\]"
+        ):
             service._validate_critical_data(dataset)
 
 
@@ -336,12 +362,8 @@ class TestGetTemperaturesAt:
         """Given both temperatures available, returns (indoor, target)."""
         dataset = HistoricalDataSet(
             data={
-                HistoricalDataKey.INDOOR_TEMP: [
-                    m(base_time, 19.5)
-                ],
-                HistoricalDataKey.TARGET_TEMP: [
-                    m(base_time, 21.0)
-                ],
+                HistoricalDataKey.INDOOR_TEMP: [m(base_time, 19.5)],
+                HistoricalDataKey.TARGET_TEMP: [m(base_time, 21.0)],
             }
         )
 
@@ -355,9 +377,7 @@ class TestGetTemperaturesAt:
         dataset = HistoricalDataSet(
             data={
                 HistoricalDataKey.INDOOR_TEMP: [],
-                HistoricalDataKey.TARGET_TEMP: [
-                    m(base_time, 21.0)
-                ],
+                HistoricalDataKey.TARGET_TEMP: [m(base_time, 21.0)],
             }
         )
 
@@ -370,9 +390,7 @@ class TestGetTemperaturesAt:
         """Given missing target temp, returns (indoor, None)."""
         dataset = HistoricalDataSet(
             data={
-                HistoricalDataKey.INDOOR_TEMP: [
-                    m(base_time, 19.5)
-                ],
+                HistoricalDataKey.INDOOR_TEMP: [m(base_time, 19.5)],
                 HistoricalDataKey.TARGET_TEMP: [],
             }
         )
@@ -488,3 +506,314 @@ class TestShouldEndCycle:
 
         assert ended is False
         assert reason == ""
+
+
+class TestCalculateDeadTimeCycle:
+    """Regression tests for _calculate_dead_time_cycle() method (Issue #62).
+
+    These tests expose coverage gaps in dead time calculation.
+    They FAIL with current code to demonstrate missing functionality.
+    """
+
+    def test_calculate_dead_time_cycle_detects_threshold(self, service, base_time):
+        """Test that dead time is calculated when temp change meets threshold.
+
+        GIVEN: History data with temp rising from 18.0°C to 18.15°C after 5 minutes
+        WHEN: _calculate_dead_time_cycle() called with threshold=0.1
+        THEN: Should return ~5 minutes
+
+        This test FAILS if _calculate_dead_time_cycle is not properly implemented
+        or if temp change detection is broken.
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        # History shows temp rising to 18.15 at 5 minute mark
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),
+                m(start_time + timedelta(minutes=5), 18.15),
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+            temp_change_threshold=0.1,
+        )
+
+        # Should detect the 0.15°C change (exceeds 0.1 threshold)
+        assert result is not None, "Dead time should be detected for temp change >= threshold"
+        assert result == pytest.approx(5.0, abs=0.1)
+
+    def test_calculate_dead_time_cycle_returns_minutes(self, service, base_time):
+        """Test that duration is correctly converted to minutes.
+
+        GIVEN: Temp changes 0.1°C at exactly 3min 30sec after cycle start
+        THEN: Should return 3.5 minutes (not seconds or hours)
+
+        This test FAILS if the method returns seconds instead of minutes,
+        or if time conversion is incorrect.
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        # Temp change after exactly 3:30 (210 seconds)
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),
+                m(start_time + timedelta(minutes=3, seconds=30), 18.1),
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+            temp_change_threshold=0.1,
+        )
+
+        # Expected: 210 seconds / 60 = 3.5 minutes
+        assert result is not None
+        assert result == pytest.approx(3.5, abs=0.01)
+
+    def test_calculate_dead_time_cycle_below_threshold_returns_none(self, service, base_time):
+        """Test that None is returned if temp change is below threshold.
+
+        GIVEN: History shows only 0.05°C temp change (below 0.1 threshold)
+        WHEN: Called with threshold=0.1
+        THEN: Should return None
+
+        This test FAILS if the threshold check is not implemented correctly.
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        # Only 0.05°C change (below 0.1 threshold)
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),
+                m(start_time + timedelta(minutes=5), 18.05),
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+            temp_change_threshold=0.1,
+        )
+
+        # No temp change >= threshold, should return None
+        assert result is None, "Should return None when temp change < threshold"
+
+    def test_calculate_dead_time_cycle_missing_history_returns_none(self, service, base_time):
+        """Test that None is returned if indoor temp history empty.
+
+        GIVEN: HistoricalDataSet with empty INDOOR_TEMP list
+        WHEN: _calculate_dead_time_cycle() called
+        THEN: Should return None
+
+        This test FAILS if the method doesn't handle missing history gracefully.
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        # Empty indoor temp history
+        data = {HistoricalDataKey.INDOOR_TEMP: []}
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+            temp_change_threshold=0.1,
+        )
+
+        assert result is None, "Should return None when history is empty"
+
+    @pytest.mark.parametrize(
+        "threshold,expected_detected",
+        [
+            (0.2, True),  # 0.25°C change >= 0.2 threshold
+            (0.3, False),  # 0.25°C change < 0.3 threshold
+            (0.25, True),  # 0.25°C change >= 0.25 threshold (boundary)
+        ],
+    )
+    def test_calculate_dead_time_cycle_custom_threshold(
+        self, service, base_time, threshold, expected_detected
+    ):
+        """Test that custom temp_change_threshold parameter is respected.
+
+        GIVEN: History with 0.25°C temp change
+        WHEN: Called with different threshold values
+        THEN: Should detect change only when it meets the threshold
+
+        This test FAILS if the threshold parameter is not properly applied.
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),
+                m(start_time + timedelta(minutes=5), 18.25),
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+            temp_change_threshold=threshold,
+        )
+
+        if expected_detected:
+            assert result is not None, f"Should detect change when {0.25} >= {threshold}"
+            assert result == pytest.approx(5.0, abs=0.1)
+        else:
+            assert result is None, f"Should NOT detect when {0.25} < {threshold}"
+
+    def test_calculate_dead_time_cycle_first_measurement_after_start(self, service, base_time):
+        """Test that dead time uses first measurement AFTER cycle start time.
+
+        GIVEN: History has measurements AT start_time and AFTER start_time
+        WHEN: _calculate_dead_time_cycle() called
+        THEN: Should use first measurement AFTER start_time (ignoring start_time itself)
+
+        This test FAILS if the method includes measurements at start_time,
+        resulting in zero or incorrect dead time.
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        # Measurement AT start_time should be ignored
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),  # At start (should be skipped)
+                m(
+                    start_time + timedelta(seconds=1), 18.05
+                ),  # After start (should also be skipped, temp below threshold)
+                m(start_time + timedelta(minutes=2), 18.12),  # After start, meets threshold
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+            temp_change_threshold=0.1,
+        )
+
+        # Should return dead time to first measurement meeting threshold (~2 minutes)
+        assert result is not None
+        assert result == pytest.approx(2.0, abs=0.1)
+
+    def test_calculate_dead_time_cycle_negative_temp_change(self, service, base_time):
+        """Test that temperature decrease returns None (dead time only on heating rise).
+
+        GIVEN: History shows temperature DECREASING by 0.15°C
+        WHEN: _calculate_dead_time_cycle() called with temp_change_threshold=0.1
+        THEN: Should return None (dead time cannot be determined from cooling)
+
+        Dead time is the period before heating starts to warm the room.
+        If temperature drops, it's not heating - cannot measure dead time.
+        Threshold only applies to positive temperature changes.
+
+        This test FAILS if the method uses abs() for threshold check.
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        # Temp decreases (e.g., cycle end or measurement artifact - NOT heating)
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),
+                m(start_time + timedelta(minutes=3), 17.85),  # 0.15°C decrease
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+            temp_change_threshold=0.1,
+        )
+
+        # Temperature decreased, cannot determine dead time - must return None
+        assert result is None, "Should return None when temperature decreases (not heating)"
+
+    def test_calculate_dead_time_cycle_multiple_measurements(self, service, base_time):
+        """Test that dead time picks first measurement meeting threshold from multiple measurements.
+
+        GIVEN: History with multiple measurements, first one doesn't meet threshold,
+               second one does
+        WHEN: _calculate_dead_time_cycle() called
+        THEN: Should return dead time based on FIRST measurement meeting threshold
+
+        This test FAILS if the method doesn't iterate through all measurements properly.
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),
+                m(start_time + timedelta(minutes=1), 18.05),  # 0.05°C < 0.1 threshold
+                m(start_time + timedelta(minutes=2), 18.08),  # 0.08°C < 0.1 threshold
+                m(start_time + timedelta(minutes=3), 18.15),  # 0.15°C >= 0.1 threshold ✓
+                m(start_time + timedelta(minutes=4), 18.50),  # 0.50°C (after first match)
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+            temp_change_threshold=0.1,
+        )
+
+        # Should return dead time to first measurement meeting threshold (3 minutes)
+        assert result is not None
+        assert result == pytest.approx(3.0, abs=0.1)
+
+    def test_calculate_dead_time_cycle_handles_invalid_temp_values(self, service, base_time):
+        """Test that invalid temperature values are skipped gracefully.
+
+        GIVEN: History with some invalid (non-numeric) temperature values
+        WHEN: _calculate_dead_time_cycle() called
+        THEN: Should skip invalid values and continue to find valid ones
+
+        This test FAILS if the method crashes or doesn't skip non-numeric values.
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),
+                m(start_time + timedelta(minutes=1), "invalid"),  # Non-numeric
+                m(start_time + timedelta(minutes=2), None),  # None value
+                m(start_time + timedelta(minutes=3), 18.15),  # Valid, meets threshold
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+            temp_change_threshold=0.1,
+        )
+
+        # Should skip invalid values and return dead time from valid measurement
+        assert result is not None
+        assert result == pytest.approx(3.0, abs=0.1)

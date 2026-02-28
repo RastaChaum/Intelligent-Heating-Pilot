@@ -1,0 +1,103 @@
+name: Promote RC to Final Release
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [closed]
+
+permissions:
+  issues: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'integration'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Extract version from manifest.json
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if tag already exists
+        id: tag-check
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Le tag v${{ steps.version.outputs.version }} existe déjà"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Prepare release notes
+        id: release-notes
+        run: |
+          # Extraction de la section Unreleased pour la transformer en release
+          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/,/## \[/' CHANGELOG.md | sed '1d;$d')
+
+          if [ -z "$CHANGELOG_CONTENT" ]; then
+            echo "❌ Aucune entrée Unreleased dans CHANGELOG.md"
+            exit 1
+          fi
+
+          echo "$CHANGELOG_CONTENT" > /tmp/release-notes.md
+
+      - name: Update CHANGELOG with version
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Remplace [Unreleased] par la version actuelle
+          sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [$VERSION] - $TODAY/" CHANGELOG.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore: update CHANGELOG for v$VERSION"
+          git push origin main
+
+      - name: Delete pre-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Suppression de la pre-release beta
+          gh release delete "v${{ steps.version.outputs.version }}-beta" --yes 2>/dev/null || true
+          git push origin ":refs/tags/v${{ steps.version.outputs.version }}-beta" 2>/dev/null || true
+
+      - name: Create release
+        if: steps.tag-check.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+
+          gh release create "$TAG" \
+            --title "🚀 Release $VERSION" \
+            --notes-file /tmp/release-notes.md \
+            --latest \
+            --target main
+
+      - name: Comment on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "🚀 **Release v${{ steps.version.outputs.version }} publiée !**
+
+          La release est maintenant disponible pour tous les utilisateurs.
+
+          **Prochaines étapes :**
+          1. Créer une nouvelle branche à partir de \`integration\` pour la prochaine version
+          2. Incrémenter la version dans \`manifest.json\` et \`hacs.json\`
+          3. Vérifier que HACS détecte bien la nouvelle release
+          "

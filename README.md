@@ -1,7 +1,7 @@
 # Intelligent Heating Pilot (IHP)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-![Version](https://img.shields.io/badge/version-0.4.3-blue)
+![Version](https://img.shields.io/badge/version-0.5.0--rc.1-blue)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 
 > **The Adaptive Brain for Versatile Thermostat**
@@ -14,7 +14,7 @@ A Home Assistant integration that learns your heating system and automatically s
 
 ```
 📅 Next heating: 18:00 (target 21°C)
-🧠 Learned slope: 2.3°C/hour  
+🧠 Learned slope: 2.3°C/hour
 ⏰ Start time: 16:42 (calculated automatically)
 ✅ Room reaches 21°C exactly at 18:00
 ```
@@ -57,9 +57,10 @@ Settings → Devices & Services → + Add Integration
 
 ## 🎯 Features
 
-### Current (v0.4.3)
+### Current (v0.5.0-rc.1)
 
 - ✅ **Smart Pre-heating** - Automatically calculates optimal start time
+- ✅ **Enable/Disable Switch** - Toggle preheating on/off while maintaining learning
 - ✅ **Cycle Detection** - Learns from real heating cycles, not VTherm slopes
 - ✅ **Configurable Detection Parameters** - Fine-tune cycle detection for your heating system
 - ✅ **Time-Contextual Learning** - Different heating speeds by time of day

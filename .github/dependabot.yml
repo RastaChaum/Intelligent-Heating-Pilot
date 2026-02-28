@@ -1,0 +1,41 @@
+# Configuration Dependabot pour mises à jour automatiques des dépendances
+
+version: 2
+updates:
+  # Mises à jour Python/Poetry
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    target-branch: "integration"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "automated"
+    # Grouper les mises à jour mineures ensemble
+    groups:
+      minor-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Mises à jour GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    target-branch: "integration"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "ci"
+      - "automated"
