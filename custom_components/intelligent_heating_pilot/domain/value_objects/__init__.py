@@ -10,6 +10,7 @@ from .heating import HeatingAction, HeatingCycle, HeatingDecision, TariffPeriodD
 from .heating_cycle_cache_data import HeatingCycleCacheData
 from .historical_data import HistoricalDataKey, HistoricalDataSet, HistoricalMeasurement
 from .prediction_result import PredictionResult
+from .recording_extraction_task import ExtractionTaskState, RecordingExtractionTask
 from .scheduled_timeslot import ScheduledTimeslot
 from .slope_data import SlopeData
 
@@ -26,4 +27,6 @@ __all__ = [
     "HistoricalDataSet",
     "HistoricalMeasurement",
     "HeatingCycleCacheData",
+    "RecordingExtractionTask",
+    "ExtractionTaskState",
 ]

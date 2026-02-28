@@ -148,6 +148,7 @@ def mock_model_storage() -> Mock:
     storage.set_heating_cycle = AsyncMock()
     storage.set_cache_global_lhs = AsyncMock()
     storage.set_cache_contextual_lhs = AsyncMock()
+    storage.cache_heating_cycle = AsyncMock()
     return storage
 
 
