@@ -8,10 +8,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+<<<<<<< copilot/fix-ignored-config-values
+- **Zero-Retention Mode for Learning History** – New configuration option to disable LHS (Learning Heating Slope) data retention
+  - Set `lhs_retention_days=0` to disable historical data storage (useful for testing or minimal deployments)
+  - When disabled, system uses default LHS value (2.0°C/h) without attempting to persist or retrieve learning data
+  - No storage overhead when retention is disabled
+=======
+- Dead time calculation in heating time prediction ([#62](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/62)): Formula now includes dead time constant: `time_needed = dead_time + (temperature_delta / learned_slope) * 60`. Dead time is automatically learned from historical heating cycles.
+>>>>>>> integration
 
 ### Changed
+- **Contextual LHS Lazy Loading at Startup** ([#103](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/103)) – Refactored `LhsLifecycleManager` to use lazy loading for contextual LHS, reducing startup I/O and memory overhead
+  - At startup, only the current hour's contextual LHS is loaded (instead of all 24 hours)
+  - Other hours are loaded on-demand via `get_contextual_lhs()` or `ensure_contextual_lhs_populated()` when first requested
+  - Replaced `calculate_all_contextual_lhs()` with `calculate_contextual_lhs_for_hour()` for per-hour on-demand computation
+  - Bulk updates (`on_retention_change()`, `on_24h_timer()`) still recalculate and cache all 24 hours as before
+- **Coordinator Architecture Refactoring** – Improved code organization and DDD compliance
+  - Extracted `IntelligentHeatingPilotCoordinator` from `__init__.py` into dedicated `coordinator.py` module for better maintainability
+  - Consolidated `_as_bool()` utility function into `utils/config_helpers.py` to eliminate code duplication
+  - Added explicit type annotations for better IDE support and type safety
+  - Improved separation of concerns between domain, infrastructure, and application layers
+- **Timer-Based Anticipation Triggering** ([#84](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/84)) – Improved the reliability of the preheating system by replacing event-driven triggering with timer-based triggering, reducing unexpected triggers and enhancing the accuracy of heating predictions.
 
 ### Fixed
+- **Fixed Configuration Values Being Ignored When Falsy** – Configuration values like `0` (false/disabled) are now properly read and applied
+  - `lhs_retention_days=0`, `cycle_split_duration_minutes=0`, `auto_learning=False` now correctly persist and are respected by the system
+  - Centralized boolean parsing ensures consistent handling of stringified config values across the integration
+- **No-scheduler KeyError spam** ([#81](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/81))
+  - Fixed `KeyError: 'anticipated_start_time'` when IHP runs without a scheduler configured
+  - Event bridge now distinguishes between clear-values signals and full data payloads
+  - Users without scheduler configuration no longer see repeated errors; sensors stay `unknown` as expected
+
+## [0.5.0] - 2026-01-25
+
+### Added
+- **IHP Enable/Disable Switch** ([#77](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/77)) – New domain entity to toggle IHP preheating on/off per device while preserving learned data
+  - Switch entity `switch.intelligent_heating_pilot_<device>_enable_preheating` for each configured IHP device
+  - Full domain layer support with DDD-compliant abstraction
+  - Comprehensive unit tests for switch functionality
+  - Documented in user guides
+- **Optional Scheduler Support** ([#75](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/75)) – Schedulers now optional; new service for dynamic calculations without scheduler binding
+  - New service `calculate_anticipated_start_time` for on-demand calculations with custom parameters
+  - Service accepts input parameters: `target_temperature`, `current_temperature`, `outdoor_temperature` (optional)
+  - Service returns `anticipated_start_time` and `heating_slope_used` for transparency
+  - Enables integration with other heating automation systems beyond Scheduler
+- **RC workflow suite** – New GitHub Actions for release candidates (prepare, increment, promote) plus CLI helper `scripts/rc-helper.sh` and documentation to manage RC cycles safely in production.
+
+### Changed
+- **Release automation cleanup** – Legacy pre-release/release workflows removed in favor of the RC-based pipeline to avoid duplicate runs and align production releases with validated RCs.
+- **Documentation maintenance** – Updated README badges and version, aligned docs index, and referenced open issues [#20](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/20) and [#66](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/66) for tracking.
+
 
 ## [0.4.4] - 2026-01-14
 
@@ -69,7 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Incremental Cycle Cache for LHS Calculation** - New cache system to store heating cycles incrementally, drastically reducing Home Assistant recorder queries and enabling longer retention periods than HA's native history
   - New `CycleCacheData` value object to store cycles with metadata
-  - New `ICycleCache` interface for cache operations  
+  - New `ICycleCache` interface for cache operations
   - New `HACycleCache` adapter using HA Store for JSON persistence
   - Automatic deduplication and retention-based pruning
   - Graceful degradation to direct recorder queries if cache unavailable
@@ -243,7 +289,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Release Links
 
-[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.5.0-rc.1...HEAD
+[0.5.0-rc.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.4...v0.5.0-rc.1
 [0.4.3]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.0...v0.4.1

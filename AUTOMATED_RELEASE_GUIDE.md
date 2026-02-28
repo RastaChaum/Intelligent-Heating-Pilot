@@ -2,11 +2,115 @@
 
 ## Overview
 
-The Intelligent Heating Pilot project uses **GitHub Actions** to automate release creation. You only need to prepare the documentation and push a tag - GitHub does the rest!
+The Intelligent Heating Pilot project uses **GitHub Actions** to automate release creation with a **Release Candidate (RC)** workflow for production testing before final releases.
+
+**Two-phase release workflow:**
+1. **RC Phase**: Test in production with `v0.5.0-rc1`, `v0.5.0-rc2`, etc. (pre-releases)
+2. **Final Release**: Promote tested RC to stable `v0.5.0` release
 
 ---
 
-## 🚀 Step-by-Step Release Process
+## 🚀 Release Candidate (RC) Workflow
+
+### Phase 1: Create Initial RC on `integration` branch
+
+#### Option A: Using the Helper Script (Recommended)
+
+```bash
+# Sur la branche integration
+./scripts/rc-helper.sh prepare
+# Entrez la version (ex: 0.5.0)
+# Le script vérifie le CHANGELOG, crée GITHUB_RELEASE_v0.5.0.md et le tag v0.5.0-rc1
+```
+
+#### Option B: Using GitHub Workflow Manually
+
+1. Go to [Actions → Prepare Release Candidate](../../actions/workflows/prepare-release-candidate.yml)
+2. Click "Run workflow"
+3. Enter version (e.g., `0.5.0`)
+4. Workflow creates:
+   - `GITHUB_RELEASE_v0.5.0.md` on `integration`
+   - Tag `v0.5.0-rc1`
+   - GitHub pre-release
+   - Tracking issue for RC testing
+
+### Phase 2: Test in Production
+
+**Deploy the RC to your production environment:**
+- Install from pre-release in HACS or manually
+- Beta-testers can test the RC
+- Report issues in the RC tracking issue
+
+### Phase 3: Fix Issues and Increment RC
+
+**If bugs are found:**
+
+```bash
+# Faire les corrections sur integration
+git add .
+git commit -m "fix: correction problème X"
+git push origin integration
+
+# Créer une nouvelle RC (rc2, rc3, etc.)
+./scripts/rc-helper.sh increment
+# Entrez la version de base (0.5.0)
+# Décrivez les corrections apportées
+```
+
+**Or via GitHub Workflow:**
+1. Fix bugs on `integration` branch
+2. Go to [Actions → Increment RC Version](../../actions/workflows/increment-rc-version.yml)
+3. Run workflow with version and fix description
+4. Workflow creates `v0.5.0-rc2`, updates release notes, creates new pre-release
+
+### Phase 4: Promote to Final Release
+
+**When RC is stable and ready:**
+
+```bash
+# Vérifier que tout est OK
+./scripts/rc-helper.sh promote
+
+# Créer la PR integration → main
+gh pr create --base main --head integration --title "Release v0.5.0" --body "Promote RC to stable release"
+```
+
+**When PR is merged to `main`:**
+- Workflow automatically:
+  - Updates CHANGELOG.md with release date
+  - Syncs version numbers in all files
+  - Creates final tag `v0.5.0`
+  - Creates GitHub Release (NOT pre-release)
+  - Closes referenced issues
+  - Deletes RC pre-releases
+  - Closes RC tracking issue
+
+---
+
+## 📋 Quick Reference Commands
+
+```bash
+# Check RC status
+./scripts/rc-helper.sh status
+
+# Prepare first RC (on integration)
+./scripts/rc-helper.sh prepare
+
+# Increment RC after fixes (on integration)
+./scripts/rc-helper.sh increment
+
+# Prepare for final release promotion
+./scripts/rc-helper.sh promote
+
+# Show help
+./scripts/rc-helper.sh help
+```
+
+---
+
+## 🔄 Legacy: Direct Release Process (Not Recommended)
+
+**This section kept for reference. Use RC workflow above instead.**
 
 ### 1️⃣ Prepare Release Documentation
 
@@ -239,7 +343,7 @@ Use this before pushing the tag:
 5. Append:
    ```markdown
    ---
-   
+
    **Issues Fixed:**
    Closes #16
    Closes #17
@@ -319,6 +423,108 @@ git push origin main v0.4.0
 
 ---
 
-**Last Updated**: November 2025  
-**Automation File**: `.github/workflows/create-release.yml`  
-**Documentation**: `.github/agents/documentation_specialist.agent.md`
+**Last Updated**: Janvier 2025
+**Automation Files**:
+- `.github/workflows/prepare-release-candidate.yml` - Create initial RC
+- `.github/workflows/increment-rc-version.yml` - Increment RC version
+- `.github/workflows/promote-rc-to-release.yml` - Promote RC to final release
+- `scripts/rc-helper.sh` - CLI helper for RC management
+
+**Documentation**: `.github/agents/documentation_agent.agent.md`
+
+---
+
+## 📊 RC Workflow Summary
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  INTEGRATION BRANCH                                         │
+│                                                             │
+│  1. Develop features                                        │
+│  2. Update CHANGELOG.md [Unreleased]                        │
+│  3. ./scripts/rc-helper.sh prepare → v0.5.0-rc1            │
+│  4. Test in production                                      │
+│  5. Fix bugs if needed                                      │
+│  6. ./scripts/rc-helper.sh increment → v0.5.0-rc2, rc3...  │
+│  7. Repeat until stable                                     │
+│                                                             │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       │ PR integration → main
+                       │
+┌──────────────────────▼──────────────────────────────────────┐
+│  MAIN BRANCH                                                │
+│                                                             │
+│  Merge triggers automatic:                                 │
+│  ✅ CHANGELOG.md update                                     │
+│  ✅ Version sync in all files                               │
+│  ✅ Tag v0.5.0 creation                                     │
+│  ✅ GitHub Release (stable, not pre-release)                │
+│  ✅ Issues closure                                          │
+│  ✅ RC pre-releases cleanup                                 │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 🎯 Best Practices
+
+### ✅ Do's
+
+- **Always test RC in production** before final release
+- **Use semantic versioning**: Major.Minor.Patch
+- **Document all changes** in CHANGELOG.md as you develop
+- **Reference issues** with `[#123](URL)` format for auto-closure
+- **Keep integration clean**: Only merge tested features
+- **One RC at a time**: Don't create multiple concurrent RCs
+
+### ❌ Don'ts
+
+- **Don't skip RC phase** for non-trivial releases
+- **Don't merge to main** without successful RC testing
+- **Don't forget to sync versions** in all files before RC
+- **Don't create RC tags manually** on main branch
+- **Don't promote untested RCs** to production
+
+## 🔧 Troubleshooting
+
+### RC workflow didn't trigger
+
+**Check:**
+- Workflow files exist in `.github/workflows/`
+- You have workflow execution permissions
+- Check [Actions tab](../../actions) for errors
+
+**Fix:**
+- Re-run workflow manually
+- Check YAML syntax
+- Verify GitHub token permissions
+
+### Multiple RCs created accidentally
+
+**Fix:**
+```bash
+# Delete unwanted RC releases
+gh release delete v0.5.0-rc3 --yes
+git push origin :refs/tags/v0.5.0-rc3
+```
+
+### Want to restart RC process
+
+**Steps:**
+1. Delete all RC tags for the version
+2. Delete RC pre-releases on GitHub
+3. Close RC tracking issue
+4. Start fresh with `./scripts/rc-helper.sh prepare`
+
+### RC promoted but issues not closed
+
+**Check:**
+- Issue references use `[#123](URL)` format in release notes
+- Issues are open (not already closed)
+- Workflow has `issues: write` permission
+
+**Fix manually:**
+```bash
+gh issue close 123 --comment "Fixed in v0.5.0"
+gh issue edit 123 --add-label "released"
+```

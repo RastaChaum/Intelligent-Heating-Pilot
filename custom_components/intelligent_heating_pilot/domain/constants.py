@@ -13,6 +13,9 @@ DEFAULT_ANTICIPATION_BUFFER = 5  # Safety buffer to ensure target is reached on 
 MIN_VALID_SLOPE = 0.1  # Minimum valid heating slope
 DEFAULT_LEARNED_SLOPE = 2.0  # Default slope when no learning data exists
 
+# Dead time (in minutes)
+DEFAULT_DEAD_TIME_MINUTES = 0.0  # Default dead time when no learning data exists
+
 # Environmental correction factors
 OUTDOOR_TEMP_REFERENCE = 20.0  # Reference outdoor temperature (°C)
 OUTDOOR_TEMP_FACTOR = 0.05  # Impact factor per degree difference

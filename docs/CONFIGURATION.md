@@ -13,11 +13,13 @@
 
 A configuration dialog will appear. Here's what you need:
 
-| Field | What It Is | How to Find |
-|-------|-----------|------------|
-| **Name** | A friendly name for this IHP instance | Any name you want (e.g., "Living Room") |
-| **VTherm Entity** | Your Versatile Thermostat climate entity | Go to **Devices** → Find your thermostat → Copy entity name (e.g., `climate.living_room`) |
-| **Scheduler Entity** | HACS Scheduler switch(es) that control the VTherm | Go to **Devices** → Find your scheduler → Copy entity name (e.g., `switch.schedule_heating`) |
+| Field | Required? | What It Is | How to Find |
+|-------|-----------|-----------|------------|
+| **Name** | ✅ Yes | A friendly name for this IHP instance | Any name you want (e.g., "Living Room") |
+| **VTherm Entity** | ✅ Yes | Your Versatile Thermostat climate entity | Go to **Devices** → Find your thermostat → Copy entity name (e.g., `climate.living_room`) |
+| **Scheduler Entity** | ⚠️ Optional | HACS Scheduler switch(es) that control the VTherm | Go to **Devices** → Find your scheduler → Copy entity name (e.g., `switch.schedule_heating`) |
+
+> **New in v0.5.0+**: The Scheduler Entity is now **optional**. See [Using IHP Without a Scheduler](#using-ihp-without-a-scheduler) below.
 
 ### Step 3: (Optional) Add Environmental Sensors
 
@@ -68,6 +70,82 @@ Once configured, IHP operates automatically:
 
 ---
 
+## Using IHP Without a Scheduler
+
+**New in v0.5.0+**: You can now use IHP without configuring a scheduler entity. This is useful for:
+
+- 🤖 **Dynamic scheduling** based on external triggers (e.g., smartphone alarm, calendar events)
+- 🔧 **Custom automations** that calculate start times programmatically
+- 📱 **Voice-controlled** heating schedules
+- 🧪 **Testing** IHP's prediction capabilities
+
+### What Happens Without a Scheduler?
+
+When no scheduler is configured:
+
+- ✅ IHP continues to **learn** from your heating cycles
+- ✅ The **Learned Heating Slope** sensor updates normally
+- ⚠️ Anticipation sensors show **"unknown"** (no scheduled events to anticipate)
+- ⚠️ IHP does **not automatically trigger** heating (you control this via automations)
+
+### Using the Calculation Service
+
+Without a scheduler, you can use the **`calculate_anticipated_start_time`** service in your own automations:
+
+**Example: Wake-up heating based on phone alarm**
+
+```yaml
+alias: "Dynamic Wake-up Heating"
+trigger:
+    - platform: state
+    entity_id: sensor.phone_next_alarm
+action:
+    # Calculate when to start heating
+    - service: intelligent_heating_pilot.calculate_anticipated_start_time
+    data:
+        entity_id: sensor.intelligent_heating_pilot_living_room_anticipated_start_time
+        target_time: "{{ states('sensor.phone_next_alarm') }}"
+        target_temp: 21.0
+    response_variable: heating_calc
+    
+    # Wait until the calculated start time
+    - delay:
+        seconds: "{{ (as_datetime(heating_calc.anticipated_start_time) - now()).total_seconds() }}"
+    
+    # Start heating
+    - service: climate.set_temperature
+    target:
+        entity_id: climate.living_room
+    data:
+        temperature: 21.0
+```
+
+**Service Parameters:**
+
+| Parameter | Required? | Description | Example |
+|-----------|-----------|-------------|---------|
+| `entity_id` | ✅ Yes | Any IHP sensor entity (to identify the device) | `sensor.intelligent_heating_pilot_living_room_anticipated_start_time` |
+| `target_time` | ✅ Yes | When you want target temperature reached | `"2024-01-15 07:00:00"` or template |
+| `target_temp` | ⚠️ Optional | Desired temperature (defaults to VTherm's current target) | `21.0` |
+
+**Service Response:**
+
+The service returns calculation results visible in Developer Tools:
+
+```yaml
+anticipated_start_time: "2024-01-15T06:27:00+01:00"
+target_time: "2024-01-15T07:00:00+01:00"
+target_temp: 21.0
+current_temp: 18.5
+estimated_duration_minutes: 33.0
+learned_heating_slope: 2.1
+confidence_level: 0.85
+```
+
+**Use these values in your automations** to create intelligent, adaptive heating schedules!
+
+---
+
 ## Modifying Configuration
 
 Need to change entities after setup?
@@ -97,6 +175,26 @@ The integration will reload automatically.
 - 📊 **Cycle Cache**: Heating cycles older than this are automatically pruned
 - 🧠 **Learning History**: More retention = better slope calculations
 - 💾 **Storage**: Longer retention uses slightly more disk space (minimal)
+
+**⚠️ Important Performance Note:**
+
+When you first configure IHP or increase the **Data Retention Days** setting, IHP will analyze your VTherm's historical data from Home Assistant's recorder database to extract heating cycles.
+
+**Expected behavior during initial extraction:**
+- 🕒 **Processing time**: Up to **5 minutes** or more with high retention settings (>30 days)
+- 📊 **Typical example**: With `purge_keep_days` set to 60 days in recorder configuration, initial extraction takes approximately **2-3 minutes**
+- 🔄 **This only happens once**: After initial extraction, IHP uses incremental updates (every 24 hours) which are much faster
+- 📱 **UI may be slow**: Some features/UI elements may load slowly during this initial processing
+
+**Factors affecting processing time:**
+- Higher **Data Retention Days** = longer processing time
+- Higher **recorder `purge_keep_days`** = more historical data to process
+- Slower hardware (e.g., Raspberry Pi, Home Assistant Green) = longer processing time
+
+**Recommendation**: If you experience slowness exceeding 5 minutes, consider:
+- Reducing **Data Retention Days** to 30 days (default) or lower
+- Checking your recorder's `purge_keep_days` setting (typically in `configuration.yaml`)
+- Allowing the initial extraction to complete before making configuration changes
 
 ### Heating Cycle Detection Parameters
 
@@ -195,7 +293,26 @@ You can configure multiple IHP instances—one per VTherm:
 
 ## Entities Created by IHP
 
-After configuration, IHP creates these sensors on your device:
+After configuration, IHP creates these entities on your device:
+
+### Control Switch
+
+| Switch | What It Does | Default State |
+|--------|-------------|--------------|
+| **IHP Preheating** | Enable/disable intelligent preheating | ON (enabled) |
+
+**When Enabled (ON):**
+- ✅ IHP triggers heating at calculated anticipation time
+- ✅ Learning and calculations continue normally
+- ✅ All sensors update as expected
+
+**When Disabled (OFF):**
+- ❌ IHP does NOT trigger heating (scheduler runs in legacy mode)
+- ✅ Learning continues (heating cycles still detected)
+- ✅ Calculations continue (predictions still shown in sensors)
+- ✅ You can monitor what IHP would do without it taking control
+
+**Use Case:** Temporarily disable preheating during manual heating control, or when you want to monitor IHP's predictions without automatic intervention.
 
 ### Main Sensors
 

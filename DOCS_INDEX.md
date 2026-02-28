@@ -119,9 +119,11 @@ If you want to **contribute code or documentation**:
 - **[.github/agents/README.md](.github/agents/README.md)** - Agent system overview
 
 **🤖 Specialized Agents**:
-- **[testing_specialist.agent.md](.github/agents/testing_specialist.agent.md)** - TDD Red phase (write tests)
-- **[tech_lead.agent.md](.github/agents/tech_lead.agent.md)** - TDD Green + Refactor (implement code)
-- **[documentation_specialist.agent.md](.github/agents/documentation_specialist.agent.md)** - Update docs
+- **[software_architect.agent.md](.github/agents/software_architect.agent.md)** - Design interfaces and types
+- **[qa_engineer.agent.md](.github/agents/qa_engineer.agent.md)** - TDD Red phase (write tests)
+- **[developer.agent.md](.github/agents/developer.agent.md)** - TDD Green (implement code)
+- **[tech_lead.agent.md](.github/agents/tech_lead.agent.md)** - Review and refactor
+- **[documentation_agent.agent.md](.github/agents/documentation_agent.agent.md)** - Update docs
 
 **📋 General Development**:
 - **[.github/copilot-instructions.md](.github/copilot-instructions.md)** - AI-assisted development guidelines
@@ -247,12 +249,12 @@ Please open an issue or submit a pull request. See [CONTRIBUTING.md](CONTRIBUTIN
 
 All documentation follows these principles:
 
-✅ **DRY Principle**: Single source of truth - no duplicate information  
-✅ **Clear Audience**: Each document targets specific readers (users vs contributors)  
-✅ **Consistent Format**: Standard templates and formatting throughout  
-✅ **Keep Current**: Updated with each release  
-✅ **Examples**: Practical examples where helpful  
-✅ **Searchable**: Well-structured with clear headings  
+✅ **DRY Principle**: Single source of truth - no duplicate information
+✅ **Clear Audience**: Each document targets specific readers (users vs contributors)
+✅ **Consistent Format**: Standard templates and formatting throughout
+✅ **Keep Current**: Updated with each release
+✅ **Examples**: Practical examples where helpful
+✅ **Searchable**: Well-structured with clear headings
 ✅ **Cross-referenced**: Links to related documentation
 
 ---
