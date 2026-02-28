@@ -1052,6 +1052,64 @@ class TestLhsLifecycleManagerLazyLoading:
         assert result == 2.5
 
     @pytest.mark.asyncio
+    async def test_get_contextual_lhs_returns_global_fallback_if_computed_zero(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        mock_contextual_lhs_calculator: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that get_contextual_lhs() returns global fallback when computed LHS is 0.0.
+
+        A slope of 0.0 is invalid and would block predictions; global LHS must be used instead.
+        """
+        # GIVEN: No cached contextual value in storage
+        mock_model_storage.get_cached_contextual_lhs.return_value = None
+        # GIVEN: Calculator returns 0.0 (invalid slope)
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = 0.0
+        # GIVEN: Global LHS fallback exists
+        mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
+            value=2.5, updated_at=base_datetime
+        )
+
+        # WHEN: get_contextual_lhs is called
+        target_time = base_datetime.replace(hour=18)
+        cycles = []
+        result = await manager.get_contextual_lhs(target_time, cycles)
+
+        # THEN: Global LHS is returned as fallback
+        assert result == 2.5
+
+    @pytest.mark.asyncio
+    async def test_get_contextual_lhs_returns_global_fallback_if_computed_negative(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        mock_contextual_lhs_calculator: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test that get_contextual_lhs() returns global fallback when computed LHS is negative.
+
+        A negative slope is invalid and would block predictions; global LHS must be used instead.
+        """
+        # GIVEN: No cached contextual value in storage
+        mock_model_storage.get_cached_contextual_lhs.return_value = None
+        # GIVEN: Calculator returns -1.0 (invalid slope)
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = -1.0
+        # GIVEN: Global LHS fallback exists
+        mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
+            value=2.5, updated_at=base_datetime
+        )
+
+        # WHEN: get_contextual_lhs is called
+        target_time = base_datetime.replace(hour=18)
+        cycles = []
+        result = await manager.get_contextual_lhs(target_time, cycles)
+
+        # THEN: Global LHS is returned as fallback
+        assert result == 2.5
+
+    @pytest.mark.asyncio
     async def test_ensure_contextual_lhs_populated_lazy_loads_missing_hour(
         self,
         manager: LhsLifecycleManager,
