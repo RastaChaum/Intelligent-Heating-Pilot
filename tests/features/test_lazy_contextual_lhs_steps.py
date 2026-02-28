@@ -45,9 +45,10 @@ def lhs_lifecycle_manager_configured(lhs_context):
     mock_storage.set_cached_global_lhs = AsyncMock()
 
     mock_contextual_calculator = Mock()
-    # The method is calculate_all_contextual_lhs and returns a dict
-    # Use AsyncMock to properly track async calls
-    mock_contextual_calculator.calculate_all_contextual_lhs = AsyncMock(
+    # Adapter pour lazy loading : mocker calculate_contextual_lhs_for_hour (par heure)
+    mock_contextual_calculator.calculate_contextual_lhs_for_hour = Mock(return_value=2.5)
+    # Garder calculate_all_contextual_lhs pour compatibilité bulk
+    mock_contextual_calculator.calculate_all_contextual_lhs = Mock(
         return_value={h: 2.5 for h in range(24)}
     )
 
@@ -151,10 +152,10 @@ def ensure_contextual_lhs_populated_called(lhs_context, hour, recalc=None):
     lhs_context["force_recalculate"] = force_recalculate
     lhs_context["target_hour"] = hour
 
-    # Track calculator calls before execution
+    # Track calculator calls before execution (lazy loading: par heure)
     initial_call_count = lhs_context[
         "contextual_calculator"
-    ].calculate_all_contextual_lhs.call_count
+    ].calculate_contextual_lhs_for_hour.call_count
 
     # Call the method with target_hour as first parameter
     result = asyncio.run(
@@ -165,7 +166,7 @@ def ensure_contextual_lhs_populated_called(lhs_context, hour, recalc=None):
 
     lhs_context["result"] = result
     lhs_context["recalculation_occurred"] = (
-        lhs_context["contextual_calculator"].calculate_all_contextual_lhs.call_count
+        lhs_context["contextual_calculator"].calculate_contextual_lhs_for_hour.call_count
         > initial_call_count
     )
 

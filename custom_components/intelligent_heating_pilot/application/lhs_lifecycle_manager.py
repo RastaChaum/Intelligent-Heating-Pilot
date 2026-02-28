@@ -436,11 +436,12 @@ class LhsLifecycleManager:
             cycles, target_hour
         )
 
-        # If contextual LHS is None, fallback to global LHS
-        if computed_lhs is None:
+        # If contextual LHS is None or invalid (<= 0), fallback to global LHS
+        if computed_lhs is None or computed_lhs <= 0:
             _LOGGER.debug(
-                "No contextual LHS computed for hour %d, falling back to global LHS",
+                "Contextual LHS for hour %d is invalid (%s°C/h), falling back to global LHS",
                 target_hour,
+                computed_lhs,
             )
             return await self.get_global_lhs()
 
