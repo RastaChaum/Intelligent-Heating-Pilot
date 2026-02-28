@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 try:
     from homeassistant.util import dt as dt_util
 except ImportError:
-    dt_util = None  # type: ignore[assignment]  # For testing without HA
+    dt_util = None
 
 from ...domain.value_objects.historical_data import HistoricalDataKey, HistoricalDataSet
 from ...domain.value_objects.recording_extraction_task import (

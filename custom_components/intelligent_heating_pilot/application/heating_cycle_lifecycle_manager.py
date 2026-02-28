@@ -125,7 +125,9 @@ class HeatingCycleLifecycleManager:
             None
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager.refresh_heating_cycle_cache")
-        _LOGGER.info("Heating cycle cache refresh triggered for device=%s", self._device_config.device_id)
+        _LOGGER.info(
+            "Heating cycle cache refresh triggered for device=%s", self._device_config.device_id
+        )
 
         # Step 1: Cancel previous timer, then schedule next one at dt_util.now() + 24H
         if self._timer_cancel_func is not None:
@@ -152,9 +154,7 @@ class HeatingCycleLifecycleManager:
         # Pruning happens BEFORE extraction to avoid concurrent storage mutations.
         if self._heating_cycle_storage is not None:
             now = dt_util.now() if dt_util is not None else datetime.now()
-            await self._heating_cycle_storage.prune_old_cycles(
-                self._device_config.device_id, now
-            )
+            await self._heating_cycle_storage.prune_old_cycles(self._device_config.device_id, now)
             _LOGGER.debug("Pruned old cycles from storage cache")
 
             # Recalculate LHS from the cycles that remain after pruning
@@ -655,9 +655,7 @@ class HeatingCycleLifecycleManager:
         if self._heating_cycle_storage is None:
             return [(window_start, window_end)]
 
-        cache_data = await self._heating_cycle_storage.get_cache_data(
-            self._device_config.device_id
-        )
+        cache_data = await self._heating_cycle_storage.get_cache_data(self._device_config.device_id)
 
         if cache_data is None or not cache_data.cycles:
             return [(window_start, window_end)]
@@ -775,7 +773,7 @@ class HeatingCycleLifecycleManager:
         range_tasks = [asyncio.create_task(coro) for coro in run_coroutines]
 
         # _extraction_task tracks the combined completion of all range tasks.
-        async def _wait_all_ranges(tasks: list[asyncio.Task]) -> None:  # type: ignore[type-arg]
+        async def _wait_all_ranges(tasks: list[asyncio.Task]) -> None:
             await asyncio.gather(*tasks, return_exceptions=True)
 
         self._extraction_task = asyncio.create_task(_wait_all_ranges(range_tasks))
@@ -1098,7 +1096,9 @@ class HeatingCycleLifecycleManager:
             [self._extraction_queue] if self._extraction_queue is not None else []
         )
         if queues_to_cancel:
-            _LOGGER.info("Cancelling ongoing incremental extraction (%d queue(s))", len(queues_to_cancel))
+            _LOGGER.info(
+                "Cancelling ongoing incremental extraction (%d queue(s))", len(queues_to_cancel)
+            )
             for queue in queues_to_cancel:
                 try:
                     await queue.cancel_queue()

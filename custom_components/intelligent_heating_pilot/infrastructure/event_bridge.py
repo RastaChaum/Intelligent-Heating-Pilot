@@ -6,6 +6,7 @@ to the orchestrator.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -90,6 +91,8 @@ class HAEventBridge:
         # Track active tasks for proper shutdown
         self._active_tasks: set = set()
         self._is_shutting_down = False
+        self._recalculate_task: asyncio.Task | None = None
+        self._recalculate_pending = False
 
     def setup_listeners(self) -> None:
         """Setup all event listeners."""
@@ -139,11 +142,48 @@ class HAEventBridge:
         """
         if meaningful and not self._is_shutting_down:
             _LOGGER.debug("Entity %s changed meaningfully, triggering update", entity_id)
-            task = self._hass.async_create_task(self._recalculate_and_publish())
-            self._active_tasks.add(task)
-            task.add_done_callback(self._active_tasks.discard)
+            self._request_recalculate()
         elif not meaningful:
             _LOGGER.debug("Entity %s change not actionable, skipping recalculation", entity_id)
+
+    def _request_recalculate(self) -> None:
+        """Request a recalculation with coalescing.
+
+        If a recalculation is already running, mark one pending pass instead of
+        spawning additional concurrent tasks.
+        """
+        if self._is_shutting_down:
+            return
+
+        if self._recalculate_task is not None and not self._recalculate_task.done():
+            self._recalculate_pending = True
+            _LOGGER.debug("Recalculation already running, coalescing trigger")
+            return
+
+        task = self._hass.async_create_task(self._run_recalculate_loop())
+        self._recalculate_task = task
+        self._active_tasks.add(task)
+        task.add_done_callback(self._on_recalculate_task_done)
+
+    def _on_recalculate_task_done(self, task: asyncio.Task) -> None:
+        """Track recalculation task completion and cleanup references."""
+        self._active_tasks.discard(task)
+        if self._recalculate_task is task:
+            self._recalculate_task = None
+
+    async def _run_recalculate_loop(self) -> None:
+        """Run recalculation and process one coalesced pending request if needed."""
+        while not self._is_shutting_down:
+            try:
+                await self._recalculate_and_publish()
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.error("Error during recalculation workflow: %s", exc, exc_info=True)
+
+            if self._recalculate_pending:
+                self._recalculate_pending = False
+                _LOGGER.debug("Processing coalesced recalculation trigger")
+                continue
+            break
 
     def _has_meaningful_scheduler_change(self, event: Event[EventStateChangedData]) -> bool:
         """Return True only when a scheduler state change is actionable for IHP.
@@ -295,9 +335,7 @@ class HAEventBridge:
             return
 
         _LOGGER.debug("VTherm temperature changed: %s -> %s", old_temp, new_temp)
-        task = self._hass.async_create_task(self._recalculate_and_publish())
-        self._active_tasks.add(task)
-        task.add_done_callback(self._active_tasks.discard)
+        self._request_recalculate()
 
     async def _recalculate_and_publish(self) -> None:
         """Recalculate anticipation and publish event for sensors if data changed.
@@ -383,8 +421,6 @@ class HAEventBridge:
 
         # Cancel all active tasks with timeout
         if self._active_tasks:
-            import asyncio
-
             _LOGGER.debug("Cancelling %d active recalculation tasks", len(self._active_tasks))
             for task in self._active_tasks:
                 if not task.done():

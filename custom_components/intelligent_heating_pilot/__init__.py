@@ -10,6 +10,7 @@ The coordinator here is reduced to a thin setup/teardown manager.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 
 import voluptuous as vol
@@ -29,6 +30,22 @@ from .view import async_register_http_views
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[str] = [Platform.SENSOR, Platform.SWITCH]
+
+_STARTUP_UPDATE_BASE_DELAY_SECONDS = 5
+_STARTUP_UPDATE_JITTER_SECONDS = 55
+_STARTUP_EXTRACTION_BASE_DELAY_SECONDS = 20
+_STARTUP_EXTRACTION_JITTER_SECONDS = 240
+_LATE_UPDATE_BASE_DELAY_SECONDS = 30
+_LATE_UPDATE_JITTER_SECONDS = 90
+
+
+def _stable_jitter_seconds(seed: str, spread_seconds: int) -> int:
+    """Return deterministic jitter in [0, spread_seconds] for a given seed."""
+    if spread_seconds <= 0:
+        return 0
+    digest = hashlib.blake2s(seed.encode("utf-8"), digest_size=4).digest()
+    value = int.from_bytes(digest, "big")
+    return value % (spread_seconds + 1)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -112,6 +129,44 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Setup event listeners
     coordinator.setup_listeners()
 
+    def _schedule_startup_work() -> None:
+        """Schedule startup work with deterministic per-entry staggering.
+
+        This avoids synchronized bursts when many IHP entries start together.
+        """
+        extraction_delay = _STARTUP_EXTRACTION_BASE_DELAY_SECONDS + _stable_jitter_seconds(
+            f"{entry.entry_id}:extract", _STARTUP_EXTRACTION_JITTER_SECONDS
+        )
+        update_delay = _STARTUP_UPDATE_BASE_DELAY_SECONDS + _stable_jitter_seconds(
+            f"{entry.entry_id}:update", _STARTUP_UPDATE_JITTER_SECONDS
+        )
+
+        @callback
+        def _run_extraction(_now):
+            hass.async_create_task(coordinator.async_initialize_cycle_extraction())
+
+        @callback
+        def _run_update(_now):
+            hass.async_create_task(coordinator.async_update())
+
+        async_track_point_in_time(
+            hass,
+            _run_update,
+            dt_util.now() + dt_util.dt.timedelta(seconds=update_delay),
+        )
+        async_track_point_in_time(
+            hass,
+            _run_extraction,
+            dt_util.now() + dt_util.dt.timedelta(seconds=extraction_delay),
+        )
+
+        _LOGGER.info(
+            "[%s] Startup workload staggered: update in %ss, extraction in %ss",
+            entry.entry_id,
+            update_delay,
+            extraction_delay,
+        )
+
     # Wait for HA to be fully started before initializing cycle extraction and first update
     # This ensures all entities (especially VTherm and scheduler entities) are available
     @callback
@@ -119,17 +174,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info(
             "[%s] HA started, initializing cycle extraction and triggering updates", entry.entry_id
         )
-        hass.async_create_task(coordinator.async_initialize_cycle_extraction())
-        hass.async_create_task(coordinator.async_update())
+        _schedule_startup_work()
 
     # Schedule initial tasks asynchronously to avoid blocking config flow
     # This prevents HA watchdog restart during device creation with scheduler
     if hass.is_running:
-        _LOGGER.debug(
-            "[%s] HA already running, scheduling cycle extraction and async update", entry.entry_id
-        )
-        hass.async_create_task(coordinator.async_initialize_cycle_extraction())
-        hass.async_create_task(coordinator.async_update())
+        _LOGGER.debug("[%s] HA already running, scheduling staggered startup work", entry.entry_id)
+        _schedule_startup_work()
     else:
         _LOGGER.debug("[%s] Waiting for HA start event before initialization", entry.entry_id)
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started)
@@ -140,10 +191,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug("[%s] Delayed update", entry.entry_id)
         hass.async_create_task(coordinator.async_update())
 
+    late_update_delay = _LATE_UPDATE_BASE_DELAY_SECONDS + _stable_jitter_seconds(
+        f"{entry.entry_id}:late_update", _LATE_UPDATE_JITTER_SECONDS
+    )
+
     async_track_point_in_time(
         hass,
         _delayed_update,
-        dt_util.now() + dt_util.dt.timedelta(seconds=30),
+        dt_util.now() + dt_util.dt.timedelta(seconds=late_update_delay),
     )
 
     # Register options update listener
