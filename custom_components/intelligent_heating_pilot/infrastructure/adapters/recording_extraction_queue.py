@@ -21,7 +21,7 @@ try:
 except ImportError:
     dt_util = None
 
-from ...domain.value_objects.historical_data import HistoricalDataKey, HistoricalDataSet
+from ...domain.value_objects.historical_data import HistoricalDataSet
 from ...domain.value_objects.recording_extraction_task import (
     ExtractionTaskState,
     RecordingExtractionTask,
@@ -292,21 +292,17 @@ class RecordingExtractionQueue:
 
             for adapter in self._historical_adapters:
                 try:
-                    for data_key in HistoricalDataKey:
-                        adapter_data = await adapter.fetch_historical_data(
-                            entity_id=self._climate_entity_id,
-                            data_key=data_key,
-                            start_time=start_time,
-                            end_time=end_time,
-                        )
-                        if (
-                            adapter_data is not None
-                            and adapter_data.data
-                            and data_key in adapter_data.data
-                        ):
+                    # Single call extracts all supported keys in one recorder query
+                    adapter_data = await adapter.fetch_all_historical_data(
+                        entity_id=self._climate_entity_id,
+                        start_time=start_time,
+                        end_time=end_time,
+                    )
+                    if adapter_data is not None and adapter_data.data:
+                        for data_key, measurements in adapter_data.data.items():
                             if data_key not in combined_data.data:
                                 combined_data.data[data_key] = []
-                            combined_data.data[data_key].extend(adapter_data.data[data_key])
+                            combined_data.data[data_key].extend(measurements)
                 except Exception as exc:
                     _LOGGER.warning(
                         "Failed to fetch historical data from adapter for %s: %s",

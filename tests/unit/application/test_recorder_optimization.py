@@ -2,26 +2,25 @@
 
 Validates the key behavioral changes introduced to prevent HA reboot-in-loop:
 
-1. fetch_all_historical_data() on ClimateDataAdapter issues a single recorder query
+1. HAClimateDataReader.fetch_all_historical_data() issues exactly ONE recorder query
    (instead of one per HistoricalDataKey).
-2. _get_cycles_with_cache() at first boot (empty cache) extracts only yesterday,
-   not the full history_lookback_days window.
-3. _get_contextual_lhs() never falls back to direct recorder extraction when the
-   cycle cache is unavailable — it returns [] and uses the global LHS.
+2. HeatingCycleLifecycleManager.refresh_heating_cycle_cache(is_startup=True) limits
+   extraction to 1 day (yesterday only) — not the full retention window.
+3. HeatingCycleLifecycleManager.get_cycles_for_window() returns [] when cache is empty
+   (no synchronous fallback to direct recorder extraction).
+4. _find_missing_date_ranges(max_catchup_days=1) correctly caps results to 1 day.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, Mock, patch
+from contextlib import suppress
+from datetime import date, datetime, timedelta, timezone
+from unittest.mock import AsyncMock, Mock, patch, call
 import pytest
 
-from custom_components.intelligent_heating_pilot.application import HeatingApplicationService
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
-    EnvironmentState,
     HistoricalDataKey,
     HistoricalDataSet,
     HistoricalMeasurement,
-    ScheduledTimeslot,
 )
 
 
@@ -31,136 +30,102 @@ def make_aware(dt: datetime) -> datetime:
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Helpers for HeatingCycleLifecycleManager fixture
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def mock_adapters():
-    """Create mock adapters for HeatingApplicationService."""
-    scheduler_reader = Mock()
-    scheduler_reader.get_next_timeslot = AsyncMock(return_value=None)
-    scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+def _make_device_config(device_id: str = "climate.vtherm_test", retention_days: int = 30):
+    from custom_components.intelligent_heating_pilot.domain.interfaces.device_config_reader_interface import (
+        DeviceConfig,
+    )
 
-    model_storage = Mock()
-    model_storage.get_learned_heating_slope = AsyncMock(return_value=2.0)
-    model_storage.get_all_slope_data = AsyncMock(return_value=[])
-    model_storage.get_cached_global_lhs = AsyncMock(return_value=None)
-    model_storage.set_cached_global_lhs = AsyncMock()
-    model_storage.get_cached_contextual_lhs = AsyncMock(return_value=None)
-    model_storage.set_cached_contextual_lhs = AsyncMock()
-
-    scheduler_commander = Mock()
-    scheduler_commander.run_action = AsyncMock()
-    scheduler_commander.cancel_action = AsyncMock()
-
-    climate_commander = Mock()
-    climate_commander.turn_on_heat = AsyncMock()
-    climate_commander.turn_off = AsyncMock()
-    climate_commander.set_temperature = AsyncMock()
-    climate_commander.set_hvac_mode = AsyncMock()
-
-    environment_reader = Mock()
-    environment_reader.get_current_environment = AsyncMock()
-    environment_reader.is_heating_active = AsyncMock(return_value=False)
-    environment_reader.get_vtherm_slope = Mock(return_value=None)
-    environment_reader.get_vtherm_entity_id = Mock(return_value="climate.vtherm_test")
-    environment_reader.get_humidity_in_entity_id = Mock(return_value=None)
-    environment_reader.get_humidity_out_entity_id = Mock(return_value=None)
-    environment_reader.get_hass = Mock(return_value=Mock())
-
-    return {
-        "scheduler_reader": scheduler_reader,
-        "model_storage": model_storage,
-        "scheduler_commander": scheduler_commander,
-        "climate_commander": climate_commander,
-        "environment_reader": environment_reader,
-    }
-
-
-@pytest.fixture
-def cycle_cache_mock():
-    """Create a mock ICycleCache adapter."""
-    cache = Mock()
-    cache.get_cache_data = AsyncMock(return_value=None)
-    cache.append_cycles = AsyncMock()
-    cache.prune_old_cycles = AsyncMock()
-    return cache
-
-
-@pytest.fixture
-def app_service_with_cache(mock_adapters, cycle_cache_mock):
-    """HeatingApplicationService with a cycle cache mock."""
-    return HeatingApplicationService(
-        scheduler_reader=mock_adapters["scheduler_reader"],
-        model_storage=mock_adapters["model_storage"],
-        scheduler_commander=mock_adapters["scheduler_commander"],
-        climate_commander=mock_adapters["climate_commander"],
-        environment_reader=mock_adapters["environment_reader"],
-        cycle_cache=cycle_cache_mock,
-        history_lookback_days=30,
+    return DeviceConfig(
+        device_id=device_id,
+        vtherm_entity_id=device_id,
+        scheduler_entities=[],
+        lhs_retention_days=retention_days,
     )
 
 
-@pytest.fixture
-def app_service_no_cache(mock_adapters):
-    """HeatingApplicationService WITHOUT a cycle cache (cycle_cache=None)."""
-    return HeatingApplicationService(
-        scheduler_reader=mock_adapters["scheduler_reader"],
-        model_storage=mock_adapters["model_storage"],
-        scheduler_commander=mock_adapters["scheduler_commander"],
-        climate_commander=mock_adapters["climate_commander"],
-        environment_reader=mock_adapters["environment_reader"],
-        cycle_cache=None,
-        history_lookback_days=30,
+def _make_lifecycle_manager(
+    cycle_storage=None,
+    historical_adapters=None,
+    lhs_storage=None,
+):
+    """Build a HeatingCycleLifecycleManager with minimal mocks."""
+    from custom_components.intelligent_heating_pilot.application.heating_cycle_lifecycle_manager import (
+        HeatingCycleLifecycleManager,
+    )
+    from custom_components.intelligent_heating_pilot.domain.services import HeatingCycleService
+
+    device_config = _make_device_config()
+    heating_cycle_service = HeatingCycleService(
+        temp_delta_threshold=1.0,
+        cycle_split_duration_minutes=30,
+        min_cycle_duration_minutes=5,
+        max_cycle_duration_minutes=300,
+    )
+    return HeatingCycleLifecycleManager(
+        device_config=device_config,
+        heating_cycle_service=heating_cycle_service,
+        heating_cycle_storage=cycle_storage,
+        historical_adapters=historical_adapters or [],
+        lhs_storage=lhs_storage,
+        lhs_lifecycle_manager=None,
+        timer_scheduler=None,
+        dead_time_updated_callback=None,
     )
 
 
 # ---------------------------------------------------------------------------
-# Test 1: ClimateDataAdapter.fetch_all_historical_data issues exactly one query
+# Test 1: HAClimateDataReader.fetch_all_historical_data issues exactly one query
 # ---------------------------------------------------------------------------
 
 
-class TestClimateAdapterSingleQuery:
+class TestHAClimateDataReaderSingleQuery:
     """Ensure fetch_all_historical_data calls _fetch_history exactly once."""
+
+    def _make_reader(self):
+        """Create a reader with a mocked mapper registry."""
+        from custom_components.intelligent_heating_pilot.infrastructure.adapters.climate_data_reader import (
+            HAClimateDataReader,
+        )
+        from custom_components.intelligent_heating_pilot.infrastructure.adapters.vtherm_attribute_mapper import (
+            VThermAttributeMapper,
+        )
+
+        mock_hass = Mock()
+        mock_queue = Mock()
+        mock_queue.lock = Mock()
+        mock_queue.lock.__aenter__ = AsyncMock(return_value=None)
+        mock_queue.lock.__aexit__ = AsyncMock(return_value=None)
+
+        reader = HAClimateDataReader(mock_hass, mock_queue, "climate.vtherm_test")
+        # Inject a VTherm mapper directly to avoid HA state lookup in unit tests
+        reader._mapper_registry = Mock()
+        reader._mapper_registry.get_mapper_for_entity = Mock(
+            return_value=VThermAttributeMapper(mock_hass)
+        )
+        return reader
 
     @pytest.mark.asyncio
     async def test_fetch_all_issues_single_recorder_query(self):
         """fetch_all_historical_data must call _fetch_history exactly once, not ×3."""
-        from custom_components.intelligent_heating_pilot.infrastructure.adapters.climate_data_adapter import (
-            ClimateDataAdapter,
-        )
-
-        mock_hass = Mock()
-        adapter = ClimateDataAdapter(mock_hass)
+        reader = self._make_reader()
 
         start = make_aware(datetime(2025, 1, 1, 0, 0))
         end = make_aware(datetime(2025, 1, 2, 0, 0))
-
-        sample_records = [
-            {
-                "entity_id": "climate.vtherm",
-                "state": "heat",
-                "attributes": {
-                    "current_temperature": 19.5,
-                    "temperature": 21.0,
-                    "hvac_action": "heating",
-                },
-                "last_changed": start,
-                "last_updated": start,
-            }
-        ]
 
         fetch_call_count = 0
 
         async def fake_fetch_history(entity_id, s, e):
             nonlocal fetch_call_count
             fetch_call_count += 1
-            return sample_records
+            return []
 
-        adapter._fetch_history = fake_fetch_history
+        reader._fetch_history = fake_fetch_history
 
-        result = await adapter.fetch_all_historical_data("climate.vtherm", start, end)
+        await reader.fetch_all_historical_data("climate.vtherm_test", start, end)
 
         assert fetch_call_count == 1, (
             "fetch_all_historical_data must issue exactly ONE recorder query, "
@@ -170,17 +135,12 @@ class TestClimateAdapterSingleQuery:
     @pytest.mark.asyncio
     async def test_fetch_all_returns_all_keys_from_single_query(self):
         """fetch_all_historical_data extracts INDOOR_TEMP, TARGET_TEMP, HEATING_STATE in one pass."""
-        from custom_components.intelligent_heating_pilot.infrastructure.adapters.climate_data_adapter import (
-            ClimateDataAdapter,
-        )
-
-        mock_hass = Mock()
-        adapter = ClimateDataAdapter(mock_hass)
+        reader = self._make_reader()
 
         ts = make_aware(datetime(2025, 1, 1, 6, 0))
         records = [
             {
-                "entity_id": "climate.vtherm",
+                "entity_id": "climate.vtherm_test",
                 "state": "heat",
                 "attributes": {
                     "current_temperature": 18.0,
@@ -192,10 +152,10 @@ class TestClimateAdapterSingleQuery:
             }
         ]
 
-        adapter._fetch_history = AsyncMock(return_value=records)
+        reader._fetch_history = AsyncMock(return_value=records)
 
-        result = await adapter.fetch_all_historical_data(
-            "climate.vtherm",
+        result = await reader.fetch_all_historical_data(
+            "climate.vtherm_test",
             ts - timedelta(hours=1),
             ts + timedelta(hours=1),
         )
@@ -210,85 +170,98 @@ class TestClimateAdapterSingleQuery:
     @pytest.mark.asyncio
     async def test_fetch_all_empty_history_returns_empty_dataset(self):
         """fetch_all_historical_data returns empty HistoricalDataSet when no records."""
-        from custom_components.intelligent_heating_pilot.infrastructure.adapters.climate_data_adapter import (
-            ClimateDataAdapter,
-        )
-
-        adapter = ClimateDataAdapter(Mock())
-        adapter._fetch_history = AsyncMock(return_value=[])
+        reader = self._make_reader()
+        reader._fetch_history = AsyncMock(return_value=[])
 
         ts = make_aware(datetime(2025, 1, 1))
-        result = await adapter.fetch_all_historical_data("climate.vtherm", ts, ts + timedelta(days=1))
+        result = await reader.fetch_all_historical_data(
+            "climate.vtherm_test", ts, ts + timedelta(days=1)
+        )
 
         assert result.data == {}
 
 
 # ---------------------------------------------------------------------------
-# Test 2: Boot extraction is limited to yesterday only
+# Test 2: Boot extraction is limited to yesterday only (max_catchup_days=1)
 # ---------------------------------------------------------------------------
 
 
 class TestBootExtractionLimit:
-    """Verify that first-boot cache fill covers only yesterday, not 30 days."""
+    """Verify _find_missing_date_ranges respects max_catchup_days=1 at startup."""
 
     @pytest.mark.asyncio
-    async def test_empty_cache_extracts_only_one_day(
-        self, app_service_with_cache, cycle_cache_mock
-    ):
-        """When cache is empty, _get_cycles_with_cache must search at most 1 day back."""
-        target_time = make_aware(datetime(2025, 3, 1, 6, 30))
+    async def test_empty_cache_max_catchup_1_returns_only_yesterday(self):
+        """With empty cache and max_catchup_days=1, only yesterday is returned."""
+        cycle_storage = Mock()
+        cycle_storage.get_cache_data = AsyncMock(return_value=None)
 
-        # No existing cache
-        cycle_cache_mock.get_cache_data.return_value = None
+        manager = _make_lifecycle_manager(cycle_storage=cycle_storage)
 
-        # Patch _extract_cycles_from_recorder to capture the time window used
-        captured_windows: list[tuple[datetime, datetime]] = []
+        today = date(2025, 3, 2)
+        yesterday = date(2025, 3, 1)
+        thirty_days_ago = today - timedelta(days=30)
 
-        async def fake_extract(device_id, start, end):
-            captured_windows.append((start, end))
-            return []
-
-        app_service_with_cache._extract_cycles_from_recorder = fake_extract
-
-        await app_service_with_cache._get_cycles_with_cache("climate.vtherm", target_time)
-
-        assert len(captured_windows) == 1, "Expected exactly one extraction call at boot"
-        start_used, end_used = captured_windows[0]
-        window_days = (end_used - start_used).total_seconds() / 86400
-
-        assert window_days <= 1.0, (
-            f"Boot extraction window must be ≤ 1 day, but was {window_days:.1f} days. "
-            "This would issue too many recorder queries with 10 devices."
+        ranges = await manager._find_missing_date_ranges(
+            thirty_days_ago, yesterday, max_catchup_days=1
         )
 
+        assert len(ranges) == 1
+        start, end = ranges[0]
+        total_days = (end - start).days + 1
+        assert total_days == 1, (
+            f"Boot extraction must be limited to 1 day, got {total_days} days."
+        )
+        # Should be yesterday (most recent day)
+        assert end == yesterday
+
     @pytest.mark.asyncio
-    async def test_empty_cache_initializes_cache_after_extraction(
-        self, app_service_with_cache, cycle_cache_mock
-    ):
-        """After boot extraction, append_cycles is called to persist the cache."""
-        target_time = make_aware(datetime(2025, 3, 1, 6, 30))
-        cycle_cache_mock.get_cache_data.return_value = None
-        app_service_with_cache._extract_cycles_from_recorder = AsyncMock(return_value=[])
+    async def test_no_limit_returns_full_window(self):
+        """Without max_catchup_days, all missing days are returned."""
+        cycle_storage = Mock()
+        cycle_storage.get_cache_data = AsyncMock(return_value=None)
 
-        await app_service_with_cache._get_cycles_with_cache("climate.vtherm", target_time)
+        manager = _make_lifecycle_manager(cycle_storage=cycle_storage)
 
-        cycle_cache_mock.append_cycles.assert_called_once()
+        today = date(2025, 3, 2)
+        yesterday = date(2025, 3, 1)
+        five_days_ago = today - timedelta(days=5)
+
+        ranges = await manager._find_missing_date_ranges(
+            five_days_ago, yesterday, max_catchup_days=None
+        )
+
+        # Without limit, the entire 5-day range is missing
+        total_days = sum((e - s).days + 1 for s, e in ranges)
+        assert total_days == 5
+
+    def test_apply_max_catchup_truncates_to_most_recent(self):
+        """_apply_max_catchup keeps the most recent days."""
+        from custom_components.intelligent_heating_pilot.application.heating_cycle_lifecycle_manager import (
+            HeatingCycleLifecycleManager,
+        )
+
+        # 5-day gap: 2025-02-24 to 2025-02-28
+        ranges = [(date(2025, 2, 24), date(2025, 2, 28))]
+        result = HeatingCycleLifecycleManager._apply_max_catchup(ranges, max_catchup_days=1)
+
+        assert len(result) == 1
+        start, end = result[0]
+        assert start == end  # 1 day only
+        assert end == date(2025, 2, 28)  # Most recent day
 
 
 # ---------------------------------------------------------------------------
-# Test 3: No direct recorder fallback when cache is unavailable
+# Test 3: No synchronous fallback when cache is empty
 # ---------------------------------------------------------------------------
 
 
 class TestNoDirectFallbackWhenCacheEmpty:
-    """Ensure _get_contextual_lhs never calls _extract_cycles_from_recorder directly."""
+    """get_cycles_for_window() must return [] without calling _extract_cycles()."""
 
     @pytest.mark.asyncio
-    async def test_no_cache_adapter_uses_global_lhs(
-        self, app_service_no_cache, mock_adapters
-    ):
-        """Without a cycle cache, _get_contextual_lhs must return global LHS, no recorder call."""
-        target_time = make_aware(datetime(2025, 3, 1, 6, 30))
+    async def test_no_storage_returns_empty_list(self):
+        """When cycle_cache=None, get_cycles_for_window returns [] immediately."""
+        manager = _make_lifecycle_manager(cycle_storage=None)
 
         extract_called = []
 
@@ -296,25 +269,25 @@ class TestNoDirectFallbackWhenCacheEmpty:
             extract_called.append(True)
             return []
 
-        app_service_no_cache._extract_cycles_from_recorder = should_not_be_called
+        manager._extract_cycles = should_not_be_called
 
-        lhs = await app_service_no_cache._get_contextual_lhs(target_time)
+        start = make_aware(datetime(2025, 3, 1, 0, 0))
+        end = make_aware(datetime(2025, 3, 1, 23, 59))
+        result = await manager.get_cycles_for_window("climate.vtherm_test", start, end)
 
+        assert result == []
         assert not extract_called, (
-            "_extract_cycles_from_recorder must NOT be called when cycle_cache is None. "
-            "Direct extraction without throttling can cause 900+ recorder queries at boot."
+            "_extract_cycles must NOT be called when cycle_cache is None. "
+            "Direct extraction outside the queue risks saturating the recorder."
         )
-        # Falls back to global LHS from model_storage
-        assert lhs == pytest.approx(2.0)
 
     @pytest.mark.asyncio
-    async def test_cache_exception_uses_global_lhs(
-        self, app_service_with_cache, cycle_cache_mock, mock_adapters
-    ):
-        """When cycle cache raises an exception, return global LHS without recorder fallback."""
-        target_time = make_aware(datetime(2025, 3, 1, 6, 30))
+    async def test_empty_storage_returns_empty_list(self):
+        """When storage returns None (no data), get_cycles_for_window returns []."""
+        cycle_storage = Mock()
+        cycle_storage.get_cache_data = AsyncMock(return_value=None)
 
-        cycle_cache_mock.get_cache_data.side_effect = RuntimeError("cache unavailable")
+        manager = _make_lifecycle_manager(cycle_storage=cycle_storage)
 
         extract_called = []
 
@@ -322,103 +295,60 @@ class TestNoDirectFallbackWhenCacheEmpty:
             extract_called.append(True)
             return []
 
-        app_service_with_cache._extract_cycles_from_recorder = should_not_be_called
+        manager._extract_cycles = should_not_be_called
 
-        lhs = await app_service_with_cache._get_contextual_lhs(target_time)
+        start = make_aware(datetime(2025, 3, 1, 0, 0))
+        end = make_aware(datetime(2025, 3, 1, 23, 59))
+        result = await manager.get_cycles_for_window("climate.vtherm_test", start, end)
 
-        assert not extract_called, (
-            "_extract_cycles_from_recorder must NOT be called on cache exception. "
-            "Direct extraction without throttling risks saturating the recorder."
-        )
-        assert lhs == pytest.approx(2.0)
-
-    @pytest.mark.asyncio
-    async def test_empty_cache_returns_global_lhs(
-        self, app_service_with_cache, cycle_cache_mock, mock_adapters
-    ):
-        """When cache returns [] (e.g. first boot not yet done), global LHS is used."""
-        target_time = make_aware(datetime(2025, 3, 1, 6, 30))
-
-        # Cache exists but returns no cycles (e.g. first boot extraction found nothing)
-        from custom_components.intelligent_heating_pilot.domain.value_objects.cycle_cache_data import (
-            CycleCacheData,
-        )
-
-        empty_cache = CycleCacheData(
-            device_id="climate.vtherm",
-            cycles=tuple(),
-            last_search_time=target_time - timedelta(hours=1),
-            retention_days=30,
-        )
-        cycle_cache_mock.get_cache_data.return_value = empty_cache
-        cycle_cache_mock.prune_old_cycles = AsyncMock()
-
-        # Updated cache returns empty as well
-        async def fake_get_cache_data_after_prune(device_id):
-            return empty_cache
-
-        cycle_cache_mock.get_cache_data.side_effect = [empty_cache, empty_cache]
-
-        extract_called = []
-
-        async def should_not_be_called(*args, **kwargs):
-            extract_called.append(True)
-            return []
-
-        app_service_with_cache._extract_cycles_from_recorder = should_not_be_called
-
-        lhs = await app_service_with_cache._get_contextual_lhs(target_time)
-
-        assert not extract_called, (
-            "_extract_cycles_from_recorder must NOT be called when cache is empty."
-        )
-        assert lhs == pytest.approx(2.0)
+        assert result == []
+        assert not extract_called
 
 
 # ---------------------------------------------------------------------------
-# Test 4: _extract_cycles_from_recorder uses fetch_all_historical_data
+# Test 4: _extract_cycles uses fetch_all_historical_data (not per-key loop)
 # ---------------------------------------------------------------------------
 
 
-class TestExtractCyclesUsesOneSingleQuery:
-    """Confirm _extract_cycles_from_recorder uses fetch_all_historical_data (÷3 queries)."""
+class TestExtractCyclesUsesAllHistoricalData:
+    """_extract_cycles() must call fetch_all_historical_data, not 11×fetch_historical_data."""
 
     @pytest.mark.asyncio
-    async def test_extract_cycles_uses_fetch_all(
-        self, app_service_with_cache, mock_adapters
-    ):
-        """_extract_cycles_from_recorder must call fetch_all_historical_data, not 3× fetch_historical_data."""
-        from custom_components.intelligent_heating_pilot.infrastructure.adapters import (
-            ClimateDataAdapter,
+    async def test_extract_cycles_calls_fetch_all(self):
+        """_extract_cycles must call fetch_all_historical_data exactly once per adapter."""
+        ts = make_aware(datetime(2025, 1, 1, 8, 0))
+        minimal_data = HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    HistoricalMeasurement(timestamp=ts, value=18.0, attributes={}, entity_id="climate.vtherm_test")
+                ],
+                HistoricalDataKey.TARGET_TEMP: [
+                    HistoricalMeasurement(timestamp=ts, value=20.0, attributes={}, entity_id="climate.vtherm_test")
+                ],
+                HistoricalDataKey.HEATING_STATE: [
+                    HistoricalMeasurement(timestamp=ts, value="heating", attributes={}, entity_id="climate.vtherm_test")
+                ],
+            }
         )
+
+        mock_adapter = Mock(spec=["fetch_historical_data", "fetch_all_historical_data"])
+        mock_adapter.fetch_all_historical_data = AsyncMock(return_value=minimal_data)
+        mock_adapter.fetch_historical_data = AsyncMock(
+            return_value=HistoricalDataSet(data={})
+        )
+
+        manager = _make_lifecycle_manager(historical_adapters=[mock_adapter])
 
         start = make_aware(datetime(2025, 1, 1))
         end = make_aware(datetime(2025, 1, 2))
 
-        fetch_all_calls = []
-        fetch_individual_calls = []
+        await manager._extract_cycles("climate.vtherm_test", start, end)
 
-        async def fake_fetch_all(*args):
-            # Called as instance method: (self, entity_id, start, end)
-            # Capture the entity_id (args[1]) ignoring self (args[0])
-            fetch_all_calls.append(args[1:])
-            return HistoricalDataSet(data={})
-
-        async def fake_fetch_historical(*args):
-            # Called as instance method: (self, entity_id, key, start, end)
-            fetch_individual_calls.append(args[1:])
-            return HistoricalDataSet(data={})
-
-        with patch.object(ClimateDataAdapter, "fetch_all_historical_data", fake_fetch_all):
-            with patch.object(ClimateDataAdapter, "fetch_historical_data", fake_fetch_historical):
-                await app_service_with_cache._extract_cycles_from_recorder(
-                    "climate.vtherm", start, end
-                )
-
-        assert len(fetch_all_calls) == 1, (
-            "_extract_cycles_from_recorder must call fetch_all_historical_data exactly once."
+        mock_adapter.fetch_all_historical_data.assert_called_once_with(
+            entity_id="climate.vtherm_test",
+            start_time=start,
+            end_time=end,
         )
-        assert fetch_individual_calls == [], (
-            "fetch_historical_data must NOT be called for climate keys — "
-            "fetch_all_historical_data handles all of them in one recorder query."
-        )
+        mock_adapter.fetch_historical_data.assert_not_called()
+
+

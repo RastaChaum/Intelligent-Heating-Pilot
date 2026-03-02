@@ -286,8 +286,9 @@ class HeatingApplication:
         # Load initial data
         if self._lhs_manager:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
-            # Also load contextual LHS cache for all hours
-            await self._load_contextual_lhs_cache()
+            # NOTE: Contextual LHS cache loading is deferred to async_initialize_cycle_extraction()
+            # (post-EVENT_HOMEASSISTANT_STARTED) to avoid 240 I/O operations blocking
+            # async_setup_entry() for all 10+ IHP devices during HA startup.
 
         # NOTE: Cycle extraction is deferred to async_initialize_cycle_extraction()
         # which is called after HA fully started (EVENT_HOMEASSISTANT_STARTED)
@@ -395,8 +396,36 @@ class HeatingApplication:
                 self._data_retention_days,
             )
 
-            # Trigger cache refresh: schedules 24h timer and extracts missing days asynchronously
-            await self._heating_cycle_manager.refresh_heating_cycle_cache()
+            # Load contextual LHS cache (deferred from async_load to avoid 240 I/O ops at boot)
+            await self._load_contextual_lhs_cache()
+
+            # Trigger cache refresh: schedules 24h timer and extracts missing days asynchronously.
+            # is_startup=True limits the initial extraction to yesterday only to avoid
+            # hundreds of recorder queries at first boot with many IHP devices.
+            await self._heating_cycle_manager.refresh_heating_cycle_cache(is_startup=True)
+
+            # Log cache state for boot diagnostics
+            cycle_count = 0
+            if self._heating_cycle_manager and self._cycle_storage:
+                try:
+                    cache_data = await self._cycle_storage.get_cache_data(
+                        self._device_config.device_id
+                    )
+                    cycle_count = len(cache_data.cycles) if cache_data else 0
+                except Exception:  # noqa: BLE001
+                    pass
+            if cycle_count:
+                _LOGGER.info(
+                    "IHP startup: %d cached cycles loaded for %s",
+                    cycle_count,
+                    self._device_config.device_id,
+                )
+            else:
+                _LOGGER.info(
+                    "IHP startup: empty cache for %s — "
+                    "first anticipation available after extraction completes",
+                    self._device_config.device_id,
+                )
 
             _LOGGER.info(
                 "Cycle extraction initialized: device=%s, retention=%d days (async)",

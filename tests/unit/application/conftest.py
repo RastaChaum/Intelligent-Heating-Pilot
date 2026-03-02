@@ -91,6 +91,10 @@ def mock_historical_adapter() -> Mock:
     adapter.fetch_historical_data = AsyncMock(
         return_value=HistoricalDataSet(data={key: [] for key in HistoricalDataKey})
     )
+    # Single-query variant used by _extract_cycles (replaces per-key loop)
+    adapter.fetch_all_historical_data = AsyncMock(
+        return_value=HistoricalDataSet(data={key: [] for key in HistoricalDataKey})
+    )
     return adapter
 
 

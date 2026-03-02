@@ -71,6 +71,10 @@ class TestHeatingCycleLifecycleManager:
             return HistoricalDataSet(data={key: [] for key in HistoricalDataKey})
 
         adapter.fetch_historical_data = AsyncMock(side_effect=create_empty_dataset)
+        # Single-query variant used by _extract_cycles (replaces the per-key loop)
+        adapter.fetch_all_historical_data = AsyncMock(
+            return_value=HistoricalDataSet(data={key: [] for key in HistoricalDataKey})
+        )
         return adapter
 
     @pytest.fixture
@@ -436,21 +440,18 @@ class TestHeatingCycleLifecycleManager:
 
         result = await manager.get_cycles_for_window(device_id, start_time, end_time)
 
-        # THEN Aspect B: Extracts when no cache
-        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
-        assert result == expected_cycles
+        # THEN Aspect B: Returns [] when no cache (no direct recorder fallback)
+        # The system waits for async extraction queue to populate the cache rather
+        # than triggering an unthrottled recorder query.
+        mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
+        assert result == []
 
         # THEN Aspect C: Filters by time range
         # Result is filtered (implementation may filter)
         assert isinstance(result, list)
 
         # THEN Aspect D: Handles empty result
-        # (Setup for empty result)
-        mock_heating_cycle_service.extract_heating_cycles.return_value = []
-
         result_empty = await manager.get_cycles_for_window(device_id, start_time, end_time)
-
-        # Empty list is returned
         assert result_empty == []
 
         # THEN Aspect E: Handles edge cases
@@ -503,13 +504,13 @@ class TestHeatingCycleLifecycleManager:
         mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
 
         # WHEN: get_cycles_for_target_time is called (SINGLE CALL without cache)
-        # Configure storage to return None (no cache) so extraction is forced
+        # Configure storage to return None (no cache) — system operates in degraded mode
         mock_heating_cycle_storage.get_cache_data.return_value = None
         result = await manager.get_cycles_for_target_time(device_id, target_time)
 
-        # THEN Aspect A: Uses retention window correctly
-        # Cycles within retention window are returned
-        assert result == expected_cycles
+        # THEN Aspect A: Returns [] when no cache (no direct recorder fallback)
+        # The system waits for async extraction queue to populate the cache.
+        assert result == []
 
         # THEN Aspect B: Calculates correct time window
         # Window should be [target_time - 30 days, target_time]

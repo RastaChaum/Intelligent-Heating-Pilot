@@ -275,6 +275,106 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
 
         return HistoricalDataSet(data=data)
 
+    async def fetch_all_historical_data(
+        self,
+        entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> HistoricalDataSet:
+        """Fetch all supported historical data keys with a single recorder query.
+
+        Overrides the default loop-per-key implementation in IHistoricalDataAdapter to
+        issue **one** ``get_significant_states()`` call and extract every supported
+        concept in a single iteration over the returned State objects.
+
+        This eliminates the ×3 recorder query waste (INDOOR_TEMP, TARGET_TEMP,
+        HEATING_STATE each triggered the same SQL query independently).
+
+        Args:
+            entity_id: The climate entity ID (e.g., ``"climate.living_room_vtherm"``)
+            start_time: Start of historical period
+            end_time: End of historical period
+
+        Returns:
+            HistoricalDataSet keyed by all HistoricalDataKeys supported by the mapper.
+        """
+        _LOGGER.debug(
+            "fetch_all_historical_data: single recorder query for %s from %s to %s",
+            entity_id,
+            start_time,
+            end_time,
+        )
+
+        try:
+            mapper = self._mapper_registry.get_mapper_for_entity(entity_id)
+        except ValueError as err:
+            _LOGGER.error("Cannot select mapper for %s: %s", entity_id, err)
+            raise
+
+        try:
+            historical_records = await self._fetch_history(entity_id, start_time, end_time)
+        except asyncio.CancelledError:
+            _LOGGER.debug("History fetch cancelled for %s", entity_id)
+            raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout fetching history for %s", entity_id)
+            raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
+        except Exception as exc:
+            _LOGGER.error("Failed to fetch history for %s: %s", entity_id, exc)
+            raise ValueError(f"Cannot fetch history for entity {entity_id}") from exc
+
+        if not historical_records:
+            return HistoricalDataSet(data={})
+
+        # Build a reverse map: concept → data_key(s) for all supported concepts
+        concept_to_keys: dict[AttributeConcept, list[HistoricalDataKey]] = {}
+        for data_key, concept in DATA_KEY_TO_CONCEPT.items():
+            if concept in mapper.get_supported_concepts():
+                concept_to_keys.setdefault(concept, []).append(data_key)
+
+        # Accumulate measurements per data_key in a single pass over records
+        measurements_by_key: dict[HistoricalDataKey, list[HistoricalMeasurement]] = {}
+
+        for record in historical_records:
+            timestamp = self._parse_timestamp(record)
+            attributes = record.get("attributes", {})
+            entity_id_from_record = record.get("entity_id", entity_id)
+
+            for concept, data_keys in concept_to_keys.items():
+                try:
+                    value = mapper.extract_attribute_value(attributes, concept)
+                except ValueError:
+                    continue
+
+                if value is None:
+                    continue
+
+                # Numeric coercion for temperature concepts
+                if concept in (
+                    AttributeConcept.CURRENT_TEMPERATURE,
+                    AttributeConcept.TARGET_TEMPERATURE,
+                    AttributeConcept.OUTDOOR_TEMPERATURE,
+                ):
+                    value = self._safe_float(value)
+                    if value is None:
+                        continue
+
+                measurement = HistoricalMeasurement(
+                    timestamp=timestamp,
+                    value=value,
+                    attributes=attributes,
+                    entity_id=entity_id_from_record,
+                )
+                for data_key in data_keys:
+                    measurements_by_key.setdefault(data_key, []).append(measurement)
+
+        _LOGGER.debug(
+            "fetch_all_historical_data: extracted keys %s for %s",
+            list(measurements_by_key.keys()),
+            entity_id,
+        )
+        return HistoricalDataSet(data=measurements_by_key)
+
     # ------------------------------------------------------------------
     # Private helper methods
     # ------------------------------------------------------------------
@@ -336,6 +436,10 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         This is a FIFO queue shared across all IHP instances to prevent
         overwhelming the recorder during startup or cache refresh.
 
+        A 30-second timeout protects against an overloaded recorder hanging
+        indefinitely, and a 0.5-second post-query sleep yields control back
+        to the event loop so other HA components can process I/O between queries.
+
         Args:
             entity_id: The entity ID
             start_time: Start of historical period
@@ -347,6 +451,8 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         from functools import partial
 
         from homeassistant.components.recorder import get_instance, history
+
+        from ..recorder_queue import RECORDER_QUERY_THROTTLE_SECONDS, RECORDER_QUERY_TIMEOUT_SECONDS
 
         # Use Home Assistant's get_significant_states function from recorder
         # Must run in recorder executor to avoid blocking and comply with HA best practices
@@ -362,7 +468,12 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         # Serialize recorder access via shared FIFO queue (MANDATORY)
         async with self._recorder_queue.lock:
             _LOGGER.debug("Acquired recorder lock for climate entity %s", entity_id)
-            history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
+            history_dict = await asyncio.wait_for(
+                get_instance(self._hass).async_add_executor_job(get_states_func),
+                timeout=RECORDER_QUERY_TIMEOUT_SECONDS,
+            )
+            # Yield time to other HA components before releasing the lock
+            await asyncio.sleep(RECORDER_QUERY_THROTTLE_SECONDS)
 
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])

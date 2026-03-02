@@ -20,6 +20,17 @@ _LOGGER = logging.getLogger(__name__)
 
 RECORDER_QUEUE_KEY = "recorder_queue"
 
+# Maximum seconds to wait for a single recorder query before raising TimeoutError.
+# 30 s is chosen to be generous enough for a heavily-loaded SQLite recorder (e.g.
+# with 10+ IHP devices and a Raspberry Pi) while still preventing an indefinitely
+# hung event loop.  Most healthy recorders respond in < 2 s.
+RECORDER_QUERY_TIMEOUT_SECONDS = 30
+
+# Minimum delay inserted **inside** the recorder lock after each query before
+# yielding to the next waiter.  Keeps the recorder from being monopolised at
+# 100 % and lets other HA components (UI, automations, WebSocket) breathe.
+RECORDER_QUERY_THROTTLE_SECONDS = 0.5
+
 
 class RecorderAccessQueue:
     """FIFO queue for serializing recorder access across all IHP instances.

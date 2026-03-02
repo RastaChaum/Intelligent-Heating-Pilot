@@ -13,7 +13,7 @@ from ..domain.interfaces.device_config_reader_interface import DeviceConfig
 from ..domain.interfaces.heating_cycle_service_interface import IHeatingCycleService
 from ..domain.services.extraction_date_range_calculator import ExtractionDateRangeCalculator
 from ..domain.value_objects.heating import HeatingCycle
-from ..domain.value_objects.historical_data import HistoricalDataKey, HistoricalDataSet
+from ..domain.value_objects.historical_data import HistoricalDataSet
 from ..infrastructure.adapters.recording_extraction_queue import RecordingExtractionQueue
 
 if TYPE_CHECKING:
@@ -105,7 +105,7 @@ class HeatingCycleLifecycleManager:
         self._extraction_queue: RecordingExtractionQueue | None = None
         self._extraction_task: asyncio.Task | None = None
 
-    async def refresh_heating_cycle_cache(self) -> None:
+    async def refresh_heating_cycle_cache(self, *, is_startup: bool = False) -> None:
         """Refresh the heating cycle cache and schedule the next 24h timer.
 
         This is the single lifecycle entry point for both initial startup and
@@ -116,17 +116,27 @@ class HeatingCycleLifecycleManager:
         1. Schedule next 24h timer at dt_util.now() + 24H
         2. Calculate extraction window: start = now - retention_days, end = yesterday
         3. Find missing date ranges vs current cache
+           - At **startup** (``is_startup=True``): limits the catch-up to 1 day
+             (yesterday only) to avoid issuing hundreds of recorder queries at
+             boot with many IHP devices.  The full window fills naturally each
+             24-hour timer tick.
         4. Launch async extraction only for missing ranges
         5. Prune cycles outside the retention window from persistent storage
 
         Cycles are delivered asynchronously via the _on_cycles_extracted() callback.
+
+        Args:
+            is_startup: When ``True``, limit initial extraction to yesterday only
+                        (max_catchup_days=1) to prevent recorder overload at boot.
 
         Returns:
             None
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager.refresh_heating_cycle_cache")
         _LOGGER.info(
-            "Heating cycle cache refresh triggered for device=%s", self._device_config.device_id
+            "Heating cycle cache refresh triggered for device=%s (is_startup=%s)",
+            self._device_config.device_id,
+            is_startup,
         )
 
         # Step 1: Cancel previous timer, then schedule next one at dt_util.now() + 24H
@@ -141,6 +151,7 @@ class HeatingCycleLifecycleManager:
         if self._timer_scheduler is not None:
             now = dt_util.now() if dt_util is not None else datetime.now()
             next_refresh = now + timedelta(hours=24)
+            # Periodic refresh is never a startup call
             self._timer_cancel_func = self._timer_scheduler.schedule_timer(
                 next_refresh, self.refresh_heating_cycle_cache
             )
@@ -178,8 +189,19 @@ class HeatingCycleLifecycleManager:
             else:
                 _LOGGER.debug("No remaining cycles after pruning — skipping LHS recalculation")
 
-        # Step 4: Find missing date ranges vs current (pruned) cache
-        missing_ranges = await self._find_missing_date_ranges(start_date, end_date)
+        # Step 4: Find missing date ranges vs current (pruned) cache.
+        # At startup, limit catch-up to 1 day to prevent recorder overload.
+        max_catchup = 1 if is_startup else None
+        missing_ranges = await self._find_missing_date_ranges(
+            start_date, end_date, max_catchup_days=max_catchup
+        )
+
+        if is_startup:
+            _LOGGER.info(
+                "IHP startup: extracted yesterday only to limit recorder load "
+                "(full %d-day window fills via 24h timer ticks)",
+                self._device_config.lhs_retention_days,
+            )
 
         # Step 5: Launch async extraction for missing ranges only
         if missing_ranges:
@@ -271,11 +293,19 @@ class HeatingCycleLifecycleManager:
                 _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_window")
                 return cycles
 
-        # No cache, extract cycles
-        cycles = await self._extract_cycles(device_id, start_time, end_time)
-        _LOGGER.debug("Extracted %d cycles without cache", len(cycles))
+        # No persistent cache available — return empty list.
+        # Caller should wait for the async extraction queue to populate the cache
+        # via refresh_heating_cycle_cache() rather than triggering an unthrottled
+        # direct recorder query that could saturate Home Assistant at startup.
+        _LOGGER.warning(
+            "No cached cycles available for device=%s (%s → %s) — "
+            "extraction in progress, operating in degraded mode",
+            device_id,
+            start_time,
+            end_time,
+        )
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_window")
-        return cycles
+        return []
 
     async def get_cycles_for_target_time(
         self,
@@ -636,6 +666,7 @@ class HeatingCycleLifecycleManager:
         self,
         window_start: date,
         window_end: date,
+        max_catchup_days: int | None = None,
     ) -> list[tuple[date, date]]:
         """Find date ranges within the window not yet covered by the cache.
 
@@ -647,18 +678,24 @@ class HeatingCycleLifecycleManager:
         Args:
             window_start: Start of desired coverage window (inclusive).
             window_end: End of desired coverage window (inclusive).
+            max_catchup_days: When set, limits the total number of days that can
+                be returned across all missing ranges.  Used at startup
+                (``max_catchup_days=1``) to avoid issuing hundreds of recorder
+                queries before HA has finished booting.
 
         Returns:
             List of (start, end) date ranges that require extraction.
             Empty list if every day in the window is covered by the cache.
         """
         if self._heating_cycle_storage is None:
-            return [(window_start, window_end)]
+            full_range = [(window_start, window_end)]
+            return self._apply_max_catchup(full_range, max_catchup_days)
 
         cache_data = await self._heating_cycle_storage.get_cache_data(self._device_config.device_id)
 
         if cache_data is None or not cache_data.cycles:
-            return [(window_start, window_end)]
+            full_range = [(window_start, window_end)]
+            return self._apply_max_catchup(full_range, max_catchup_days)
 
         # Build a set of dates covered by at least one cached cycle.
         # For each cycle, mark every calendar day from start_time to end_time
@@ -707,7 +744,47 @@ class HeatingCycleLifecycleManager:
                 window_end,
             )
 
-        return missing_ranges
+        return self._apply_max_catchup(missing_ranges, max_catchup_days)
+
+    @staticmethod
+    def _apply_max_catchup(
+        missing_ranges: list[tuple[date, date]],
+        max_catchup_days: int | None,
+    ) -> list[tuple[date, date]]:
+        """Truncate missing_ranges so the total days do not exceed max_catchup_days.
+
+        Ranges are consumed from the **most recent** end (rightmost range first)
+        so that the freshest data is always available first.
+
+        Args:
+            missing_ranges: Ordered list of (start, end) date ranges.
+            max_catchup_days: Maximum total days to return; ``None`` means no limit.
+
+        Returns:
+            Possibly truncated list of date ranges.
+        """
+        if max_catchup_days is None or not missing_ranges:
+            return missing_ranges
+
+        one_day = timedelta(days=1)
+        result: list[tuple[date, date]] = []
+        remaining = max_catchup_days
+
+        for range_start, range_end in reversed(missing_ranges):
+            if remaining <= 0:
+                break
+            days_in_range = (range_end - range_start).days + 1
+            if days_in_range <= remaining:
+                result.append((range_start, range_end))
+                remaining -= days_in_range
+            else:
+                # Partial range — take the most recent `remaining` days
+                partial_start = range_end - timedelta(days=remaining - 1)
+                result.append((partial_start, range_end))
+                remaining = 0
+
+        result.reverse()
+        return result
 
     async def _launch_extraction_for_ranges(
         self,
@@ -942,38 +1019,27 @@ class HeatingCycleLifecycleManager:
                 device_id,
             )
 
-        # Load historical data from all adapters
+        # Load historical data from all adapters using single-query pattern
         combined_data: HistoricalDataSet = HistoricalDataSet(data={})
 
         for adapter in self._historical_adapters:
             try:
-                # Call the interface method to fetch historical data for each data key
-                # Use the configured VTherm entity ID from device_config, not the device_id
                 vtherm_entity_id = self._device_config.vtherm_entity_id
                 _LOGGER.debug(
-                    "Fetching historical data from adapter for entity_id=%s",
+                    "Fetching all historical data from adapter for entity_id=%s",
                     vtherm_entity_id,
                 )
-                for data_key in HistoricalDataKey:
-                    adapter_data = await adapter.fetch_historical_data(
-                        entity_id=vtherm_entity_id,
-                        data_key=data_key,
-                        start_time=start_time,
-                        end_time=end_time,
-                    )
-                    # Merge adapter data into combined_data
-                    if adapter_data is not None and adapter_data.data:
-                        # Only extend if this data_key exists in the adapter response
-                        if data_key in adapter_data.data:
-                            if data_key not in combined_data.data:
-                                combined_data.data[data_key] = []
-                            combined_data.data[data_key].extend(adapter_data.data[data_key])
-                        else:
-                            _LOGGER.debug(
-                                "Data key %s not found in adapter response for entity %s",
-                                data_key.value,
-                                device_id,
-                            )
+                adapter_data = await adapter.fetch_all_historical_data(
+                    entity_id=vtherm_entity_id,
+                    start_time=start_time,
+                    end_time=end_time,
+                )
+                # Merge adapter data into combined_data
+                if adapter_data is not None and adapter_data.data:
+                    for data_key, measurements in adapter_data.data.items():
+                        if data_key not in combined_data.data:
+                            combined_data.data[data_key] = []
+                        combined_data.data[data_key].extend(measurements)
             except Exception as exc:
                 _LOGGER.error("Error loading data from adapter: %s", exc)
                 raise
