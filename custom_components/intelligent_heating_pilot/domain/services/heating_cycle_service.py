@@ -1,26 +1,31 @@
 """Domain service for extracting heating cycles from historical data."""
+
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
-from ..interfaces.heating_cycle_service import IHeatingCycleService
+from ..interfaces.heating_cycle_service_interface import IHeatingCycleService
 from ..value_objects.heating import HeatingCycle, TariffPeriodDetail
-from ..value_objects.historical_data import HistoricalDataKey, HistoricalDataSet, HistoricalMeasurement
+from ..value_objects.historical_data import (
+    HistoricalDataKey,
+    HistoricalDataSet,
+    HistoricalMeasurement,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class HeatingCycleService(IHeatingCycleService):
     """Service to detect and extract heating cycles from a raw historical dataset.
-    
+
     This service encapsulates the business logic for defining what constitutes a heating cycle,
     how long cycles should be split, and how relevant metrics are calculated.
     It operates solely on domain value objects and has no direct dependencies on Home Assistant
     or ML frameworks.
     """
-    
+
     def __init__(
         self,
         temp_delta_threshold: float = 0.2,
@@ -58,7 +63,7 @@ class HeatingCycleService(IHeatingCycleService):
         self._max_cycle_duration_minutes = max_cycle_duration_minutes
 
         _LOGGER.debug("Exiting HeatingCycleService.__init__")
-    
+
     async def extract_heating_cycles(
         self,
         device_id: str,
@@ -68,9 +73,9 @@ class HeatingCycleService(IHeatingCycleService):
         cycle_split_duration_minutes: int | None = 0,
     ) -> list[HeatingCycle]:
         """Extract heating cycles from a HistoricalDataSet within a given time range.
-        
+
         This method applies the core business logic to identify and process heating cycles.
-        
+
         Args:
             device_id: The device identifier for the cycles.
             history_data_set: A HistoricalDataSet containing all necessary raw sensor data.
@@ -78,33 +83,43 @@ class HeatingCycleService(IHeatingCycleService):
             end_time: The end of the time range for cycle extraction.
             cycle_split_duration_minutes: Duration in minutes to split long cycles
                 into smaller sub-cycles for granular analysis. If 0 or None, no splitting.
-            
+
         Returns:
             A list of HeatingCycle value objects.
-            
+
         Raises:
             ValueError: If critical historical data keys are missing from the dataset.
         """
         _LOGGER.debug("Extracting heating cycles from %s to %s", start_time, end_time)
-        
+
         # Validate critical data availability
         self._validate_critical_data(history_data_set)
-        
+        _LOGGER.debug("Critical data validation passed - proceeding with cycle extraction")
+
         # Use provided cycle_split_duration_minutes if specified (>0), otherwise use instance default
-        split_duration = cycle_split_duration_minutes if (cycle_split_duration_minutes is not None and cycle_split_duration_minutes > 0) else self._cycle_split_duration_minutes
-        
+        split_duration = (
+            cycle_split_duration_minutes
+            if (cycle_split_duration_minutes is not None and cycle_split_duration_minutes > 0)
+            else self._cycle_split_duration_minutes
+        )
+
         # Récupérer les données d'historique triées par timestamp
         heating_state_history = sorted(
             history_data_set.data[HistoricalDataKey.HEATING_STATE],
             key=lambda m: m.timestamp,
         )
-        
+
         # Initialiser les variables de suivi de cycle
         heating_start: datetime | None = None
         cycle_start_indoor_temp: float | None = None
         cycle_start_target_temp: float | None = None
-        
-        cycles: list[HeatingCycle] = []       
+
+        cycles: list[HeatingCycle] = []
+
+        measurements_processed = 0
+        measurements_skipped_no_temp = 0
+        samples_logged = 0
+        max_debug_samples = 10  # Log first 10 measurements for debugging
 
         for measurement in heating_state_history:
             timestamp = measurement.timestamp
@@ -116,13 +131,41 @@ class HeatingCycleService(IHeatingCycleService):
                 history_data_set, timestamp
             )
 
+            measurements_processed += 1
+
             if current_indoor_temp is None or current_target_temp is None:
-                _LOGGER.debug("Skipping measurement at %s due to missing temp data", timestamp)
+                measurements_skipped_no_temp += 1
+                if samples_logged < max_debug_samples:
+                    _LOGGER.debug(
+                        "Skipping measurement #%d at %s: missing temps (indoor=%s, target=%s)",
+                        measurements_processed,
+                        timestamp,
+                        current_indoor_temp,
+                        current_target_temp,
+                    )
+                    samples_logged += 1
                 continue
+
+            # Log first few measurements to understand the data
+            if samples_logged < max_debug_samples:
+                _LOGGER.debug(
+                    "Measurement #%d: mode_on=%s, action_active=%s, indoor=%.1f, target=%.1f, "
+                    "hvac_action=%s, hvac_mode=%s",
+                    measurements_processed,
+                    mode_on,
+                    action_active,
+                    current_indoor_temp,
+                    current_target_temp,
+                    (measurement.attributes or {}).get("hvac_action") if measurement else None,
+                    (measurement.attributes or {}).get("hvac_mode") if measurement else None,
+                )
+                samples_logged += 1
 
             if heating_start is None:
                 # Check for cycle START condition
-                if self._should_start_cycle(mode_on, action_active, current_indoor_temp, current_target_temp):
+                if self._should_start_cycle(
+                    mode_on, action_active, current_indoor_temp, current_target_temp
+                ):
                     heating_start = timestamp
                     cycle_start_indoor_temp = current_indoor_temp
                     cycle_start_target_temp = current_target_temp
@@ -144,9 +187,13 @@ class HeatingCycleService(IHeatingCycleService):
                         device_id=device_id,
                         start_time=heating_start,
                         end_time=timestamp,
-                        start_indoor_temp=cycle_start_indoor_temp if cycle_start_indoor_temp is not None else current_indoor_temp,
+                        start_indoor_temp=cycle_start_indoor_temp
+                        if cycle_start_indoor_temp is not None
+                        else current_indoor_temp,
                         end_indoor_temp=current_indoor_temp,
-                        target_temp=cycle_start_target_temp if cycle_start_target_temp is not None else current_target_temp,
+                        target_temp=cycle_start_target_temp
+                        if cycle_start_target_temp is not None
+                        else current_target_temp,
                         history_data_set=history_data_set,
                         split_duration_minutes=split_duration,
                     )
@@ -156,29 +203,41 @@ class HeatingCycleService(IHeatingCycleService):
                     heating_start = None
                     cycle_start_indoor_temp = None
                     cycle_start_target_temp = None
-        
+
         # Gérer un cycle potentiellement non terminé à la fin des données
         if heating_start is not None:
-            _LOGGER.debug("Unfinished heating cycle found, ending at data_set end time %s", end_time)
+            _LOGGER.debug(
+                "Unfinished heating cycle found, ending at data_set end time %s", end_time
+            )
             created = self._create_cycles(
                 device_id=device_id,
                 start_time=heating_start,
                 end_time=end_time,
                 start_indoor_temp=cycle_start_indoor_temp or 20.0,
-                end_indoor_temp=self._get_value_at_time(history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, []), end_time, float) or 20.0,
+                end_indoor_temp=self._get_value_at_time(
+                    history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, []), end_time, float
+                )
+                or 20.0,
                 target_temp=cycle_start_target_temp or 20.0,
                 history_data_set=history_data_set,
                 split_duration_minutes=split_duration,
             )
             if created:
                 cycles.extend(created)
-            
+
+        _LOGGER.debug(
+            "Cycle extraction complete: processed=%d measurements, skipped=%d (no temp data), "
+            "extracted=%d cycles",
+            measurements_processed,
+            measurements_skipped_no_temp,
+            len(cycles),
+        )
         _LOGGER.info("Extracted %d heating cycles", len(cycles))
         return cycles
-    
+
     def _is_heating_active(self, measurement: HistoricalMeasurement) -> bool:
         """Determines if the heating system is considered ON from a measurement.
-        
+
         This logic abstracts whether the entity is a climate control, switch, or binary sensor.
         """
         # For action detection, prefer hvac_action attribute when present.
@@ -187,10 +246,7 @@ class HeatingCycleService(IHeatingCycleService):
 
         if hvac_action:
             try:
-                if isinstance(hvac_action, str):
-                    action = hvac_action.lower()
-                else:
-                    action = None
+                action = hvac_action.lower() if isinstance(hvac_action, str) else None
 
                 if action in ("heating", "preheating"):
                     return True
@@ -214,10 +270,7 @@ class HeatingCycleService(IHeatingCycleService):
 
         if hvac_mode:
             try:
-                if isinstance(hvac_mode, str):
-                    mode = hvac_mode.lower()
-                else:
-                    mode = None
+                mode = hvac_mode.lower() if isinstance(hvac_mode, str) else None
                 return mode in ("heat", "heat_cool", "auto")
             except Exception:
                 _LOGGER.debug("Error evaluating hvac_mode: %s", attrs, exc_info=True)
@@ -236,24 +289,25 @@ class HeatingCycleService(IHeatingCycleService):
         attribute_name: str | None = None,
     ) -> Any | None:
         """Get the sensor value at or before a specific time from a list of HistoricalMeasurement.
-        
+
         Args:
             history: List of HistoricalMeasurement records for the entity.
             target_time: Time to find the value for.
             value_type: The expected type of the value (e.g., float, str).
             attribute_name: If provided, extract value from attributes (e.g., 'current_temperature').
-            
+
         Returns:
             The sensor value cast to value_type, or None if not found/invalid.
         """
         closest_measurement: HistoricalMeasurement | None = None
-        
+
         # Find the closest measurement at or before target_time
         for measurement in history:
-            if measurement.timestamp <= target_time:
-                if closest_measurement is None or measurement.timestamp > closest_measurement.timestamp:
-                    closest_measurement = measurement
-        
+            if measurement.timestamp <= target_time and (
+                closest_measurement is None or measurement.timestamp > closest_measurement.timestamp
+            ):
+                closest_measurement = measurement
+
         if closest_measurement:
             try:
                 value_raw: Any = None
@@ -261,12 +315,17 @@ class HeatingCycleService(IHeatingCycleService):
                     value_raw = closest_measurement.attributes.get(attribute_name)
                 else:
                     value_raw = closest_measurement.value
-                
+
                 if value_raw is not None:
-                    return value_type(value_raw)
+                    result = value_type(value_raw)
+                    return cast(float, result)
             except (ValueError, TypeError):
-                _LOGGER.debug("Could not cast value %s to %s for timestamp %s",
-                              value_raw, value_type.__name__, closest_measurement.timestamp)
+                _LOGGER.debug(
+                    "Could not cast value %s to %s for timestamp %s",
+                    value_raw,
+                    value_type.__name__,
+                    closest_measurement.timestamp,
+                )
         return None
 
     def _create_cycles(
@@ -299,19 +358,32 @@ class HeatingCycleService(IHeatingCycleService):
 
         # Compute energy, runtime and tariff breakdown using helper methods
         data = history_data_set.data
-        
+
         total_energy_kwh = self._compute_energy_kwh(data, start_time, end_time)
         heating_duration_minutes = self._compute_runtime_minutes(
             data, start_time, end_time, duration_minutes
         )
-        
+
         tariff_history = data.get(HistoricalDataKey.TARIFF_PRICE_EUR_PER_KWH, [])
         energy_history = data.get(HistoricalDataKey.HEATING_ENERGY_KWH, [])
         runtime_history = data.get(HistoricalDataKey.HEATING_RUNTIME_SECONDS, [])
 
         total_cost_euro, tariff_details = self._compute_tariff_breakdown(
-            tariff_history, energy_history, runtime_history,
-            start_time, end_time, total_energy_kwh
+            tariff_history, energy_history, runtime_history, start_time, end_time, total_energy_kwh
+        )
+
+        # Calculate dead_time_cycle for this cycle
+        dead_time_cycle_minutes = self._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_indoor_temp,
+            history_data_set=history_data_set,
+        )
+
+        # Calculate dead_time_cycle for this cycle
+        dead_time_cycle_minutes = self._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_indoor_temp,
+            history_data_set=history_data_set,
         )
 
         # Build HeatingCycle with computed tariff details (may be empty)
@@ -323,6 +395,7 @@ class HeatingCycleService(IHeatingCycleService):
             end_temp=end_indoor_temp,
             start_temp=start_indoor_temp,
             tariff_details=tariff_details,
+            dead_time_cycle_minutes=dead_time_cycle_minutes,
         )
         _LOGGER.debug(
             "Created single heating cycle: %s (energy=%.3fkWh duration=%.1fmin cost=%.3f€)",
@@ -333,8 +406,21 @@ class HeatingCycleService(IHeatingCycleService):
         )
 
         # If splitting is enabled, return sub-cycles (used for ML augmentation).
-        if split_duration_minutes is not None and split_duration_minutes > 0 and duration_minutes > split_duration_minutes:
-            return self._split_into_cycles(device_id, start_time, end_time, start_indoor_temp, end_indoor_temp, target_temp, history_data_set, split_duration_minutes)
+        if (
+            split_duration_minutes is not None
+            and split_duration_minutes > 0
+            and duration_minutes > split_duration_minutes
+        ):
+            return self._split_into_cycles(
+                device_id,
+                start_time,
+                end_time,
+                start_indoor_temp,
+                end_indoor_temp,
+                target_temp,
+                history_data_set,
+                split_duration_minutes,
+            )
 
         return [cycle]
 
@@ -381,8 +467,30 @@ class HeatingCycleService(IHeatingCycleService):
         )
 
         for i in range(num_sub_cycles):
-            sub_cycle_end_time = current_sub_cycle_start_time + timedelta(minutes=split_duration_minutes)
-            sub_cycle_end_temp = current_sub_cycle_start_temp + (temp_per_minute * split_duration_minutes)
+            sub_cycle_end_time = current_sub_cycle_start_time + timedelta(
+                minutes=split_duration_minutes
+            )
+            sub_cycle_end_temp = current_sub_cycle_start_temp + (
+                temp_per_minute * split_duration_minutes
+            )
+
+            # Calculate dead_time_cycle only for the first sub-cycle
+            dead_time_cycle_minutes = None
+            if i == 0:
+                dead_time_cycle_minutes = self._calculate_dead_time_cycle(
+                    start_time=current_sub_cycle_start_time,
+                    start_temp=current_sub_cycle_start_temp,
+                    history_data_set=history_data_set,
+                )
+
+            # Calculate dead_time_cycle only for the first sub-cycle
+            dead_time_cycle_minutes = None
+            if i == 0:
+                dead_time_cycle_minutes = self._calculate_dead_time_cycle(
+                    start_time=current_sub_cycle_start_time,
+                    start_temp=current_sub_cycle_start_temp,
+                    history_data_set=history_data_set,
+                )
 
             sub_cycle = HeatingCycle(
                 device_id=device_id,
@@ -392,6 +500,7 @@ class HeatingCycleService(IHeatingCycleService):
                 end_temp=sub_cycle_end_temp,
                 start_temp=current_sub_cycle_start_temp,
                 tariff_details=[],  # TODO: calculate for sub-cycle
+                dead_time_cycle_minutes=dead_time_cycle_minutes,
             )
             created.append(sub_cycle)
             _LOGGER.debug("  Created sub-cycle %d: %s", i + 1, sub_cycle)
@@ -410,12 +519,13 @@ class HeatingCycleService(IHeatingCycleService):
                 end_temp=end_indoor_temp,
                 start_temp=current_sub_cycle_start_temp,
                 tariff_details=[],  # TODO: calculate for remaining sub-cycle
+                dead_time_cycle_minutes=None,  # Not for remaining cycles
             )
             created.append(remaining_cycle)
             _LOGGER.debug("  Created remaining sub-cycle: %s", remaining_cycle)
 
         return created
-    
+
     def _compute_energy_kwh(
         self,
         data: dict[HistoricalDataKey, list[HistoricalMeasurement]],
@@ -423,12 +533,12 @@ class HeatingCycleService(IHeatingCycleService):
         end_time: datetime,
     ) -> float:
         """Compute energy consumed during cycle using cumulative meter (preferred) or fallback to 0.0.
-        
+
         Args:
             data: Historical data dictionary
             start_time: Cycle start time
             end_time: Cycle end time
-            
+
         Returns:
             Energy consumed in kWh (≥0.0)
         """
@@ -437,7 +547,7 @@ class HeatingCycleService(IHeatingCycleService):
             start_energy = self._get_value_at_time(energy_history, start_time, float)
             end_energy = self._get_value_at_time(energy_history, end_time, float)
             if start_energy is not None and end_energy is not None:
-                return max(0.0, end_energy - start_energy)
+                return float(max(0.0, end_energy - start_energy))
         return 0.0
 
     def _compute_runtime_minutes(
@@ -448,17 +558,17 @@ class HeatingCycleService(IHeatingCycleService):
         fallback_duration_minutes: float,
     ) -> float:
         """Compute actual heating runtime by summing on_time_sec snapshots.
-        
+
         HEATING_RUNTIME_SECONDS is NOT cumulative; it's the instantaneous "On" duration
         at each snapshot (reset after each cycle). Sum all values in the time range to get
         the total runtime across all sub-cycles within [start_time, end_time].
-        
+
         Args:
             data: Historical data dictionary
             start_time: Cycle start time
             end_time: Cycle end time
             fallback_duration_minutes: Temporal duration to use if no runtime sensor
-            
+
         Returns:
             Heating runtime in minutes (≥0.0)
         """
@@ -486,12 +596,12 @@ class HeatingCycleService(IHeatingCycleService):
         fallback_energy_kwh: float,
     ) -> tuple[float, list[TariffPeriodDetail]]:
         """Compute cost and tariff period details by segmenting cycle at tariff price changes.
-        
+
         For each segment between consecutive tariff price changes:
         - Energy: difference in cumulative meter (HEATING_ENERGY_KWH)
         - Runtime: sum of on_time_sec values (HEATING_RUNTIME_SECONDS, non-cumulative) in segment
         - Cost: energy_kwh × price
-        
+
         Args:
             tariff_history: Tariff price measurements (EUR/kWh)
             energy_history: Cumulative energy measurements (kWh)
@@ -499,7 +609,7 @@ class HeatingCycleService(IHeatingCycleService):
             start_time: Cycle start time
             end_time: Cycle end time
             fallback_energy_kwh: Energy to use if no cumulative meter
-            
+
         Returns:
             Tuple of (total_cost_euro, tariff_details_list)
         """
@@ -508,7 +618,7 @@ class HeatingCycleService(IHeatingCycleService):
 
         t_samples = sorted(tariff_history, key=lambda m: m.timestamp)
         start_price = self._get_value_at_time(t_samples, start_time, float) or 0.0
-        
+
         # Build segment boundaries at tariff price changes
         boundaries: list[datetime] = [start_time]
         prev_price = start_price
@@ -549,7 +659,11 @@ class HeatingCycleService(IHeatingCycleService):
                             segment_runtime_seconds += float(measurement.value)
                         except (TypeError, ValueError):
                             continue
-                segment_runtime_minutes = segment_runtime_seconds / 60.0 if segment_runtime_seconds > 0.0 else (b - a).total_seconds() / 60.0
+                segment_runtime_minutes = (
+                    segment_runtime_seconds / 60.0
+                    if segment_runtime_seconds > 0.0
+                    else (b - a).total_seconds() / 60.0
+                )
             else:
                 segment_runtime_minutes = (b - a).total_seconds() / 60.0
 
@@ -567,23 +681,106 @@ class HeatingCycleService(IHeatingCycleService):
 
         return total_cost_euro, tariff_details
 
+    def _calculate_dead_time_cycle(
+        self,
+        start_time: datetime,
+        start_temp: float,
+        history_data_set: HistoricalDataSet,
+        temp_change_threshold: float = 0.1,
+        max_dead_time_minutes: float = 60.0,
+    ) -> float | None:
+        """Calculate the dead time for a specific cycle.
+
+        Dead time is the period from cycle start to the first measurable temperature rise.
+        Only positive temperature changes (heating) are considered; decreases return None.
+
+        Args:
+            start_time: When the heating cycle started
+            start_temp: Initial temperature at cycle start
+            history_data_set: Historical temperature data
+            temp_change_threshold: Minimum temperature rise to detect (default: 0.1°C, must be positive)
+            max_dead_time_minutes: Maximum acceptable dead time (default: 60 minutes).
+                Values above this threshold are considered data artifacts.
+
+        Returns:
+            Dead time in minutes, or None if temperature never rises by threshold,
+            no data available, or dead time exceeds maximum threshold
+        """
+        indoor_temp_history = history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, [])
+
+        if not indoor_temp_history:
+            return None
+
+        # Sort by timestamp
+        sorted_temps = sorted(indoor_temp_history, key=lambda m: m.timestamp)
+
+        # Find temperature measurements after cycle start
+        for measurement in sorted_temps:
+            if measurement.timestamp <= start_time:
+                continue
+
+            try:
+                current_temp = float(measurement.value)
+                # Check if temperature has risen by at least the threshold
+                # (only positive changes indicate heating; threshold only applies to increases)
+                temp_change = current_temp - start_temp
+                if temp_change >= temp_change_threshold:
+                    dead_time_minutes = (measurement.timestamp - start_time).total_seconds() / 60.0
+
+                    # Filter out abnormally high dead times (data artifacts)
+                    if dead_time_minutes > max_dead_time_minutes:
+                        _LOGGER.debug(
+                            "Dead time %.1f minutes exceeds maximum threshold %.1f minutes - ignoring as data artifact",
+                            dead_time_minutes,
+                            max_dead_time_minutes,
+                        )
+                        return None
+
+                    _LOGGER.debug(
+                        "Dead time calculated: %.1f minutes (temp change from %.1f to %.1f°C)",
+                        dead_time_minutes,
+                        start_temp,
+                        current_temp,
+                    )
+                    return dead_time_minutes
+            except (ValueError, TypeError):
+                continue
+
+        # If no temperature change detected, cannot determine dead time
+        return None
+
     def _validate_critical_data(self, history_data_set: HistoricalDataSet) -> None:
         """Validate that critical historical data keys are present in the dataset.
-        
+
         Args:
             history_data_set: Dataset to validate
-            
+
         Raises:
-            ValueError: If any critical key is missing
+            ValueError: If any critical key is missing with detailed diagnostic info
         """
         required_keys = [
             HistoricalDataKey.INDOOR_TEMP,
             HistoricalDataKey.TARGET_TEMP,
             HistoricalDataKey.HEATING_STATE,
         ]
-        for key in required_keys:
-            if not history_data_set.data.get(key):
-                raise ValueError(f"Missing critical historical data for key: {key.value}")
+        missing_keys = [k for k in required_keys if not history_data_set.data.get(k)]
+
+        if missing_keys:
+            missing_values = [k.value for k in missing_keys]
+            available_keys = list(history_data_set.data.keys())
+            _LOGGER.error(
+                "Cannot extract cycles: missing REQUIRED data keys %s. Available keys: %s",
+                missing_values,
+                [k.value for k in available_keys],
+            )
+            raise ValueError(
+                f"Missing critical historical data keys: {missing_values}. "
+                f"Available data: {[k.value for k in available_keys]}. "
+                f"Ensure the climate entity has required attributes: "
+                f"current_temperature, target_temperature, and hvac_action. "
+                f"For VTherm entities, ensure it's properly configured and attributes are accessible. "
+                f"If the entity uses custom attributes, configure attribute mapping in the integration settings."
+            )
 
     def _get_temperatures_at(
         self,
@@ -591,11 +788,11 @@ class HeatingCycleService(IHeatingCycleService):
         timestamp: datetime,
     ) -> tuple[float | None, float | None]:
         """Get indoor and target temperatures at a given timestamp.
-        
+
         Args:
             history_data_set: Dataset containing temperature histories
             timestamp: Time to query
-            
+
         Returns:
             Tuple of (indoor_temp, target_temp), either may be None if unavailable
         """
@@ -619,18 +816,18 @@ class HeatingCycleService(IHeatingCycleService):
         target_temp: float | None,
     ) -> bool:
         """Check if heating cycle should start based on system state and temperatures.
-        
+
         Cycle starts when ALL conditions are met:
         - System enabled (mode_on)
         - Heating action active
         - Temperature below target minus threshold
-        
+
         Args:
             mode_on: Whether climate system is enabled
             action_active: Whether heating action is currently active
             indoor_temp: Current indoor temperature (may be None)
             target_temp: Current target temperature (may be None)
-            
+
         Returns:
             True if cycle should start
         """
@@ -648,22 +845,25 @@ class HeatingCycleService(IHeatingCycleService):
         target_temp: float | None,
     ) -> tuple[bool, str]:
         """Check if heating cycle should end and return reason if so.
-        
+
         Cycle ends when ANY condition is met:
         - Indoor temperature reaches target (within threshold)
         - System disabled (mode_on=False)
-        
+
         Args:
             mode_on: Whether climate system is enabled
             indoor_temp: Current indoor temperature (may be None)
             target_temp: Current target temperature (may be None)
-            
+
         Returns:
             Tuple of (should_end, reason_string)
         """
         if not mode_on:
             return True, "mode_disabled"
-        if indoor_temp is not None and target_temp is not None:
-            if indoor_temp >= (target_temp - self._temp_delta_threshold):
-                return True, "target_reached_or_within_threshold"
+        if (
+            indoor_temp is not None
+            and target_temp is not None
+            and indoor_temp >= (target_temp - self._temp_delta_threshold)
+        ):
+            return True, "target_reached_or_within_threshold"
         return False, ""

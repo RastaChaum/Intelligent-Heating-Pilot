@@ -1,35 +1,57 @@
-"""Integration tests for ClimateDataAdapter using real Home Assistant recorder.
+"""Integration tests for HAClimateDataReader using real Home Assistant recorder.
 
 These tests use real HA state recording via hass.states.async_set + recorder,
 not manually constructed State objects, to ensure adapter behavior matches
 actual Home Assistant data structures.
+
+NOTE: These tests require SQLite >= 3.40.1 to run with Home Assistant recorder.
+If SQLite version is too old, tests will be skipped.
 """
+
+import sqlite3
 from datetime import timedelta
 
 import pytest
 from freezegun import freeze_time
-
-from homeassistant.util import dt as dt_util
 from homeassistant.components.recorder.history import get_significant_states
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
 )
 
-from custom_components.intelligent_heating_pilot.infrastructure.adapters.climate_data_adapter import (
-    ClimateDataAdapter,
-)
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     HistoricalDataKey,
+)
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.climate_data_reader import (
+    HAClimateDataReader,
+)
+from custom_components.intelligent_heating_pilot.infrastructure.recorder_queue import (
+    RecorderAccessQueue,
+)
+
+
+@pytest.fixture
+def recorder_queue() -> RecorderAccessQueue:
+    """Create a RecorderAccessQueue for tests."""
+    return RecorderAccessQueue()
+
+
+# Check SQLite version
+SQLITE_VERSION = tuple(map(int, sqlite3.sqlite_version.split(".")))
+REQUIRED_SQLITE = (3, 40, 1)
+pytestmark = pytest.mark.skipif(
+    SQLITE_VERSION < REQUIRED_SQLITE,
+    reason=f"SQLite {sqlite3.sqlite_version} < 3.40.1 required by HA recorder",
 )
 
 
 @pytest.mark.usefixtures("recorder_mock")
-async def test_climate_adapter_fetch_real_indoor_temp_history(hass):
-    """Test ClimateDataAdapter fetches indoor temperature from real recorded states."""
+async def test_climate_adapter_fetch_real_indoor_temp_history(hass, recorder_queue):
+    """Test HAClimateDataReader fetches indoor temperature from real recorded states."""
     entity_id = "climate.living_room"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
-    
+
     # Record real states via hass.states.async_set (like actual climate entities do)
     # Change state value each time to ensure get_significant_states captures them
     with freeze_time(now - timedelta(minutes=10)) as freezer:
@@ -43,7 +65,7 @@ async def test_climate_adapter_fetch_real_indoor_temp_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now - timedelta(minutes=5))
         hass.states.async_set(
             entity_id,
@@ -55,7 +77,7 @@ async def test_climate_adapter_fetch_real_indoor_temp_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now)
         hass.states.async_set(
             entity_id,
@@ -76,7 +98,7 @@ async def test_climate_adapter_fetch_real_indoor_temp_history(hass):
     assert len(hist[entity_id]) >= 2
 
     # Now test adapter fetches and converts correctly from real recorder data
-    adapter = ClimateDataAdapter(hass)
+    adapter = HAClimateDataReader(hass, recorder_queue, entity_id)
     dataset = await adapter.fetch_historical_data(
         entity_id=entity_id,
         data_key=HistoricalDataKey.INDOOR_TEMP,
@@ -91,19 +113,19 @@ async def test_climate_adapter_fetch_real_indoor_temp_history(hass):
     # Verify first value is correct (always recorded)
     assert measurements[0].value == pytest.approx(19.1)
     # Verify all values are in expected range
-    assert all(19.0 <= m.value <= 21.0 for m in measurements)
+    assert all(19.0 <= float(m.value) <= 21.0 for m in measurements)
     # Verify attributes are preserved from real HA states
     assert measurements[0].attributes["hvac_action"] == "heating"
     assert measurements[0].entity_id == entity_id
 
 
 @pytest.mark.usefixtures("recorder_mock")
-async def test_climate_adapter_fetch_real_target_temp_history(hass):
-    """Test ClimateDataAdapter fetches target temperature from real recorded states."""
+async def test_climate_adapter_fetch_real_target_temp_history(hass, recorder_queue):
+    """Test HAClimateDataReader fetches target temperature from real recorded states."""
     entity_id = "climate.bedroom"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
-    
+
     # Record states with changing target_temperature
     # Change state value each time to ensure significant state changes
     with freeze_time(now - timedelta(minutes=20)) as freezer:
@@ -117,7 +139,7 @@ async def test_climate_adapter_fetch_real_target_temp_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now - timedelta(minutes=10))
         hass.states.async_set(
             entity_id,
@@ -129,7 +151,7 @@ async def test_climate_adapter_fetch_real_target_temp_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now)
         hass.states.async_set(
             entity_id,
@@ -143,7 +165,7 @@ async def test_climate_adapter_fetch_real_target_temp_history(hass):
         await async_wait_recording_done(hass)
 
     # Test adapter extraction from real recorder data
-    adapter = ClimateDataAdapter(hass)
+    adapter = HAClimateDataReader(hass, recorder_queue, entity_id)
     dataset = await adapter.fetch_historical_data(
         entity_id=entity_id,
         data_key=HistoricalDataKey.TARGET_TEMP,
@@ -158,16 +180,16 @@ async def test_climate_adapter_fetch_real_target_temp_history(hass):
     # Verify first target temperature (always recorded)
     assert measurements[0].value == pytest.approx(20.0)
     # Verify all values are in expected range
-    assert all(20.0 <= m.value <= 22.0 for m in measurements)
+    assert all(20.0 <= float(m.value) <= 22.0 for m in measurements)
 
 
 @pytest.mark.usefixtures("recorder_mock")
-async def test_climate_adapter_fetch_real_heating_state_history(hass):
-    """Test ClimateDataAdapter fetches hvac_action (heating state) from real recorded states."""
+async def test_climate_adapter_fetch_real_heating_state_history(hass, recorder_queue):
+    """Test HAClimateDataReader fetches hvac_action (heating state) from real recorded states."""
     entity_id = "climate.kitchen"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
-    
+
     # Record states with changing hvac_action
     # State value already changes (heat → heat → off), but ensure all are different
     with freeze_time(now - timedelta(minutes=30)) as freezer:
@@ -181,7 +203,7 @@ async def test_climate_adapter_fetch_real_heating_state_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now - timedelta(minutes=15))
         hass.states.async_set(
             entity_id,
@@ -193,7 +215,7 @@ async def test_climate_adapter_fetch_real_heating_state_history(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now)
         hass.states.async_set(
             entity_id,
@@ -207,7 +229,7 @@ async def test_climate_adapter_fetch_real_heating_state_history(hass):
         await async_wait_recording_done(hass)
 
     # Test adapter extraction of hvac_action from real recorder data
-    adapter = ClimateDataAdapter(hass)
+    adapter = HAClimateDataReader(hass, recorder_queue, entity_id)
     dataset = await adapter.fetch_historical_data(
         entity_id=entity_id,
         data_key=HistoricalDataKey.HEATING_STATE,
@@ -226,12 +248,12 @@ async def test_climate_adapter_fetch_real_heating_state_history(hass):
 
 
 @pytest.mark.usefixtures("recorder_mock")
-async def test_climate_adapter_handles_missing_attributes_in_real_states(hass):
+async def test_climate_adapter_handles_missing_attributes_in_real_states(hass, recorder_queue):
     """Test adapter handles states where expected attributes might be missing."""
     entity_id = "climate.faulty"
     now = dt_util.utcnow()
     start = now - timedelta(hours=1)
-    
+
     # Record states with some missing attributes (edge case)
     # Change state value each time to ensure significance
     with freeze_time(now - timedelta(minutes=10)) as freezer:
@@ -246,7 +268,7 @@ async def test_climate_adapter_handles_missing_attributes_in_real_states(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now - timedelta(minutes=5))
         # State missing current_temperature
         hass.states.async_set(
@@ -258,7 +280,7 @@ async def test_climate_adapter_handles_missing_attributes_in_real_states(hass):
             },
         )
         await async_wait_recording_done(hass)
-        
+
         freezer.move_to(now)
         # State with current_temperature again
         hass.states.async_set(
@@ -273,7 +295,7 @@ async def test_climate_adapter_handles_missing_attributes_in_real_states(hass):
         await async_wait_recording_done(hass)
 
     # Test adapter only extracts valid measurements from real recorder data
-    adapter = ClimateDataAdapter(hass)
+    adapter = HAClimateDataReader(hass, recorder_queue, entity_id)
     dataset = await adapter.fetch_historical_data(
         entity_id=entity_id,
         data_key=HistoricalDataKey.INDOOR_TEMP,

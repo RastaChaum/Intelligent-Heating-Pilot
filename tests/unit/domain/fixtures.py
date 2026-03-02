@@ -1,23 +1,13 @@
 """Centralized test fixtures for domain layer tests (DRY principle)."""
-from datetime import datetime, timedelta, timezone
-import sys
-import os
 
-# Add custom_components to path for domain imports
-sys.path.insert(
-    0,
-    os.path.join(
-        os.path.dirname(__file__),
-        "../../../custom_components/intelligent_heating_pilot",
-    ),
-)
+from datetime import datetime, timedelta
 
-from domain.value_objects.heating import HeatingCycle
+from custom_components.intelligent_heating_pilot.domain.value_objects.heating import HeatingCycle
 
 
 def get_test_datetime() -> datetime:
     """Get a fixed datetime for testing.
-    
+
     Returns:
         A datetime object representing 2024-01-15 12:00:00
     """
@@ -26,10 +16,10 @@ def get_test_datetime() -> datetime:
 
 def get_future_datetime(hours: int = 2) -> datetime:
     """Get a future datetime for testing.
-    
+
     Args:
         hours: Number of hours in the future
-        
+
     Returns:
         A datetime object in the future
     """
@@ -43,13 +33,13 @@ def create_test_heating_cycle(
     temp_increase: float = 2.0,
 ) -> HeatingCycle:
     """Create a test heating cycle with default values.
-    
+
     Args:
         device_id: Device identifier for the cycle
         start_time: Cycle start time
         duration_hours: Duration in hours (default: 1.0)
         temp_increase: Temperature increase in °C (default: 2.0)
-        
+
     Returns:
         HeatingCycle object for testing
     """
@@ -57,7 +47,7 @@ def create_test_heating_cycle(
     start_temp = 18.0
     end_temp = start_temp + temp_increase
     target_temp = end_temp + 0.5
-    
+
     return HeatingCycle(
         device_id=device_id,
         start_time=start_time,
@@ -65,7 +55,7 @@ def create_test_heating_cycle(
         target_temp=target_temp,
         end_temp=end_temp,
         start_temp=start_temp,
-        tariff_details=None
+        tariff_details=None,
     )
 
 
