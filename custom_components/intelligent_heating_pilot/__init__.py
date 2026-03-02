@@ -199,6 +199,20 @@ class IntelligentHeatingPilotCoordinator:
         # Load initial data
         self._lhs_cache = await self._model_storage.get_learned_heating_slope()
         
+        # Boot diagnostic: report cache state to aid monitoring and troubleshooting
+        cache_data = await self._cycle_cache.get_cache_data(self._vtherm_entity)
+        if cache_data:
+            _LOGGER.info(
+                "[%s] IHP startup: %d cached cycles loaded. Incremental extraction covers yesterday only.",
+                self.config.entry_id,
+                cache_data.cycle_count,
+            )
+        else:
+            _LOGGER.info(
+                "[%s] IHP startup: empty cache. First anticipation available after extraction completes.",
+                self.config.entry_id,
+            )
+        
         _LOGGER.info(
             "[%s] Coordinator initialized (VTherm: %s, Schedulers: %d)",
             self.config.entry_id,

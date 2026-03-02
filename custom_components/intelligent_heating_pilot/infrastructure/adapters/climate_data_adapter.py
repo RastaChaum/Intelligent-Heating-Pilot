@@ -4,6 +4,7 @@ Converts Home Assistant climate entity history into HistoricalDataSet.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -19,6 +20,14 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+# Throttle recorder queries to prevent saturating HA's SQLite DB during heavy extraction.
+# 0.5 s between queries gives other HA components time to read/write the recorder.
+RECORDER_QUERY_THROTTLE_SECONDS: float = 0.5
+
+# Maximum time (seconds) to wait for a single recorder query before giving up.
+# Avoids an indefinite hang when the recorder is overloaded.
+RECORDER_QUERY_TIMEOUT_SECONDS: float = 30.0
 
 
 class ClimateDataAdapter(IHistoricalDataAdapter):
@@ -143,6 +152,112 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
 
         return HistoricalDataSet(data=data)
 
+    async def fetch_all_historical_data(
+        self,
+        entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> HistoricalDataSet:
+        """Fetch all supported climate data keys in a **single** recorder query.
+
+        Issues one call to Home Assistant's recorder and extracts INDOOR_TEMP,
+        TARGET_TEMP, and HEATING_STATE in a single pass over the returned State
+        objects, avoiding the ×3 redundant SQL queries that occur when
+        fetch_historical_data is called separately for each key.
+
+        Args:
+            entity_id: The climate entity ID (e.g., "climate.living_room")
+            start_time: Start of historical period
+            end_time: End of historical period
+
+        Returns:
+            HistoricalDataSet with INDOOR_TEMP, TARGET_TEMP, and HEATING_STATE keys
+
+        Raises:
+            ValueError: If entity_id is invalid or history cannot be retrieved
+        """
+        _LOGGER.debug(
+            "Fetching all climate history for %s from %s to %s (single-query)",
+            entity_id,
+            start_time,
+            end_time,
+        )
+
+        try:
+            historical_records = await self._fetch_history(entity_id, start_time, end_time)
+        except Exception as exc:
+            _LOGGER.error("Failed to fetch history for %s: %s", entity_id, exc)
+            raise ValueError(f"Cannot fetch history for entity {entity_id}") from exc
+
+        if not historical_records:
+            _LOGGER.warning("No history found for %s", entity_id)
+            return HistoricalDataSet(data={})
+
+        indoor_temp_measurements: list[HistoricalMeasurement] = []
+        target_temp_measurements: list[HistoricalMeasurement] = []
+        heating_state_measurements: list[HistoricalMeasurement] = []
+
+        for record in historical_records:
+            timestamp = self._parse_timestamp(record)
+            attributes = record.get("attributes", {})
+            entity_id_from_record = record.get("entity_id", entity_id)
+
+            # Extract INDOOR_TEMP
+            if "current_temperature" in attributes:
+                value = self._safe_float(attributes["current_temperature"])
+                if value is not None:
+                    indoor_temp_measurements.append(
+                        HistoricalMeasurement(
+                            timestamp=timestamp,
+                            value=value,
+                            attributes=attributes,
+                            entity_id=entity_id_from_record,
+                        )
+                    )
+
+            # Extract TARGET_TEMP (prefer "temperature" then "target_temperature")
+            raw_target = attributes.get("temperature") or attributes.get("target_temperature")
+            if raw_target is not None:
+                value = self._safe_float(raw_target)
+                if value is not None:
+                    target_temp_measurements.append(
+                        HistoricalMeasurement(
+                            timestamp=timestamp,
+                            value=value,
+                            attributes=attributes,
+                            entity_id=entity_id_from_record,
+                        )
+                    )
+
+            # Extract HEATING_STATE
+            if "hvac_action" in attributes:
+                heating_state_measurements.append(
+                    HistoricalMeasurement(
+                        timestamp=timestamp,
+                        value=attributes["hvac_action"],
+                        attributes=attributes,
+                        entity_id=entity_id_from_record,
+                    )
+                )
+
+        data: dict[HistoricalDataKey, list[HistoricalMeasurement]] = {}
+        if indoor_temp_measurements:
+            data[HistoricalDataKey.INDOOR_TEMP] = indoor_temp_measurements
+        if target_temp_measurements:
+            data[HistoricalDataKey.TARGET_TEMP] = target_temp_measurements
+        if heating_state_measurements:
+            data[HistoricalDataKey.HEATING_STATE] = heating_state_measurements
+
+        _LOGGER.debug(
+            "Single-query extracted for %s: %d indoor_temp, %d target_temp, %d heating_state",
+            entity_id,
+            len(indoor_temp_measurements),
+            len(target_temp_measurements),
+            len(heating_state_measurements),
+        )
+
+        return HistoricalDataSet(data=data)
+
     @staticmethod
     def _parse_timestamp(record: dict[str, Any]) -> datetime:
         """Parse timestamp from history record.
@@ -219,7 +334,21 @@ class ClimateDataAdapter(IHistoricalDataAdapter):
             end_time,
             entity_ids=[entity_id],
         )
-        history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
+        try:
+            history_dict = await asyncio.wait_for(
+                get_instance(self._hass).async_add_executor_job(get_states_func),
+                timeout=RECORDER_QUERY_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            _LOGGER.warning(
+                "Recorder query timed out after %.0fs for entity %s. Returning empty result.",
+                RECORDER_QUERY_TIMEOUT_SECONDS,
+                entity_id,
+            )
+            return []
+        finally:
+            # Throttle: yield to other HA components between recorder queries
+            await asyncio.sleep(RECORDER_QUERY_THROTTLE_SECONDS)
         
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])

@@ -179,21 +179,19 @@ class HeatingApplicationService:
                 heating_cycles = await self._get_cycles_with_cache(vtherm_id, target_time)
             except Exception as exc:
                 _LOGGER.warning(
-                    "Failed to use cycle cache, falling back to direct extraction: %s",
+                    "Failed to use cycle cache: %s. "
+                    "Operating in degraded mode — no anticipation until cache is available.",
                     exc,
                 )
-                heating_cycles = await self._extract_cycles_from_recorder(
-                    vtherm_id,
-                    target_time - timedelta(days=self._history_lookback_days),
-                    target_time,
-                )
+                heating_cycles = []
         else:
-            # No cache available, extract directly from recorder
-            heating_cycles = await self._extract_cycles_from_recorder(
-                vtherm_id,
-                target_time - timedelta(days=self._history_lookback_days),
-                target_time,
+            # No cache adapter configured: skip extraction to protect HA performance.
+            # All direct recorder queries are routed through the incremental cache path.
+            _LOGGER.warning(
+                "No cycle cache configured. "
+                "Skipping cycle extraction to avoid uncontrolled recorder load."
             )
+            heating_cycles = []
         
         # If we have extracted cycles, compute contextual LHS (by hour)
         if heating_cycles:
@@ -310,10 +308,12 @@ class HeatingApplicationService:
                 return cycles
             return []
         else:
-            _LOGGER.info("No cache found, performing full extraction")
+            _LOGGER.info("No cache found, performing initial extraction (yesterday only — to limit recorder load)")
             
-            # No cache exists, perform full extraction
-            search_start = target_time - timedelta(days=self._history_lookback_days)
+            # No cache exists: extract only yesterday to avoid saturating the recorder at boot.
+            # The cache grows incrementally with each 24-hour refresh cycle,
+            # reaching full retention depth naturally over time.
+            search_start = target_time - timedelta(days=1)
             search_end = target_time
             
             cycles = await self._extract_cycles_from_recorder(
@@ -325,6 +325,10 @@ class HeatingApplicationService:
             # Initialize cache with extracted cycles
             if cycles:
                 _LOGGER.debug("Initializing cache with %d cycles", len(cycles))
+            else:
+                _LOGGER.info(
+                    "IHP startup: empty cache, first anticipation available after extraction completes"
+                )
             await self._cycle_cache.append_cycles(  # type: ignore[union-attr]
                 device_id,
                 cycles,
@@ -341,6 +345,10 @@ class HeatingApplicationService:
         end_time: datetime,
     ) -> list[HeatingCycle]:
         """Extract heating cycles directly from Home Assistant recorder.
+
+        Issues a **single** recorder query via fetch_all_historical_data() to
+        retrieve INDOOR_TEMP, TARGET_TEMP, and HEATING_STATE in one pass,
+        instead of three separate identical SQL calls.
         
         Args:
             device_id: Device identifier
@@ -378,32 +386,15 @@ class HeatingApplicationService:
 
         combined_data: dict[HistoricalDataKey, list] = {}
 
-        # Fetch climate data (indoor temp, target temp, heating state)
+        # Fetch all climate data (indoor temp, target temp, heating state) in ONE query
         try:
             climate_adapter = ClimateDataAdapter(hass)
-            indoor_data = await climate_adapter.fetch_historical_data(
+            all_climate_data = await climate_adapter.fetch_all_historical_data(
                 device_id,
-                HistoricalDataKey.INDOOR_TEMP,
                 start_time,
                 end_time,
             )
-            combined_data.update(indoor_data.data)
-
-            target_data = await climate_adapter.fetch_historical_data(
-                device_id,
-                HistoricalDataKey.TARGET_TEMP,
-                start_time,
-                end_time,
-            )
-            combined_data.update(target_data.data)
-
-            heating_state = await climate_adapter.fetch_historical_data(
-                device_id,
-                HistoricalDataKey.HEATING_STATE,
-                start_time,
-                end_time,
-            )
-            combined_data.update(heating_state.data)
+            combined_data.update(all_climate_data.data)
         except Exception as exc:
             _LOGGER.warning("Failed to fetch climate historical data: %s", exc)
             _LOGGER.debug("Exiting _extract_cycles_from_recorder")

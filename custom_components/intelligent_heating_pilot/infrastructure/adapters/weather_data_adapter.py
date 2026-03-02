@@ -4,6 +4,7 @@ Converts Home Assistant weather entity history into HistoricalDataSet.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -19,6 +20,10 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
+
+# Throttle recorder queries to prevent saturating HA's SQLite DB during heavy extraction.
+RECORDER_QUERY_THROTTLE_SECONDS: float = 0.5
+RECORDER_QUERY_TIMEOUT_SECONDS: float = 30.0
 
 
 class WeatherDataAdapter(IHistoricalDataAdapter):
@@ -218,7 +223,21 @@ class WeatherDataAdapter(IHistoricalDataAdapter):
             end_time,
             entity_ids=[entity_id],
         )
-        history_dict = await get_instance(self._hass).async_add_executor_job(get_states_func)
+        try:
+            history_dict = await asyncio.wait_for(
+                get_instance(self._hass).async_add_executor_job(get_states_func),
+                timeout=RECORDER_QUERY_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            _LOGGER.warning(
+                "Recorder query timed out after %.0fs for entity %s. Returning empty result.",
+                RECORDER_QUERY_TIMEOUT_SECONDS,
+                entity_id,
+            )
+            return []
+        finally:
+            # Throttle: yield to other HA components between recorder queries
+            await asyncio.sleep(RECORDER_QUERY_THROTTLE_SECONDS)
         
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])
