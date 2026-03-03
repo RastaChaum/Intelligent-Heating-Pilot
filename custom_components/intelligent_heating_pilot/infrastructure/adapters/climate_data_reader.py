@@ -275,6 +275,112 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
 
         return HistoricalDataSet(data=data)
 
+    async def fetch_all_historical_data(
+        self,
+        entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> HistoricalDataSet:
+        """Fetch historical data for all supported keys in a single recorder query.
+
+        Overrides the default implementation to fetch raw history ONCE and extract
+        all supported HistoricalDataKey values from the single result, avoiding
+        redundant recorder queries.
+
+        Args:
+            entity_id: The climate entity ID (e.g., "climate.living_room")
+            start_time: Start of historical period
+            end_time: End of historical period
+
+        Returns:
+            HistoricalDataSet with measurements for all supported data keys
+
+        Raises:
+            ValueError: If entity_id is invalid or history cannot be retrieved
+        """
+        _LOGGER.debug(
+            "Fetching all climate history for %s from %s to %s (single recorder query)",
+            entity_id,
+            start_time,
+            end_time,
+        )
+
+        # Get mapper for this entity
+        try:
+            mapper = self._mapper_registry.get_mapper_for_entity(entity_id)
+            _LOGGER.debug("Using mapper: %s", type(mapper).__name__)
+        except ValueError as err:
+            _LOGGER.error("Cannot select mapper for %s: %s", entity_id, err)
+            raise
+
+        # Fetch raw history ONCE from the recorder
+        try:
+            historical_records = await self._fetch_history(entity_id, start_time, end_time)
+        except asyncio.CancelledError:
+            _LOGGER.debug("History fetch cancelled (shutdown in progress) for %s", entity_id)
+            raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout fetching history for %s (DB may be shutdown)", entity_id)
+            raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
+        except Exception as exc:
+            _LOGGER.error("Failed to fetch history for %s: %s", entity_id, exc)
+            raise ValueError(f"Cannot fetch history for entity {entity_id}") from exc
+
+        if not historical_records:
+            _LOGGER.debug("No history found for %s", entity_id)
+            return HistoricalDataSet(data={})
+
+        supported_concepts = mapper.get_supported_concepts()
+        data: dict[HistoricalDataKey, list[HistoricalMeasurement]] = {}
+
+        # Extract all supported data keys from the single set of records
+        for data_key, concept in DATA_KEY_TO_CONCEPT.items():
+            if concept not in supported_concepts:
+                continue
+
+            measurements: list[HistoricalMeasurement] = []
+            for record in historical_records:
+                timestamp = self._parse_timestamp(record)
+                attributes = record.get("attributes", {})
+                entity_id_from_record = record.get("entity_id", entity_id)
+
+                try:
+                    value = mapper.extract_attribute_value(attributes, concept)
+                except ValueError:
+                    value = None
+
+                if value is not None:
+                    if concept in [
+                        AttributeConcept.CURRENT_TEMPERATURE,
+                        AttributeConcept.TARGET_TEMPERATURE,
+                    ]:
+                        value = self._safe_float(value)
+                        if value is None:
+                            continue
+
+                    measurements.append(
+                        HistoricalMeasurement(
+                            timestamp=timestamp,
+                            value=value,
+                            attributes=attributes,
+                            entity_id=entity_id_from_record,
+                        )
+                    )
+
+            if measurements:
+                data[data_key] = measurements
+
+        total = sum(len(v) for v in data.values())
+        _LOGGER.debug(
+            "Extracted %d total measurements for %s across %d keys using %s",
+            total,
+            entity_id,
+            len(data),
+            type(mapper).__name__,
+        )
+
+        return HistoricalDataSet(data=data)
+
     # ------------------------------------------------------------------
     # Private helper methods
     # ------------------------------------------------------------------

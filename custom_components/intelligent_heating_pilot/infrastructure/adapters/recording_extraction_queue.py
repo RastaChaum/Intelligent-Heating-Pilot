@@ -1,7 +1,7 @@
-"""Recording extraction queue for incremental daily data loading.
+"""Recording extraction queue for incremental weekly data loading.
 
 This module implements a sequential, asynchronous extraction queue that loads
-climate and environment data from the Home Assistant Recorder one day at a time.
+climate and environment data from the Home Assistant Recorder one week at a time.
 This prevents overwhelming the Recorder and keeps Home Assistant responsive during
 the initial cache population.
 """
@@ -21,7 +21,7 @@ try:
 except ImportError:
     dt_util = None
 
-from ...domain.value_objects.historical_data import HistoricalDataKey, HistoricalDataSet
+from ...domain.value_objects.historical_data import HistoricalDataSet
 from ...domain.value_objects.recording_extraction_task import (
     ExtractionTaskState,
     RecordingExtractionTask,
@@ -34,20 +34,21 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-QUEUE_YIELD_SECONDS = 0.005
+QUEUE_YIELD_SECONDS = 10.0
+TASK_RANGE_DAYS = 7
 
 
 class RecordingExtractionQueue:
     """Queue-based orchestrator for incremental Recorder data extraction.
 
     This service manages asynchronous extraction of climate and environment data
-    from the Home Assistant Recorder, processing one day at a time to:
+    from the Home Assistant Recorder, processing one week at a time to:
     1. Prevent timeout/freezing of Home Assistant during large queries
     2. Load data incrementally into cache (progressive model availability)
     3. Respect the RecorderAccessQueue serialization (avoid concurrent access)
 
     Lifecycle:
-    - populate_queue(start_date, end_date): Create daily extraction tasks
+    - populate_queue(start_date, end_date): Create weekly extraction tasks
     - run_queue(): Execute tasks sequentially in the background
     - cancel_queue(): Stop ongoing extraction
     - get_progress(): Query extraction status
@@ -125,7 +126,7 @@ class RecordingExtractionQueue:
         # Clear existing queue
         self._queue.clear()
 
-        # Create daily tasks
+        # Create weekly tasks
         current_date = start_date
         task_count = 0
         while current_date <= end_date:
@@ -137,10 +138,10 @@ class RecordingExtractionQueue:
             )
             self._queue.append(task)
             task_count += 1
-            current_date += timedelta(days=1)
+            current_date += timedelta(days=TASK_RANGE_DAYS)
 
         _LOGGER.info(
-            "Populated extraction queue with %d daily tasks from %s to %s",
+            "Populated extraction queue with %d weekly tasks from %s to %s",
             task_count,
             start_date,
             end_date,
@@ -260,20 +261,29 @@ class RecordingExtractionQueue:
         return self._extracted_count, total_count, self._is_running
 
     async def _extract_day(self, extraction_date: date) -> list[HeatingCycle]:
-        """Extract climate and environment data for a single day from Recorder.
+        """Extract climate and environment data for a weekly period from Recorder.
+
+        Each task covers up to TASK_RANGE_DAYS (7 days) starting from extraction_date,
+        capped at the overall extraction end date to avoid overshooting the range.
 
         Args:
-            extraction_date: Date to extract (YYYY-MM-DD)
+            extraction_date: Start date of the period to extract (YYYY-MM-DD)
 
         Returns:
-            List of extracted HeatingCycle objects for the day
+            List of extracted HeatingCycle objects for the period
 
         Raises:
             Exception: If extraction fails (will be caught by run_queue())
         """
+        # Compute end of this task's period, capped at the queue's overall end date
+        period_end = extraction_date + timedelta(days=TASK_RANGE_DAYS - 1)
+        if self._extraction_end_date is not None:
+            period_end = min(period_end, self._extraction_end_date)
+
         _LOGGER.debug(
-            "Extracting data from Recorder for date=%s, device=%s, climate=%s",
+            "Extracting data from Recorder for period=%s to %s, device=%s, climate=%s",
             extraction_date,
+            period_end,
             self._device_id,
             self._climate_entity_id,
         )
@@ -282,35 +292,33 @@ class RecordingExtractionQueue:
             raise RuntimeError("HeatingCycleService is required for extraction")
 
         try:
-            # Create time window for this day using HA local timezone to avoid
+            # Create time window for this period using HA local timezone to avoid
             # midnight boundary shifts on non-UTC installations.
             local_tz = dt_util.get_default_time_zone() if dt_util is not None else timezone.utc
             start_time = datetime.combine(extraction_date, time.min).replace(tzinfo=local_tz)
-            end_time = datetime.combine(extraction_date, time.max).replace(tzinfo=local_tz)
+            end_time = datetime.combine(period_end, time.max).replace(tzinfo=local_tz)
 
             combined_data: HistoricalDataSet = HistoricalDataSet(data={})
 
             for adapter in self._historical_adapters:
                 try:
-                    for data_key in HistoricalDataKey:
-                        adapter_data = await adapter.fetch_historical_data(
-                            entity_id=self._climate_entity_id,
-                            data_key=data_key,
-                            start_time=start_time,
-                            end_time=end_time,
-                        )
-                        if (
-                            adapter_data is not None
-                            and adapter_data.data
-                            and data_key in adapter_data.data
-                        ):
-                            if data_key not in combined_data.data:
-                                combined_data.data[data_key] = []
-                            combined_data.data[data_key].extend(adapter_data.data[data_key])
+                    # Fetch all supported data keys in a single recorder query
+                    adapter_data = await adapter.fetch_all_historical_data(
+                        entity_id=self._climate_entity_id,
+                        start_time=start_time,
+                        end_time=end_time,
+                    )
+                    if adapter_data is not None and adapter_data.data:
+                        for data_key, measurements in adapter_data.data.items():
+                            if measurements:
+                                if data_key not in combined_data.data:
+                                    combined_data.data[data_key] = []
+                                combined_data.data[data_key].extend(measurements)
                 except Exception as exc:
                     _LOGGER.warning(
-                        "Failed to fetch historical data from adapter for %s: %s",
+                        "Failed to fetch historical data from adapter for %s to %s: %s",
                         extraction_date,
+                        period_end,
                         exc,
                     )
                     continue
@@ -325,17 +333,19 @@ class RecordingExtractionQueue:
             )
 
             _LOGGER.debug(
-                "Extracted %d cycles from Recorder for %s",
+                "Extracted %d cycles from Recorder for %s to %s",
                 len(cycles),
                 extraction_date,
+                period_end,
             )
 
             return cycles
 
         except Exception as exc:
             _LOGGER.warning(
-                "Failed to extract cycles for date %s: %s",
+                "Failed to extract cycles for period %s to %s: %s",
                 extraction_date,
+                period_end,
                 exc,
             )
             raise

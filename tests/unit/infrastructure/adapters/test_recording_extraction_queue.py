@@ -84,19 +84,19 @@ class TestRecordingExtractionQueuePopulation:
     """Test queue population functionality."""
 
     @pytest.mark.asyncio
-    async def test_populate_queue_creates_daily_tasks(
+    async def test_populate_queue_creates_weekly_tasks(
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
-        """Test that populate_queue creates one task per day."""
-        # GIVEN
+        """Test that populate_queue creates one task per TASK_RANGE_DAYS window."""
+        # GIVEN: 15-day range = ceil(15/7) = 3 weekly tasks
         start_date = date(2024, 1, 10)
-        end_date = date(2024, 1, 15)
+        end_date = date(2024, 1, 24)
 
         # WHEN
         task_count = await extraction_queue.populate_queue(start_date, end_date)
 
         # THEN
-        expected_count = 6  # Jan 10, 11, 12, 13, 14, 15
+        expected_count = 3  # Jan 10, Jan 17, Jan 24
         assert task_count == expected_count
 
     @pytest.mark.asyncio
@@ -119,13 +119,13 @@ class TestRecordingExtractionQueuePopulation:
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
         """Test that populate_queue clears any previous tasks."""
-        # GIVEN: First population
-        await extraction_queue.populate_queue(date(2024, 1, 1), date(2024, 1, 5))
+        # GIVEN: First population (1 weekly task)
+        await extraction_queue.populate_queue(date(2024, 1, 1), date(2024, 1, 7))
 
-        # WHEN: Second population
-        task_count = await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        # WHEN: Second population (3 weekly tasks: Jan 10, 17, 24)
+        task_count = await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
-        # THEN: Should only have new tasks (3 days), not accumulated
+        # THEN: Should only have new tasks (3 weeks), not accumulated
         assert task_count == 3
 
     @pytest.mark.asyncio
@@ -188,8 +188,8 @@ class TestRecordingExtractionQueueExecution:
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
         """Test that run_queue executes tasks one at a time, not in parallel."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+        # GIVEN: 15-day range → 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         # Track execution order
         execution_order = []
@@ -206,14 +206,11 @@ class TestRecordingExtractionQueueExecution:
         await extraction_queue.run_queue()
 
         # THEN
-        # Should be in date order
+        # Should be in date order, one task per 7-day window
         expected_order = [
             date(2024, 1, 10),
-            date(2024, 1, 11),
-            date(2024, 1, 12),
-            date(2024, 1, 13),
-            date(2024, 1, 14),
-            date(2024, 1, 15),
+            date(2024, 1, 17),
+            date(2024, 1, 24),
         ]
         assert execution_order == expected_order
 
@@ -247,15 +244,15 @@ class TestRecordingExtractionQueueExecution:
         mock_on_cycles_extracted: Mock,
         sample_heating_cycles: list[HeatingCycle],
     ) -> None:
-        """Test that callback is invoked after each day's extraction."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        """Test that callback is invoked after each week's extraction."""
+        # GIVEN: 15-day range → 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
-        # Make _extract_day return cycles for testing
+        # Make _extract_day return cycles for 2 of the 3 tasks
         async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
             if extraction_date == date(2024, 1, 10):
                 return sample_heating_cycles[:1]
-            elif extraction_date == date(2024, 1, 11):
+            elif extraction_date == date(2024, 1, 17):
                 return sample_heating_cycles[1:]
             return []
 
@@ -265,7 +262,7 @@ class TestRecordingExtractionQueueExecution:
         # WHEN
         await extraction_queue.run_queue()
 
-        # THEN: Callback should be called twice (for days with cycles)
+        # THEN: Callback should be called twice (for weeks with cycles)
         assert mock_on_cycles_extracted.call_count == 2
 
     @pytest.mark.asyncio
@@ -274,8 +271,8 @@ class TestRecordingExtractionQueueExecution:
         extraction_queue: RecordingExtractionQueue,
         mock_on_cycles_extracted: Mock,
     ) -> None:
-        """Test that callback is not called when day has no cycles."""
-        # GIVEN
+        """Test that callback is not called when week has no cycles."""
+        # GIVEN: Single weekly task
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
 
         # _extract_day returns empty list
@@ -320,8 +317,8 @@ class TestRecordingExtractionQueueExecution:
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
         """Test that extracted_count increments for each successful extraction."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
             return []
@@ -339,8 +336,8 @@ class TestRecordingExtractionQueueExecution:
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
         """Test that failed_count increments when extraction raises exception."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        # GIVEN: 3 weekly tasks
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
             raise ValueError("Test extraction error")
@@ -368,8 +365,8 @@ class TestRecordingExtractionQueueCancellation:
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
         """Test that cancel_queue stops processing remaining tasks."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+        # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         processing_count = 0
 
@@ -396,8 +393,8 @@ class TestRecordingExtractionQueueCancellation:
         sample_heating_cycles: list[HeatingCycle],
     ) -> None:
         """Test that cancelled queue preserves count of completed tasks."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+        # GIVEN: 5 weekly tasks (Jan 1, 8, 15, 22, 29)
+        await extraction_queue.populate_queue(date(2024, 1, 1), date(2024, 1, 29))
 
         processed = 0
 
@@ -441,8 +438,8 @@ class TestRecordingExtractionQueueProgress:
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
         """Test that get_progress returns correct tuple format."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         # WHEN
         extracted, total, is_running = await extraction_queue.get_progress()
@@ -460,8 +457,8 @@ class TestRecordingExtractionQueueProgress:
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
         """Test get_progress while extraction is running."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         is_running_during = None
         task_counter = 0
@@ -488,8 +485,8 @@ class TestRecordingExtractionQueueProgress:
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
         """Test get_progress after queue completes."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
             return []
@@ -510,21 +507,21 @@ class TestRecordingExtractionQueueProgress:
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
         """Test that total count includes completed + failed + remaining."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+        # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         # Manually set state
         extraction_queue._extracted_count = 2
         extraction_queue._failed_count = 1
-        # Queue still has all 6 items (no extraction has run)
+        # Queue still has all 3 items (no extraction has run)
 
         # WHEN
         extracted, total, _ = await extraction_queue.get_progress()
 
         # THEN
-        # Total = extracted_count + failed_count + queue_length = 2 + 1 + 6 = 9
+        # Total = extracted_count + failed_count + queue_length = 2 + 1 + 3 = 6
         assert extracted == 2
-        assert total == 9  # 2 extracted + 1 failed + 6 remaining in queue
+        assert total == 6  # 2 extracted + 1 failed + 3 remaining in queue
 
 
 # ============================================================================
@@ -540,15 +537,15 @@ class TestRecordingExtractionQueueErrorHandling:
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
         """Test that queue continues processing after a task fails."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         failed_dates = []
 
         async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
-            if extraction_date == date(2024, 1, 11):
+            if extraction_date == date(2024, 1, 17):
                 failed_dates.append(extraction_date)
-                raise ValueError("Extraction error for this day")
+                raise ValueError("Extraction error for this week")
             return []
 
         extraction_queue._extract_day = mock_extract_day
@@ -557,10 +554,10 @@ class TestRecordingExtractionQueueErrorHandling:
         await extraction_queue.run_queue()
 
         # THEN
-        # Should have processed all 3 days, 1 failed, 2 succeeded
+        # Should have processed all 3 weeks, 1 failed, 2 succeeded
         assert extraction_queue._extracted_count == 2
         assert extraction_queue._failed_count == 1
-        assert failed_dates == [date(2024, 1, 11)]
+        assert failed_dates == [date(2024, 1, 17)]
 
     @pytest.mark.asyncio
     async def test_queue_logs_error_on_failure(
@@ -643,12 +640,13 @@ class TestRecordingExtractionQueueStateConsistency:
         extraction_queue._extract_day = mock_extract_day
 
         # WHEN/THEN: Run extraction twice
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        # 3 weekly tasks: Jan 10, Jan 17, Jan 24
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
         await extraction_queue.run_queue()
         assert extraction_queue._extracted_count == 3
 
-        # Second run: populate with different range
-        await extraction_queue.populate_queue(date(2024, 2, 1), date(2024, 2, 5))
+        # Second run: populate with different range (5 weekly tasks: Feb 1, 8, 15, 22, 29)
+        await extraction_queue.populate_queue(date(2024, 2, 1), date(2024, 2, 29))
         await extraction_queue.run_queue()
         assert (
             extraction_queue._extracted_count == 5
@@ -659,11 +657,11 @@ class TestRecordingExtractionQueueStateConsistency:
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
         """Test queue state is consistent after cancellation."""
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+        # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
-            if extraction_date == date(2024, 1, 12):
+            if extraction_date == date(2024, 1, 17):
                 await extraction_queue.cancel_queue()
             return []
 
@@ -709,8 +707,8 @@ class TestRecordingExtractionQueueSequentialityValidation:
         CRITICAL TEST: If implementation runs tasks in parallel, this will FAIL.
         Each task MUST complete before next one starts.
         """
-        # GIVEN: Populate with 3 days
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         execution_timeline = []
 
@@ -727,15 +725,15 @@ class TestRecordingExtractionQueueSequentialityValidation:
         await extraction_queue.run_queue()
 
         # THEN: Verify STRICT sequential pattern
-        # Pattern MUST be: start_d1, end_d1, start_d2, end_d2, start_d3, end_d3
-        # If parallel: start_d1, start_d2, start_d3, end_d1, end_d2, end_d3 ❌ FAILS THIS TEST
+        # Pattern MUST be: start_w1, end_w1, start_w2, end_w2, start_w3, end_w3
+        # If parallel: start_w1, start_w2, start_w3, end_w1, end_w2, end_w3 ❌ FAILS THIS TEST
         expected_timeline = [
             ("start", date(2024, 1, 10)),
             ("end", date(2024, 1, 10)),
-            ("start", date(2024, 1, 11)),
-            ("end", date(2024, 1, 11)),
-            ("start", date(2024, 1, 12)),
-            ("end", date(2024, 1, 12)),
+            ("start", date(2024, 1, 17)),
+            ("end", date(2024, 1, 17)),
+            ("start", date(2024, 1, 24)),
+            ("end", date(2024, 1, 24)),
         ]
         assert execution_timeline == expected_timeline, (
             f"Tasks must be sequential (start→end→start→end→...). " f"Got: {execution_timeline}"
@@ -749,8 +747,8 @@ class TestRecordingExtractionQueueSequentialityValidation:
 
         This detects if implementation uses asyncio.gather or similar parallel approaches.
         """
-        # GIVEN
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         active_tasks = []
         max_concurrent = 0
@@ -784,8 +782,8 @@ class TestRecordingExtractionQueueSequentialityValidation:
 
         This validates FIFO semantics: first populated task must execute first.
         """
-        # GIVEN: Populate 5 tasks
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 14))
+        # GIVEN: 5 weekly tasks (Jan 1, 8, 15, 22, 29)
+        await extraction_queue.populate_queue(date(2024, 1, 1), date(2024, 1, 29))
 
         execution_order = []
 
@@ -800,11 +798,11 @@ class TestRecordingExtractionQueueSequentialityValidation:
 
         # THEN: Exact order, not shuffled or randomized
         expected_order = [
-            date(2024, 1, 10),
-            date(2024, 1, 11),
-            date(2024, 1, 12),
-            date(2024, 1, 13),
-            date(2024, 1, 14),
+            date(2024, 1, 1),
+            date(2024, 1, 8),
+            date(2024, 1, 15),
+            date(2024, 1, 22),
+            date(2024, 1, 29),
         ]
         assert execution_order == expected_order, (
             f"Tasks must execute in queue order (FIFO). "
@@ -865,12 +863,12 @@ class TestRecordingExtractionQueueCallbackValidation:
             tariff_details=None,
         )
 
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 11))
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 17))
 
         async def mock_extract_returns_cycles(extraction_date: date) -> list[HeatingCycle]:
             if extraction_date == date(2024, 1, 10):
                 return [cycle_jan10_a, cycle_jan10_b]
-            elif extraction_date == date(2024, 1, 11):
+            elif extraction_date == date(2024, 1, 17):
                 return [cycle_jan11]
             return []
 
@@ -907,23 +905,23 @@ class TestRecordingExtractionQueueCallbackValidation:
 
         Days with no cycles should NOT trigger callback (empty list not passed).
         """
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
+        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
         async def mock_extract_sparse(extraction_date: date) -> list[HeatingCycle]:
-            """Only Jan 11 has cycles; others are empty."""
-            if extraction_date == date(2024, 1, 11):
+            """Only second week (Jan 17) has cycles; others are empty."""
+            if extraction_date == date(2024, 1, 17):
                 return [
                     HeatingCycle(
                         device_id="sensor.test_device",
-                        start_time=datetime(2024, 1, 11, 8, 0),
-                        end_time=datetime(2024, 1, 11, 9, 0),
+                        start_time=datetime(2024, 1, 17, 8, 0),
+                        end_time=datetime(2024, 1, 17, 9, 0),
                         target_temp=21.0,
                         end_temp=20.5,
                         start_temp=18.0,
                         tariff_details=None,
                     )
                 ]
-            return []  # Jan 10 and 12 have no cycles
+            return []  # Jan 10 and Jan 24 weeks have no cycles
 
         extraction_queue._extract_day = mock_extract_sparse
         mock_on_cycles_extracted.reset_mock()
@@ -959,7 +957,8 @@ class TestRecordingExtractionQueueCancellationValidation:
 
         CRITICAL: Current task must complete, but no new task should start.
         """
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+        # GIVEN: 5 weekly tasks (Jan 1, 8, 15, 22, 29)
+        await extraction_queue.populate_queue(date(2024, 1, 1), date(2024, 1, 29))
 
         task_executions = []
 
@@ -981,7 +980,7 @@ class TestRecordingExtractionQueueCancellationValidation:
         assert len(task_executions) == 3, (
             f"Expected 3 tasks executed before cancellation, " f"got {len(task_executions)}"
         )
-        assert task_executions == [date(2024, 1, 10), date(2024, 1, 11), date(2024, 1, 12)]
+        assert task_executions == [date(2024, 1, 1), date(2024, 1, 8), date(2024, 1, 15)]
 
     @pytest.mark.asyncio
     async def test_cancellation_with_partial_extraction_preserves_count(
@@ -989,9 +988,10 @@ class TestRecordingExtractionQueueCancellationValidation:
     ) -> None:
         """Verify extraction count is accurate even after cancellation.
 
-        If 3 of 6 tasks completed before cancel, extracted_count must be 3.
+        If 2 of 5 tasks completed before cancel, extracted_count must be 2.
         """
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+        # GIVEN: 5 weekly tasks (Jan 1, 8, 15, 22, 29)
+        await extraction_queue.populate_queue(date(2024, 1, 1), date(2024, 1, 29))
 
         processed = 0
 
@@ -1035,7 +1035,8 @@ class TestRecordingExtractionQueueProgressAccuracy:
 
         total = extracted + failed + remaining_in_queue
         """
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+        # GIVEN: 6 weekly tasks (Jan 1, 8, 15, 22, 29, Feb 5)
+        await extraction_queue.populate_queue(date(2024, 1, 1), date(2024, 2, 5))
 
         async def mock_extract_simple(extraction_date: date) -> list[HeatingCycle]:
             # Simple mock that returns empty cycles
@@ -1064,12 +1065,13 @@ class TestRecordingExtractionQueueProgressAccuracy:
     ) -> None:
         """Verify progress is accurate when some extractions fail.
 
-        GIVEN: 6 tasks, 2 fail (of which 1 actually-fails, 1 times out)
+        GIVEN: 6 weekly tasks, 2 fail
         EXPECTED: extracted=4, failed=2, total=6
         """
-        await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 15))
+        # GIVEN: 6 weekly tasks (Jan 1, 8, 15, 22, 29, Feb 5)
+        await extraction_queue.populate_queue(date(2024, 1, 1), date(2024, 2, 5))
 
-        failure_dates = {date(2024, 1, 11), date(2024, 1, 14)}
+        failure_dates = {date(2024, 1, 8), date(2024, 1, 29)}
 
         async def mock_extract_with_failures(extraction_date: date) -> list[HeatingCycle]:
             if extraction_date in failure_dates:
