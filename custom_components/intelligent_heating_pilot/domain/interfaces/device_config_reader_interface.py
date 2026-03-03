@@ -38,6 +38,7 @@ class DeviceConfig:
 
         # IHP control state
         ihp_enabled: If True, IHP preheating is active; if False, IHP is paused
+        task_range_days: Number of days covered by each Recorder extraction task (tune to machine power)
     """
 
     # Required fields
@@ -64,6 +65,7 @@ class DeviceConfig:
 
     # IHP enabled state
     ihp_enabled: bool = True
+    task_range_days: int = 7
 
     def __post_init__(self) -> None:
         """Validate configuration values after initialization.
@@ -100,6 +102,9 @@ class DeviceConfig:
 
         if self.max_cycle_duration_minutes <= self.min_cycle_duration_minutes:
             raise ValueError("max_cycle_duration_minutes must be > min_cycle_duration_minutes")
+
+        if self.task_range_days < 1:
+            raise ValueError("task_range_days must be at least 1")
 
 
 class IDeviceConfigReader(ABC):

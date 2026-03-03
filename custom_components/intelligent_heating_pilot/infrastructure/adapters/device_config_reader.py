@@ -18,6 +18,7 @@ from ...const import (
     CONF_MAX_CYCLE_DURATION_MINUTES,
     CONF_MIN_CYCLE_DURATION_MINUTES,
     CONF_SCHEDULER_ENTITIES,
+    CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
     DEFAULT_AUTO_LEARNING,
@@ -26,6 +27,7 @@ from ...const import (
     DEFAULT_LHS_RETENTION_DAYS,
     DEFAULT_MAX_CYCLE_DURATION_MINUTES,
     DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+    DEFAULT_TASK_RANGE_DAYS,
     DEFAULT_TEMP_DELTA_THRESHOLD,
 )
 from ...domain.interfaces.device_config_reader_interface import DeviceConfig, IDeviceConfigReader
@@ -135,6 +137,9 @@ class HADeviceConfigReader(IDeviceConfigReader):
         ihp_enabled_value = self._get_config_value(config, options, CONF_IHP_ENABLED)
         ihp_enabled = as_bool(ihp_enabled_value, default=True)
 
+        task_range = self._get_config_value(config, options, CONF_TASK_RANGE_DAYS)
+        task_range_days = int(task_range if task_range is not None else DEFAULT_TASK_RANGE_DAYS)
+
         device_config = DeviceConfig(
             device_id=device_id,
             vtherm_entity_id=vtherm_entity,
@@ -150,6 +155,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
             min_cycle_duration_minutes=min_cycle_duration_minutes,
             max_cycle_duration_minutes=max_cycle_duration_minutes,
             ihp_enabled=ihp_enabled,
+            task_range_days=task_range_days,
         )
 
         _LOGGER.debug("Retrieved device configuration: %s", device_config)

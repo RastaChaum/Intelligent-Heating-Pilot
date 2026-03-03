@@ -594,6 +594,7 @@ class HeatingCycleLifecycleManager:
                 historical_adapters=self._historical_adapters,
                 heating_cycle_service=self._heating_cycle_service,
                 on_cycles_extracted=self._on_cycles_extracted,
+                task_range_days=self._device_config.task_range_days,
             )
 
             # Step 4: Populate with 2 days only
@@ -753,6 +754,7 @@ class HeatingCycleLifecycleManager:
                 historical_adapters=self._historical_adapters,
                 heating_cycle_service=self._heating_cycle_service,
                 on_cycles_extracted=self._on_cycles_extracted,
+                task_range_days=self._device_config.task_range_days,
             )
             task_count = await queue.populate_queue(range_start, range_end)
             self._extraction_queues.append(queue)
@@ -1164,6 +1166,7 @@ class HeatingCycleLifecycleManager:
             historical_adapters=self._historical_adapters,
             heating_cycle_service=self._heating_cycle_service,
             on_cycles_extracted=_collect,
+            task_range_days=self._device_config.task_range_days,
         )
 
         try:

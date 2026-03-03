@@ -22,6 +22,7 @@ from .const import (
     CONF_MIN_CYCLE_DURATION_MINUTES,
     CONF_NAME,
     CONF_SCHEDULER_ENTITIES,
+    CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
     DEFAULT_AUTO_LEARNING,
@@ -31,6 +32,7 @@ from .const import (
     DEFAULT_MAX_CYCLE_DURATION_MINUTES,
     DEFAULT_MIN_CYCLE_DURATION_MINUTES,
     DEFAULT_NAME,
+    DEFAULT_TASK_RANGE_DAYS,
     DEFAULT_TEMP_DELTA_THRESHOLD,
     DOMAIN,
 )
@@ -201,6 +203,17 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         max=360,
                         step=5,
                         unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_TASK_RANGE_DAYS, default=DEFAULT_TASK_RANGE_DAYS
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=30,
+                        step=1,
+                        unit_of_measurement="days",
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
@@ -465,6 +478,20 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 max=360,
                 step=5,
                 unit_of_measurement="minutes",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        schema_dict[
+            vol.Optional(
+                CONF_TASK_RANGE_DAYS,
+                default=_opt_or_data(CONF_TASK_RANGE_DAYS, DEFAULT_TASK_RANGE_DAYS),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=30,
+                step=1,
+                unit_of_measurement="days",
                 mode=selector.NumberSelectorMode.BOX,
             )
         )

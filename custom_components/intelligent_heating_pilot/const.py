@@ -24,6 +24,7 @@ CONF_CYCLE_SPLIT_DURATION_MINUTES = "cycle_split_duration_minutes"
 CONF_MIN_CYCLE_DURATION_MINUTES = "min_cycle_duration_minutes"
 CONF_MAX_CYCLE_DURATION_MINUTES = "max_cycle_duration_minutes"
 CONF_IHP_ENABLED = "ihp_enabled"  # Enable/disable IHP preheating
+CONF_TASK_RANGE_DAYS = "task_range_days"  # Number of days covered by each Recorder extraction task
 
 # Legacy keys (kept for backward compatibility if needed)
 CONF_THERMAL_SLOPE_ENTITY = "thermal_slope_entity"
@@ -46,6 +47,7 @@ DEFAULT_LHS_RETENTION_DAYS = 30  # Deprecated: Use DEFAULT_DATA_RETENTION_DAYS
 DEFAULT_DECISION_MODE = DECISION_MODE_SIMPLE  # Simple mode by default
 DEFAULT_DEAD_TIME_MINUTES = 0.0  # Default dead time (0 = will be learned from cycles)
 DEFAULT_AUTO_LEARNING = True  # Auto-learning enabled by default
+DEFAULT_TASK_RANGE_DAYS = 7  # Number of days per Recorder extraction task (tune to machine power)
 
 # Default values for Heating Cycle Detection
 DEFAULT_TEMP_DELTA_THRESHOLD = 0.2  # °C threshold for cycle start/end detection
