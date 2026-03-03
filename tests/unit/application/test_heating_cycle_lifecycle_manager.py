@@ -9,6 +9,7 @@ Purpose: Comprehensive test coverage for heating cycle lifecycle management
 from __future__ import annotations
 
 import asyncio
+import math
 from contextlib import suppress
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
@@ -29,6 +30,9 @@ from custom_components.intelligent_heating_pilot.domain.value_objects.heating_cy
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
     HistoricalDataSet,
+)
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.recording_extraction_queue import (
+    TASK_RANGE_DAYS,
 )
 
 
@@ -215,10 +219,6 @@ class TestHeatingCycleLifecycleManager:
         # THEN Aspect E: queue task count == number of weekly periods in the extraction window
         # window = [today - retention_days, yesterday] = lhs_retention_days days
         retention_days = manager._device_config.lhs_retention_days  # 30 days
-        import math
-        from custom_components.intelligent_heating_pilot.infrastructure.adapters.recording_extraction_queue import (
-            TASK_RANGE_DAYS,
-        )
         expected_tasks = math.ceil(retention_days / TASK_RANGE_DAYS)  # ceil(30/7) = 5
         # Wait for the background extraction task to complete
         assert manager._extraction_task is not None
