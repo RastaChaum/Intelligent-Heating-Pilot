@@ -590,7 +590,7 @@ class HeatingCycleLifecycleManager:
             # Step 3: Create NEW queue instance for refresh
             self._extraction_queue = RecordingExtractionQueue(
                 device_id=self._device_config.device_id,
-                climate_entity_id=self._device_config.vtherm_entity_id,
+                entity_id=self._device_config.vtherm_entity_id,
                 historical_adapters=self._historical_adapters,
                 heating_cycle_service=self._heating_cycle_service,
                 on_cycles_extracted=self._on_cycles_extracted,
@@ -749,7 +749,7 @@ class HeatingCycleLifecycleManager:
         for range_start, range_end in missing_ranges:
             queue = RecordingExtractionQueue(
                 device_id=self._device_config.device_id,
-                climate_entity_id=self._device_config.vtherm_entity_id,
+                entity_id=self._device_config.vtherm_entity_id,
                 historical_adapters=self._historical_adapters,
                 heating_cycle_service=self._heating_cycle_service,
                 on_cycles_extracted=self._on_cycles_extracted,
@@ -1160,7 +1160,7 @@ class HeatingCycleLifecycleManager:
         # Create a dedicated queue (does not replace the background queue)
         demand_queue = RecordingExtractionQueue(
             device_id=device_id,
-            climate_entity_id=self._device_config.vtherm_entity_id,
+            entity_id=self._device_config.vtherm_entity_id,
             historical_adapters=self._historical_adapters,
             heating_cycle_service=self._heating_cycle_service,
             on_cycles_extracted=_collect,

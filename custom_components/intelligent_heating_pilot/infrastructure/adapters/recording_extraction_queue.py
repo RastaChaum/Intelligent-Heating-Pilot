@@ -1,9 +1,9 @@
-"""Recording extraction queue for incremental weekly data loading.
+"""Recording extraction queue for incremental, configurable-period data loading.
 
 This module implements a sequential, asynchronous extraction queue that loads
-climate and environment data from the Home Assistant Recorder one week at a time.
-This prevents overwhelming the Recorder and keeps Home Assistant responsive during
-the initial cache population.
+historical entity data from the Home Assistant Recorder one configurable period
+at a time. This prevents overwhelming the Recorder and keeps Home Assistant
+responsive during the initial cache population.
 """
 
 from __future__ import annotations
@@ -35,20 +35,24 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 QUEUE_YIELD_SECONDS = 10.0
-TASK_RANGE_DAYS = 7
+DEFAULT_TASK_RANGE_DAYS = 7
 
 
 class RecordingExtractionQueue:
     """Queue-based orchestrator for incremental Recorder data extraction.
 
-    This service manages asynchronous extraction of climate and environment data
-    from the Home Assistant Recorder, processing one week at a time to:
+    This service manages asynchronous extraction of historical entity data
+    from the Home Assistant Recorder, processing one configurable period at
+    a time to:
     1. Prevent timeout/freezing of Home Assistant during large queries
     2. Load data incrementally into cache (progressive model availability)
     3. Respect the RecorderAccessQueue serialization (avoid concurrent access)
 
+    The extraction period length is configurable via `task_range_days` to allow
+    users to tune the load according to their machine's capabilities.
+
     Lifecycle:
-    - populate_queue(start_date, end_date): Create weekly extraction tasks
+    - populate_queue(start_date, end_date): Create extraction tasks
     - run_queue(): Execute tasks sequentially in the background
     - cancel_queue(): Stop ongoing extraction
     - get_progress(): Query extraction status
@@ -61,25 +65,31 @@ class RecordingExtractionQueue:
     def __init__(
         self,
         device_id: str,
-        climate_entity_id: str,
+        entity_id: str,
         historical_adapters: list[IHistoricalDataAdapter],
         heating_cycle_service: IHeatingCycleService | None = None,
         on_cycles_extracted: Callable[[list[HeatingCycle]], Awaitable[None] | None] | None = None,
+        task_range_days: int = DEFAULT_TASK_RANGE_DAYS,
     ) -> None:
         """Initialize the extraction queue.
 
         Args:
             device_id: IHP device identifier
-            climate_entity_id: VTherm climate entity ID
+            entity_id: Entity ID to extract data from (e.g. a climate or sensor entity)
             historical_adapters: List of adapters to fetch historical data
-            on_cycles_extracted: Callback function called after each day's extraction
+            heating_cycle_service: Service used to extract heating cycles from raw data
+            on_cycles_extracted: Callback function called after each period's extraction
                                 with the extracted cycles list
+            task_range_days: Number of days covered by each extraction task.
+                             Increase to reduce task count (less pauses, more data per query).
+                             Decrease on low-powered machines. Default: 7.
         """
         self._device_id = device_id
-        self._climate_entity_id = climate_entity_id
+        self._entity_id = entity_id
         self._historical_adapters = historical_adapters
         self._heating_cycle_service = heating_cycle_service
         self._on_cycles_extracted = on_cycles_extracted
+        self._task_range_days = task_range_days
 
         self._queue: deque[RecordingExtractionTask] = deque()
         self._is_running = False
@@ -90,15 +100,16 @@ class RecordingExtractionQueue:
         self._cancel_requested = False
 
         _LOGGER.debug(
-            "Initialized RecordingExtractionQueue for device=%s, climate=%s",
+            "Initialized RecordingExtractionQueue for device=%s, entity=%s, task_range_days=%d",
             device_id,
-            climate_entity_id,
+            entity_id,
+            task_range_days,
         )
 
     async def populate_queue(self, start_date: date, end_date: date) -> int:
-        """Populate the queue with daily extraction tasks.
+        """Populate the queue with extraction tasks covering the given date range.
 
-        Creates one RecordingExtractionTask per day in the date range.
+        Creates one RecordingExtractionTask per period of `task_range_days` days.
         Does NOT start extraction (call run_queue() to start).
 
         Args:
@@ -126,25 +137,29 @@ class RecordingExtractionQueue:
         # Clear existing queue
         self._queue.clear()
 
-        # Create weekly tasks
+        # Create tasks, each covering task_range_days days
         current_date = start_date
         task_count = 0
         while current_date <= end_date:
+            period_end = min(
+                current_date + timedelta(days=self._task_range_days - 1), end_date
+            )
             task = RecordingExtractionTask(
-                extraction_date=current_date,
+                start_date=current_date,
+                end_date=period_end,
                 device_id=self._device_id,
-                climate_entity_id=self._climate_entity_id,
                 state=ExtractionTaskState.PENDING,
             )
             self._queue.append(task)
             task_count += 1
-            current_date += timedelta(days=TASK_RANGE_DAYS)
+            current_date += timedelta(days=self._task_range_days)
 
         _LOGGER.info(
-            "Populated extraction queue with %d weekly tasks from %s to %s",
+            "Populated extraction queue with %d tasks from %s to %s (period=%d days each)",
             task_count,
             start_date,
             end_date,
+            self._task_range_days,
         )
         _LOGGER.debug("Exiting RecordingExtractionQueue.populate_queue")
         return task_count
@@ -162,7 +177,7 @@ class RecordingExtractionQueue:
 
             asyncio.create_task(queue.run_queue())
 
-        Extracted cycles for each day are passed to the callback function (if
+        Extracted cycles for each period are passed to the callback function (if
         provided) for progressive cache population.
         Raises:
             RuntimeError: If extraction is already running
@@ -190,20 +205,22 @@ class RecordingExtractionQueue:
                 task = self._queue.popleft()
 
                 _LOGGER.debug(
-                    "Processing extraction task for date=%s (task %d/%d)",
-                    task.extraction_date,
+                    "Processing extraction task for period=%s to %s (task %d/%d)",
+                    task.start_date,
+                    task.end_date,
                     self._extracted_count + self._failed_count + 1,
                     self._extracted_count + self._failed_count + len(self._queue) + 1,
                 )
 
                 try:
-                    # Extract data for this day
-                    cycles = await self._extract_day(task.extraction_date)
+                    # Extract data for this period
+                    cycles = await self._extract_period(task.start_date, task.end_date)
 
                     self._extracted_count += 1
                     _LOGGER.info(
-                        "Extraction completed for date=%s: %d cycles extracted",
-                        task.extraction_date,
+                        "Extraction completed for period=%s to %s: %d cycles extracted",
+                        task.start_date,
+                        task.end_date,
                         len(cycles),
                     )
 
@@ -216,15 +233,16 @@ class RecordingExtractionQueue:
                 except Exception as exc:
                     self._failed_count += 1
                     _LOGGER.warning(
-                        "Extraction failed for date=%s: %s",
-                        task.extraction_date,
+                        "Extraction failed for period=%s to %s: %s",
+                        task.start_date,
+                        task.end_date,
                         exc,
                     )
 
                     # Continue with next task despite failure
                     continue
 
-                # Small async checkpoint to let HA process other tasks
+                # Pause between tasks to let the Recorder breathe
                 await asyncio.sleep(QUEUE_YIELD_SECONDS)
 
             if self._cancel_requested:
@@ -260,14 +278,12 @@ class RecordingExtractionQueue:
         total_count = self._extracted_count + self._failed_count + len(self._queue)
         return self._extracted_count, total_count, self._is_running
 
-    async def _extract_day(self, extraction_date: date) -> list[HeatingCycle]:
-        """Extract climate and environment data for a weekly period from Recorder.
-
-        Each task covers up to TASK_RANGE_DAYS (7 days) starting from extraction_date,
-        capped at the overall extraction end date to avoid overshooting the range.
+    async def _extract_period(self, start_date: date, end_date: date) -> list[HeatingCycle]:
+        """Extract historical data for a given period from the Recorder.
 
         Args:
-            extraction_date: Start date of the period to extract (YYYY-MM-DD)
+            start_date: First day (inclusive) of the period to extract
+            end_date: Last day (inclusive) of the period to extract
 
         Returns:
             List of extracted HeatingCycle objects for the period
@@ -275,17 +291,12 @@ class RecordingExtractionQueue:
         Raises:
             Exception: If extraction fails (will be caught by run_queue())
         """
-        # Compute end of this task's period, capped at the queue's overall end date
-        period_end = extraction_date + timedelta(days=TASK_RANGE_DAYS - 1)
-        if self._extraction_end_date is not None:
-            period_end = min(period_end, self._extraction_end_date)
-
         _LOGGER.debug(
-            "Extracting data from Recorder for period=%s to %s, device=%s, climate=%s",
-            extraction_date,
-            period_end,
+            "Extracting data from Recorder for period=%s to %s, device=%s, entity=%s",
+            start_date,
+            end_date,
             self._device_id,
-            self._climate_entity_id,
+            self._entity_id,
         )
 
         if self._heating_cycle_service is None:
@@ -295,8 +306,8 @@ class RecordingExtractionQueue:
             # Create time window for this period using HA local timezone to avoid
             # midnight boundary shifts on non-UTC installations.
             local_tz = dt_util.get_default_time_zone() if dt_util is not None else timezone.utc
-            start_time = datetime.combine(extraction_date, time.min).replace(tzinfo=local_tz)
-            end_time = datetime.combine(period_end, time.max).replace(tzinfo=local_tz)
+            start_time = datetime.combine(start_date, time.min).replace(tzinfo=local_tz)
+            end_time = datetime.combine(end_date, time.max).replace(tzinfo=local_tz)
 
             combined_data: HistoricalDataSet = HistoricalDataSet(data={})
 
@@ -304,7 +315,7 @@ class RecordingExtractionQueue:
                 try:
                     # Fetch all supported data keys in a single recorder query
                     adapter_data = await adapter.fetch_all_historical_data(
-                        entity_id=self._climate_entity_id,
+                        entity_id=self._entity_id,
                         start_time=start_time,
                         end_time=end_time,
                     )
@@ -317,8 +328,8 @@ class RecordingExtractionQueue:
                 except Exception as exc:
                     _LOGGER.warning(
                         "Failed to fetch historical data from adapter for %s to %s: %s",
-                        extraction_date,
-                        period_end,
+                        start_date,
+                        end_date,
                         exc,
                     )
                     continue
@@ -335,8 +346,8 @@ class RecordingExtractionQueue:
             _LOGGER.debug(
                 "Extracted %d cycles from Recorder for %s to %s",
                 len(cycles),
-                extraction_date,
-                period_end,
+                start_date,
+                end_date,
             )
 
             return cycles
@@ -344,8 +355,9 @@ class RecordingExtractionQueue:
         except Exception as exc:
             _LOGGER.warning(
                 "Failed to extract cycles for period %s to %s: %s",
-                extraction_date,
-                period_end,
+                start_date,
+                end_date,
                 exc,
             )
             raise
+

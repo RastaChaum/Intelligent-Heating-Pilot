@@ -43,7 +43,7 @@ def extraction_queue(
     """Create a RecordingExtractionQueue instance for testing."""
     return RecordingExtractionQueue(
         device_id="sensor.test_device",
-        climate_entity_id="climate.living_room",
+        entity_id="climate.living_room",
         historical_adapters=mock_historical_adapters,
         on_cycles_extracted=mock_on_cycles_extracted,
     )
@@ -84,11 +84,11 @@ class TestRecordingExtractionQueuePopulation:
     """Test queue population functionality."""
 
     @pytest.mark.asyncio
-    async def test_populate_queue_creates_weekly_tasks(
+    async def test_populate_queue_creates_period_tasks(
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
-        """Test that populate_queue creates one task per TASK_RANGE_DAYS window."""
-        # GIVEN: 15-day range = ceil(15/7) = 3 weekly tasks
+        """Test that populate_queue creates one task per DEFAULT_TASK_RANGE_DAYS window."""
+        # GIVEN: 15-day range = ceil(15/7) = 3 tasks (default period = 7 days)
         start_date = date(2024, 1, 10)
         end_date = date(2024, 1, 24)
 
@@ -96,8 +96,34 @@ class TestRecordingExtractionQueuePopulation:
         task_count = await extraction_queue.populate_queue(start_date, end_date)
 
         # THEN
-        expected_count = 3  # Jan 10, Jan 17, Jan 24
+        expected_count = 3  # Jan 10-16, Jan 17-23, Jan 24
         assert task_count == expected_count
+
+    @pytest.mark.asyncio
+    async def test_populate_queue_with_custom_task_range_days(
+        self, mock_historical_adapters: list, mock_on_cycles_extracted: Mock
+    ) -> None:
+        """Test that task_range_days parameter controls the task period size."""
+        # GIVEN: A queue with 3-day periods
+        queue = RecordingExtractionQueue(
+            device_id="sensor.test_device",
+            entity_id="sensor.some_entity",
+            historical_adapters=mock_historical_adapters,
+            on_cycles_extracted=mock_on_cycles_extracted,
+            task_range_days=3,
+        )
+
+        # WHEN: 10-day range → ceil(10/3) = 4 tasks
+        task_count = await queue.populate_queue(date(2024, 1, 10), date(2024, 1, 19))
+
+        # THEN
+        assert task_count == 4
+        tasks = list(queue._queue)
+        # First task: Jan 10-12; second: Jan 13-15; third: Jan 16-18; fourth: Jan 19 (capped)
+        assert tasks[0].start_date == date(2024, 1, 10)
+        assert tasks[0].end_date == date(2024, 1, 12)
+        assert tasks[3].start_date == date(2024, 1, 19)
+        assert tasks[3].end_date == date(2024, 1, 19)  # capped at end_date
 
     @pytest.mark.asyncio
     async def test_populate_queue_with_single_day(
@@ -194,13 +220,13 @@ class TestRecordingExtractionQueueExecution:
         # Track execution order
         execution_order = []
 
-        # Mock _extract_day to track order
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
-            execution_order.append(extraction_date)
+        # Mock _extract_period to track order
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
+            execution_order.append(start_date)
             await asyncio.sleep(0.01)  # Small delay to ensure sequential
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN
         await extraction_queue.run_queue()
@@ -248,15 +274,15 @@ class TestRecordingExtractionQueueExecution:
         # GIVEN: 15-day range → 3 weekly tasks (Jan 10, Jan 17, Jan 24)
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
-        # Make _extract_day return cycles for 2 of the 3 tasks
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
-            if extraction_date == date(2024, 1, 10):
+        # Make _extract_period return cycles for 2 of the 3 tasks
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
+            if start_date == date(2024, 1, 10):
                 return sample_heating_cycles[:1]
-            elif extraction_date == date(2024, 1, 17):
+            elif start_date == date(2024, 1, 17):
                 return sample_heating_cycles[1:]
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
         mock_on_cycles_extracted.reset_mock()
 
         # WHEN
@@ -275,11 +301,11 @@ class TestRecordingExtractionQueueExecution:
         # GIVEN: Single weekly task
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 12))
 
-        # _extract_day returns empty list
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        # _extract_period returns empty list
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
         mock_on_cycles_extracted.reset_mock()
 
         # WHEN
@@ -299,13 +325,13 @@ class TestRecordingExtractionQueueExecution:
         # Track if control was yielded
         yield_detected = False
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             nonlocal yield_detected
             # This task should be able to run while extraction is ongoing
             yield_detected = True
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN/THEN
         # Should complete without blocking
@@ -320,10 +346,10 @@ class TestRecordingExtractionQueueExecution:
         # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN
         await extraction_queue.run_queue()
@@ -339,10 +365,10 @@ class TestRecordingExtractionQueueExecution:
         # GIVEN: 3 weekly tasks
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             raise ValueError("Test extraction error")
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN
         await extraction_queue.run_queue()
@@ -370,7 +396,7 @@ class TestRecordingExtractionQueueCancellation:
 
         processing_count = 0
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             nonlocal processing_count
             processing_count += 1
             # After first task, request cancellation
@@ -378,7 +404,7 @@ class TestRecordingExtractionQueueCancellation:
                 await extraction_queue.cancel_queue()
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN
         await extraction_queue.run_queue()
@@ -398,14 +424,14 @@ class TestRecordingExtractionQueueCancellation:
 
         processed = 0
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             nonlocal processed
             processed += 1
             if processed == 3:
                 asyncio.create_task(extraction_queue.cancel_queue())
             return sample_heating_cycles if processed <= 3 else []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN
         await extraction_queue.run_queue()
@@ -463,7 +489,7 @@ class TestRecordingExtractionQueueProgress:
         is_running_during = None
         task_counter = 0
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             nonlocal is_running_during, task_counter
             task_counter += 1
             # Check progress during extraction of task 2
@@ -471,7 +497,7 @@ class TestRecordingExtractionQueueProgress:
                 _, _, is_running_during = await extraction_queue.get_progress()
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN
         await extraction_queue.run_queue()
@@ -488,10 +514,10 @@ class TestRecordingExtractionQueueProgress:
         # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN
         await extraction_queue.run_queue()
@@ -542,13 +568,13 @@ class TestRecordingExtractionQueueErrorHandling:
 
         failed_dates = []
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
-            if extraction_date == date(2024, 1, 17):
-                failed_dates.append(extraction_date)
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
+            if start_date == date(2024, 1, 17):
+                failed_dates.append(start_date)
                 raise ValueError("Extraction error for this week")
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN
         await extraction_queue.run_queue()
@@ -567,10 +593,10 @@ class TestRecordingExtractionQueueErrorHandling:
         # GIVEN
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 11))
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             raise TimeoutError("Recorder timeout")
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN/THEN: Should complete without raising, but log error
         with patch(
@@ -588,10 +614,10 @@ class TestRecordingExtractionQueueErrorHandling:
         # GIVEN
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 11))
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN
         await extraction_queue.run_queue()
@@ -607,10 +633,10 @@ class TestRecordingExtractionQueueErrorHandling:
         # GIVEN
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 11))
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             raise RuntimeError("Unexpected error")
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN
         await extraction_queue.run_queue()
@@ -634,10 +660,10 @@ class TestRecordingExtractionQueueStateConsistency:
         """Test that queue can be populated and run multiple times."""
 
         # GIVEN
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN/THEN: Run extraction twice
         # 3 weekly tasks: Jan 10, Jan 17, Jan 24
@@ -660,12 +686,12 @@ class TestRecordingExtractionQueueStateConsistency:
         # GIVEN: 3 weekly tasks (Jan 10, Jan 17, Jan 24)
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
-        async def mock_extract_day(extraction_date: date) -> list[HeatingCycle]:
-            if extraction_date == date(2024, 1, 17):
+        async def mock_extract_period(start_date: date, end_date: date) -> list[HeatingCycle]:
+            if start_date == date(2024, 1, 17):
                 await extraction_queue.cancel_queue()
             return []
 
-        extraction_queue._extract_day = mock_extract_day
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN
         await extraction_queue.run_queue()
@@ -675,19 +701,19 @@ class TestRecordingExtractionQueueStateConsistency:
         assert extraction_queue._cancel_requested is True  # Flag should be set
 
     @pytest.mark.asyncio
-    async def test_extract_day_not_called_when_queue_empty(
+    async def test_extract_period_not_called_when_queue_empty(
         self, extraction_queue: RecordingExtractionQueue
     ) -> None:
-        """Test that _extract_day is never called when queue is empty."""
+        """Test that _extract_period is never called when queue is empty."""
         # GIVEN
-        mock_extract_day = AsyncMock()
-        extraction_queue._extract_day = mock_extract_day
+        mock_extract_period = AsyncMock()
+        extraction_queue._extract_period = mock_extract_period
 
         # WHEN: Run queue without populating (empty queue)
         await extraction_queue.run_queue()
 
         # THEN
-        mock_extract_day.assert_not_called()
+        mock_extract_period.assert_not_called()
 
 
 # ============================================================================
@@ -712,14 +738,14 @@ class TestRecordingExtractionQueueSequentialityValidation:
 
         execution_timeline = []
 
-        async def mock_extract_with_timing(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_with_timing(start_date: date, end_date: date) -> list[HeatingCycle]:
             """Track when each task starts and ends."""
-            execution_timeline.append(("start", extraction_date))
+            execution_timeline.append(("start", start_date))
             await asyncio.sleep(0.01)  # Simulate work (important for parallelism detection)
-            execution_timeline.append(("end", extraction_date))
+            execution_timeline.append(("end", start_date))
             return []
 
-        extraction_queue._extract_day = mock_extract_with_timing
+        extraction_queue._extract_period = mock_extract_with_timing
 
         # WHEN
         await extraction_queue.run_queue()
@@ -753,18 +779,18 @@ class TestRecordingExtractionQueueSequentialityValidation:
         active_tasks = []
         max_concurrent = 0
 
-        async def mock_extract_track_concurrency(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_track_concurrency(start_date: date, end_date: date) -> list[HeatingCycle]:
             nonlocal max_concurrent
-            active_tasks.append(extraction_date)
+            active_tasks.append(start_date)
             current_concurrent = len(active_tasks)
             max_concurrent = max(max_concurrent, current_concurrent)
 
             await asyncio.sleep(0.01)
 
-            active_tasks.remove(extraction_date)
+            active_tasks.remove(start_date)
             return []
 
-        extraction_queue._extract_day = mock_extract_track_concurrency
+        extraction_queue._extract_period = mock_extract_track_concurrency
 
         # WHEN
         await extraction_queue.run_queue()
@@ -787,11 +813,11 @@ class TestRecordingExtractionQueueSequentialityValidation:
 
         execution_order = []
 
-        async def mock_extract_track_order(extraction_date: date) -> list[HeatingCycle]:
-            execution_order.append(extraction_date)
+        async def mock_extract_track_order(start_date: date, end_date: date) -> list[HeatingCycle]:
+            execution_order.append(start_date)
             return []
 
-        extraction_queue._extract_day = mock_extract_track_order
+        extraction_queue._extract_period = mock_extract_track_order
 
         # WHEN
         await extraction_queue.run_queue()
@@ -865,14 +891,14 @@ class TestRecordingExtractionQueueCallbackValidation:
 
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 17))
 
-        async def mock_extract_returns_cycles(extraction_date: date) -> list[HeatingCycle]:
-            if extraction_date == date(2024, 1, 10):
+        async def mock_extract_returns_cycles(start_date: date, end_date: date) -> list[HeatingCycle]:
+            if start_date == date(2024, 1, 10):
                 return [cycle_jan10_a, cycle_jan10_b]
-            elif extraction_date == date(2024, 1, 17):
+            elif start_date == date(2024, 1, 17):
                 return [cycle_jan11]
             return []
 
-        extraction_queue._extract_day = mock_extract_returns_cycles
+        extraction_queue._extract_period = mock_extract_returns_cycles
 
         # WHEN
         await extraction_queue.run_queue()
@@ -907,9 +933,9 @@ class TestRecordingExtractionQueueCallbackValidation:
         """
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 24))
 
-        async def mock_extract_sparse(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_sparse(start_date: date, end_date: date) -> list[HeatingCycle]:
             """Only second week (Jan 17) has cycles; others are empty."""
-            if extraction_date == date(2024, 1, 17):
+            if start_date == date(2024, 1, 17):
                 return [
                     HeatingCycle(
                         device_id="sensor.test_device",
@@ -923,7 +949,7 @@ class TestRecordingExtractionQueueCallbackValidation:
                 ]
             return []  # Jan 10 and Jan 24 weeks have no cycles
 
-        extraction_queue._extract_day = mock_extract_sparse
+        extraction_queue._extract_period = mock_extract_sparse
         mock_on_cycles_extracted.reset_mock()
 
         # WHEN
@@ -962,8 +988,8 @@ class TestRecordingExtractionQueueCancellationValidation:
 
         task_executions = []
 
-        async def mock_extract_cancel_on_third(extraction_date: date) -> list[HeatingCycle]:
-            task_executions.append(extraction_date)
+        async def mock_extract_cancel_on_third(start_date: date, end_date: date) -> list[HeatingCycle]:
+            task_executions.append(start_date)
 
             # Request cancellation after third task
             if len(task_executions) == 3:
@@ -971,7 +997,7 @@ class TestRecordingExtractionQueueCancellationValidation:
 
             return []
 
-        extraction_queue._extract_day = mock_extract_cancel_on_third
+        extraction_queue._extract_period = mock_extract_cancel_on_third
 
         # WHEN
         await extraction_queue.run_queue()
@@ -995,7 +1021,7 @@ class TestRecordingExtractionQueueCancellationValidation:
 
         processed = 0
 
-        async def mock_extract_cancel_early(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_cancel_early(start_date: date, end_date: date) -> list[HeatingCycle]:
             nonlocal processed
             processed += 1
 
@@ -1005,7 +1031,7 @@ class TestRecordingExtractionQueueCancellationValidation:
 
             return []
 
-        extraction_queue._extract_day = mock_extract_cancel_early
+        extraction_queue._extract_period = mock_extract_cancel_early
 
         # WHEN
         await extraction_queue.run_queue()
@@ -1038,11 +1064,11 @@ class TestRecordingExtractionQueueProgressAccuracy:
         # GIVEN: 6 weekly tasks (Jan 1, 8, 15, 22, 29, Feb 5)
         await extraction_queue.populate_queue(date(2024, 1, 1), date(2024, 2, 5))
 
-        async def mock_extract_simple(extraction_date: date) -> list[HeatingCycle]:
+        async def mock_extract_simple(start_date: date, end_date: date) -> list[HeatingCycle]:
             # Simple mock that returns empty cycles
             return []
 
-        extraction_queue._extract_day = mock_extract_simple
+        extraction_queue._extract_period = mock_extract_simple
 
         # WHEN
         await extraction_queue.run_queue()
@@ -1073,12 +1099,12 @@ class TestRecordingExtractionQueueProgressAccuracy:
 
         failure_dates = {date(2024, 1, 8), date(2024, 1, 29)}
 
-        async def mock_extract_with_failures(extraction_date: date) -> list[HeatingCycle]:
-            if extraction_date in failure_dates:
-                raise ValueError(f"Extraction failed for {extraction_date}")
+        async def mock_extract_with_failures(start_date: date, end_date: date) -> list[HeatingCycle]:
+            if start_date in failure_dates:
+                raise ValueError(f"Extraction failed for {start_date}")
             return []
 
-        extraction_queue._extract_day = mock_extract_with_failures
+        extraction_queue._extract_period = mock_extract_with_failures
 
         # WHEN
         await extraction_queue.run_queue()
