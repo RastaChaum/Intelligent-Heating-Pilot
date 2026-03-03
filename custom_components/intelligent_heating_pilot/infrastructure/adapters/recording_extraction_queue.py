@@ -69,6 +69,7 @@ class RecordingExtractionQueue:
         historical_adapters: list[IHistoricalDataAdapter],
         heating_cycle_service: IHeatingCycleService | None = None,
         on_cycles_extracted: Callable[[list[HeatingCycle]], Awaitable[None] | None] | None = None,
+        on_period_explored: Callable[[date, date], Awaitable[None] | None] | None = None,
         task_range_days: int = DEFAULT_TASK_RANGE_DAYS,
     ) -> None:
         """Initialize the extraction queue.
@@ -80,6 +81,8 @@ class RecordingExtractionQueue:
             heating_cycle_service: Service used to extract heating cycles from raw data
             on_cycles_extracted: Callback function called after each period's extraction
                                 with the extracted cycles list
+            on_period_explored: Callback called after each period is explored
+                               with (start_date, end_date), regardless of cycle count
             task_range_days: Number of days covered by each extraction task.
                              Increase to reduce task count (less pauses, more data per query).
                              Decrease on low-powered machines. Default: 7.
@@ -89,6 +92,7 @@ class RecordingExtractionQueue:
         self._historical_adapters = historical_adapters
         self._heating_cycle_service = heating_cycle_service
         self._on_cycles_extracted = on_cycles_extracted
+        self._on_period_explored = on_period_explored
         self._task_range_days = task_range_days
 
         self._queue: deque[RecordingExtractionTask] = deque()
@@ -141,9 +145,7 @@ class RecordingExtractionQueue:
         current_date = start_date
         task_count = 0
         while current_date <= end_date:
-            period_end = min(
-                current_date + timedelta(days=self._task_range_days - 1), end_date
-            )
+            period_end = min(current_date + timedelta(days=self._task_range_days - 1), end_date)
             task = RecordingExtractionTask(
                 start_date=current_date,
                 end_date=period_end,
@@ -227,6 +229,12 @@ class RecordingExtractionQueue:
                     # Callback to progressively feed cache (sync or async)
                     if self._on_cycles_extracted and cycles:
                         result = self._on_cycles_extracted(cycles)
+                        if inspect.isawaitable(result):
+                            await result
+
+                    # Callback to track period as explored (even if empty)
+                    if self._on_period_explored:
+                        result = self._on_period_explored(task.start_date, task.end_date)
                         if inspect.isawaitable(result):
                             await result
 
@@ -360,4 +368,3 @@ class RecordingExtractionQueue:
                 exc,
             )
             raise
-

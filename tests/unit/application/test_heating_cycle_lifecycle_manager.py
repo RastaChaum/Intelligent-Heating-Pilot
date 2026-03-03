@@ -106,7 +106,6 @@ class TestHeatingCycleLifecycleManager:
         storage = Mock()
         storage.save_heating_cycle = AsyncMock()
         storage.get_heating_cycles = AsyncMock(return_value=[])
-        storage.cache_heating_cycle = AsyncMock()
         return storage
 
     @pytest.fixture
@@ -735,9 +734,7 @@ class TestHeatingCycleLifecycleManager:
         )
 
         # THEN: end_date must be yesterday at most
-        assert end_date == yesterday, (
-            f"end_date {end_date} should be yesterday {yesterday}"
-        )
+        assert end_date == yesterday, f"end_date {end_date} should be yesterday {yesterday}"
 
     # ===== Tests: _trigger_incremental_extraction() =====
 

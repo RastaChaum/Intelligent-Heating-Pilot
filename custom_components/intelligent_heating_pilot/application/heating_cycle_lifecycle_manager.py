@@ -524,19 +524,7 @@ class HeatingCycleLifecycleManager:
             return
 
         try:
-            # Feed cycles into lhs storage cache
-            if self._lhs_storage is not None:
-                cache_heating_cycle = getattr(self._lhs_storage, "cache_heating_cycle", None)
-                if callable(cache_heating_cycle):
-                    for cycle in cycles:
-                        await cache_heating_cycle(cycle)
-
-                    _LOGGER.info(
-                        "Cached %d heating cycles from extraction queue",
-                        len(cycles),
-                    )
-
-            # Update heating cycle storage cache (synchronous cache update)
+            # Update heating cycle storage cache (incremental persistence)
             if self._heating_cycle_storage is not None:
                 # Use a deterministic search_end_time tied to the extracted data
                 search_end_time = max(cycle.end_time for cycle in cycles)
@@ -560,6 +548,54 @@ class HeatingCycleLifecycleManager:
             # Don't fail - just log and continue
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager._on_cycles_extracted")
+
+    async def _on_period_explored(self, start_date: date, end_date: date) -> None:
+        """Callback invoked after each extraction period completes.
+
+        Marks ALL dates in the range as explored, regardless of whether
+        cycles were found. This creates a unified, single source of truth:
+        explored_dates tracks all days that have been extracted/examined,
+        making it the only check needed to determine if a day requires re-extraction.
+
+        Args:
+            start_date: First day of the explored period
+            end_date: Last day of the explored period
+        """
+        _LOGGER.debug(
+            "Entering HeatingCycleLifecycleManager._on_period_explored (start=%s, end=%s)",
+            start_date,
+            end_date,
+        )
+
+        if self._heating_cycle_storage is None:
+            _LOGGER.debug("No heating cycle storage configured, skipping explored date tracking")
+            _LOGGER.debug("Exiting HeatingCycleLifecycleManager._on_period_explored")
+            return
+
+        # Generate set of ALL dates in the range (explored_dates is the single source of truth)
+        explored_dates = set()
+        current = start_date
+        one_day = timedelta(days=1)
+        while current <= end_date:
+            explored_dates.add(current)
+            current += one_day
+
+        try:
+            await self._heating_cycle_storage.append_explored_dates(
+                self._device_config.device_id,
+                explored_dates,
+            )
+            _LOGGER.debug(
+                "Marked %d dates as explored for device=%s (all dates in period %s-%s)",
+                len(explored_dates),
+                self._device_config.device_id,
+                start_date,
+                end_date,
+            )
+        except Exception as exc:
+            _LOGGER.warning("Failed to track explored dates: %s", exc)
+
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager._on_period_explored")
 
     async def trigger_24h_refresh(self) -> None:
         """Trigger a 24-hour data refresh by launching a new extraction queue.
@@ -594,6 +630,7 @@ class HeatingCycleLifecycleManager:
                 historical_adapters=self._historical_adapters,
                 heating_cycle_service=self._heating_cycle_service,
                 on_cycles_extracted=self._on_cycles_extracted,
+                on_period_explored=self._on_period_explored,
                 task_range_days=self._device_config.task_range_days,
             )
 
@@ -638,12 +675,15 @@ class HeatingCycleLifecycleManager:
         window_start: date,
         window_end: date,
     ) -> list[tuple[date, date]]:
-        """Find date ranges within the window not yet covered by the cache.
+        """Find date ranges within the window not yet explored.
 
-        Walks every day in [window_start, window_end] and checks whether at
-        least one cached cycle has its start_time or end_time on that day.
-        Consecutive uncovered days are merged into contiguous (start, end)
-        ranges to minimise the number of extraction tasks launched.
+        Uses explored_dates as the SINGLE SOURCE OF TRUTH. A day is considered
+        "covered" if and only if it exists in explored_dates (regardless of
+        whether it contained cycles or was empty).
+
+        Walks every day in [window_start, window_end] and checks whether the
+        day has been marked as explored. Consecutive unexplored days are merged
+        into contiguous (start, end) ranges to minimize extraction tasks.
 
         Args:
             window_start: Start of desired coverage window (inclusive).
@@ -651,40 +691,33 @@ class HeatingCycleLifecycleManager:
 
         Returns:
             List of (start, end) date ranges that require extraction.
-            Empty list if every day in the window is covered by the cache.
+            Empty list if every day in the window is in explored_dates.
         """
         if self._heating_cycle_storage is None:
             return [(window_start, window_end)]
 
         cache_data = await self._heating_cycle_storage.get_cache_data(self._device_config.device_id)
 
-        if cache_data is None or not cache_data.cycles:
+        # If no cache data exists, need to extract everything
+        if cache_data is None:
             return [(window_start, window_end)]
 
-        # Build a set of dates covered by at least one cached cycle.
-        # For each cycle, mark every calendar day from start_time to end_time
-        # (inclusive) so that multi-day cycles do not leave gaps.
-        covered_dates: set[date] = set()
-        one_day = timedelta(days=1)
-        for cycle in cache_data.cycles:
-            day = cycle.start_time.date()
-            end_day = cycle.end_time.date()
-            while day <= end_day:
-                covered_dates.add(day)
-                day += one_day
+        # explored_dates is the SINGLE SOURCE OF TRUTH for coverage
+        explored_dates = cache_data.explored_dates
 
         # Walk day-by-day and collect contiguous gaps
         missing_ranges: list[tuple[date, date]] = []
         range_start: date | None = None
         current_day = window_start
+        one_day = timedelta(days=1)
 
         while current_day <= window_end:
-            if current_day not in covered_dates:
-                # Day is missing – start or extend a gap
+            if current_day not in explored_dates:
+                # Day has not been explored – start or extend a gap
                 if range_start is None:
                     range_start = current_day
             else:
-                # Day is covered – close any open gap
+                # Day has been explored – close any open gap
                 if range_start is not None:
                     missing_ranges.append((range_start, current_day - one_day))
                     range_start = None
@@ -754,6 +787,7 @@ class HeatingCycleLifecycleManager:
                 historical_adapters=self._historical_adapters,
                 heating_cycle_service=self._heating_cycle_service,
                 on_cycles_extracted=self._on_cycles_extracted,
+                on_period_explored=self._on_period_explored,
                 task_range_days=self._device_config.task_range_days,
             )
             task_count = await queue.populate_queue(range_start, range_end)
@@ -1159,6 +1193,10 @@ class HeatingCycleLifecycleManager:
             # Also persist and cascade LHS as with background extraction
             await self._on_cycles_extracted(cycles)
 
+        async def _track_explored(start_date: date, end_date: date) -> None:
+            """Track explored dates (with or without cycles)."""
+            await self._on_period_explored(start_date, end_date)
+
         # Create a dedicated queue (does not replace the background queue)
         demand_queue = RecordingExtractionQueue(
             device_id=device_id,
@@ -1166,6 +1204,7 @@ class HeatingCycleLifecycleManager:
             historical_adapters=self._historical_adapters,
             heating_cycle_service=self._heating_cycle_service,
             on_cycles_extracted=_collect,
+            on_period_explored=_track_explored,
             task_range_days=self._device_config.task_range_days,
         )
 

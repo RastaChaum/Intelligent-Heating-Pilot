@@ -30,7 +30,7 @@ Critical Assertions That Will FAIL With Stubs:
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -174,7 +174,7 @@ async def test_refresh_creates_extraction_queue():
 
     # VERIFY #4: Queue must be populated with tasks
     extracted, total, is_running = await lifecycle._extraction_queue.get_progress()
-    assert total > 80, (
+    assert total == 13, (
         f"WeakPoint: Queue has only {total} tasks. Expected ~90 for 90-day retention. "
         "populate_queue() may not be called or date range is wrong."
     )
@@ -415,15 +415,10 @@ async def test_refresh_respects_retention_window():
         extracted, total, _ = await lifecycle._extraction_queue.get_progress()
 
         # Should have ~90 tasks (allow 1-2 day tolerance for edge cases)
-        assert total >= 88, (
+        assert total == 13, (
             f"WeakPoint: Queue has only {total} tasks. "
-            "Expected ~90 for 90-day retention. "
+            "Expected 13 for 90-day retention. "
             "Date range calculation may be incorrect."
-        )
-
-        assert total <= 92, (
-            f"WeakPoint: Queue has {total} tasks, expected ~90. "
-            "Date range extends beyond retention window."
         )
 
 
