@@ -103,12 +103,14 @@ class HALhsStorage(BaseHAStorageAdapter[dict[str, Any]], ILhsStorage):
 
         from typing import cast
 
+        from ...domain.constants import MINIMUM_REALISTIC_LHS
+
         # Try to get the cached global LHS (set by update_global_lhs_from_cycles)
         cached_entry_data = self._data.get("cached_global_lhs")
         if cached_entry_data and isinstance(cached_entry_data, dict):
             cached_lhs = cached_entry_data.get("value")
-            # Validate: LHS must be strictly positive
-            if cached_lhs is not None and cached_lhs > 0:
+            # Validate: LHS must be realistically positive (>= 0.5°C/h)
+            if cached_lhs is not None and cached_lhs >= MINIMUM_REALISTIC_LHS:
                 _LOGGER.debug(
                     "Returning cached global LHS: %.2f°C/h",
                     cached_lhs,
@@ -116,8 +118,9 @@ class HALhsStorage(BaseHAStorageAdapter[dict[str, Any]], ILhsStorage):
                 return cast(float, cached_lhs)
             elif cached_lhs is not None:
                 _LOGGER.debug(
-                    "Cached global LHS is invalid (%.2f°C/h <= 0), using default: %.2f°C/h",
+                    "Cached global LHS is invalid (%.2f°C/h < %.2f°C/h), using default: %.2f°C/h",
                     cached_lhs,
+                    MINIMUM_REALISTIC_LHS,
                     DEFAULT_HEATING_SLOPE,
                 )
                 return DEFAULT_HEATING_SLOPE

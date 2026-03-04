@@ -189,9 +189,14 @@ async def test_get_learned_heating_slope_default(storage: HALhsStorage) -> None:
 @pytest.mark.asyncio
 async def test_get_learned_heating_slope_cached(storage: HALhsStorage) -> None:
     """Test getting cached LHS."""
-    # Set a custom LHS
+    # Set a custom LHS using the new cached_global_lhs format
+    from datetime import datetime
+
     custom_lhs = 3.5
-    storage._data["learned_heating_slope"] = custom_lhs
+    storage._data["cached_global_lhs"] = {
+        "value": custom_lhs,
+        "updated_at": datetime.now().isoformat(),
+    }
 
     lhs = await storage.get_learned_heating_slope()
     assert lhs == custom_lhs
@@ -200,8 +205,13 @@ async def test_get_learned_heating_slope_cached(storage: HALhsStorage) -> None:
 @pytest.mark.asyncio
 async def test_get_learned_heating_slope_invalid_returns_default(storage: HALhsStorage) -> None:
     """Test that invalid LHS values return default."""
-    # Set an invalid (negative) LHS
-    storage._data["learned_heating_slope"] = -1.0
+    from datetime import datetime
+
+    # Set an invalid (too low) LHS using new format
+    storage._data["cached_global_lhs"] = {
+        "value": 0.3,  # Below MINIMUM_REALISTIC_LHS (0.3)
+        "updated_at": datetime.now().isoformat(),
+    }
 
     lhs = await storage.get_learned_heating_slope()
     assert lhs == DEFAULT_HEATING_SLOPE

@@ -93,7 +93,7 @@ class CalculateAnticipationUseCase:
         )
 
         # Import default constant for LHS validation
-        from ...domain.constants import DEFAULT_LEARNED_SLOPE
+        from ...domain.constants import DEFAULT_LEARNED_SLOPE, MINIMUM_REALISTIC_LHS
 
         # Determine target time and temp
         timeslot = None
@@ -107,11 +107,12 @@ class CalculateAnticipationUseCase:
         # Always get global LHS (for minimal return structure)
         global_lhs = await self._lhs_manager.get_global_lhs()
 
-        # Validate global LHS: must be strictly positive
-        if global_lhs is None or global_lhs <= 0:
+        # Validate global LHS: must be realistically positive (>= 0.5°C/h)
+        if global_lhs is None or global_lhs < MINIMUM_REALISTIC_LHS:
             _LOGGER.warning(
-                "Invalid global LHS (%.4f°C/h <= 0), using default (%.2f°C/h)",
+                "Invalid global LHS (%.4f°C/h < %.2f°C/h), using default (%.2f°C/h)",
                 global_lhs or 0,
+                MINIMUM_REALISTIC_LHS,
                 DEFAULT_LEARNED_SLOPE,
             )
             global_lhs = DEFAULT_LEARNED_SLOPE
@@ -169,11 +170,12 @@ class CalculateAnticipationUseCase:
             cycles=heating_cycles,
         )
 
-        # Validate LHS: must be strictly positive
-        if lhs is None or lhs <= 0:
+        # Validate LHS: must be realistically positive (>= 0.5°C/h)
+        if lhs is None or lhs < MINIMUM_REALISTIC_LHS:
             _LOGGER.warning(
-                "Invalid contextual LHS (%.4f°C/h <= 0), using default (%.2f°C/h)",
+                "Invalid contextual LHS (%.4f°C/h < %.2f°C/h), using default (%.2f°C/h)",
                 lhs or 0,
+                MINIMUM_REALISTIC_LHS,
                 DEFAULT_LEARNED_SLOPE,
             )
             lhs = DEFAULT_LEARNED_SLOPE
