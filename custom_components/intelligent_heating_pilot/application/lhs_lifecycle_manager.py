@@ -250,6 +250,8 @@ class LhsLifecycleManager:
         Returns:
             None.
         """
+        from ..domain.constants import DEFAULT_LEARNED_SLOPE
+
         _LOGGER.debug("Entering LhsLifecycleManager.on_retention_change")
         _LOGGER.debug("Recalculating LHS from %d cycles after retention change", len(cycles))
 
@@ -260,6 +262,16 @@ class LhsLifecycleManager:
 
         # Step 2: Recalculate global LHS from provided cycles
         global_lhs = self._global_lhs_calculator.calculate_global_lhs(cycles)
+
+        # Validate: LHS must be strictly positive
+        if global_lhs <= 0:
+            _LOGGER.warning(
+                "Calculated global LHS is invalid (%.4f°C/h <= 0), using default (%.2f°C/h)",
+                global_lhs,
+                DEFAULT_LEARNED_SLOPE,
+            )
+            global_lhs = DEFAULT_LEARNED_SLOPE
+
         updated_at = dt_util.now() if dt_util is not None else datetime.now()
         await self._model_storage.set_cached_global_lhs(global_lhs, updated_at)
         _LOGGER.info("Recalculated global LHS: %.2f °C/h", global_lhs)
@@ -269,7 +281,7 @@ class LhsLifecycleManager:
             cycles
         )
         for hour, lhs_value in contextual_lhs_by_hour.items():
-            if lhs_value is not None:
+            if lhs_value is not None and lhs_value > 0:
                 await self._model_storage.set_cached_contextual_lhs(hour, lhs_value, updated_at)
         _LOGGER.debug("Recalculated contextual LHS for %d hours", len(contextual_lhs_by_hour))
 
@@ -300,11 +312,23 @@ class LhsLifecycleManager:
         Returns:
             None.
         """
+        from ..domain.constants import DEFAULT_LEARNED_SLOPE
+
         _LOGGER.debug("Entering LhsLifecycleManager.on_24h_timer")
         _LOGGER.info("24h LHS refresh timer triggered")
 
         # Recalculate global LHS from provided cycles
         global_lhs = self._global_lhs_calculator.calculate_global_lhs(cycles)
+
+        # Validate: LHS must be strictly positive
+        if global_lhs <= 0:
+            _LOGGER.warning(
+                "Calculated global LHS is invalid (%.4f°C/h <= 0), using default (%.2f°C/h)",
+                global_lhs,
+                DEFAULT_LEARNED_SLOPE,
+            )
+            global_lhs = DEFAULT_LEARNED_SLOPE
+
         updated_at = dt_util.now() if dt_util is not None else datetime.now()
         await self._model_storage.set_cached_global_lhs(global_lhs, updated_at)
         # Invalidate cache to ensure fresh load
@@ -316,7 +340,7 @@ class LhsLifecycleManager:
             cycles
         )
         for hour, lhs_value in contextual_lhs_by_hour.items():
-            if lhs_value is not None:
+            if lhs_value is not None and lhs_value > 0:
                 await self._model_storage.set_cached_contextual_lhs(hour, lhs_value, updated_at)
         # Invalidate cache to ensure fresh load
         self._cached_contextual_lhs = {}
@@ -514,6 +538,16 @@ class LhsLifecycleManager:
 
         try:
             global_lhs = self._global_lhs_calculator.calculate_global_lhs(cycles)
+
+            # Validate: LHS must be strictly positive to be meaningful
+            if global_lhs <= 0:
+                _LOGGER.warning(
+                    "Calculated global LHS is invalid (%.4f°C/h <= 0), using default (%.2f°C/h)",
+                    global_lhs,
+                    DEFAULT_LEARNED_SLOPE,
+                )
+                global_lhs = DEFAULT_LEARNED_SLOPE
+
             updated_at = dt_util.now() if dt_util is not None else datetime.now()
             await self._model_storage.set_cached_global_lhs(global_lhs, updated_at)
 

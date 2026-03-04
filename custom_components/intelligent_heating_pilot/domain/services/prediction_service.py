@@ -93,17 +93,18 @@ class PredictionService:
                 learned_heating_slope=learned_slope,
             )
 
-        # Protection against invalid slope
-        if learned_slope <= 0:
-            _LOGGER.warning(
-                "Invalid learned heating slope (%.2f°C/h <= 0), cannot calculate prediction",
-                learned_slope,
+        # Protection against invalid slope (should not happen with proper validation)
+        if learned_slope is None or learned_slope <= 0:
+            _LOGGER.error(
+                "CRITICAL: Invalid learned heating slope (%.4f°C/h <= 0) reached prediction_service. "
+                "This indicates missing validation in calling code. Cannot calculate prediction.",
+                learned_slope or 0,
             )
             return PredictionResult(
                 anticipated_start_time=target_time,
                 estimated_duration_minutes=0.0,
                 confidence_level=0.0,
-                learned_heating_slope=learned_slope,
+                learned_heating_slope=learned_slope or 0,
             )
 
         # Calculate base anticipation time (in minutes)
