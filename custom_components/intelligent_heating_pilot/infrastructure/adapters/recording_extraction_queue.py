@@ -21,6 +21,7 @@ try:
 except ImportError:
     dt_util = None
 
+from ...const import DEFAULT_TASK_RANGE_DAYS
 from ...domain.value_objects.historical_data import HistoricalDataSet
 from ...domain.value_objects.recording_extraction_task import (
     ExtractionTaskState,
@@ -35,7 +36,6 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 QUEUE_YIELD_SECONDS = 10.0
-DEFAULT_TASK_RANGE_DAYS = 7
 
 
 class RecordingExtractionQueue:
@@ -93,6 +93,11 @@ class RecordingExtractionQueue:
         self._heating_cycle_service = heating_cycle_service
         self._on_cycles_extracted = on_cycles_extracted
         self._on_period_explored = on_period_explored
+
+        if task_range_days < 1:
+            raise ValueError(
+                f"task_range_days must be at least 1 day for RecordingExtractionQueue; got {task_range_days}"
+            )
         self._task_range_days = task_range_days
 
         self._queue: deque[RecordingExtractionTask] = deque()

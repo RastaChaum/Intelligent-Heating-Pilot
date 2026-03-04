@@ -4,12 +4,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from ..value_objects.lhs_cache_entry import LHSCacheEntry
-
-if TYPE_CHECKING:
-    pass
 
 
 class ILhsStorage(ABC):

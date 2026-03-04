@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import date, datetime
 
 from ..value_objects.heating import HeatingCycle
 from ..value_objects.heating_cycle_cache_data import HeatingCycleCacheData
@@ -98,7 +98,7 @@ class IHeatingCycleStorage(ABC):
     async def append_explored_dates(
         self,
         device_id: str,
-        explored_dates: set,
+        explored_dates: set[date],
     ) -> None:
         """Mark dates as explored (whether they contained cycles or not).
 
