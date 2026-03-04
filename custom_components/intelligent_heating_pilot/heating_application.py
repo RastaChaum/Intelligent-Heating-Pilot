@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -193,7 +192,15 @@ class HeatingApplication:
         global_lhs_calculator = GlobalLHSCalculatorService()
         contextual_lhs_calculator = ContextualLHSCalculatorService()
 
-        # Create lifecycle managers
+        # Create LHS lifecycle manager FIRST (required by heating_cycle_manager)
+        self._lhs_manager = LhsLifecycleManagerFactory.create(
+            model_storage=self._lhs_storage,
+            global_lhs_calculator=global_lhs_calculator,
+            contextual_lhs_calculator=contextual_lhs_calculator,
+            timer_scheduler=self._timer_scheduler,
+        )
+
+        # Create heating cycle lifecycle manager (after LHS manager is available)
         self._heating_cycle_manager = HeatingCycleLifecycleManagerFactory.create(
             hass=self.hass,
             device_config=self._device_config,
@@ -201,14 +208,8 @@ class HeatingApplication:
             cycle_cache=self._cycle_storage,
             timer_scheduler=self._timer_scheduler,
             model_storage=self._lhs_storage,
+            lhs_lifecycle_manager=self._lhs_manager,
             dead_time_updated_callback=self._fire_dead_time_updated_event,
-        )
-
-        self._lhs_manager = LhsLifecycleManagerFactory.create(
-            model_storage=self._lhs_storage,
-            global_lhs_calculator=global_lhs_calculator,
-            contextual_lhs_calculator=contextual_lhs_calculator,
-            timer_scheduler=self._timer_scheduler,
         )
 
         # Create use cases for orchestrator

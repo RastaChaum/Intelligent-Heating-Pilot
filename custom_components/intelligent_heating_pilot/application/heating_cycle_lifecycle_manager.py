@@ -171,8 +171,9 @@ class HeatingCycleLifecycleManager:
 
             if remaining_cycles:
                 await self._trigger_lhs_cascade(remaining_cycles)
+                await self._persist_learned_dead_time(remaining_cycles)
                 _LOGGER.debug(
-                    "Recalculated LHS from %d remaining cycles after pruning",
+                    "Recalculated LHS and dead time from %d remaining cycles after pruning",
                     len(remaining_cycles),
                 )
             else:
@@ -543,6 +544,9 @@ class HeatingCycleLifecycleManager:
             # Trigger LHS recalculation (cascade update)
             await self._trigger_lhs_cascade(cycles)
 
+            # Persist learned dead time from extracted cycles
+            await self._persist_learned_dead_time(cycles)
+
         except Exception as exc:
             _LOGGER.error("Failed to process extracted cycles: %s", exc)
             # Don't fail - just log and continue
@@ -816,6 +820,62 @@ class HeatingCycleLifecycleManager:
 
         # Yield control to allow each run_queue() task to begin processing
         await asyncio.sleep(0)
+
+    async def _persist_learned_dead_time(self, cycles: list[HeatingCycle]) -> None:
+        """Calculate and persist learned dead time from cycles.
+
+        This method:
+        1. Calculates average dead time from cycles (if auto-learning enabled)
+        2. Persists to storage (model_storage)
+        3. Fires callback to notify sensors
+
+        Args:
+            cycles: Heating cycles used to calculate dead time
+
+        Returns:
+            None
+        """
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager._persist_learned_dead_time")
+        _LOGGER.debug(
+            "Dead time persistence check: cycles=%d, lhs_storage=%s, auto_learning=%s",
+            len(cycles) if cycles else 0,
+            "Not None" if self._lhs_storage is not None else "None",
+            self._device_config.auto_learning,
+        )
+
+        if cycles and self._lhs_storage is not None and self._device_config.auto_learning:
+            try:
+                from ..domain.services import DeadTimeCalculationService
+
+                dead_time_calculator = DeadTimeCalculationService()
+                learned_dead_time = dead_time_calculator.calculate_average_dead_time(cycles)
+
+                _LOGGER.debug(
+                    "Calculated learned_dead_time: %s minutes",
+                    f"{learned_dead_time:.1f}" if learned_dead_time is not None else "None",
+                )
+
+                if learned_dead_time is not None:
+                    await self._lhs_storage.set_learned_dead_time(learned_dead_time)
+                    _LOGGER.info(
+                        "Updated learned dead time from %d cycles: %.1f minutes",
+                        len(cycles),
+                        learned_dead_time,
+                    )
+                    if self._dead_time_updated_callback is not None:
+                        try:
+                            self._dead_time_updated_callback(learned_dead_time)
+                        except Exception as exc:
+                            _LOGGER.warning("Dead time update callback failed: %s", exc)
+            except Exception as exc:
+                _LOGGER.warning("Failed to calculate/persist dead time: %s", exc, exc_info=True)
+        elif cycles and self._lhs_storage is not None and not self._device_config.auto_learning:
+            _LOGGER.debug(
+                "Auto-learning disabled; skipping dead time persistence for device=%s",
+                self._device_config.device_id,
+            )
+
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager._persist_learned_dead_time")
 
     async def _trigger_lhs_cascade(self, cycles: list[HeatingCycle]) -> None:
         """Trigger cascade update to LHS lifecycle manager with error isolation.
