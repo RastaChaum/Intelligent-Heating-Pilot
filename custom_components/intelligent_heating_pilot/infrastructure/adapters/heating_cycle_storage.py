@@ -388,6 +388,7 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             "end_temp": cycle.end_temp,
             "start_temp": cycle.start_temp,
             "tariff_details": None,
+            "dead_time_cycle_minutes": cycle.dead_time_cycle_minutes,
         }
 
         # Serialize tariff details if present
@@ -457,4 +458,5 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             end_temp=cycle_dict["end_temp"],
             start_temp=cycle_dict["start_temp"],
             tariff_details=tariff_details,
+            dead_time_cycle_minutes=cycle_dict.get("dead_time_cycle_minutes"),
         )

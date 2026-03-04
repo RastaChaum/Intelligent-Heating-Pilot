@@ -506,3 +506,83 @@ async def test_serialization_roundtrip(
     assert len(cache_data.cycles) == 2
     assert cache_data.cycles[0].device_id == device_id
     assert cache_data.cycles[0].start_time == base_time
+
+
+@pytest.mark.asyncio
+async def test_dead_time_cycle_minutes_serialization(
+    cache: HAHeatingCycleStorage,
+    device_id: str,
+    base_time: datetime,
+) -> None:
+    """Test that dead_time_cycle_minutes is correctly persisted and restored.
+
+    This regression test ensures the dead_time_cycle_minutes field is included
+    in serialization/deserialization, which is critical for accurate slope calculations.
+    """
+    # Create cycle with dead_time_cycle_minutes
+    cycle_with_deadtime = HeatingCycle(
+        device_id=device_id,
+        start_time=base_time,
+        end_time=base_time + timedelta(hours=1),
+        target_temp=22.5,
+        end_temp=21.5,
+        start_temp=19.0,
+        tariff_details=None,
+        dead_time_cycle_minutes=14.5,  # Explicit dead time
+    )
+
+    # Persist the cycle
+    await cache.append_cycles(device_id, [cycle_with_deadtime], base_time + timedelta(hours=2))
+
+    # Retrieve and verify dead_time_cycle_minutes is preserved
+    cache_data = await cache.get_cache_data(device_id)
+
+    assert cache_data is not None
+    assert len(cache_data.cycles) == 1
+    retrieved_cycle = cache_data.cycles[0]
+
+    # Verify all fields including dead_time_cycle_minutes
+    assert retrieved_cycle.device_id == device_id
+    assert retrieved_cycle.start_time == base_time
+    assert retrieved_cycle.end_time == base_time + timedelta(hours=1)
+    assert retrieved_cycle.target_temp == 22.5
+    assert retrieved_cycle.end_temp == 21.5
+    assert retrieved_cycle.start_temp == 19.0
+    assert retrieved_cycle.dead_time_cycle_minutes == 14.5  # CRITICAL: must be preserved
+
+
+@pytest.mark.asyncio
+async def test_dead_time_cycle_minutes_none_serialization(
+    cache: HAHeatingCycleStorage,
+    device_id: str,
+    base_time: datetime,
+) -> None:
+    """Test that dead_time_cycle_minutes=None is correctly handled.
+
+    Some cycles may not have dead time calculated (e.g., insufficient data).
+    Ensure None values are properly serialized/deserialized.
+    """
+    # Create cycle without dead_time_cycle_minutes (defaults to None)
+    cycle_without_deadtime = HeatingCycle(
+        device_id=device_id,
+        start_time=base_time,
+        end_time=base_time + timedelta(hours=1),
+        target_temp=20.0,
+        end_temp=19.5,
+        start_temp=18.0,
+        tariff_details=None,
+        dead_time_cycle_minutes=None,
+    )
+
+    # Persist
+    await cache.append_cycles(device_id, [cycle_without_deadtime], base_time + timedelta(hours=2))
+
+    # Retrieve and verify
+    cache_data = await cache.get_cache_data(device_id)
+
+    assert cache_data is not None
+    assert len(cache_data.cycles) == 1
+    retrieved_cycle = cache_data.cycles[0]
+
+    # Verify dead_time_cycle_minutes is None (not missing, not 0)
+    assert retrieved_cycle.dead_time_cycle_minutes is None
