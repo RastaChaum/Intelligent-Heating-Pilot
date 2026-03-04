@@ -273,8 +273,17 @@ class HeatingCycleLifecycleManager:
                 return cycles
 
         # No cache, extract cycles
-        cycles = await self._extract_cycles(device_id, start_time, end_time)
-        _LOGGER.debug("Extracted %d cycles without cache", len(cycles))
+        try:
+            cycles = await self._extract_cycles(device_id, start_time, end_time)
+            _LOGGER.debug("Extracted %d cycles without cache", len(cycles))
+        except ValueError as err:
+            # Entity not found or extraction error - return empty list
+            _LOGGER.warning(
+                "Cannot extract cycles for device %s: %s. Returning empty cycles list.",
+                device_id,
+                err,
+            )
+            cycles = []
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_window")
         return cycles
 

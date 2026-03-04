@@ -180,8 +180,12 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
             mapper = self._mapper_registry.get_mapper_for_entity(entity_id)
             _LOGGER.debug("Using mapper: %s", type(mapper).__name__)
         except ValueError as err:
-            _LOGGER.error("Cannot select mapper for %s: %s", entity_id, err)
-            raise
+            _LOGGER.warning(
+                "Cannot fetch historical data for %s: %s. Entity may not exist or may not be configured.",
+                entity_id,
+                err,
+            )
+            return HistoricalDataSet(data={})
 
         # Map the data_key to a domain concept
         concept = DATA_KEY_TO_CONCEPT.get(data_key)
