@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Timer-Based Anticipation Triggering** ([#84](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/84)) – Improved the reliability of the preheating system by replacing event-driven triggering with timer-based triggering, reducing unexpected triggers and enhancing the accuracy of heating predictions.
 
 ### Fixed
+- **Home Assistant Recorder Saturation** – Fixed HA restarts triggered by the supervisor when multiple IHP devices were configured with high retention periods (e.g. 30 days)
+  - Extraction tasks now cover configurable periods (default: 7 days) instead of a single day, reducing the number of Recorder queries by up to 7×
+  - Added a 10-second pause between extraction tasks to let the Recorder breathe and prevent query queue overflow
+  - Eliminated redundant SQL queries caused by fetching each historical data key separately: all keys are now retrieved in a single `get_significant_states` call per entity per period
 - **Fixed Configuration Values Being Ignored When Falsy** – Configuration values like `0` (false/disabled) are now properly read and applied
   - `lhs_retention_days=0`, `cycle_split_duration_minutes=0`, `auto_learning=False` now correctly persist and are respected by the system
   - Centralized boolean parsing ensures consistent handling of stringified config values across the integration

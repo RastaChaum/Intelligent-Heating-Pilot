@@ -7,7 +7,7 @@ to persist heating cycles with incremental update support.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
@@ -109,11 +109,21 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
 
         retention_days = device_data.get("retention_days", self._retention_days)
 
+        # Deserialize explored_dates (list of ISO date strings)
+        explored_dates_str = device_data.get("explored_dates", [])
+        explored_dates = set()
+        for date_str in explored_dates_str:
+            try:
+                explored_dates.add(datetime.fromisoformat(date_str).date())
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to parse explored date: %s", date_str)
+
         cache_data = HeatingCycleCacheData(
             device_id=device_id,
             cycles=tuple(cycles),
             last_search_time=last_search_time,
             retention_days=retention_days,
+            explored_dates=frozenset(explored_dates),
         )
 
         _LOGGER.debug(
@@ -155,6 +165,7 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
         existing_cache = await self.get_cache_data(device_id)
 
         existing_cycles = list(existing_cache.cycles) if existing_cache else []
+        existing_explored_dates = set(existing_cache.explored_dates) if existing_cache else set()
 
         # Deduplicate: Use (start_time, device_id) as key
         existing_keys = {(cycle.start_time, cycle.device_id) for cycle in existing_cycles}
@@ -175,11 +186,15 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             retention_days if retention_days is not None else self._retention_days
         )
 
+        # Serialize explored_dates as ISO date strings
+        explored_dates_serialized = [d.isoformat() for d in existing_explored_dates]
+
         # Update storage
         self._data[device_id] = {
             "cycles": self._serialize_heating_cycles(all_cycles),
             "last_search_time": self._serialize_datetime(search_end_time),
             "retention_days": stored_retention_days,
+            "explored_dates": explored_dates_serialized,
         }
 
         await self._save_data()
@@ -191,6 +206,72 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             device_id,
         )
         _LOGGER.debug("Exiting HAHeatingCycleStorage.append_cycles")
+
+    async def append_explored_dates(
+        self,
+        device_id: str,
+        explored_dates: set[date],
+    ) -> None:
+        """Mark dates as explored (even if no cycles were found).
+
+        This prevents re-extracting empty days indefinitely.
+
+        Args:
+            device_id: The device identifier
+            explored_dates: Set of dates to mark as explored
+        """
+        _LOGGER.debug("Entering HAHeatingCycleStorage.append_explored_dates")
+        _LOGGER.debug(
+            "Appending %d explored dates for device_id=%s",
+            len(explored_dates),
+            device_id,
+        )
+
+        await self._ensure_loaded()
+
+        # Get existing cache
+        cache_data = await self.get_cache_data(device_id)
+        if cache_data is None:
+            _LOGGER.debug(
+                "No cache exists for device %s, creating initial cache entry for explored dates",
+                device_id,
+            )
+            explored_dates_serialized = [d.isoformat() for d in explored_dates]
+            self._data[device_id] = {
+                "cycles": [],
+                "last_search_time": self._serialize_datetime(datetime.utcnow()),
+                "retention_days": self._retention_days,
+                "explored_dates": explored_dates_serialized,
+            }
+            await self._save_data()
+            _LOGGER.debug(
+                "Initialized cache with %d explored dates for device %s",
+                len(explored_dates),
+                device_id,
+            )
+            _LOGGER.debug("Exiting HAHeatingCycleStorage.append_explored_dates")
+            return
+
+        # Merge explored dates
+        merged_explored_dates = set(cache_data.explored_dates) | explored_dates
+        explored_dates_serialized = [d.isoformat() for d in merged_explored_dates]
+
+        # Update storage (keep existing cycles and last_search_time)
+        self._data[device_id] = {
+            "cycles": self._serialize_heating_cycles(list(cache_data.cycles)),
+            "last_search_time": self._serialize_datetime(cache_data.last_search_time),
+            "retention_days": cache_data.retention_days,
+            "explored_dates": explored_dates_serialized,
+        }
+
+        await self._save_data()
+
+        _LOGGER.debug(
+            "Appended explored dates (total now: %d) for device %s",
+            len(merged_explored_dates),
+            device_id,
+        )
+        _LOGGER.debug("Exiting HAHeatingCycleStorage.append_explored_dates")
 
     async def prune_old_cycles(
         self,
@@ -226,11 +307,17 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
         removed_count = len(cache_data.cycles) - len(retained_cycles)
 
         if removed_count > 0:
+            # Also prune explored_dates that are older than retention
+            cutoff_date = cutoff_time.date()
+            retained_explored_dates = {d for d in cache_data.explored_dates if d >= cutoff_date}
+            explored_dates_serialized = [d.isoformat() for d in retained_explored_dates]
+
             # Update storage
             self._data[device_id] = {
-                "cycles": self._serialize_heating_cycles(retained_cycles),
+                "cycles": self._serialize_heating_cycles(list(retained_cycles)),
                 "last_search_time": self._serialize_datetime(cache_data.last_search_time),
                 "retention_days": cache_data.retention_days,
+                "explored_dates": explored_dates_serialized,
             }
 
             await self._save_data()
@@ -315,6 +402,7 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             "end_temp": cycle.end_temp,
             "start_temp": cycle.start_temp,
             "tariff_details": None,
+            "dead_time_cycle_minutes": cycle.dead_time_cycle_minutes,
         }
 
         # Serialize tariff details if present
@@ -384,4 +472,5 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             end_temp=cycle_dict["end_temp"],
             start_temp=cycle_dict["start_temp"],
             tariff_details=tariff_details,
+            dead_time_cycle_minutes=cycle_dict.get("dead_time_cycle_minutes"),
         )

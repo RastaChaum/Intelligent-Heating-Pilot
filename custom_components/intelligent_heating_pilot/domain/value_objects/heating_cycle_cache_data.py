@@ -7,8 +7,8 @@ cycle extraction without re-scanning entire recorder history.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import date, datetime
 
 from .heating import HeatingCycle
 
@@ -19,19 +19,24 @@ class HeatingCycleCacheData:
 
     This value object stores a collection of heating cycles along with
     metadata about when the cache was last updated, enabling incremental
-    cache refresh strategies.
+    cache refresh strategies, and tracks which dates have been explored
+    even if they contained no cycles.
 
     Attributes:
         device_id: Device identifier these cycles belong to
         cycles: List of cached HeatingCycle objects
         last_search_time: UTC timestamp of the last history search
         retention_days: Number of days to retain cycles in cache
+        explored_dates: Set of dates that have been extracted/explored
+                       (even if no cycles were found). Used to avoid
+                       re-extracting empty days indefinitely.
     """
 
     device_id: str
     cycles: tuple[HeatingCycle, ...]  # Use tuple for immutability
     last_search_time: datetime
     retention_days: int
+    explored_dates: frozenset[date] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         """Validate cache data after initialization."""
@@ -74,3 +79,23 @@ class HeatingCycleCacheData:
 
         cutoff_time = reference_time - timedelta(days=self.retention_days)
         return [cycle for cycle in self.cycles if cycle.start_time >= cutoff_time]
+
+    def with_explored_dates(self, explored_dates: set[date]) -> HeatingCycleCacheData:
+        """Return a new cache instance with updated explored_dates.
+
+        Since this dataclass is immutable (frozen=True), this method creates
+        a new instance rather than modifying the existing one.
+
+        Args:
+            explored_dates: Set of dates to mark as explored
+
+        Returns:
+            A new HeatingCycleCacheData instance with updated explored_dates
+        """
+        return HeatingCycleCacheData(
+            device_id=self.device_id,
+            cycles=self.cycles,
+            last_search_time=self.last_search_time,
+            retention_days=self.retention_days,
+            explored_dates=frozenset(explored_dates),
+        )

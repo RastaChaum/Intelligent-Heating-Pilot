@@ -72,10 +72,11 @@ class HALhsStorage(BaseHAStorageAdapter[dict[str, Any]], ILhsStorage):
         """Return default data structure for LHS storage.
 
         Returns:
-            Default dictionary with learned_heating_slope
+            Default dictionary with cached_global_lhs and learned_dead_time
         """
         return {
-            "learned_heating_slope": DEFAULT_HEATING_SLOPE,
+            "cached_global_lhs": None,
+            "cached_contextual_lhs": {},
             "learned_dead_time": None,
         }
 
@@ -102,27 +103,34 @@ class HALhsStorage(BaseHAStorageAdapter[dict[str, Any]], ILhsStorage):
 
         from typing import cast
 
-        # First, try to get the cached global LHS (set by extract_heating_cycles_use_case)
+        from ...domain.constants import MINIMUM_REALISTIC_LHS
+
+        # Try to get the cached global LHS (set by update_global_lhs_from_cycles)
         cached_entry_data = self._data.get("cached_global_lhs")
         if cached_entry_data and isinstance(cached_entry_data, dict):
             cached_lhs = cached_entry_data.get("value")
-            if cached_lhs is not None and cached_lhs > 0:
+            # Validate: LHS must be realistically positive (>= 0.5°C/h)
+            if cached_lhs is not None and cached_lhs >= MINIMUM_REALISTIC_LHS:
                 _LOGGER.debug(
                     "Returning cached global LHS: %.2f°C/h",
                     cached_lhs,
                 )
                 return cast(float, cached_lhs)
+            elif cached_lhs is not None:
+                _LOGGER.debug(
+                    "Cached global LHS is invalid (%.2f°C/h < %.2f°C/h), using default: %.2f°C/h",
+                    cached_lhs,
+                    MINIMUM_REALISTIC_LHS,
+                    DEFAULT_HEATING_SLOPE,
+                )
+                return DEFAULT_HEATING_SLOPE
 
-        # Fallback to legacy learned_heating_slope (for backward compatibility)
-        lhs = self._data.get("learned_heating_slope")
-        if lhs is None or lhs <= 0:
-            _LOGGER.debug(
-                "No learned heating slope in history, using default: %.2f°C/h",
-                DEFAULT_HEATING_SLOPE,
-            )
-            return DEFAULT_HEATING_SLOPE
-
-        return cast(float, lhs)
+        # No cached global LHS available, use default
+        _LOGGER.debug(
+            "No cached global LHS available, using default: %.2f°C/h",
+            DEFAULT_HEATING_SLOPE,
+        )
+        return DEFAULT_HEATING_SLOPE
 
     async def clear_slope_history(self) -> None:
         """Clear all learned slope data from history.
@@ -132,7 +140,8 @@ class HALhsStorage(BaseHAStorageAdapter[dict[str, Any]], ILhsStorage):
         await self._ensure_loaded()
 
         _LOGGER.info("Clearing all learned slope history")
-        self._data["learned_heating_slope"] = DEFAULT_HEATING_SLOPE
+        self._data["cached_global_lhs"] = None
+        self._data["cached_contextual_lhs"] = {}
 
         await self._save_data()
 
@@ -197,8 +206,15 @@ class HALhsStorage(BaseHAStorageAdapter[dict[str, Any]], ILhsStorage):
         Returns:
             Dead time in minutes, or None if not yet learned
         """
+        from typing import cast
+
         await self._ensure_loaded()
-        return self._data.get("learned_dead_time")
+        dead_time_entry = self._data.get("learned_dead_time")
+        if dead_time_entry and isinstance(dead_time_entry, dict):
+            value = dead_time_entry.get("value")
+            if value is not None:
+                return cast(float, value)
+        return None
 
     async def set_learned_dead_time(self, dead_time: float | None) -> None:
         """Persist learned dead time value from auto-learning.
@@ -207,7 +223,23 @@ class HALhsStorage(BaseHAStorageAdapter[dict[str, Any]], ILhsStorage):
             dead_time: Dead time in minutes, or None to clear
         """
         await self._ensure_loaded()
-        self._data["learned_dead_time"] = dead_time
+        if dead_time is None:
+            self._data["learned_dead_time"] = None
+        else:
+            updated_at = datetime.now() if not hasattr(self, "_get_now") else self._get_now()
+            try:
+                from homeassistant.util import dt as dt_util
+
+                if dt_util is not None:
+                    updated_at = dt_util.now()
+            except ImportError:
+                pass
+            self._data["learned_dead_time"] = {
+                "value": dead_time,
+                "updated_at": updated_at.isoformat()
+                if isinstance(updated_at, datetime)
+                else str(updated_at),
+            }
         await self._save_data()
         _LOGGER.info("Learned dead time updated: %.1f minutes", dead_time or 0)
 

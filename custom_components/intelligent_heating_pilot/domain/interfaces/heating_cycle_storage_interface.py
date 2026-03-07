@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import date, datetime
 
 from ..value_objects.heating import HeatingCycle
 from ..value_objects.heating_cycle_cache_data import HeatingCycleCacheData
@@ -91,5 +91,22 @@ class IHeatingCycleStorage(ABC):
 
         Returns:
             UTC timestamp of last search, or None if no cache exists
+        """
+        pass
+
+    @abstractmethod
+    async def append_explored_dates(
+        self,
+        device_id: str,
+        explored_dates: set[date],
+    ) -> None:
+        """Mark dates as explored (whether they contained cycles or not).
+
+        This prevents re-extracting days that have already been examined,
+        making explored_dates the single source of truth for coverage.
+
+        Args:
+            device_id: The device identifier
+            explored_dates: Set of dates to mark as explored
         """
         pass

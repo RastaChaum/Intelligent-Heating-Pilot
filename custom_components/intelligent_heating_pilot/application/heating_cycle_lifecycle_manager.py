@@ -171,8 +171,9 @@ class HeatingCycleLifecycleManager:
 
             if remaining_cycles:
                 await self._trigger_lhs_cascade(remaining_cycles)
+                await self._persist_learned_dead_time(remaining_cycles)
                 _LOGGER.debug(
-                    "Recalculated LHS from %d remaining cycles after pruning",
+                    "Recalculated LHS and dead time from %d remaining cycles after pruning",
                     len(remaining_cycles),
                 )
             else:
@@ -272,8 +273,17 @@ class HeatingCycleLifecycleManager:
                 return cycles
 
         # No cache, extract cycles
-        cycles = await self._extract_cycles(device_id, start_time, end_time)
-        _LOGGER.debug("Extracted %d cycles without cache", len(cycles))
+        try:
+            cycles = await self._extract_cycles(device_id, start_time, end_time)
+            _LOGGER.debug("Extracted %d cycles without cache", len(cycles))
+        except ValueError as err:
+            # Entity not found or extraction error - return empty list
+            _LOGGER.warning(
+                "Cannot extract cycles for device %s: %s. Returning empty cycles list.",
+                device_id,
+                err,
+            )
+            cycles = []
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_window")
         return cycles
 
@@ -524,19 +534,7 @@ class HeatingCycleLifecycleManager:
             return
 
         try:
-            # Feed cycles into lhs storage cache
-            if self._lhs_storage is not None:
-                cache_heating_cycle = getattr(self._lhs_storage, "cache_heating_cycle", None)
-                if callable(cache_heating_cycle):
-                    for cycle in cycles:
-                        await cache_heating_cycle(cycle)
-
-                    _LOGGER.info(
-                        "Cached %d heating cycles from extraction queue",
-                        len(cycles),
-                    )
-
-            # Update heating cycle storage cache (synchronous cache update)
+            # Update heating cycle storage cache (incremental persistence)
             if self._heating_cycle_storage is not None:
                 # Use a deterministic search_end_time tied to the extracted data
                 search_end_time = max(cycle.end_time for cycle in cycles)
@@ -555,11 +553,62 @@ class HeatingCycleLifecycleManager:
             # Trigger LHS recalculation (cascade update)
             await self._trigger_lhs_cascade(cycles)
 
+            # Persist learned dead time from extracted cycles
+            await self._persist_learned_dead_time(cycles)
+
         except Exception as exc:
             _LOGGER.error("Failed to process extracted cycles: %s", exc)
             # Don't fail - just log and continue
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager._on_cycles_extracted")
+
+    async def _on_period_explored(self, start_date: date, end_date: date) -> None:
+        """Callback invoked after each extraction period completes.
+
+        Marks ALL dates in the range as explored, regardless of whether
+        cycles were found. This creates a unified, single source of truth:
+        explored_dates tracks all days that have been extracted/examined,
+        making it the only check needed to determine if a day requires re-extraction.
+
+        Args:
+            start_date: First day of the explored period
+            end_date: Last day of the explored period
+        """
+        _LOGGER.debug(
+            "Entering HeatingCycleLifecycleManager._on_period_explored (start=%s, end=%s)",
+            start_date,
+            end_date,
+        )
+
+        if self._heating_cycle_storage is None:
+            _LOGGER.debug("No heating cycle storage configured, skipping explored date tracking")
+            _LOGGER.debug("Exiting HeatingCycleLifecycleManager._on_period_explored")
+            return
+
+        # Generate set of ALL dates in the range (explored_dates is the single source of truth)
+        explored_dates = set()
+        current = start_date
+        one_day = timedelta(days=1)
+        while current <= end_date:
+            explored_dates.add(current)
+            current += one_day
+
+        try:
+            await self._heating_cycle_storage.append_explored_dates(
+                self._device_config.device_id,
+                explored_dates,
+            )
+            _LOGGER.debug(
+                "Marked %d dates as explored for device=%s (all dates in period %s-%s)",
+                len(explored_dates),
+                self._device_config.device_id,
+                start_date,
+                end_date,
+            )
+        except Exception as exc:
+            _LOGGER.warning("Failed to track explored dates: %s", exc)
+
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager._on_period_explored")
 
     async def trigger_24h_refresh(self) -> None:
         """Trigger a 24-hour data refresh by launching a new extraction queue.
@@ -590,10 +639,12 @@ class HeatingCycleLifecycleManager:
             # Step 3: Create NEW queue instance for refresh
             self._extraction_queue = RecordingExtractionQueue(
                 device_id=self._device_config.device_id,
-                climate_entity_id=self._device_config.vtherm_entity_id,
+                entity_id=self._device_config.vtherm_entity_id,
                 historical_adapters=self._historical_adapters,
                 heating_cycle_service=self._heating_cycle_service,
                 on_cycles_extracted=self._on_cycles_extracted,
+                on_period_explored=self._on_period_explored,
+                task_range_days=self._device_config.task_range_days,
             )
 
             # Step 4: Populate with 2 days only
@@ -637,12 +688,15 @@ class HeatingCycleLifecycleManager:
         window_start: date,
         window_end: date,
     ) -> list[tuple[date, date]]:
-        """Find date ranges within the window not yet covered by the cache.
+        """Find date ranges within the window not yet explored.
 
-        Walks every day in [window_start, window_end] and checks whether at
-        least one cached cycle has its start_time or end_time on that day.
-        Consecutive uncovered days are merged into contiguous (start, end)
-        ranges to minimise the number of extraction tasks launched.
+        Uses explored_dates as the SINGLE SOURCE OF TRUTH. A day is considered
+        "covered" if and only if it exists in explored_dates (regardless of
+        whether it contained cycles or was empty).
+
+        Walks every day in [window_start, window_end] and checks whether the
+        day has been marked as explored. Consecutive unexplored days are merged
+        into contiguous (start, end) ranges to minimize extraction tasks.
 
         Args:
             window_start: Start of desired coverage window (inclusive).
@@ -650,40 +704,33 @@ class HeatingCycleLifecycleManager:
 
         Returns:
             List of (start, end) date ranges that require extraction.
-            Empty list if every day in the window is covered by the cache.
+            Empty list if every day in the window is in explored_dates.
         """
         if self._heating_cycle_storage is None:
             return [(window_start, window_end)]
 
         cache_data = await self._heating_cycle_storage.get_cache_data(self._device_config.device_id)
 
-        if cache_data is None or not cache_data.cycles:
+        # If no cache data exists, need to extract everything
+        if cache_data is None:
             return [(window_start, window_end)]
 
-        # Build a set of dates covered by at least one cached cycle.
-        # For each cycle, mark every calendar day from start_time to end_time
-        # (inclusive) so that multi-day cycles do not leave gaps.
-        covered_dates: set[date] = set()
-        one_day = timedelta(days=1)
-        for cycle in cache_data.cycles:
-            day = cycle.start_time.date()
-            end_day = cycle.end_time.date()
-            while day <= end_day:
-                covered_dates.add(day)
-                day += one_day
+        # explored_dates is the SINGLE SOURCE OF TRUTH for coverage
+        explored_dates = cache_data.explored_dates
 
         # Walk day-by-day and collect contiguous gaps
         missing_ranges: list[tuple[date, date]] = []
         range_start: date | None = None
         current_day = window_start
+        one_day = timedelta(days=1)
 
         while current_day <= window_end:
-            if current_day not in covered_dates:
-                # Day is missing – start or extend a gap
+            if current_day not in explored_dates:
+                # Day has not been explored – start or extend a gap
                 if range_start is None:
                     range_start = current_day
             else:
-                # Day is covered – close any open gap
+                # Day has been explored – close any open gap
                 if range_start is not None:
                     missing_ranges.append((range_start, current_day - one_day))
                     range_start = None
@@ -749,10 +796,12 @@ class HeatingCycleLifecycleManager:
         for range_start, range_end in missing_ranges:
             queue = RecordingExtractionQueue(
                 device_id=self._device_config.device_id,
-                climate_entity_id=self._device_config.vtherm_entity_id,
+                entity_id=self._device_config.vtherm_entity_id,
                 historical_adapters=self._historical_adapters,
                 heating_cycle_service=self._heating_cycle_service,
                 on_cycles_extracted=self._on_cycles_extracted,
+                on_period_explored=self._on_period_explored,
+                task_range_days=self._device_config.task_range_days,
             )
             task_count = await queue.populate_queue(range_start, range_end)
             self._extraction_queues.append(queue)
@@ -780,6 +829,62 @@ class HeatingCycleLifecycleManager:
 
         # Yield control to allow each run_queue() task to begin processing
         await asyncio.sleep(0)
+
+    async def _persist_learned_dead_time(self, cycles: list[HeatingCycle]) -> None:
+        """Calculate and persist learned dead time from cycles.
+
+        This method:
+        1. Calculates average dead time from cycles (if auto-learning enabled)
+        2. Persists to storage (model_storage)
+        3. Fires callback to notify sensors
+
+        Args:
+            cycles: Heating cycles used to calculate dead time
+
+        Returns:
+            None
+        """
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager._persist_learned_dead_time")
+        _LOGGER.debug(
+            "Dead time persistence check: cycles=%d, lhs_storage=%s, auto_learning=%s",
+            len(cycles) if cycles else 0,
+            "Not None" if self._lhs_storage is not None else "None",
+            self._device_config.auto_learning,
+        )
+
+        if cycles and self._lhs_storage is not None and self._device_config.auto_learning:
+            try:
+                from ..domain.services import DeadTimeCalculationService
+
+                dead_time_calculator = DeadTimeCalculationService()
+                learned_dead_time = dead_time_calculator.calculate_average_dead_time(cycles)
+
+                _LOGGER.debug(
+                    "Calculated learned_dead_time: %s minutes",
+                    f"{learned_dead_time:.1f}" if learned_dead_time is not None else "None",
+                )
+
+                if learned_dead_time is not None:
+                    await self._lhs_storage.set_learned_dead_time(learned_dead_time)
+                    _LOGGER.info(
+                        "Updated learned dead time from %d cycles: %.1f minutes",
+                        len(cycles),
+                        learned_dead_time,
+                    )
+                    if self._dead_time_updated_callback is not None:
+                        try:
+                            self._dead_time_updated_callback(learned_dead_time)
+                        except Exception as exc:
+                            _LOGGER.warning("Dead time update callback failed: %s", exc)
+            except Exception as exc:
+                _LOGGER.warning("Failed to calculate/persist dead time: %s", exc, exc_info=True)
+        elif cycles and self._lhs_storage is not None and not self._device_config.auto_learning:
+            _LOGGER.debug(
+                "Auto-learning disabled; skipping dead time persistence for device=%s",
+                self._device_config.device_id,
+            )
+
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager._persist_learned_dead_time")
 
     async def _trigger_lhs_cascade(self, cycles: list[HeatingCycle]) -> None:
         """Trigger cascade update to LHS lifecycle manager with error isolation.
@@ -1157,13 +1262,19 @@ class HeatingCycleLifecycleManager:
             # Also persist and cascade LHS as with background extraction
             await self._on_cycles_extracted(cycles)
 
+        async def _track_explored(start_date: date, end_date: date) -> None:
+            """Track explored dates (with or without cycles)."""
+            await self._on_period_explored(start_date, end_date)
+
         # Create a dedicated queue (does not replace the background queue)
         demand_queue = RecordingExtractionQueue(
             device_id=device_id,
-            climate_entity_id=self._device_config.vtherm_entity_id,
+            entity_id=self._device_config.vtherm_entity_id,
             historical_adapters=self._historical_adapters,
             heating_cycle_service=self._heating_cycle_service,
             on_cycles_extracted=_collect,
+            on_period_explored=_track_explored,
+            task_range_days=self._device_config.task_range_days,
         )
 
         try:

@@ -23,14 +23,14 @@ Critical Assertions That Will FAIL With Stubs:
 1. `assert manager._extraction_queue is not None` → FAILS if queue never created
 2. `assert manager._extraction_task is not None` → FAILS if task never started
 3. `assert is_running is True` → FAILS if queue not actually running
-4. `assert len(cached) > 0` → FAILS if _extract_day() is stub returning []
+4. `assert len(cached) > 0` → FAILS if _extract_period() is stub returning []
 5. `assert await queue.get_progress()[2] is True` → FAILS if run_queue() never called
 """
 
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -99,7 +99,7 @@ async def test_refresh_creates_extraction_queue():
       - Queue is never created during refresh
       - Queue is created but not started
       - run_queue() is called as blocking call (freezes manager)
-      - _extract_day() is stubbed (returns [] always)
+      - _extract_period() is stubbed (returns [] always)
     """
     device_config = DeviceConfig(
         device_id="climate.living_room",
@@ -174,7 +174,7 @@ async def test_refresh_creates_extraction_queue():
 
     # VERIFY #4: Queue must be populated with tasks
     extracted, total, is_running = await lifecycle._extraction_queue.get_progress()
-    assert total > 80, (
+    assert total == 13, (
         f"WeakPoint: Queue has only {total} tasks. Expected ~90 for 90-day retention. "
         "populate_queue() may not be called or date range is wrong."
     )
@@ -255,7 +255,7 @@ async def test_extracted_cycles_feed_cache_via_callback():
 
     REGRESSION: Test will FAIL if:
       - Callback is never invoked
-      - _extract_day() returns [] (stub)
+      - _extract_period() returns [] (stub)
       - Cache is never updated
     """
     # Track callback invocations
@@ -267,7 +267,7 @@ async def test_extracted_cycles_feed_cache_via_callback():
     # Create queue with callback
     queue = RecordingExtractionQueue(
         device_id="climate.living_room",
-        climate_entity_id="climate.vtherm",
+        entity_id="climate.vtherm",
         historical_adapters=[],
         on_cycles_extracted=track_callback,
     )
@@ -286,8 +286,8 @@ async def test_extracted_cycles_feed_cache_via_callback():
         ),
     ]
 
-    # Mock _extract_day to return cycles (not empty list!)
-    queue._extract_day = AsyncMock(return_value=test_cycles)
+    # Mock _extract_period to return cycles (not empty list!)
+    queue._extract_period = AsyncMock(return_value=test_cycles)
 
     # Populate queue for a single day
     extraction_date = date(2026, 2, 20)
@@ -307,14 +307,14 @@ async def test_extracted_cycles_feed_cache_via_callback():
     # VERIFY #2: Callback must have received the extracted cycles
     assert len(callback_invocations[0]) == len(test_cycles), (
         f"WeakPoint: Callback received {len(callback_invocations[0])} cycles "
-        f"but _extract_day() returned {len(test_cycles)}. "
+        f"but _extract_period() returned {len(test_cycles)}. "
         "Cycle extraction is not flowing through callback."
     )
 
     # VERIFY #3: Progress shows extraction completed
     extracted, total, is_running = await queue.get_progress()
     assert extracted == 1, (
-        "WeakPoint: Progress shows 0 extracted. " "_extract_day() may be stubbed (returning [])."
+        "WeakPoint: Progress shows 0 extracted. " "_extract_period() may be stubbed (returning [])."
     )
 
 
@@ -415,15 +415,10 @@ async def test_refresh_respects_retention_window():
         extracted, total, _ = await lifecycle._extraction_queue.get_progress()
 
         # Should have ~90 tasks (allow 1-2 day tolerance for edge cases)
-        assert total >= 88, (
+        assert total == 13, (
             f"WeakPoint: Queue has only {total} tasks. "
-            "Expected ~90 for 90-day retention. "
+            "Expected 13 for 90-day retention. "
             "Date range calculation may be incorrect."
-        )
-
-        assert total <= 92, (
-            f"WeakPoint: Queue has {total} tasks, expected ~90. "
-            "Date range extends beyond retention window."
         )
 
 
@@ -452,9 +447,10 @@ async def test_extraction_continues_after_single_day_failure():
     """
     queue = RecordingExtractionQueue(
         device_id="climate.living_room",
-        climate_entity_id="climate.vtherm",
+        entity_id="climate.vtherm",
         historical_adapters=[],
         on_cycles_extracted=None,
+        task_range_days=1,  # 1 day per task for this test to have 5 distinct tasks
     )
 
     # Populate 5 days
@@ -462,29 +458,29 @@ async def test_extraction_continues_after_single_day_failure():
     end_date = date(2026, 2, 22)
     task_count = await queue.populate_queue(start_date, end_date)
 
-    assert task_count == 5, "Queue should have exactly 5 days"
+    assert task_count == 5, "Queue should have exactly 5 tasks (1 day each)"
 
-    # Mock extraction: day 1 succeeds, day 2 fails, day 3-5 succeed
+    # Mock extraction: task 1 succeeds, task 2 fails, tasks 3-5 succeed
     extraction_attempts = []
 
-    async def failing_extract(extraction_date):
-        extraction_attempts.append(extraction_date)
+    async def failing_extract(start_date, end_date):
+        extraction_attempts.append(start_date)
 
-        # Day 2 fails
-        if extraction_date == date(2026, 2, 19):
-            raise ValueError(f"Simulated extraction failure for {extraction_date}")
+        # Task 2 (Feb 19) fails
+        if start_date == date(2026, 2, 19):
+            raise ValueError(f"Simulated extraction failure for {start_date}")
 
         # Others succeed with empty list
         return []
 
-    queue._extract_day = AsyncMock(side_effect=failing_extract)
+    queue._extract_period = AsyncMock(side_effect=failing_extract)
 
     # ACT: Run queue
     await queue.run_queue()
 
-    # VERIFY #1: All 5 days must have been attempted
+    # VERIFY #1: All 5 tasks must have been attempted
     assert len(extraction_attempts) == 5, (
-        f"WeakPoint: Only {len(extraction_attempts)} days attempted. "
+        f"WeakPoint: Only {len(extraction_attempts)} tasks attempted. "
         "Queue must continue on failure, not stop."
     )
 
@@ -520,7 +516,7 @@ async def test_shutdown_cancels_running_extraction():
     """
     queue = RecordingExtractionQueue(
         device_id="climate.living_room",
-        climate_entity_id="climate.vtherm",
+        entity_id="climate.vtherm",
         historical_adapters=[],
         on_cycles_extracted=None,
     )
@@ -531,11 +527,11 @@ async def test_shutdown_cancels_running_extraction():
     await queue.populate_queue(start_date, end_date)
 
     # Mock slow extraction to simulate long processing
-    async def slow_extract(extraction_date):
+    async def slow_extract(start_date, end_date):
         await asyncio.sleep(0.05)  # Simulate work
         return []
 
-    queue._extract_day = AsyncMock(side_effect=slow_extract)
+    queue._extract_period = AsyncMock(side_effect=slow_extract)
 
     # Start extraction in background
     run_task = asyncio.create_task(queue.run_queue())
@@ -689,9 +685,10 @@ async def test_queue_progress_reporting_works():
     """
     queue = RecordingExtractionQueue(
         device_id="climate.living_room",
-        climate_entity_id="climate.vtherm",
+        entity_id="climate.vtherm",
         historical_adapters=[],
         on_cycles_extracted=None,
+        task_range_days=1,  # 1 day per task to get 10 distinct tasks
     )
 
     # Populate 10 days
@@ -708,7 +705,7 @@ async def test_queue_progress_reporting_works():
     assert is_running is False, "Should not be running"
 
     # Mock fast extraction
-    queue._extract_day = AsyncMock(return_value=[])
+    queue._extract_period = AsyncMock(return_value=[])
 
     # Start queue in background
     run_task = asyncio.create_task(queue.run_queue())

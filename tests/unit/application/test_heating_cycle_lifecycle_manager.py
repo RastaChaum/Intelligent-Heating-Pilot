@@ -9,6 +9,7 @@ Purpose: Comprehensive test coverage for heating cycle lifecycle management
 from __future__ import annotations
 
 import asyncio
+import math
 from contextlib import suppress
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
@@ -29,6 +30,9 @@ from custom_components.intelligent_heating_pilot.domain.value_objects.heating_cy
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
     HistoricalDataSet,
+)
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.recording_extraction_queue import (
+    DEFAULT_TASK_RANGE_DAYS,
 )
 
 
@@ -71,6 +75,10 @@ class TestHeatingCycleLifecycleManager:
             return HistoricalDataSet(data={key: [] for key in HistoricalDataKey})
 
         adapter.fetch_historical_data = AsyncMock(side_effect=create_empty_dataset)
+        # fetch_all_historical_data is now the primary entry point used by _extract_day
+        adapter.fetch_all_historical_data = AsyncMock(
+            return_value=HistoricalDataSet(data={key: [] for key in HistoricalDataKey})
+        )
         return adapter
 
     @pytest.fixture
@@ -98,7 +106,6 @@ class TestHeatingCycleLifecycleManager:
         storage = Mock()
         storage.save_heating_cycle = AsyncMock()
         storage.get_heating_cycles = AsyncMock(return_value=[])
-        storage.cache_heating_cycle = AsyncMock()
         return storage
 
     @pytest.fixture
@@ -208,9 +215,10 @@ class TestHeatingCycleLifecycleManager:
         # THEN Aspect D: In-memory cache dict exists (lazily populated)
         assert isinstance(manager._cached_cycles_for_target_time, dict)
 
-        # THEN Aspect E: queue task count == number of days in the extraction window
+        # THEN Aspect E: queue task count == number of weekly periods in the extraction window
         # window = [today - retention_days, yesterday] = lhs_retention_days days
-        expected_days = manager._device_config.lhs_retention_days  # 30 days
+        retention_days = manager._device_config.lhs_retention_days  # 30 days
+        expected_tasks = math.ceil(retention_days / DEFAULT_TASK_RANGE_DAYS)  # ceil(30/7) = 5
         # Wait for the background extraction task to complete
         assert manager._extraction_task is not None
         try:
@@ -222,8 +230,8 @@ class TestHeatingCycleLifecycleManager:
             pytest.fail("Background extraction task timed out")
         # Verify the task completed without exception
         assert not manager._extraction_task.cancelled()
-        # extract_heating_cycles is called once per day in the queue
-        assert mock_heating_cycle_service.extract_heating_cycles.call_count == expected_days
+        # extract_heating_cycles is called once per weekly task in the queue
+        assert mock_heating_cycle_service.extract_heating_cycles.call_count == expected_tasks
 
     # ===== Test: on_retention_change() - ONE test for ALL scenarios =====
 
@@ -726,9 +734,7 @@ class TestHeatingCycleLifecycleManager:
         )
 
         # THEN: end_date must be yesterday at most
-        assert end_date == yesterday, (
-            f"end_date {end_date} should be yesterday {yesterday}"
-        )
+        assert end_date == yesterday, f"end_date {end_date} should be yesterday {yesterday}"
 
     # ===== Tests: _trigger_incremental_extraction() =====
 
@@ -900,8 +906,8 @@ class TestHeatingCycleLifecycleManager:
             end_date=end_d,
         )
 
-        # THEN Aspect A: cycles returned
-        assert len(result) == 2  # 2 days × 1 cycle each
+        # THEN Aspect A: cycles returned (2-day range fits in 1 weekly task → 1 call → 1 cycle)
+        assert len(result) == 1
         assert all(isinstance(c, HeatingCycle) for c in result)
 
         # THEN Aspect B: storage updated for each extracted cycle batch
