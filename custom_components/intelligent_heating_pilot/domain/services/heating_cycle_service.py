@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import bisect
 import logging
 from datetime import datetime, timedelta
 from typing import Any, cast
@@ -109,6 +111,15 @@ class HeatingCycleService(IHeatingCycleService):
             key=lambda m: m.timestamp,
         )
 
+        # Build sorted indexes once for O(log N) temperature lookups inside the loop.
+        # Without this, _get_temperatures_at does an O(N) scan per measurement → O(N²) total.
+        indoor_hist, indoor_ts = self._build_sorted_history(
+            history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, [])
+        )
+        target_hist, target_ts = self._build_sorted_history(
+            history_data_set.data.get(HistoricalDataKey.TARGET_TEMP, [])
+        )
+
         # Initialiser les variables de suivi de cycle
         heating_start: datetime | None = None
         cycle_start_indoor_temp: float | None = None
@@ -121,15 +132,18 @@ class HeatingCycleService(IHeatingCycleService):
         samples_logged = 0
         max_debug_samples = 10  # Log first 10 measurements for debugging
 
-        for measurement in heating_state_history:
+        for i, measurement in enumerate(heating_state_history):
+            # Yield control to the event loop every 200 iterations to keep HA responsive.
+            if i > 0 and i % 200 == 0:
+                await asyncio.sleep(0)
+
             timestamp = measurement.timestamp
             # Separate concerns: mode_on (system enabled) vs action_active (actually heating)
             mode_on = self._is_mode_on(measurement)
             action_active = self._is_heating_active(measurement)
 
-            current_indoor_temp, current_target_temp = self._get_temperatures_at(
-                history_data_set, timestamp
-            )
+            current_indoor_temp = self._lookup_float_at(indoor_hist, indoor_ts, timestamp)
+            current_target_temp = self._lookup_float_at(target_hist, target_ts, timestamp)
 
             measurements_processed += 1
 
@@ -807,6 +821,51 @@ class HeatingCycleService(IHeatingCycleService):
             float,
         )
         return indoor_temp, target_temp
+
+    @staticmethod
+    def _build_sorted_history(
+        history: list[HistoricalMeasurement],
+    ) -> tuple[list[HistoricalMeasurement], list[datetime]]:
+        """Sort a measurement list by timestamp and return a parallel timestamp list for bisect.
+
+        Pre-building the sorted list and its timestamp index once before a lookup loop
+        reduces temperature lookups from O(N) per call to O(log N) via bisect.
+
+        Args:
+            history: Unsorted list of historical measurements.
+
+        Returns:
+            Tuple of (sorted_measurements, sorted_timestamps).
+        """
+        sorted_hist = sorted(history, key=lambda m: m.timestamp)
+        return sorted_hist, [m.timestamp for m in sorted_hist]
+
+    @staticmethod
+    def _lookup_float_at(
+        sorted_history: list[HistoricalMeasurement],
+        sorted_timestamps: list[datetime],
+        target_time: datetime,
+    ) -> float | None:
+        """Return the float value of the latest measurement at or before target_time.
+
+        Uses binary search (O(log N)) on a pre-sorted index. Requires the parallel
+        sorted_timestamps list built by _build_sorted_history.
+
+        Args:
+            sorted_history: Measurements sorted ascending by timestamp.
+            sorted_timestamps: Parallel list of timestamps for bisect.
+            target_time: The time to look up.
+
+        Returns:
+            Float value of the closest measurement at or before target_time, or None.
+        """
+        idx = bisect.bisect_right(sorted_timestamps, target_time) - 1
+        if idx < 0:
+            return None
+        try:
+            return float(sorted_history[idx].value)
+        except (ValueError, TypeError):
+            return None
 
     def _should_start_cycle(
         self,
