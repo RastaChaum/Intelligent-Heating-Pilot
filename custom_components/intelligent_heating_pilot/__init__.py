@@ -149,15 +149,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         def _run_update(_now):
             hass.async_create_task(coordinator.async_update())
 
-        async_track_point_in_time(
-            hass,
-            _run_update,
-            dt_util.now() + dt_util.dt.timedelta(seconds=update_delay),
+        entry.async_on_unload(
+            async_track_point_in_time(
+                hass,
+                _run_update,
+                dt_util.now() + dt_util.dt.timedelta(seconds=update_delay),
+            )
         )
-        async_track_point_in_time(
-            hass,
-            _run_extraction,
-            dt_util.now() + dt_util.dt.timedelta(seconds=extraction_delay),
+        entry.async_on_unload(
+            async_track_point_in_time(
+                hass,
+                _run_extraction,
+                dt_util.now() + dt_util.dt.timedelta(seconds=extraction_delay),
+            )
         )
 
         _LOGGER.info(
@@ -183,7 +187,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _schedule_startup_work()
     else:
         _LOGGER.debug("[%s] Waiting for HA start event before initialization", entry.entry_id)
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started)
+        entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started))
 
     # Small delayed update for late attribute population
     @callback
@@ -195,10 +199,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         f"{entry.entry_id}:late_update", _LATE_UPDATE_JITTER_SECONDS
     )
 
-    async_track_point_in_time(
-        hass,
-        _delayed_update,
-        dt_util.now() + dt_util.dt.timedelta(seconds=late_update_delay),
+    entry.async_on_unload(
+        async_track_point_in_time(
+            hass,
+            _delayed_update,
+            dt_util.now() + dt_util.dt.timedelta(seconds=late_update_delay),
+        )
     )
 
     # Register options update listener
