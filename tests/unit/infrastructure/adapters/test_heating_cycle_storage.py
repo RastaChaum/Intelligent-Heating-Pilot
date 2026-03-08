@@ -4,7 +4,7 @@ This adapter implements IHeatingCycleStorage by using Home Assistant's storage h
 to persist heating cycles with incremental update support.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -586,3 +586,63 @@ async def test_dead_time_cycle_minutes_none_serialization(
 
     # Verify dead_time_cycle_minutes is None (not missing, not 0)
     assert retrieved_cycle.dead_time_cycle_minutes is None
+
+
+# ============================================================================
+# Tests: get_oldest_explored_date()
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_oldest_explored_date_returns_none_when_no_cache(
+    cache: HAHeatingCycleStorage,
+    device_id: str,
+) -> None:
+    """Returns None when no cache data exists for the device."""
+    result = await cache.get_oldest_explored_date(device_id)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_oldest_explored_date_returns_none_when_no_explored_dates(
+    cache: HAHeatingCycleStorage,
+    device_id: str,
+    base_time: datetime,
+) -> None:
+    """Returns None when cache exists but explored_dates is empty."""
+    # Populate cache with a cycle (but no explored dates)
+    cycle = create_test_heating_cycle(device_id=device_id, start_time=base_time)
+    await cache.append_cycles(device_id, [cycle], base_time)
+
+    result = await cache.get_oldest_explored_date(device_id)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_oldest_explored_date_returns_min_explored_date(
+    cache: HAHeatingCycleStorage,
+    device_id: str,
+    base_time: datetime,
+) -> None:
+    """Returns the oldest date in explored_dates."""
+    d1 = date(2025, 1, 10)
+    d2 = date(2025, 1, 5)  # oldest
+    d3 = date(2025, 1, 15)
+
+    await cache.append_explored_dates(device_id, [d1, d2, d3])
+
+    result = await cache.get_oldest_explored_date(device_id)
+    assert result == d2
+
+
+@pytest.mark.asyncio
+async def test_get_oldest_explored_date_single_date(
+    cache: HAHeatingCycleStorage,
+    device_id: str,
+) -> None:
+    """Returns that single date when only one explored date exists."""
+    d = date(2025, 3, 1)
+    await cache.append_explored_dates(device_id, [d])
+
+    result = await cache.get_oldest_explored_date(device_id)
+    assert result == d

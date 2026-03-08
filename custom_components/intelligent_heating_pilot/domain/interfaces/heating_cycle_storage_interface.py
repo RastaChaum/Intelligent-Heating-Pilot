@@ -110,3 +110,19 @@ class IHeatingCycleStorage(ABC):
             explored_dates: Set of dates to mark as explored
         """
         pass
+
+    @abstractmethod
+    async def get_oldest_explored_date(self, device_id: str) -> date | None:
+        """Return the oldest date in explored_dates for this device.
+
+        Used by the progressive backfill scheduler to determine the next
+        historical period to extract. Returns None if no dates have been
+        explored yet (e.g. first startup before any extraction completes).
+
+        Args:
+            device_id: The device identifier
+
+        Returns:
+            The oldest explored date, or None if explored_dates is empty
+        """
+        pass

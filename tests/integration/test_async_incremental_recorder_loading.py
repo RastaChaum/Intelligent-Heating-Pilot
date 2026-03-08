@@ -92,7 +92,7 @@ async def test_refresh_creates_extraction_queue():
       - manager._extraction_queue MUST be created (not None)
       - manager._extraction_task MUST be created (not None)
       - Extraction task MUST be running (not already done)
-      - Queue MUST contain approximately 90 daily tasks
+      - Queue MUST contain exactly 1 task (startup window = task_range_days days only)
       - Queue MUST be actively executing tasks
 
     REGRESSION: Tests will FAIL if:
@@ -100,6 +100,7 @@ async def test_refresh_creates_extraction_queue():
       - Queue is created but not started
       - run_queue() is called as blocking call (freezes manager)
       - _extract_period() is stubbed (returns [] always)
+      - Startup extracts full lhs_retention_days instead of task_range_days (watchdog risk)
     """
     device_config = DeviceConfig(
         device_id="climate.living_room",
@@ -173,10 +174,13 @@ async def test_refresh_creates_extraction_queue():
     )
 
     # VERIFY #4: Queue must be populated with tasks
+    # Startup uses _calculate_startup_window() — only the most recent task_range_days (7)
+    # period is extracted (1 task). Full historical backfill happens progressively
+    # via trigger_24h_refresh() stepping backward one task_range_days period at a time.
     extracted, total, is_running = await lifecycle._extraction_queue.get_progress()
-    assert total == 13, (
-        f"WeakPoint: Queue has only {total} tasks. Expected ~90 for 90-day retention. "
-        "populate_queue() may not be called or date range is wrong."
+    assert total == 1, (
+        f"WeakPoint: Queue has {total} tasks. Expected 1 (startup window = task_range_days only). "
+        "Startup MUST use _calculate_startup_window(), not the full lhs_retention_days window."
     )
 
     # VERIFY #5: Queue must be actively running
@@ -373,19 +377,17 @@ async def test_24h_refresh_creates_new_queue_instance():
 
 @pytest.mark.asyncio
 async def test_refresh_respects_retention_window():
-    """CRITICAL TEST: Refresh extraction MUST respect retention boundary.
+    """CRITICAL TEST: Refresh extraction MUST use startup window (not full retention).
 
-    GIVEN: Retention = 90 days
+    GIVEN: Retention = 90 days, task_range_days = 7 (default)
     WHEN: refresh_heating_cycle_cache() called
     THEN:
-      - Extraction MUST cover exactly retention window
-      - Start date = current_date - 90 days
+      - Startup window = most recent task_range_days period only (1 task)
+      - Historical backfill happens progressively via trigger_24h_refresh()
       - End date = yesterday (not today, to avoid partial cycles)
-      - Queue MUST have exactly ~90 tasks (one per day)
 
     REGRESSION: Test will FAIL if:
-      - Window is longer or shorter than retention
-      - Extraction extends beyond retention
+      - Startup tries to extract the full lhs_retention_days window (watchdog risk)
       - Queue has wrong number of tasks
     """
     device_config = DeviceConfig(
@@ -414,10 +416,11 @@ async def test_refresh_respects_retention_window():
     if hasattr(lifecycle, "_extraction_queue") and lifecycle._extraction_queue:
         extracted, total, _ = await lifecycle._extraction_queue.get_progress()
 
-        # Should have ~90 tasks (allow 1-2 day tolerance for edge cases)
-        assert total == 13, (
-            f"WeakPoint: Queue has only {total} tasks. "
-            "Expected 13 for 90-day retention. "
+        # Should have exactly 1 task: startup window = task_range_days (7) days
+        # Full historical backfill happens progressively via trigger_24h_refresh()
+        assert total == 1, (
+            f"WeakPoint: Queue has {total} tasks. "
+            "Expected 1 (startup window = task_range_days only, not full retention). "
             "Date range calculation may be incorrect."
         )
 
@@ -763,8 +766,8 @@ async def test_refresh_end_date_is_yesterday():
         lhs_lifecycle_manager=None,
     )
 
-    # Get the extraction window
-    start_date, end_date = lifecycle._calculate_extraction_window()
+    # Get the startup extraction window
+    start_date, end_date = lifecycle._calculate_startup_window()
 
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)

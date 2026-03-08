@@ -250,11 +250,13 @@ class TestLifecycleCascadeFlow:
         # THEN: Extraction queue created (async extraction launched for new window)
         assert manager._extraction_queue is not None
 
-        # AND: New retention is reflected in device config and extraction window
+        # AND: New retention is reflected in device config
         assert manager._device_config.lhs_retention_days == new_retention
-        start_date, end_date = manager._calculate_extraction_window()
+        # The startup window covers task_range_days (not the full retention), because
+        # full historical coverage is built progressively via the 24h backfill timer.
+        start_date, end_date = manager._calculate_startup_window()
         window_span_days = (end_date - start_date).days
-        assert window_span_days == new_retention - 1
+        assert window_span_days == manager._device_config.task_range_days - 1
 
     @pytest.mark.asyncio
     async def test_retention_change_clears_memory_cache_before_cascade(

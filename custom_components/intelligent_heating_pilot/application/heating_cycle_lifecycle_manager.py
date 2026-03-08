@@ -146,8 +146,9 @@ class HeatingCycleLifecycleManager:
             )
             _LOGGER.debug("Scheduled 24h cycle refresh timer for %s", next_refresh.isoformat())
 
-        # Step 2: Calculate extraction window (end = yesterday, not today)
-        start_date, end_date = self._calculate_extraction_window()
+        # Step 2: Calculate startup window (most recent task_range_days only).
+        # Backfill of older periods happens progressively via trigger_24h_refresh().
+        start_date, end_date = self._calculate_startup_window()
         _LOGGER.debug("Extraction window: %s to %s", start_date, end_date)
 
         # Step 3: Prune cycles outside the retention window from persistent storage.
@@ -503,14 +504,22 @@ class HeatingCycleLifecycleManager:
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.cancel")
 
     async def _launch_extraction_queue(self) -> None:
-        """Launch the asynchronous recording extraction queue.
+        """Launch the asynchronous recording extraction queue for the startup window.
 
-        Delegates to _launch_extraction_for_ranges after computing the extraction
-        window and finding missing date ranges. Kept for backward compatibility.
+        At startup, only the most recent task_range_days period is extracted to avoid
+        overwhelming the Recorder with 10+ devices × 13 tasks = 130 queries at once.
+        Full historical coverage is built progressively via trigger_24h_refresh().
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager._launch_extraction_queue")
 
-        start_date, end_date = self._calculate_extraction_window()
+        start_date, end_date = self._calculate_startup_window()
+        _LOGGER.info(
+            "Startup extraction window: %s to %s (device=%s). "
+            "Historical backfill will progress via daily 24h refresh.",
+            start_date,
+            end_date,
+            self._device_config.device_id,
+        )
         missing_ranges = await self._find_missing_date_ranges(start_date, end_date)
         await self._launch_extraction_for_ranges(missing_ranges)
 
@@ -660,6 +669,44 @@ class HeatingCycleLifecycleManager:
 
             _LOGGER.info("24h refresh extraction queue launched")
 
+            # Historical backfill: extend coverage backward by one task_range_days step.
+            # This progressively builds the full lhs_retention_days model without
+            # overwhelming the Recorder at startup (one extra query per device per day).
+            backfill_window = await self._calculate_backfill_window()
+            if backfill_window is not None:
+                backfill_start, backfill_end = backfill_window
+                _LOGGER.info(
+                    "Historical backfill step: %s to %s (device=%s)",
+                    backfill_start,
+                    backfill_end,
+                    self._device_config.device_id,
+                )
+                missing_backfill = await self._find_missing_date_ranges(
+                    backfill_start, backfill_end
+                )
+                if missing_backfill:
+                    # Detach recent-refresh references before launching backfill.
+                    # _launch_extraction_for_ranges cancels self._extraction_task and
+                    # self._extraction_queue first; without this, the just-launched
+                    # recent-refresh task (yesterday+today) would be cancelled before
+                    # it completes. The detached asyncio.Task continues running until
+                    # it finishes, then is garbage-collected.
+                    self._extraction_task = None
+                    self._extraction_queue = None
+                    self._extraction_queues = []
+                    await self._launch_extraction_for_ranges(missing_backfill)
+                else:
+                    _LOGGER.debug(
+                        "Backfill window %s-%s already explored for device=%s",
+                        backfill_start,
+                        backfill_end,
+                        self._device_config.device_id,
+                    )
+            else:
+                _LOGGER.debug(
+                    "Historical backfill complete for device=%s", self._device_config.device_id
+                )
+
         except Exception as exc:
             _LOGGER.error("Failed to trigger 24h refresh: %s", exc)
 
@@ -669,18 +716,75 @@ class HeatingCycleLifecycleManager:
     # Extraction Window Helpers
     # ------------------------------------------------------------------
 
-    def _calculate_extraction_window(self) -> tuple[date, date]:
-        """Calculate the extraction window for heating cycles.
+    def _calculate_startup_window(self) -> tuple[date, date]:
+        """Calculate the extraction window for initial startup.
 
-        end_date is always yesterday (never today) to avoid partial cycle
-        extractions for the current day.
+        Returns only the most recent task_range_days period to avoid launching
+        N_devices × N_periods queries simultaneously at startup (which overwhelms
+        the Recorder and triggers the HA supervisor watchdog with 10+ devices).
+
+        Full historical coverage up to lhs_retention_days is built progressively
+        one task_range_days step per 24h refresh cycle via _calculate_backfill_window().
+
+        end_date is always yesterday (never today) to avoid partial cycle extractions.
 
         Returns:
-            Tuple of (start_date, end_date) for extraction.
+            Tuple of (start_date, end_date) covering the most recent task_range_days.
         """
         now = self._get_current_time_for_extraction(None)
         end_date = (now - timedelta(days=1)).date()
-        start_date = (now - timedelta(days=self._device_config.lhs_retention_days)).date()
+        start_date = end_date - timedelta(days=self._device_config.task_range_days - 1)
+        return start_date, end_date
+
+    async def _calculate_backfill_window(self) -> tuple[date, date] | None:
+        """Calculate the next historical period to backfill, or None if complete.
+
+        Looks at the oldest explored date and steps back one task_range_days period.
+        Each call to trigger_24h_refresh() advances the backfill frontier one step,
+        so the full lhs_retention_days model builds up over ceil(lhs_retention_days /
+        task_range_days) daily cycles.
+
+        When the Recorder returns no data for a period (data purged), that period is
+        marked as explored by the extraction queue (Fix 1), so the backfill naturally
+        stops at the actual Recorder retention boundary without endless retries.
+
+        Returns:
+            Tuple of (start_date, end_date) for the next backfill step,
+            or None when full coverage is already reached or storage is unavailable.
+        """
+        if self._heating_cycle_storage is None:
+            return None
+
+        oldest = await self._heating_cycle_storage.get_oldest_explored_date(
+            self._device_config.device_id
+        )
+        if oldest is None:
+            # Startup window not yet explored — skip backfill this cycle.
+            _LOGGER.debug(
+                "No explored dates yet for device=%s, skipping backfill",
+                self._device_config.device_id,
+            )
+            return None
+
+        max_start = (
+            self._get_current_time_for_extraction(None)
+            - timedelta(days=self._device_config.lhs_retention_days)
+        ).date()
+
+        if oldest <= max_start + timedelta(days=1):
+            _LOGGER.debug(
+                "Historical backfill complete for device=%s (oldest=%s >= target=%s)",
+                self._device_config.device_id,
+                oldest,
+                max_start,
+            )
+            return None
+
+        end_date = oldest - timedelta(days=1)
+        start_date = max(
+            end_date - timedelta(days=self._device_config.task_range_days - 1),
+            max_start,
+        )
         return start_date, end_date
 
     async def _find_missing_date_ranges(

@@ -111,6 +111,8 @@ def mock_cycle_cache() -> Mock:
     cache.prune_old_cycles = AsyncMock()
     cache.clear_cache = AsyncMock()
     cache.get_last_search_time = AsyncMock(return_value=None)
+    cache.append_explored_dates = AsyncMock()
+    cache.get_oldest_explored_date = AsyncMock(return_value=None)
     return cache
 
 

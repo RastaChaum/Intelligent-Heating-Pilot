@@ -779,7 +779,9 @@ class TestRecordingExtractionQueueSequentialityValidation:
         active_tasks = []
         max_concurrent = 0
 
-        async def mock_extract_track_concurrency(start_date: date, end_date: date) -> list[HeatingCycle]:
+        async def mock_extract_track_concurrency(
+            start_date: date, end_date: date
+        ) -> list[HeatingCycle]:
             nonlocal max_concurrent
             active_tasks.append(start_date)
             current_concurrent = len(active_tasks)
@@ -891,7 +893,9 @@ class TestRecordingExtractionQueueCallbackValidation:
 
         await extraction_queue.populate_queue(date(2024, 1, 10), date(2024, 1, 17))
 
-        async def mock_extract_returns_cycles(start_date: date, end_date: date) -> list[HeatingCycle]:
+        async def mock_extract_returns_cycles(
+            start_date: date, end_date: date
+        ) -> list[HeatingCycle]:
             if start_date == date(2024, 1, 10):
                 return [cycle_jan10_a, cycle_jan10_b]
             elif start_date == date(2024, 1, 17):
@@ -988,7 +992,9 @@ class TestRecordingExtractionQueueCancellationValidation:
 
         task_executions = []
 
-        async def mock_extract_cancel_on_third(start_date: date, end_date: date) -> list[HeatingCycle]:
+        async def mock_extract_cancel_on_third(
+            start_date: date, end_date: date
+        ) -> list[HeatingCycle]:
             task_executions.append(start_date)
 
             # Request cancellation after third task
@@ -1099,7 +1105,9 @@ class TestRecordingExtractionQueueProgressAccuracy:
 
         failure_dates = {date(2024, 1, 8), date(2024, 1, 29)}
 
-        async def mock_extract_with_failures(start_date: date, end_date: date) -> list[HeatingCycle]:
+        async def mock_extract_with_failures(
+            start_date: date, end_date: date
+        ) -> list[HeatingCycle]:
             if start_date in failure_dates:
                 raise ValueError(f"Extraction failed for {start_date}")
             return []
@@ -1122,3 +1130,50 @@ class TestRecordingExtractionQueueProgressAccuracy:
         assert extracted == 4
         assert total == 6  # 4 + 2 + 0
         assert is_running is False
+
+    @pytest.mark.asyncio
+    async def test_on_period_explored_called_even_on_failure(self) -> None:
+        """Verify on_period_explored is called for failed periods, not just successful ones.
+
+        REGRESSION: Before this fix, failed/empty periods were never marked as explored,
+        causing them to be retried on every HA restart indefinitely. This is critical
+        for periods where the Recorder has purged data (beyond purge_keep_days) — they
+        would generate a ValueError but still need to be marked as explored.
+        """
+        on_period_explored_calls: list[tuple[date, date]] = []
+
+        async def capture_explored(start: date, end: date) -> None:
+            on_period_explored_calls.append((start, end))
+
+        queue = RecordingExtractionQueue(
+            device_id="climate.test",
+            entity_id="climate.vtherm",
+            historical_adapters=[],
+            on_cycles_extracted=None,
+            on_period_explored=capture_explored,
+            task_range_days=7,
+        )
+
+        start_date = date(2024, 1, 1)
+        end_date = date(2024, 1, 7)
+        await queue.populate_queue(start_date, end_date)
+
+        # Mock _extract_period to raise ValueError (simulates Recorder returning no data)
+        async def failing_extract(s: date, e: date) -> list:
+            raise ValueError("missing REQUIRED data keys: indoor_temperature")
+
+        queue._extract_period = failing_extract
+
+        # WHEN: run queue
+        await queue.run_queue()
+
+        # THEN: on_period_explored was called despite the failure
+        assert len(on_period_explored_calls) == 1, (
+            f"Expected on_period_explored called once for the failed period, "
+            f"got {len(on_period_explored_calls)} calls. "
+            "Failed periods must be marked as explored to prevent infinite retries on restart."
+        )
+        assert on_period_explored_calls[0] == (start_date, end_date)
+
+        # AND: the failure is counted
+        assert queue._failed_count == 1

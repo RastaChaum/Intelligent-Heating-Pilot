@@ -353,6 +353,27 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
 
         _LOGGER.debug("Exiting HAHeatingCycleStorage.clear_cache")
 
+    async def get_oldest_explored_date(self, device_id: str) -> date | None:
+        """Return the oldest date in explored_dates for this device, or None.
+
+        Used by the progressive backfill scheduler to know how far back
+        extraction has reached so the next task_range_days step can be calculated.
+
+        Args:
+            device_id: The device identifier
+
+        Returns:
+            The oldest explored date, or None if explored_dates is empty
+        """
+        _LOGGER.debug("Entering HAHeatingCycleStorage.get_oldest_explored_date")
+        cache_data = await self.get_cache_data(device_id)
+        result = (
+            min(cache_data.explored_dates) if cache_data and cache_data.explored_dates else None
+        )
+        _LOGGER.debug("Oldest explored date for device %s: %s", device_id, result)
+        _LOGGER.debug("Exiting HAHeatingCycleStorage.get_oldest_explored_date")
+        return result
+
     async def get_last_search_time(self, device_id: str) -> datetime | None:
         """Get the timestamp of the last cycle search.
 

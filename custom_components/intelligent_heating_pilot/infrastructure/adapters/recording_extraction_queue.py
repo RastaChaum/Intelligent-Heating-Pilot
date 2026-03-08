@@ -252,6 +252,20 @@ class RecordingExtractionQueue:
                         exc,
                     )
 
+                    # Mark the period as explored even on failure (e.g. Recorder returned
+                    # empty because data was purged). Without this, failed periods would be
+                    # retried on every restart indefinitely, wasting Recorder queries.
+                    if self._on_period_explored:
+                        try:
+                            result = self._on_period_explored(task.start_date, task.end_date)
+                            if inspect.isawaitable(result):
+                                await result
+                        except Exception as cb_exc:
+                            _LOGGER.warning(
+                                "on_period_explored callback failed after extraction error: %s",
+                                cb_exc,
+                            )
+
                     # Continue with next task despite failure
                     continue
 
