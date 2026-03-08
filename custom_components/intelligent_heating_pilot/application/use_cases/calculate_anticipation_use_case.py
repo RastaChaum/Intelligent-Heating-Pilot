@@ -226,6 +226,7 @@ class CalculateAnticipationUseCase:
             confidence_level=prediction.confidence_level,
             timeslot_id=timeslot_id,
             scheduler_entity=scheduler_entity,
+            dead_time=dead_time,
         )
 
         _LOGGER.debug("Exiting calculate_anticipation_datas() -> %s", "data")
@@ -242,6 +243,7 @@ class CalculateAnticipationUseCase:
         confidence_level: float | None = None,
         timeslot_id: str | None = None,
         scheduler_entity: str | None = None,
+        dead_time: float | None = None,
     ) -> dict:
         """Create data structure with provided values or None defaults.
 
@@ -257,4 +259,5 @@ class CalculateAnticipationUseCase:
             "confidence_level": confidence_level,
             "timeslot_id": timeslot_id,
             "scheduler_entity": scheduler_entity,
+            "dead_time": dead_time,
         }

@@ -105,6 +105,7 @@ class HeatingApplication:
 
         # IHP enabled state
         self._ihp_enabled = device_config.ihp_enabled
+        self._last_known_dead_time: float | None = None
 
         # Infrastructure adapters
         self._lhs_storage: HALhsStorage | None = None
@@ -492,6 +493,14 @@ class HeatingApplication:
         # Cache for sensors
         self._last_anticipation_data = anticipation_data
 
+        # Persist and notify dead_time when freshly calculated and different from last known value
+        new_dead_time = anticipation_data.get("dead_time") if anticipation_data else None
+        if new_dead_time is not None and new_dead_time != self._last_known_dead_time:
+            self._last_known_dead_time = new_dead_time
+            if self._lhs_storage:
+                await self._lhs_storage.set_learned_dead_time(new_dead_time)
+            self._fire_dead_time_updated_event(new_dead_time)
+
         # Refresh LHS caches
         if self._lhs_manager:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
@@ -619,13 +628,11 @@ class HeatingApplication:
         self._ihp_enabled = enabled
 
         # Persist state to config entry if available
+        # Note: async_update_options() listener handles the state application (cancel or reschedule)
         if self._config_entry:
             new_options = dict(self._config_entry.options) if self._config_entry.options else {}
             new_options[CONF_IHP_ENABLED] = enabled
             self.hass.config_entries.async_update_entry(self._config_entry, options=new_options)
-
-        # Trigger a recalculation to apply the new state
-        await self.async_update()
 
     def get_vtherm_entity(self) -> str:
         """Get VTherm entity ID."""

@@ -143,7 +143,16 @@ class HeatingOrchestrator:
             ihp_enabled,
         )
 
-        # Step 1: Calculate anticipation data
+        # Short-circuit: when IHP is disabled, skip the anticipation calculation entirely.
+        # Only cancel active preheating and timer — no recalculation needed.
+        if not ihp_enabled:
+            await self._schedule_anticipation_action.handle_anticipation_scheduling(
+                {}, ihp_enabled=False
+            )
+            _LOGGER.debug("IHP disabled: skipped calculation, cancelled scheduling")
+            return {}
+
+        # Step 1: Calculate anticipation data (only when IHP is enabled)
         anticipation_data = await self._calculate_anticipation.calculate_anticipation_datas()
 
         # Step 2: Delegate scheduling decisions to use case (contains business logic)

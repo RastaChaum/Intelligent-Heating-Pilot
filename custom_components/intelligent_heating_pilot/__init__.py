@@ -121,6 +121,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = HeatingApplication(hass, device_config)
     coordinator.setup_config_entry_access(entry)
+    coordinator._options_snapshot = dict(entry.options)
     await coordinator.async_load()
 
     # Store coordinator
@@ -187,7 +188,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _schedule_startup_work()
     else:
         _LOGGER.debug("[%s] Waiting for HA start event before initialization", entry.entry_id)
-        entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started))
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started)
 
     # Small delayed update for late attribute population
     @callback
