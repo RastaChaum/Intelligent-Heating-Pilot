@@ -11,7 +11,7 @@ DEFAULT_ANTICIPATION_BUFFER = 5  # Safety buffer to ensure target is reached on 
 
 # Heating slope thresholds (in °C/hour)
 MIN_VALID_SLOPE = 0.1  # Minimum valid heating slope (technical threshold)
-MINIMUM_REALISTIC_LHS = 0.5  # Minimum realistic LHS for effective heating (business threshold)
+MINIMUM_REALISTIC_LHS = 0.2  # Minimum realistic LHS for effective heating (business threshold)
 DEFAULT_LEARNED_SLOPE = 2.0  # Default slope when no learning data exists
 
 # Dead time (in minutes)
