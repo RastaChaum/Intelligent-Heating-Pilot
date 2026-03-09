@@ -236,22 +236,28 @@ class HAWeatherDataReader(IHistoricalDataAdapter):
 
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])
+        del history_dict
 
-        # Convert State objects to dicts for consistent interface
+        # Convert State objects to lightweight dicts (OOM prevention)
         result = []
         for state in state_list:
             if isinstance(state, dict):
-                # Already a dict
                 result.append(state)
             else:
-                # State object - convert to dict
+                raw_attrs = state.attributes
+                slim_attrs = {}
+                for key in ("temperature", "humidity", "cloud_coverage", "cloud_cover"):
+                    val = raw_attrs.get(key)
+                    if val is not None:
+                        slim_attrs[key] = val
                 result.append(
                     {
                         "entity_id": state.entity_id,
                         "state": state.state,
-                        "attributes": state.attributes,
+                        "attributes": slim_attrs,
                         "last_changed": state.last_changed,
                         "last_updated": state.last_updated,
                     }
                 )
+        del state_list
         return result

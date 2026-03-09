@@ -219,22 +219,23 @@ class HASensorDataReader(IHistoricalDataAdapter):
 
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])
+        del history_dict
 
-        # Convert State objects to dicts for consistent interface
+        # Convert State objects to lightweight dicts (OOM prevention).
+        # Sensors typically only have a state value, minimal attributes needed.
         result = []
         for state in state_list:
             if isinstance(state, dict):
-                # Already a dict
                 result.append(state)
             else:
-                # State object - convert to dict
                 result.append(
                     {
                         "entity_id": state.entity_id,
                         "state": state.state,
-                        "attributes": state.attributes,
+                        "attributes": {},
                         "last_changed": state.last_changed,
                         "last_updated": state.last_updated,
                     }
                 )
+        del state_list
         return result

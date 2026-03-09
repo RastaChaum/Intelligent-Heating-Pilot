@@ -71,6 +71,7 @@ class RecordingExtractionQueue:
         on_cycles_extracted: Callable[[list[HeatingCycle]], Awaitable[None] | None] | None = None,
         on_period_explored: Callable[[date, date], Awaitable[None] | None] | None = None,
         task_range_days: int = DEFAULT_TASK_RANGE_DAYS,
+        extraction_semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         """Initialize the extraction queue.
 
@@ -86,6 +87,8 @@ class RecordingExtractionQueue:
             task_range_days: Number of days covered by each extraction task.
                              Increase to reduce task count (less pauses, more data per query).
                              Decrease on low-powered machines. Default: 7.
+            extraction_semaphore: Optional global semaphore to limit concurrent extractions
+                                across all devices (OOM prevention).
         """
         self._device_id = device_id
         self._entity_id = entity_id
@@ -93,6 +96,7 @@ class RecordingExtractionQueue:
         self._heating_cycle_service = heating_cycle_service
         self._on_cycles_extracted = on_cycles_extracted
         self._on_period_explored = on_period_explored
+        self._extraction_semaphore = extraction_semaphore
 
         if task_range_days < 1:
             raise ValueError(
@@ -220,8 +224,21 @@ class RecordingExtractionQueue:
                 )
 
                 try:
-                    # Extract data for this period
-                    cycles = await self._extract_period(task.start_date, task.end_date)
+                    # Acquire global extraction semaphore if available.
+                    # This limits concurrent extractions across ALL devices to
+                    # prevent OOM kills when 8+ devices extract simultaneously.
+                    if self._extraction_semaphore is not None:
+                        _LOGGER.debug(
+                            "Waiting for extraction semaphore (device=%s)", self._device_id
+                        )
+                        await self._extraction_semaphore.acquire()
+
+                    try:
+                        # Extract data for this period
+                        cycles = await self._extract_period(task.start_date, task.end_date)
+                    finally:
+                        if self._extraction_semaphore is not None:
+                            self._extraction_semaphore.release()
 
                     self._extracted_count += 1
                     _LOGGER.info(

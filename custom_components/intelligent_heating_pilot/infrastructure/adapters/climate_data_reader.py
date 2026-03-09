@@ -337,6 +337,9 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         supported_concepts = mapper.get_supported_concepts()
         data: dict[HistoricalDataKey, list[HistoricalMeasurement]] = {}
 
+        # Keys needed by domain services (heating_cycle_service uses these)
+        _ESSENTIAL_ATTR_KEYS = {"hvac_action", "hvac_mode"}
+
         # Extract all supported data keys from the single set of records
         for data_key, concept in DATA_KEY_TO_CONCEPT.items():
             if concept not in supported_concepts:
@@ -345,11 +348,11 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
             measurements: list[HistoricalMeasurement] = []
             for record in historical_records:
                 timestamp = self._parse_timestamp(record)
-                attributes = record.get("attributes", {})
+                full_attributes = record.get("attributes", {})
                 entity_id_from_record = record.get("entity_id", entity_id)
 
                 try:
-                    value = mapper.extract_attribute_value(attributes, concept)
+                    value = mapper.extract_attribute_value(full_attributes, concept)
                 except ValueError:
                     value = None
 
@@ -362,17 +365,26 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
                         if value is None:
                             continue
 
+                    # Only keep essential attributes to avoid holding the full
+                    # HA State attribute blob in memory (OOM prevention).
+                    slim_attributes = {
+                        k: full_attributes[k] for k in _ESSENTIAL_ATTR_KEYS if k in full_attributes
+                    }
+
                     measurements.append(
                         HistoricalMeasurement(
                             timestamp=timestamp,
                             value=value,
-                            attributes=attributes,
+                            attributes=slim_attributes,
                             entity_id=entity_id_from_record,
                         )
                     )
 
             if measurements:
                 data[data_key] = measurements
+
+        # Release the raw recorder data now that extraction is complete
+        del historical_records
 
         total = sum(len(v) for v in data.values())
         _LOGGER.debug(
@@ -446,6 +458,10 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         This is a FIFO queue shared across all IHP instances to prevent
         overwhelming the recorder during startup or cache refresh.
 
+        Memory optimization: converts State objects to lightweight dicts
+        immediately and releases the original recorder result to prevent
+        holding large HA State blobs in memory (OOM prevention for 8+ devices).
+
         Args:
             entity_id: The entity ID
             start_time: Start of historical period
@@ -476,22 +492,46 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
 
         # Extract records for our entity - returns list of State objects or dicts
         state_list = history_dict.get(entity_id, [])
+        # Release the full history dict immediately to free memory
+        del history_dict
 
-        # Convert State objects to dicts for consistent interface
+        # Convert State objects to lightweight dicts, keeping only the
+        # attributes that downstream code actually needs (hvac_action,
+        # hvac_mode, and the mapper-extracted values).  This avoids
+        # holding the full HA attribute blob (20-30 keys per VTherm state
+        # change) in memory across 8 devices × 7 days of data.
         result = []
         for state in state_list:
             if isinstance(state, dict):
-                # Already a dict
                 result.append(state)
             else:
-                # State object - convert to dict
+                # Extract only essential attributes from the State object
+                raw_attrs = state.attributes
+                slim_attrs = {}
+                for key in (
+                    "hvac_action",
+                    "hvac_mode",
+                    "current_temperature",
+                    "temperature",
+                    "humidity",
+                ):
+                    val = raw_attrs.get(key)
+                    if val is not None:
+                        slim_attrs[key] = val
+                # VTherm specific_states may contain nested data we need
+                specific = raw_attrs.get("specific_states")
+                if specific is not None:
+                    slim_attrs["specific_states"] = specific
+
                 result.append(
                     {
                         "entity_id": state.entity_id,
                         "state": state.state,
-                        "attributes": state.attributes,
+                        "attributes": slim_attrs,
                         "last_changed": state.last_changed,
                         "last_updated": state.last_updated,
                     }
                 )
+        # Release the original state list to free LazyState objects
+        del state_list
         return result

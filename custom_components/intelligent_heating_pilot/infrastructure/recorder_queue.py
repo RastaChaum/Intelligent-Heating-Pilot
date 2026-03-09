@@ -3,6 +3,9 @@
 Provides a FIFO queue (asyncio.Lock) shared across all IHP device instances
 to prevent parallel recorder access that can overwhelm Home Assistant,
 especially at startup or during cache refresh with multiple IHP devices.
+
+Also provides a global extraction semaphore to limit how many devices can
+run their extraction queues concurrently (OOM prevention on low-memory systems).
 """
 
 from __future__ import annotations
@@ -19,6 +22,11 @@ from ..const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 RECORDER_QUEUE_KEY = "recorder_queue"
+EXTRACTION_SEMAPHORE_KEY = "extraction_semaphore"
+# Maximum number of devices that can run extraction concurrently.
+# With 8 devices, this ensures at most 2 are processing recorder data
+# at the same time, preventing memory exhaustion during startup.
+MAX_CONCURRENT_EXTRACTIONS = 2
 
 
 class RecorderAccessQueue:
@@ -68,3 +76,29 @@ def get_recorder_queue(hass: HomeAssistant) -> RecorderAccessQueue:
 
     # Type cast for mypy since domain_data is typed as dict[str, Any]
     return domain_data[RECORDER_QUEUE_KEY]  # type: ignore[no-any-return]
+
+
+def get_extraction_semaphore(hass: HomeAssistant) -> asyncio.Semaphore:
+    """Get or create the shared extraction semaphore for this HA instance.
+
+    Limits the number of devices that can run extraction queues concurrently.
+    This prevents OOM kills when many devices start extracting recorder data
+    at HA startup (each extraction loads historical State objects into memory).
+
+    Args:
+        hass: Home Assistant instance
+
+    Returns:
+        The shared asyncio.Semaphore instance
+    """
+    domain_data = hass.data.setdefault(DOMAIN, {})
+
+    if EXTRACTION_SEMAPHORE_KEY not in domain_data:
+        domain_data[EXTRACTION_SEMAPHORE_KEY] = asyncio.Semaphore(MAX_CONCURRENT_EXTRACTIONS)
+        _LOGGER.debug(
+            "Created shared extraction semaphore (max=%d) in hass.data[%s]",
+            MAX_CONCURRENT_EXTRACTIONS,
+            DOMAIN,
+        )
+
+    return domain_data[EXTRACTION_SEMAPHORE_KEY]  # type: ignore[no-any-return]

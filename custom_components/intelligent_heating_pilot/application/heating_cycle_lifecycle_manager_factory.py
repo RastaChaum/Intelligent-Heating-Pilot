@@ -13,7 +13,7 @@ from ..infrastructure.adapters.entity_attribute_mapper_registry import (
     EntityAttributeMapperRegistry,
 )
 from ..infrastructure.adapters.vtherm_attribute_mapper import VThermAttributeMapper
-from ..infrastructure.recorder_queue import get_recorder_queue
+from ..infrastructure.recorder_queue import get_extraction_semaphore, get_recorder_queue
 from .heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
 
 if TYPE_CHECKING:
@@ -137,6 +137,7 @@ class HeatingCycleLifecycleManagerFactory:
             lhs_storage=model_storage,
             lhs_lifecycle_manager=lhs_lifecycle_manager,
             dead_time_updated_callback=dead_time_updated_callback,
+            extraction_semaphore=get_extraction_semaphore(hass),
         )
 
         # Store in registry

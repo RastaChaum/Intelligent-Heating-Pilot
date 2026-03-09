@@ -68,6 +68,7 @@ class HeatingCycleLifecycleManager:
         lhs_storage: ILhsStorage | None,
         lhs_lifecycle_manager: LhsLifecycleManager | None,
         dead_time_updated_callback: Callable[[float], None] | None = None,
+        extraction_semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         """Initialize the lifecycle manager.
 
@@ -82,6 +83,7 @@ class HeatingCycleLifecycleManager:
             timer_scheduler: Optional scheduler for periodic 24h refresh tasks.
             lhs_storage: Optional persistent storage for individual cycle records.
             lhs_lifecycle_manager: Optional LHS manager for cascade updates when cycles change.
+            extraction_semaphore: Optional global semaphore to limit concurrent extractions (OOM prevention).
         """
         self._device_config = device_config
         self._heating_cycle_service = heating_cycle_service
@@ -91,6 +93,7 @@ class HeatingCycleLifecycleManager:
         self._lhs_storage = lhs_storage
         self._lhs_lifecycle_manager = lhs_lifecycle_manager
         self._dead_time_updated_callback = dead_time_updated_callback
+        self._extraction_semaphore = extraction_semaphore
 
         # In-memory cache for fast repeated lookups
         # Key: (device_id, target_date) → list[HeatingCycle]
@@ -664,6 +667,7 @@ class HeatingCycleLifecycleManager:
                 on_cycles_extracted=self._on_cycles_extracted,
                 on_period_explored=self._on_period_explored,
                 task_range_days=self._device_config.task_range_days,
+                extraction_semaphore=self._extraction_semaphore,
             )
 
             # Step 4: Populate with 2 days only
@@ -916,6 +920,7 @@ class HeatingCycleLifecycleManager:
                 on_cycles_extracted=self._on_cycles_extracted,
                 on_period_explored=self._on_period_explored,
                 task_range_days=self._device_config.task_range_days,
+                extraction_semaphore=self._extraction_semaphore,
             )
             task_count = await queue.populate_queue(range_start, range_end)
             self._extraction_queues.append(queue)
@@ -1389,6 +1394,7 @@ class HeatingCycleLifecycleManager:
             on_cycles_extracted=_collect,
             on_period_explored=_track_explored,
             task_range_days=self._device_config.task_range_days,
+            extraction_semaphore=self._extraction_semaphore,
         )
 
         try:
