@@ -153,32 +153,42 @@ class HeatingCycleLifecycleManager:
 
         # Step 3: Prune cycles outside the retention window from persistent storage.
         # Pruning happens BEFORE extraction to avoid concurrent storage mutations.
+        # LHS recalculation only runs when cycles were actually removed: on a normal
+        # restart the model_storage values are already correct from the previous session,
+        # so recalculating unconditionally would generate dozens of Store.async_save()
+        # calls per device at startup — causing event loop saturation with 8+ devices.
         if self._heating_cycle_storage is not None:
             now = dt_util.now() if dt_util is not None else datetime.now()
-            await self._heating_cycle_storage.prune_old_cycles(self._device_config.device_id, now)
-            _LOGGER.debug("Pruned old cycles from storage cache")
+            pruned = await self._heating_cycle_storage.prune_old_cycles(
+                self._device_config.device_id, now
+            )
 
-            # Recalculate LHS from the cycles that remain after pruning
-            try:
-                cache_data = await self._heating_cycle_storage.get_cache_data(
-                    self._device_config.device_id
-                )
-                remaining_cycles: list[HeatingCycle] = (
-                    list(cache_data.cycles) if cache_data is not None else []
-                )
-            except Exception as exc:
-                _LOGGER.warning("Error loading remaining cycles for LHS recalculation: %s", exc)
-                remaining_cycles = []
+            if pruned:
+                _LOGGER.debug("Cycles pruned — recalculating LHS and dead time")
+                try:
+                    cache_data = await self._heating_cycle_storage.get_cache_data(
+                        self._device_config.device_id
+                    )
+                    remaining_cycles: list[HeatingCycle] = (
+                        list(cache_data.cycles) if cache_data is not None else []
+                    )
+                except Exception as exc:
+                    _LOGGER.warning("Error loading remaining cycles for LHS recalculation: %s", exc)
+                    remaining_cycles = []
 
-            if remaining_cycles:
-                await self._trigger_lhs_cascade(remaining_cycles)
-                await self._persist_learned_dead_time(remaining_cycles)
-                _LOGGER.debug(
-                    "Recalculated LHS and dead time from %d remaining cycles after pruning",
-                    len(remaining_cycles),
-                )
+                if remaining_cycles:
+                    await self._trigger_lhs_cascade(remaining_cycles)
+                    await self._persist_learned_dead_time(remaining_cycles)
+                    _LOGGER.debug(
+                        "Recalculated LHS and dead time from %d remaining cycles after pruning",
+                        len(remaining_cycles),
+                    )
+                else:
+                    _LOGGER.debug("All cycles pruned — skipping LHS recalculation")
             else:
-                _LOGGER.debug("No remaining cycles after pruning — skipping LHS recalculation")
+                _LOGGER.debug(
+                    "No cycles pruned — skipping LHS recalculation (model_storage already up to date)"
+                )
 
         # Step 4: Find missing date ranges vs current (pruned) cache
         missing_ranges = await self._find_missing_date_ranges(start_date, end_date)

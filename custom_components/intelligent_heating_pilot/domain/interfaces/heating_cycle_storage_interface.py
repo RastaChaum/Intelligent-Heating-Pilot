@@ -59,12 +59,15 @@ class IHeatingCycleStorage(ABC):
         self,
         device_id: str,
         reference_time: datetime,
-    ) -> None:
+    ) -> bool:
         """Remove cycles older than the retention period.
 
         Args:
             device_id: The device identifier
             reference_time: Time to calculate retention from
+
+        Returns:
+            True if any cycles were actually removed, False otherwise
         """
         pass
 

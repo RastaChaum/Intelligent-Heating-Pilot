@@ -277,12 +277,15 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
         self,
         device_id: str,
         reference_time: datetime,
-    ) -> None:
+    ) -> bool:
         """Remove cycles older than the retention period.
 
         Args:
             device_id: The device identifier
             reference_time: Time to calculate retention from
+
+        Returns:
+            True if any cycles were actually removed, False otherwise
         """
         _LOGGER.debug("Entering HAHeatingCycleStorage.prune_old_cycles")
         _LOGGER.debug(
@@ -297,7 +300,7 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
         if not cache_data:
             _LOGGER.debug("No cache to prune for device %s", device_id)
             _LOGGER.debug("Exiting HAHeatingCycleStorage.prune_old_cycles")
-            return
+            return False
 
         cutoff_time = reference_time - timedelta(days=cache_data.retention_days)
 
@@ -328,10 +331,12 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
                 cutoff_time,
                 len(retained_cycles),
             )
-        else:
-            _LOGGER.debug("No cycles to prune for device %s", device_id)
+            _LOGGER.debug("Exiting HAHeatingCycleStorage.prune_old_cycles")
+            return True
 
+        _LOGGER.debug("No cycles to prune for device %s", device_id)
         _LOGGER.debug("Exiting HAHeatingCycleStorage.prune_old_cycles")
+        return False
 
     async def clear_cache(self, device_id: str) -> None:
         """Clear all cached cycles for a device.
