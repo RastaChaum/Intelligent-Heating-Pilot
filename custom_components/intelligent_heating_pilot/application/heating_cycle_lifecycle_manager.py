@@ -69,6 +69,7 @@ class HeatingCycleLifecycleManager:
         lhs_lifecycle_manager: LhsLifecycleManager | None,
         dead_time_updated_callback: Callable[[float], None] | None = None,
         extraction_semaphore: asyncio.Semaphore | None = None,
+        on_extraction_complete_callback: Callable[[], None] | None = None,
     ) -> None:
         """Initialize the lifecycle manager.
 
@@ -84,6 +85,7 @@ class HeatingCycleLifecycleManager:
             lhs_storage: Optional persistent storage for individual cycle records.
             lhs_lifecycle_manager: Optional LHS manager for cascade updates when cycles change.
             extraction_semaphore: Optional global semaphore to limit concurrent extractions (OOM prevention).
+            on_extraction_complete_callback: Optional callback fired after cycle extraction completes.
         """
         self._device_config = device_config
         self._heating_cycle_service = heating_cycle_service
@@ -94,6 +96,7 @@ class HeatingCycleLifecycleManager:
         self._lhs_lifecycle_manager = lhs_lifecycle_manager
         self._dead_time_updated_callback = dead_time_updated_callback
         self._extraction_semaphore = extraction_semaphore
+        self._on_extraction_complete_callback = on_extraction_complete_callback
 
         # In-memory cache for fast repeated lookups
         # Key: (device_id, target_date) → list[HeatingCycle]
@@ -145,7 +148,7 @@ class HeatingCycleLifecycleManager:
             now = dt_util.now() if dt_util is not None else datetime.now()
             next_refresh = now + timedelta(hours=24)
             self._timer_cancel_func = self._timer_scheduler.schedule_timer(
-                next_refresh, self.refresh_heating_cycle_cache
+                next_refresh, self.trigger_24h_refresh
             )
             _LOGGER.debug("Scheduled 24h cycle refresh timer for %s", next_refresh.isoformat())
 
@@ -286,20 +289,16 @@ class HeatingCycleLifecycleManager:
                 _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_window")
                 return cycles
 
-        # No cache, extract cycles
-        try:
-            cycles = await self._extract_cycles(device_id, start_time, end_time)
-            _LOGGER.debug("Extracted %d cycles without cache", len(cycles))
-        except ValueError as err:
-            # Entity not found or extraction error - return empty list
-            _LOGGER.warning(
-                "Cannot extract cycles for device %s: %s. Returning empty cycles list.",
-                device_id,
-                err,
-            )
-            cycles = []
+        # No cache available — return empty list.
+        # Only background refresh (RecordingExtractionQueue) queries the Recorder.
+        # Event-driven callers must work from cache only (Rule 5).
+        _LOGGER.debug(
+            "No cache data for device=%s, returning empty cycles "
+            "(Recorder queries only allowed from background refresh)",
+            device_id,
+        )
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_window")
-        return cycles
+        return []
 
     async def get_cycles_for_target_time(
         self,
@@ -582,6 +581,13 @@ class HeatingCycleLifecycleManager:
             _LOGGER.error("Failed to process extracted cycles: %s", exc)
             # Don't fail - just log and continue
 
+        # Notify that new cycle data is available so sensors can refresh
+        if self._on_extraction_complete_callback is not None:
+            try:
+                self._on_extraction_complete_callback()
+            except Exception as exc:
+                _LOGGER.warning("Extraction complete callback failed: %s", exc)
+
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager._on_cycles_extracted")
 
     async def _on_period_explored(self, start_date: date, end_date: date) -> None:
@@ -641,6 +647,22 @@ class HeatingCycleLifecycleManager:
         _LOGGER.debug("Entering HeatingCycleLifecycleManager.trigger_24h_refresh")
 
         try:
+            # Reschedule next 24h timer for perpetual refresh cycle
+            if self._timer_cancel_func is not None:
+                try:
+                    self._timer_cancel_func()
+                except Exception as exc:
+                    _LOGGER.warning("Error cancelling previous timer: %s", exc)
+                self._timer_cancel_func = None
+
+            if self._timer_scheduler is not None:
+                now = dt_util.now() if dt_util is not None else datetime.now()
+                next_refresh = now + timedelta(hours=24)
+                self._timer_cancel_func = self._timer_scheduler.schedule_timer(
+                    next_refresh, self.trigger_24h_refresh
+                )
+                _LOGGER.debug("Scheduled next 24h refresh timer for %s", next_refresh.isoformat())
+
             # Step 1: Cancel existing queue if running
             if self._extraction_queue is not None:
                 _LOGGER.info("Cancelling previous extraction queue for 24h refresh")

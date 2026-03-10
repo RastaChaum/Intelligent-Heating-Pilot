@@ -211,6 +211,7 @@ class HeatingApplication:
             model_storage=self._lhs_storage,
             lhs_lifecycle_manager=self._lhs_manager,
             dead_time_updated_callback=self._fire_dead_time_updated_event,
+            on_extraction_complete_callback=self._on_extraction_complete,
         )
 
         # Create use cases for orchestrator
@@ -548,6 +549,11 @@ class HeatingApplication:
                 f"{DOMAIN}_anticipation_calculated",
                 event_data,
             )
+
+    def _on_extraction_complete(self) -> None:
+        """Trigger sensor recalculation after background extraction completes."""
+        if self._event_bridge is not None:
+            self._event_bridge._request_recalculate()
 
     def _fire_dead_time_updated_event(self, learned_dead_time: float) -> None:
         """Publish an event when learned dead time is persisted."""

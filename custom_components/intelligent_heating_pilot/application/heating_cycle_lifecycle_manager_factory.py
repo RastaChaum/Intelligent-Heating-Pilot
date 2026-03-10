@@ -64,6 +64,7 @@ class HeatingCycleLifecycleManagerFactory:
         model_storage: ILhsStorage | None = None,
         lhs_lifecycle_manager: LhsLifecycleManager | None = None,
         dead_time_updated_callback: Callable[[float], None] | None = None,
+        on_extraction_complete_callback: Callable[[], None] | None = None,
     ) -> HeatingCycleLifecycleManager:
         """Create or return existing HeatingCycleLifecycleManager for device_id.
 
@@ -88,6 +89,7 @@ class HeatingCycleLifecycleManagerFactory:
             model_storage: Optional persistent storage for individual cycle records.
             lhs_lifecycle_manager: Optional LHS manager for cascade updates.
             dead_time_updated_callback: Optional callback fired after dead time persistence.
+            on_extraction_complete_callback: Optional callback fired after cycle extraction completes.
 
         Returns:
             Singleton HeatingCycleLifecycleManager instance for the device_id.
@@ -138,6 +140,7 @@ class HeatingCycleLifecycleManagerFactory:
             lhs_lifecycle_manager=lhs_lifecycle_manager,
             dead_time_updated_callback=dead_time_updated_callback,
             extraction_semaphore=get_extraction_semaphore(hass),
+            on_extraction_complete_callback=on_extraction_complete_callback,
         )
 
         # Store in registry
