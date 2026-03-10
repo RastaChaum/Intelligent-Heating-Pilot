@@ -433,8 +433,8 @@ class TestHeatingCycleLifecycleManager:
         # Scenario 1: Cache hit (data in cache_data) → NO extraction needed
         mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
 
-        # WHEN: get_cycles_for_window is called without cache (SINGLE CALL)
-        # Reset mocks and configure for NO cache scenario
+        # WHEN: get_cycles_for_window is called with cache miss (get_cache_data returns None)
+        # Reset mocks and configure for cache-miss scenario
         mock_heating_cycle_storage.reset_mock()
         mock_heating_cycle_storage.get_cache_data.return_value = None  # Simulate cache miss
         mock_heating_cycle_service.reset_mock()
@@ -442,30 +442,24 @@ class TestHeatingCycleLifecycleManager:
 
         result = await manager.get_cycles_for_window(device_id, start_time, end_time)
 
-        # THEN Aspect B: Extracts when no cache
-        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
-        assert result == expected_cycles
+        # THEN Aspect B: Cache miss returns empty list — NEVER calls _extract_cycles()
+        # Bug fix: get_cycles_for_window must return [] on cache miss, not query Recorder
+        mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
+        assert result == []
 
-        # THEN Aspect C: Filters by time range
-        # Result is filtered (implementation may filter)
+        # THEN Aspect C: Result is always a list
         assert isinstance(result, list)
 
-        # THEN Aspect D: Handles empty result
-        # (Setup for empty result)
-        mock_heating_cycle_service.extract_heating_cycles.return_value = []
-
-        result_empty = await manager.get_cycles_for_window(device_id, start_time, end_time)
-
-        # Empty list is returned
-        assert result_empty == []
-
         # THEN Aspect E: Handles edge cases
-        # E1: Zero-duration window
+        # E1: Zero-duration window with cache miss still returns empty
         zero_start = base_datetime
         zero_end = base_datetime
+        mock_heating_cycle_service.reset_mock()
 
         result_zero = await manager.get_cycles_for_window(device_id, zero_start, zero_end)
         assert isinstance(result_zero, list)
+        assert result_zero == []
+        mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
 
         # E2: Inverted time range (should raise ValueError)
         inverted_start = base_datetime
@@ -509,13 +503,13 @@ class TestHeatingCycleLifecycleManager:
         mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
 
         # WHEN: get_cycles_for_target_time is called (SINGLE CALL without cache)
-        # Configure storage to return None (no cache) so extraction is forced
+        # Configure storage to return None (no cache) — should return [] without extraction
         mock_heating_cycle_storage.get_cache_data.return_value = None
         result = await manager.get_cycles_for_target_time(device_id, target_time)
 
-        # THEN Aspect A: Uses retention window correctly
-        # Cycles within retention window are returned
-        assert result == expected_cycles
+        # THEN Aspect A: Cache miss returns empty list (no Recorder query)
+        assert result == []
+        mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
 
         # THEN Aspect B: Calculates correct time window
         # Window should be [target_time - 30 days, target_time]
@@ -1099,3 +1093,276 @@ class TestHeatingCycleLifecycleManager:
         # We verify _calculate_backfill_window returned None (indirectly, by checking
         # that get_oldest_explored_date was called and backfill wasn't launched).
         mock_heating_cycle_storage.get_oldest_explored_date.assert_called_once()
+
+    # ===== Bug 2: get_cycles_for_window() must return [] on cache miss =====
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_window_returns_empty_when_storage_is_none(
+        self,
+        device_config: DeviceConfig,
+        mock_heating_cycle_service: Mock,
+        mock_historical_adapter: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """get_cycles_for_window must return [] when _heating_cycle_storage is None.
+
+        Bug fix validation: When no storage is configured at all, the method must
+        return an empty list immediately — never attempt to extract from Recorder.
+        """
+        # GIVEN: Manager created WITHOUT heating_cycle_storage
+        manager_no_storage = HeatingCycleLifecycleManager(
+            device_config=device_config,
+            heating_cycle_service=mock_heating_cycle_service,
+            historical_adapters=[mock_historical_adapter],
+            heating_cycle_storage=None,
+            timer_scheduler=None,
+            lhs_storage=None,
+            lhs_lifecycle_manager=None,
+        )
+
+        device_id = device_config.device_id
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN: get_cycles_for_window is called
+        result = await manager_no_storage.get_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Returns empty list
+        assert result == []
+
+        # THEN: _extract_cycles was NEVER called (no Recorder query)
+        mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_window_returns_empty_on_cache_miss_no_extraction(
+        self,
+        manager_with_cache: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        mock_heating_cycle_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """get_cycles_for_window must return [] when cache returns None (cache miss).
+
+        Bug fix validation: When _heating_cycle_storage.get_cache_data() returns None,
+        the method must return an empty list — NOT fall through to _extract_cycles().
+        This prevents OOM issues from querying the Recorder at startup.
+        """
+        # GIVEN: Storage exists but get_cache_data returns None (cache miss)
+        mock_heating_cycle_storage.get_cache_data.return_value = None
+        mock_heating_cycle_service.extract_heating_cycles.return_value = [
+            self._create_heating_cycle(base_datetime - timedelta(days=1)),
+        ]
+
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN: get_cycles_for_window is called
+        result = await manager_with_cache.get_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Returns empty list (NOT the extracted cycles)
+        assert result == []
+
+        # THEN: _extract_cycles was NEVER called
+        mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_window_filters_from_cache_on_hit(
+        self,
+        manager_with_cache: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        mock_heating_cycle_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """get_cycles_for_window returns filtered cycles from cache when data exists.
+
+        Regression guard: cache hit path must still filter and return cycles correctly.
+        """
+        # GIVEN: Cache has cycles, some inside and some outside the window
+        device_id = "climate.test_vtherm"
+        in_window_cycle = self._create_heating_cycle(base_datetime - timedelta(days=2))
+        out_of_window_cycle = self._create_heating_cycle(base_datetime - timedelta(days=20))
+
+        cache_data = HeatingCycleCacheData(
+            device_id=device_id,
+            cycles=tuple([in_window_cycle, out_of_window_cycle]),
+            last_search_time=base_datetime,
+            retention_days=30,
+        )
+        mock_heating_cycle_storage.get_cache_data.return_value = cache_data
+
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN: get_cycles_for_window is called
+        result = await manager_with_cache.get_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Only in-window cycle is returned
+        assert len(result) == 1
+        assert result[0] == in_window_cycle
+
+        # THEN: No extraction was performed
+        mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
+
+    # ===== Bug 1: 24h timer must schedule trigger_24h_refresh (not refresh_heating_cycle_cache) =====
+
+    @pytest.mark.asyncio
+    async def test_refresh_schedules_trigger_24h_refresh_as_timer_callback(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        mock_heating_cycle_storage: Mock,
+        mock_timer_scheduler: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """After refresh_heating_cycle_cache(), the 24h timer must call trigger_24h_refresh.
+
+        Bug fix validation: The timer callback must be self.trigger_24h_refresh,
+        NOT self.refresh_heating_cycle_cache. Using refresh_heating_cycle_cache as
+        the callback would bypass backfill logic and cause incorrect scheduling.
+        """
+        # GIVEN: Manager with timer scheduler
+        mock_heating_cycle_storage.get_cache_data.return_value = None
+
+        # WHEN: refresh_heating_cycle_cache is called
+        await manager.refresh_heating_cycle_cache()
+
+        # THEN: Timer was scheduled
+        mock_timer_scheduler.schedule_timer.assert_called_once()
+
+        # THEN: The callback target is trigger_24h_refresh (NOT refresh_heating_cycle_cache)
+        call_args = mock_timer_scheduler.schedule_timer.call_args
+        scheduled_callback = call_args[0][1]  # Second positional arg is the callback
+        assert scheduled_callback == manager.trigger_24h_refresh, (
+            f"Timer callback should be trigger_24h_refresh, "
+            f"but got {scheduled_callback.__name__}"
+        )
+        assert (
+            scheduled_callback != manager.refresh_heating_cycle_cache
+        ), "Timer callback must NOT be refresh_heating_cycle_cache"
+
+        # Cleanup
+        if manager._extraction_task is not None:
+            manager._extraction_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await manager._extraction_task
+
+    @pytest.mark.asyncio
+    async def test_trigger_24h_refresh_reschedules_next_timer(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_timer_scheduler: Mock,
+        mock_heating_cycle_storage: Mock,
+    ) -> None:
+        """trigger_24h_refresh must reschedule the next 24h timer itself.
+
+        Bug fix validation: After trigger_24h_refresh() runs, it must schedule
+        the next 24h timer so that periodic refresh continues indefinitely.
+        """
+        # GIVEN: Timer scheduler is available, no previous timer
+        cancel_func = Mock()
+        mock_timer_scheduler.schedule_timer.return_value = cancel_func
+        mock_heating_cycle_storage.get_cache_data.return_value = None
+
+        # WHEN: trigger_24h_refresh is called
+        await manager.trigger_24h_refresh()
+
+        # THEN: A new 24h timer was scheduled
+        mock_timer_scheduler.schedule_timer.assert_called()
+
+        # THEN: The scheduled callback is trigger_24h_refresh (for next cycle)
+        call_args = mock_timer_scheduler.schedule_timer.call_args
+        scheduled_callback = call_args[0][1]
+        assert scheduled_callback == manager.trigger_24h_refresh, (
+            f"trigger_24h_refresh must reschedule itself, "
+            f"but scheduled {scheduled_callback.__name__}"
+        )
+
+        # Cleanup
+        if manager._extraction_task is not None:
+            manager._extraction_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await manager._extraction_task
+
+    # ===== Bug 4: _on_cycles_extracted must call on_extraction_complete_callback =====
+
+    @pytest.mark.asyncio
+    async def test_on_cycles_extracted_calls_extraction_complete_callback(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """_on_cycles_extracted must call on_extraction_complete_callback when cycles are extracted.
+
+        Bug fix validation: After processing extracted cycles (storage update + LHS cascade),
+        the method must notify sensors via on_extraction_complete_callback so they recalculate.
+        """
+        # GIVEN: Callback is set on the manager
+        callback = AsyncMock()
+        manager._on_extraction_complete_callback = callback
+
+        test_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(days=1)),
+        ]
+
+        # WHEN: _on_cycles_extracted is called with cycles
+        await manager._on_cycles_extracted(test_cycles)
+
+        # THEN: The callback was called
+        callback.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_cycles_extracted_no_error_when_callback_is_none(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """_on_cycles_extracted must not error when on_extraction_complete_callback is None.
+
+        Regression guard: When no callback is configured, extraction completes normally.
+        """
+        # GIVEN: No callback set (default state)
+        # Ensure the attribute doesn't exist or is None
+        if hasattr(manager, "_on_extraction_complete_callback"):
+            manager._on_extraction_complete_callback = None
+
+        test_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(days=1)),
+        ]
+
+        # WHEN: _on_cycles_extracted is called — should not raise
+        await manager._on_cycles_extracted(test_cycles)
+
+        # THEN: Storage was still updated (core logic not affected)
+        mock_heating_cycle_storage.append_cycles.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_cycles_extracted_catches_callback_exception(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """_on_cycles_extracted must catch and log exceptions from the callback.
+
+        Bug fix validation: If on_extraction_complete_callback raises, it must not
+        crash the extraction pipeline. The error is logged and processing continues.
+        """
+        # GIVEN: Callback that raises an exception
+        callback = AsyncMock(side_effect=RuntimeError("Sensor update failed"))
+        manager._on_extraction_complete_callback = callback
+
+        test_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(days=1)),
+        ]
+
+        # WHEN: _on_cycles_extracted is called — should not raise
+        await manager._on_cycles_extracted(test_cycles)
+
+        # THEN: Callback was called (and raised, but error was caught)
+        callback.assert_called_once()
+
+        # THEN: Storage was still updated (core logic not disrupted)
+        mock_heating_cycle_storage.append_cycles.assert_called_once()
