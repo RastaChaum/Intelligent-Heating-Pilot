@@ -9,7 +9,7 @@ Purpose: Test complete cascade flow: cycles change → LHS recalculates
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -22,6 +22,9 @@ from custom_components.intelligent_heating_pilot.application.lhs_lifecycle_manag
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects.heating import (
     HeatingCycle,
+)
+from custom_components.intelligent_heating_pilot.domain.value_objects.heating_cycle_cache_data import (
+    HeatingCycleCacheData,
 )
 
 
@@ -54,6 +57,26 @@ class TestLifecycleCascadeFlow:
             end_temp=end_temp,
             start_temp=start_temp,
             tariff_details=None,
+        )
+
+    def _mock_cache_returns_cycles(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        cycles: list[HeatingCycle],
+        base_datetime: datetime,
+    ) -> None:
+        """Configure mock storage to return cycles from get_cache_data after append."""
+        # Ensure timezone-aware timestamp for HeatingCycleCacheData validation
+        tz_aware_time = (
+            base_datetime if base_datetime.tzinfo else base_datetime.replace(tzinfo=timezone.utc)
+        )
+        manager._heating_cycle_storage.get_cache_data = AsyncMock(
+            return_value=HeatingCycleCacheData(
+                device_id="climate.test_vtherm",
+                cycles=tuple(cycles),
+                last_search_time=tz_aware_time,
+                retention_days=30,
+            )
         )
 
     # ===== Test: Startup Cascade =====
@@ -90,6 +113,8 @@ class TestLifecycleCascadeFlow:
         assert result is None
 
         # AND: Calling _on_cycles_extracted directly verifies LHS cascade
+        # Mock get_cache_data to return all cycles (simulating post-append state)
+        self._mock_cache_returns_cycles(manager, expected_cycles, base_datetime)
         await manager._on_cycles_extracted(expected_cycles)
         mock_lhs_manager.update_global_lhs_from_cycles.assert_called_once_with(expected_cycles)
         mock_lhs_manager.update_contextual_lhs_from_cycles.assert_called_once_with(expected_cycles)
@@ -116,15 +141,18 @@ class TestLifecycleCascadeFlow:
         ]
         manager._heating_cycle_service.extract_heating_cycles = AsyncMock(return_value=test_cycles)
 
+        # Mock get_cache_data to return all cycles (simulating post-append state)
+        self._mock_cache_returns_cycles(manager, test_cycles, base_datetime)
+
         # WHEN: _on_cycles_extracted called directly to test cascade parameters
         await manager._on_cycles_extracted(test_cycles)
 
-        # THEN: LHS received exact same cycles
+        # THEN: LHS received ALL cached cycles (loaded from cache after append)
         call_args = mock_lhs_manager.update_global_lhs_from_cycles.call_args
-        assert call_args[0][0] == test_cycles
+        assert list(call_args[0][0]) == test_cycles
 
         call_args_ctx = mock_lhs_manager.update_contextual_lhs_from_cycles.call_args
-        assert call_args_ctx[0][0] == test_cycles
+        assert list(call_args_ctx[0][0]) == test_cycles
 
     @pytest.mark.asyncio
     async def test_refresh_cascade_both_global_and_contextual(
@@ -218,6 +246,8 @@ class TestLifecycleCascadeFlow:
         assert manager._extraction_queue is not None
 
         # AND: Calling _on_cycles_extracted with newly extracted cycles triggers LHS
+        # Mock get_cache_data to return all cycles (simulating post-append state)
+        self._mock_cache_returns_cycles(manager, new_cycles, base_datetime)
         await manager._on_cycles_extracted(new_cycles)
         mock_lhs_manager.update_global_lhs_from_cycles.assert_called_once_with(new_cycles)
         mock_lhs_manager.update_contextual_lhs_from_cycles.assert_called_once_with(new_cycles)
@@ -530,14 +560,17 @@ class TestLifecycleCascadeFlow:
         ]
         manager._heating_cycle_service.extract_heating_cycles = AsyncMock(return_value=test_cycles)
 
+        # Mock get_cache_data to return all cycles (simulating post-append state)
+        self._mock_cache_returns_cycles(manager, test_cycles, base_datetime)
+
         # WHEN: _on_cycles_extracted called directly to verify both cache and LHS cascade
         await manager._on_cycles_extracted(test_cycles)
 
         # THEN: Persistent storage updated
         manager._heating_cycle_storage.append_cycles.assert_called_once()
 
-        # AND: LHS cascade triggered with same cycles
-        call_args = mock_lhs_manager.update_global_lhs_from_cycles.call_args[0][0]
+        # AND: LHS cascade triggered with ALL cached cycles
+        call_args = list(mock_lhs_manager.update_global_lhs_from_cycles.call_args[0][0])
         assert len(call_args) == 2
         assert call_args == test_cycles
 

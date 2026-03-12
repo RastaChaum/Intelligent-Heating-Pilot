@@ -571,8 +571,21 @@ class HeatingCycleLifecycleManager:
                     search_end_time,
                 )
 
-            # Trigger LHS recalculation (cascade update)
-            await self._trigger_lhs_cascade(cycles)
+                # Load ALL cycles from cache for LHS recalculation.
+                # get_cache_data() is cache-only (no Recorder calls).
+                # LHS cascade is a replacement operation, so it must receive the
+                # full retention window to produce an accurate global/contextual LHS.
+                cache_data = await self._heating_cycle_storage.get_cache_data(
+                    self._device_config.device_id
+                )
+                all_cycles: list[HeatingCycle] = (
+                    list(cache_data.cycles) if cache_data is not None else []
+                )
+            else:
+                all_cycles = cycles  # Fallback: no storage, use extracted cycles
+
+            # Trigger LHS recalculation with ALL cached cycles
+            await self._trigger_lhs_cascade(all_cycles)
 
             # Persist learned dead time from extracted cycles
             await self._persist_learned_dead_time(cycles)

@@ -1366,3 +1366,136 @@ class TestHeatingCycleLifecycleManager:
 
         # THEN: Storage was still updated (core logic not disrupted)
         mock_heating_cycle_storage.append_cycles.assert_called_once()
+
+    # ===== Bug fix: _on_cycles_extracted must use ALL cached cycles for LHS cascade =====
+
+    @pytest.mark.asyncio
+    async def test_on_cycles_extracted_uses_all_cached_cycles_for_lhs_cascade(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_storage: Mock,
+        mock_lhs_lifecycle_manager: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """_on_cycles_extracted must pass ALL cached cycles to LHS cascade, not just extracted ones.
+
+        Bug fix validation: Previously, only the newly extracted day's cycles were passed
+        to _trigger_lhs_cascade(), causing global LHS to reflect only the last extracted day
+        instead of the full retention window.
+
+        After appending new cycles, the method must load ALL cycles from cache
+        and pass them to update_global_lhs_from_cycles() and update_contextual_lhs_from_cycles().
+        """
+        # GIVEN: 3 newly extracted cycles for today
+        new_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(hours=i)) for i in range(3)
+        ]
+
+        # GIVEN: Cache already contains 40 historical cycles (+ the 3 new ones after append)
+        all_cached_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(days=d)) for d in range(1, 41)
+        ] + new_cycles
+
+        # Mock get_cache_data to return ALL cycles (simulating post-append state)
+        mock_heating_cycle_storage.get_cache_data = AsyncMock(
+            return_value=HeatingCycleCacheData(
+                device_id="climate.test_vtherm",
+                cycles=tuple(all_cached_cycles),
+                last_search_time=base_datetime,
+                retention_days=30,
+            )
+        )
+
+        # WHEN: _on_cycles_extracted is called with only the 3 new cycles
+        await manager._on_cycles_extracted(new_cycles)
+
+        # THEN: LHS cascade receives ALL 43 cached cycles, not just the 3 new ones
+        mock_lhs_lifecycle_manager.update_global_lhs_from_cycles.assert_called_once()
+        lhs_call_args = mock_lhs_lifecycle_manager.update_global_lhs_from_cycles.call_args
+        cycles_passed_to_lhs = lhs_call_args[0][0]
+        assert (
+            len(cycles_passed_to_lhs) == 43
+        ), f"Expected 43 cycles (all cached) passed to LHS cascade, got {len(cycles_passed_to_lhs)}"
+
+    @pytest.mark.asyncio
+    async def test_on_cycles_extracted_uses_all_cached_cycles_for_contextual_lhs(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_storage: Mock,
+        mock_lhs_lifecycle_manager: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """_on_cycles_extracted must pass ALL cached cycles to contextual LHS update.
+
+        Same bug as global LHS: contextual LHS per hour must be calculated from
+        the full retention window, not just the latest extracted day.
+        """
+        # GIVEN: 2 newly extracted cycles
+        new_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(hours=i)) for i in range(2)
+        ]
+
+        # GIVEN: Cache contains 30 total cycles after append
+        all_cached_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(days=d)) for d in range(1, 29)
+        ] + new_cycles
+
+        mock_heating_cycle_storage.get_cache_data = AsyncMock(
+            return_value=HeatingCycleCacheData(
+                device_id="climate.test_vtherm",
+                cycles=tuple(all_cached_cycles),
+                last_search_time=base_datetime,
+                retention_days=30,
+            )
+        )
+
+        # WHEN: _on_cycles_extracted is called with only 2 new cycles
+        await manager._on_cycles_extracted(new_cycles)
+
+        # THEN: Contextual LHS receives ALL 30 cached cycles
+        mock_lhs_lifecycle_manager.update_contextual_lhs_from_cycles.assert_called_once()
+        ctx_call_args = mock_lhs_lifecycle_manager.update_contextual_lhs_from_cycles.call_args
+        cycles_passed = ctx_call_args[0][0]
+        assert (
+            len(cycles_passed) == 30
+        ), f"Expected 30 cycles passed to contextual LHS, got {len(cycles_passed)}"
+
+    @pytest.mark.asyncio
+    async def test_on_cycles_extracted_fallback_without_storage(
+        self,
+        device_config: DeviceConfig,
+        mock_heating_cycle_service: Mock,
+        mock_historical_adapter: Mock,
+        mock_timer_scheduler: Mock,
+        mock_lhs_storage: Mock,
+        mock_lhs_lifecycle_manager: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """_on_cycles_extracted falls back to extracted cycles when no storage is configured.
+
+        When _heating_cycle_storage is None, the method should still trigger the LHS
+        cascade using the extracted cycles as best-effort data.
+        """
+        # GIVEN: Manager without heating_cycle_storage
+        manager_no_storage = HeatingCycleLifecycleManager(
+            device_config=device_config,
+            heating_cycle_service=mock_heating_cycle_service,
+            historical_adapters=[mock_historical_adapter],
+            heating_cycle_storage=None,
+            timer_scheduler=mock_timer_scheduler,
+            lhs_storage=mock_lhs_storage,
+            lhs_lifecycle_manager=mock_lhs_lifecycle_manager,
+        )
+
+        new_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(hours=1)),
+        ]
+
+        # WHEN: _on_cycles_extracted is called
+        await manager_no_storage._on_cycles_extracted(new_cycles)
+
+        # THEN: LHS cascade is called with the extracted cycles (fallback)
+        mock_lhs_lifecycle_manager.update_global_lhs_from_cycles.assert_called_once()
+        lhs_call_args = mock_lhs_lifecycle_manager.update_global_lhs_from_cycles.call_args
+        cycles_passed = lhs_call_args[0][0]
+        assert len(cycles_passed) == 1
