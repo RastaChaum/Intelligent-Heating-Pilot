@@ -127,3 +127,87 @@ class TestDeviceConfigLhsRetentionDaysValidation:
                 scheduler_entities=["switch.schedule"],
                 lhs_retention_days=-1,
             )
+
+
+class TestDeviceConfigSafetyShutoffGrace:
+    """Validate that DeviceConfig correctly stores and validates safety_shutoff_grace_minutes.
+
+    GREEN: The validation is already implemented in DeviceConfig.__post_init__.
+    All tests in this class are expected to PASS with the current skeleton.
+    """
+
+    def test_default_safety_shutoff_grace_is_ten_minutes(self) -> None:
+        """DeviceConfig default for safety_shutoff_grace_minutes is 10.
+
+        Matches the HeatingCycleService default to ensure consistent behaviour
+        out-of-the-box without explicit configuration.
+
+        # PASSES with fix (default value set in dataclass)
+        """
+        config = DeviceConfig(
+            device_id="dev_1",
+            vtherm_entity_id="climate.vtherm",
+            scheduler_entities=[],
+        )
+
+        assert config.safety_shutoff_grace_minutes == 10
+
+    def test_safety_shutoff_grace_zero_is_valid(self) -> None:
+        """grace=0 disables grace period entirely — must be accepted without error.
+
+        # PASSES with fix (validation: >= 0)
+        """
+        config = DeviceConfig(
+            device_id="dev_1",
+            vtherm_entity_id="climate.vtherm",
+            scheduler_entities=[],
+            safety_shutoff_grace_minutes=0,
+        )
+
+        assert config.safety_shutoff_grace_minutes == 0
+
+    def test_safety_shutoff_grace_positive_value_is_stored_correctly(self) -> None:
+        """Positive grace values are stored as-is.
+
+        # PASSES with fix
+        """
+        config = DeviceConfig(
+            device_id="dev_1",
+            vtherm_entity_id="climate.vtherm",
+            scheduler_entities=[],
+            safety_shutoff_grace_minutes=15,
+        )
+
+        assert config.safety_shutoff_grace_minutes == 15
+
+    def test_negative_safety_shutoff_grace_is_rejected(self) -> None:
+        """Negative grace values are invalid and must raise ValueError.
+
+        A negative grace period is nonsensical (cannot wait a negative duration).
+
+        # PASSES with fix (validation raises ValueError for < 0)
+        """
+        with pytest.raises(ValueError) as exc_info:
+            DeviceConfig(
+                device_id="dev_1",
+                vtherm_entity_id="climate.vtherm",
+                scheduler_entities=[],
+                safety_shutoff_grace_minutes=-1,
+            )
+
+        assert "safety_shutoff_grace" in str(exc_info.value).lower()
+
+    def test_safety_shutoff_grace_immutability(self) -> None:
+        """DeviceConfig is frozen — safety_shutoff_grace_minutes cannot be mutated.
+
+        # PASSES with fix (frozen=True dataclass)
+        """
+        config = DeviceConfig(
+            device_id="dev_1",
+            vtherm_entity_id="climate.vtherm",
+            scheduler_entities=[],
+            safety_shutoff_grace_minutes=10,
+        )
+
+        with pytest.raises(AttributeError):
+            config.safety_shutoff_grace_minutes = 0  # type: ignore[misc]
