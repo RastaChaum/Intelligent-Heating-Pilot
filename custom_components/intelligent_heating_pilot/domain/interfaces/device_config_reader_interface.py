@@ -39,6 +39,10 @@ class DeviceConfig:
         # IHP control state
         ihp_enabled: If True, IHP preheating is active; if False, IHP is paused
         task_range_days: Number of days covered by each Recorder extraction task (tune to machine power)
+        safety_shutoff_grace_minutes: Duration in minutes of the grace period for brief heating
+                                      interruptions (safety/frost mode). Interruptions shorter than
+                                      this threshold do not terminate an in-progress cycle, avoiding
+                                      bogus dead-time and slope values. Set 0 to disable.
     """
 
     # Required fields
@@ -66,6 +70,7 @@ class DeviceConfig:
     # IHP enabled state
     ihp_enabled: bool = True
     task_range_days: int = 7
+    safety_shutoff_grace_minutes: int = 10
 
     def __post_init__(self) -> None:
         """Validate configuration values after initialization.
@@ -105,6 +110,9 @@ class DeviceConfig:
 
         if self.task_range_days < 1:
             raise ValueError("task_range_days must be at least 1")
+
+        if self.safety_shutoff_grace_minutes < 0:
+            raise ValueError("safety_shutoff_grace_minutes must be at least 0")
 
 
 class IDeviceConfigReader(ABC):

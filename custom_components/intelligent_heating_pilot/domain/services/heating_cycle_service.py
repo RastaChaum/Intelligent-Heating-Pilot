@@ -34,6 +34,7 @@ class HeatingCycleService(IHeatingCycleService):
         cycle_split_duration_minutes: int = 0,
         min_cycle_duration_minutes: int = 5,
         max_cycle_duration_minutes: int = 300,
+        safety_shutoff_grace_minutes: int = 0,
     ) -> None:
         """Initialize the HeatingCycleService.
 
@@ -48,21 +49,27 @@ class HeatingCycleService(IHeatingCycleService):
                 cycles into smaller sub-cycles for granular analysis. If 0, cycles are not split.
             min_cycle_duration_minutes: Minimum duration for a valid heating cycle.
             max_cycle_duration_minutes: Maximum duration for a single heating cycle (before splitting).
+            safety_shutoff_grace_minutes: Grace period in minutes for brief heating interruptions
+                caused by safety or frost-protection mode. Interruptions shorter than this threshold
+                will not terminate an in-progress cycle. Set to 0 to disable the grace period.
         """
         _LOGGER.debug("Entering HeatingCycleService.__init__")
         _LOGGER.debug(
             "Initializing with temp_delta_threshold=%s, cycle_split_duration_minutes=%s, "
-            "min_cycle_duration_minutes=%s, max_cycle_duration_minutes=%s",
+            "min_cycle_duration_minutes=%s, max_cycle_duration_minutes=%s, "
+            "safety_shutoff_grace_minutes=%s",
             temp_delta_threshold,
             cycle_split_duration_minutes,
             min_cycle_duration_minutes,
             max_cycle_duration_minutes,
+            safety_shutoff_grace_minutes,
         )
 
         self._temp_delta_threshold = temp_delta_threshold
         self._cycle_split_duration_minutes = cycle_split_duration_minutes
         self._min_cycle_duration_minutes = min_cycle_duration_minutes
         self._max_cycle_duration_minutes = max_cycle_duration_minutes
+        self._safety_shutoff_grace_minutes = safety_shutoff_grace_minutes
 
         _LOGGER.debug("Exiting HeatingCycleService.__init__")
 
@@ -124,6 +131,12 @@ class HeatingCycleService(IHeatingCycleService):
         heating_start: datetime | None = None
         cycle_start_indoor_temp: float | None = None
         cycle_start_target_temp: float | None = None
+
+        # Grace period: absorbs brief safety/frost-protection interruptions.
+        # When mode goes OFF for less than `_safety_shutoff_grace_minutes` and then resumes,
+        # the interruption is ignored so the cycle is not split into micro-cycles with
+        # aberrant slopes (e.g. 140 000 °C/h).
+        grace_period_start: datetime | None = None
 
         cycles: list[HeatingCycle] = []
 
@@ -190,7 +203,88 @@ class HeatingCycleService(IHeatingCycleService):
                         current_target_temp,
                     )
             else:
-                # Check if cycle should end
+                # --- Grace period state machine ---
+                if grace_period_start is not None:
+                    # We are inside an active grace window
+                    elapsed_off_minutes = (timestamp - grace_period_start).total_seconds() / 60.0
+
+                    if elapsed_off_minutes < self._safety_shutoff_grace_minutes:
+                        if mode_on:
+                            # Mode resumed within grace window → absorb the interruption
+                            _LOGGER.debug(
+                                "Grace period absorbed: mode resumed at %s "
+                                "(%.1f min < grace %d min)",
+                                timestamp,
+                                elapsed_off_minutes,
+                                self._safety_shutoff_grace_minutes,
+                            )
+                            grace_period_start = None
+                            # Fall through to normal _should_end_cycle check below
+                        else:
+                            # Still OFF and within grace → ignore this measurement
+                            continue
+                    else:
+                        # Grace period expired → close cycle at grace_period_start
+                        end_ts = grace_period_start
+                        grace_period_start = None
+                        _LOGGER.debug(
+                            "Grace period expired (%.1f min >= %d min); " "ending cycle at %s",
+                            elapsed_off_minutes,
+                            self._safety_shutoff_grace_minutes,
+                            end_ts,
+                        )
+                        end_indoor = (
+                            self._lookup_float_at(indoor_hist, indoor_ts, end_ts)
+                            or current_indoor_temp
+                        )
+                        created = self._create_cycles(
+                            device_id=device_id,
+                            start_time=heating_start,
+                            end_time=end_ts,
+                            start_indoor_temp=cycle_start_indoor_temp
+                            if cycle_start_indoor_temp is not None
+                            else end_indoor,
+                            end_indoor_temp=end_indoor,
+                            target_temp=cycle_start_target_temp
+                            if cycle_start_target_temp is not None
+                            else current_target_temp,
+                            history_data_set=history_data_set,
+                            split_duration_minutes=split_duration,
+                        )
+                        if created:
+                            cycles.extend(created)
+                        # Reset cycle state
+                        heating_start = None
+                        cycle_start_indoor_temp = None
+                        cycle_start_target_temp = None
+                        # Check whether the current measurement starts a new cycle
+                        if self._should_start_cycle(
+                            mode_on, action_active, current_indoor_temp, current_target_temp
+                        ):
+                            heating_start = timestamp
+                            cycle_start_indoor_temp = current_indoor_temp
+                            cycle_start_target_temp = current_target_temp
+                            _LOGGER.debug(
+                                "New cycle started after grace expiry at %s "
+                                "(Indoor: %.1f, Target: %.1f)",
+                                timestamp,
+                                current_indoor_temp,
+                                current_target_temp,
+                            )
+                        continue
+
+                elif not mode_on and self._safety_shutoff_grace_minutes > 0:
+                    # First OFF event while a cycle is active → begin grace window
+                    grace_period_start = timestamp
+                    _LOGGER.debug(
+                        "Grace period started at %s (grace=%d min)",
+                        timestamp,
+                        self._safety_shutoff_grace_minutes,
+                    )
+                    continue
+                # --- End grace period state machine ---
+
+                # Normal cycle-end detection (target reached, max duration, mode off with grace=0)
                 cycle_ended, end_reason = self._should_end_cycle(
                     mode_on, current_indoor_temp, current_target_temp
                 )
@@ -217,19 +311,29 @@ class HeatingCycleService(IHeatingCycleService):
                     heating_start = None
                     cycle_start_indoor_temp = None
                     cycle_start_target_temp = None
+                    grace_period_start = None
 
         # Gérer un cycle potentiellement non terminé à la fin des données
         if heating_start is not None:
+            # If a grace window was still open when the data ended, the heating mode went OFF at
+            # grace_period_start → that is the real end of the cycle, not the dataset boundary.
+            effective_end_time = grace_period_start if grace_period_start is not None else end_time
             _LOGGER.debug(
-                "Unfinished heating cycle found, ending at data_set end time %s", end_time
+                "Unfinished heating cycle found, ending at %s%s",
+                effective_end_time,
+                " (grace period active at data end)"
+                if grace_period_start is not None
+                else " (dataset end)",
             )
             created = self._create_cycles(
                 device_id=device_id,
                 start_time=heating_start,
-                end_time=end_time,
+                end_time=effective_end_time,
                 start_indoor_temp=cycle_start_indoor_temp or 20.0,
                 end_indoor_temp=self._get_value_at_time(
-                    history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, []), end_time, float
+                    history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, []),
+                    effective_end_time,
+                    float,
                 )
                 or 20.0,
                 target_temp=cycle_start_target_temp or 20.0,
@@ -393,13 +497,6 @@ class HeatingCycleService(IHeatingCycleService):
             history_data_set=history_data_set,
         )
 
-        # Calculate dead_time_cycle for this cycle
-        dead_time_cycle_minutes = self._calculate_dead_time_cycle(
-            start_time=start_time,
-            start_temp=start_indoor_temp,
-            history_data_set=history_data_set,
-        )
-
         # Build HeatingCycle with computed tariff details (may be empty)
         cycle = HeatingCycle(
             device_id=device_id,
@@ -410,6 +507,7 @@ class HeatingCycleService(IHeatingCycleService):
             start_temp=start_indoor_temp,
             tariff_details=tariff_details,
             dead_time_cycle_minutes=dead_time_cycle_minutes,
+            min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
         )
         _LOGGER.debug(
             "Created single heating cycle: %s (energy=%.3fkWh duration=%.1fmin cost=%.3f€)",
@@ -497,15 +595,6 @@ class HeatingCycleService(IHeatingCycleService):
                     history_data_set=history_data_set,
                 )
 
-            # Calculate dead_time_cycle only for the first sub-cycle
-            dead_time_cycle_minutes = None
-            if i == 0:
-                dead_time_cycle_minutes = self._calculate_dead_time_cycle(
-                    start_time=current_sub_cycle_start_time,
-                    start_temp=current_sub_cycle_start_temp,
-                    history_data_set=history_data_set,
-                )
-
             sub_cycle = HeatingCycle(
                 device_id=device_id,
                 start_time=current_sub_cycle_start_time,
@@ -515,6 +604,7 @@ class HeatingCycleService(IHeatingCycleService):
                 start_temp=current_sub_cycle_start_temp,
                 tariff_details=[],  # TODO: calculate for sub-cycle
                 dead_time_cycle_minutes=dead_time_cycle_minutes,
+                min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
             )
             created.append(sub_cycle)
             _LOGGER.debug("  Created sub-cycle %d: %s", i + 1, sub_cycle)
@@ -534,6 +624,7 @@ class HeatingCycleService(IHeatingCycleService):
                 start_temp=current_sub_cycle_start_temp,
                 tariff_details=[],  # TODO: calculate for remaining sub-cycle
                 dead_time_cycle_minutes=None,  # Not for remaining cycles
+                min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
             )
             created.append(remaining_cycle)
             _LOGGER.debug("  Created remaining sub-cycle: %s", remaining_cycle)
