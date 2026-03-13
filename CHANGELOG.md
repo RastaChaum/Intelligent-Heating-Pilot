@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-03-13
-
 ### Added
 - **Dead Time Learning** ([#62](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/62)) – Enhanced prediction accuracy with automatic dead time calculation
   - Formula now includes dead time constant: `time_needed = dead_time + (temperature_delta / learned_slope) * 60`
