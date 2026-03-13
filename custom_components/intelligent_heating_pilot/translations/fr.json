@@ -51,14 +51,17 @@
           "temp_delta_threshold": "Seuil de détection de température (°C)",
           "cycle_split_duration_minutes": "Durée de découpage des cycles (minutes)",
           "min_cycle_duration_minutes": "Durée minimale de cycle (minutes)",
-          "max_cycle_duration_minutes": "Durée maximale de cycle (minutes)"
+          "max_cycle_duration_minutes": "Durée maximale de cycle (minutes)",
+          "task_range_days": "Période d'extraction Recorder (jours)",
+          "safety_shutoff_grace_minutes": "Tolérance arrêt sécurité (minutes)"
         },
         "data_description": {
           "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage",
           "temp_delta_threshold": "Seuil de différence de température pour détecter le début/fin d'un cycle de chauffe (par défaut : 0.2°C).",
           "cycle_split_duration_minutes": "Découpe les longs cycles en sous-cycles pour l'apprentissage ML (laisser vide pour désactiver).",
           "min_cycle_duration_minutes": "Durée minimale pour considérer un cycle de chauffe valide.",
-          "max_cycle_duration_minutes": "Durée maximale pour un seul cycle de chauffe."
+          "max_cycle_duration_minutes": "Durée maximale pour un seul cycle de chauffe.",
+          "safety_shutoff_grace_minutes": "Tolérance en minutes pour les interruptions brèves de chauffe (mode sécurité/hors-gel). Les interruptions plus courtes que ce seuil ne terminent pas le cycle en cours. 0 = désactivé."
         }
       }
     }

@@ -102,6 +102,7 @@ class HeatingApplication:
         self._max_cycle_duration_minutes = device_config.max_cycle_duration_minutes
         self._dead_time_minutes = device_config.dead_time_minutes
         self._auto_learning = device_config.auto_learning
+        self._safety_shutoff_grace_minutes = device_config.safety_shutoff_grace_minutes
 
         # IHP enabled state
         self._ihp_enabled = device_config.ihp_enabled
@@ -189,6 +190,7 @@ class HeatingApplication:
             cycle_split_duration_minutes=self._cycle_split_duration_minutes,
             min_cycle_duration_minutes=self._min_cycle_duration_minutes,
             max_cycle_duration_minutes=self._max_cycle_duration_minutes,
+            safety_shutoff_grace_minutes=self._safety_shutoff_grace_minutes,
         )
         global_lhs_calculator = GlobalLHSCalculatorService()
         contextual_lhs_calculator = ContextualLHSCalculatorService()

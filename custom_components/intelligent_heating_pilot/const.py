@@ -55,6 +55,11 @@ DEFAULT_CYCLE_SPLIT_DURATION_MINUTES = 0  # 0 = No splitting (disabled)
 DEFAULT_MIN_CYCLE_DURATION_MINUTES = 5  # Minimum 5 minutes
 DEFAULT_MAX_CYCLE_DURATION_MINUTES = 300  # Maximum 5 hours
 
+# Safety shutoff grace period: brief interruptions shorter than this threshold (e.g. frost/safety mode)
+# will NOT terminate an in-progress heating cycle, preventing bogus slope values.
+CONF_SAFETY_SHUTOFF_GRACE_MINUTES = "safety_shutoff_grace_minutes"
+DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES = 10  # 10 minutes tolerance for safety/frost interruptions
+
 # Service names
 SERVICE_CALCULATE_ANTICIPATED_START_TIME = "calculate_anticipated_start_time"
 SERVICE_SCHEDULER_RUN_ACTION = "run_action"

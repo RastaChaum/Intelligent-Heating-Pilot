@@ -34,6 +34,7 @@ class HeatingCycleService(IHeatingCycleService):
         cycle_split_duration_minutes: int = 0,
         min_cycle_duration_minutes: int = 5,
         max_cycle_duration_minutes: int = 300,
+        safety_shutoff_grace_minutes: int = 10,
     ) -> None:
         """Initialize the HeatingCycleService.
 
@@ -48,21 +49,27 @@ class HeatingCycleService(IHeatingCycleService):
                 cycles into smaller sub-cycles for granular analysis. If 0, cycles are not split.
             min_cycle_duration_minutes: Minimum duration for a valid heating cycle.
             max_cycle_duration_minutes: Maximum duration for a single heating cycle (before splitting).
+            safety_shutoff_grace_minutes: Grace period in minutes for brief heating interruptions
+                caused by safety or frost-protection mode. Interruptions shorter than this threshold
+                will not terminate an in-progress cycle. Set to 0 to disable the grace period.
         """
         _LOGGER.debug("Entering HeatingCycleService.__init__")
         _LOGGER.debug(
             "Initializing with temp_delta_threshold=%s, cycle_split_duration_minutes=%s, "
-            "min_cycle_duration_minutes=%s, max_cycle_duration_minutes=%s",
+            "min_cycle_duration_minutes=%s, max_cycle_duration_minutes=%s, "
+            "safety_shutoff_grace_minutes=%s",
             temp_delta_threshold,
             cycle_split_duration_minutes,
             min_cycle_duration_minutes,
             max_cycle_duration_minutes,
+            safety_shutoff_grace_minutes,
         )
 
         self._temp_delta_threshold = temp_delta_threshold
         self._cycle_split_duration_minutes = cycle_split_duration_minutes
         self._min_cycle_duration_minutes = min_cycle_duration_minutes
         self._max_cycle_duration_minutes = max_cycle_duration_minutes
+        self._safety_shutoff_grace_minutes = safety_shutoff_grace_minutes
 
         _LOGGER.debug("Exiting HeatingCycleService.__init__")
 
@@ -124,6 +131,24 @@ class HeatingCycleService(IHeatingCycleService):
         heating_start: datetime | None = None
         cycle_start_indoor_temp: float | None = None
         cycle_start_target_temp: float | None = None
+
+        # --- SKELETON: Grace period state for safety/frost interruptions ---
+        # When the heating system briefly stops due to safety or frost-protection mode and
+        # then resumes within `_safety_shutoff_grace_minutes`, the interruption should NOT
+        # be treated as a cycle end — it would create a cycle with near-zero effective duration
+        # and aberrant slope (e.g. 140 000 °C/h).
+        #
+        # Developer TODO: implement the following state machine extension:
+        #   grace_period_start: datetime | None = None
+        #     → Set to `timestamp` when _should_end_cycle() returns True and
+        #       grace period is enabled (_safety_shutoff_grace_minutes > 0).
+        #     → While grace_period_start is not None, suppress the cycle-end logic.
+        #     → If heating resumes within grace window → reset grace_period_start (cycle continues).
+        #     → If grace window expires (timestamp - grace_period_start > grace_minutes)
+        #       → close the cycle at `grace_period_start` (not at the current timestamp).
+        #
+        # grace_period_start: datetime | None = None  # TODO: Developer à implémenter
+        # --- END SKELETON ---
 
         cycles: list[HeatingCycle] = []
 
@@ -410,6 +435,7 @@ class HeatingCycleService(IHeatingCycleService):
             start_temp=start_indoor_temp,
             tariff_details=tariff_details,
             dead_time_cycle_minutes=dead_time_cycle_minutes,
+            min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
         )
         _LOGGER.debug(
             "Created single heating cycle: %s (energy=%.3fkWh duration=%.1fmin cost=%.3f€)",
@@ -515,6 +541,7 @@ class HeatingCycleService(IHeatingCycleService):
                 start_temp=current_sub_cycle_start_temp,
                 tariff_details=[],  # TODO: calculate for sub-cycle
                 dead_time_cycle_minutes=dead_time_cycle_minutes,
+                min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
             )
             created.append(sub_cycle)
             _LOGGER.debug("  Created sub-cycle %d: %s", i + 1, sub_cycle)
@@ -534,6 +561,7 @@ class HeatingCycleService(IHeatingCycleService):
                 start_temp=current_sub_cycle_start_temp,
                 tariff_details=[],  # TODO: calculate for remaining sub-cycle
                 dead_time_cycle_minutes=None,  # Not for remaining cycles
+                min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
             )
             created.append(remaining_cycle)
             _LOGGER.debug("  Created remaining sub-cycle: %s", remaining_cycle)

@@ -17,6 +17,7 @@ from ...const import (
     CONF_LHS_RETENTION_DAYS,
     CONF_MAX_CYCLE_DURATION_MINUTES,
     CONF_MIN_CYCLE_DURATION_MINUTES,
+    CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
     CONF_SCHEDULER_ENTITIES,
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
@@ -27,6 +28,7 @@ from ...const import (
     DEFAULT_LHS_RETENTION_DAYS,
     DEFAULT_MAX_CYCLE_DURATION_MINUTES,
     DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+    DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES,
     DEFAULT_TASK_RANGE_DAYS,
     DEFAULT_TEMP_DELTA_THRESHOLD,
 )
@@ -140,6 +142,11 @@ class HADeviceConfigReader(IDeviceConfigReader):
         task_range = self._get_config_value(config, options, CONF_TASK_RANGE_DAYS)
         task_range_days = int(task_range if task_range is not None else DEFAULT_TASK_RANGE_DAYS)
 
+        safety_grace = self._get_config_value(config, options, CONF_SAFETY_SHUTOFF_GRACE_MINUTES)
+        safety_shutoff_grace_minutes = int(
+            safety_grace if safety_grace is not None else DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES
+        )
+
         device_config = DeviceConfig(
             device_id=device_id,
             vtherm_entity_id=vtherm_entity,
@@ -156,6 +163,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
             max_cycle_duration_minutes=max_cycle_duration_minutes,
             ihp_enabled=ihp_enabled,
             task_range_days=task_range_days,
+            safety_shutoff_grace_minutes=safety_shutoff_grace_minutes,
         )
 
         _LOGGER.debug("Retrieved device configuration: %s", device_config)
