@@ -34,7 +34,7 @@ class HeatingCycleService(IHeatingCycleService):
         cycle_split_duration_minutes: int = 0,
         min_cycle_duration_minutes: int = 5,
         max_cycle_duration_minutes: int = 300,
-        safety_shutoff_grace_minutes: int = 10,
+        safety_shutoff_grace_minutes: int = 0,
     ) -> None:
         """Initialize the HeatingCycleService.
 
@@ -132,23 +132,11 @@ class HeatingCycleService(IHeatingCycleService):
         cycle_start_indoor_temp: float | None = None
         cycle_start_target_temp: float | None = None
 
-        # --- SKELETON: Grace period state for safety/frost interruptions ---
-        # When the heating system briefly stops due to safety or frost-protection mode and
-        # then resumes within `_safety_shutoff_grace_minutes`, the interruption should NOT
-        # be treated as a cycle end — it would create a cycle with near-zero effective duration
-        # and aberrant slope (e.g. 140 000 °C/h).
-        #
-        # Developer TODO: implement the following state machine extension:
-        #   grace_period_start: datetime | None = None
-        #     → Set to `timestamp` when _should_end_cycle() returns True and
-        #       grace period is enabled (_safety_shutoff_grace_minutes > 0).
-        #     → While grace_period_start is not None, suppress the cycle-end logic.
-        #     → If heating resumes within grace window → reset grace_period_start (cycle continues).
-        #     → If grace window expires (timestamp - grace_period_start > grace_minutes)
-        #       → close the cycle at `grace_period_start` (not at the current timestamp).
-        #
-        # grace_period_start: datetime | None = None  # TODO: Developer à implémenter
-        # --- END SKELETON ---
+        # Grace period: absorbs brief safety/frost-protection interruptions.
+        # When mode goes OFF for less than `_safety_shutoff_grace_minutes` and then resumes,
+        # the interruption is ignored so the cycle is not split into micro-cycles with
+        # aberrant slopes (e.g. 140 000 °C/h).
+        grace_period_start: datetime | None = None
 
         cycles: list[HeatingCycle] = []
 
@@ -215,7 +203,88 @@ class HeatingCycleService(IHeatingCycleService):
                         current_target_temp,
                     )
             else:
-                # Check if cycle should end
+                # --- Grace period state machine ---
+                if grace_period_start is not None:
+                    # We are inside an active grace window
+                    elapsed_off_minutes = (timestamp - grace_period_start).total_seconds() / 60.0
+
+                    if elapsed_off_minutes < self._safety_shutoff_grace_minutes:
+                        if mode_on:
+                            # Mode resumed within grace window → absorb the interruption
+                            _LOGGER.debug(
+                                "Grace period absorbed: mode resumed at %s "
+                                "(%.1f min < grace %d min)",
+                                timestamp,
+                                elapsed_off_minutes,
+                                self._safety_shutoff_grace_minutes,
+                            )
+                            grace_period_start = None
+                            # Fall through to normal _should_end_cycle check below
+                        else:
+                            # Still OFF and within grace → ignore this measurement
+                            continue
+                    else:
+                        # Grace period expired → close cycle at grace_period_start
+                        end_ts = grace_period_start
+                        grace_period_start = None
+                        _LOGGER.debug(
+                            "Grace period expired (%.1f min >= %d min); " "ending cycle at %s",
+                            elapsed_off_minutes,
+                            self._safety_shutoff_grace_minutes,
+                            end_ts,
+                        )
+                        end_indoor = (
+                            self._lookup_float_at(indoor_hist, indoor_ts, end_ts)
+                            or current_indoor_temp
+                        )
+                        created = self._create_cycles(
+                            device_id=device_id,
+                            start_time=heating_start,
+                            end_time=end_ts,
+                            start_indoor_temp=cycle_start_indoor_temp
+                            if cycle_start_indoor_temp is not None
+                            else end_indoor,
+                            end_indoor_temp=end_indoor,
+                            target_temp=cycle_start_target_temp
+                            if cycle_start_target_temp is not None
+                            else current_target_temp,
+                            history_data_set=history_data_set,
+                            split_duration_minutes=split_duration,
+                        )
+                        if created:
+                            cycles.extend(created)
+                        # Reset cycle state
+                        heating_start = None
+                        cycle_start_indoor_temp = None
+                        cycle_start_target_temp = None
+                        # Check whether the current measurement starts a new cycle
+                        if self._should_start_cycle(
+                            mode_on, action_active, current_indoor_temp, current_target_temp
+                        ):
+                            heating_start = timestamp
+                            cycle_start_indoor_temp = current_indoor_temp
+                            cycle_start_target_temp = current_target_temp
+                            _LOGGER.debug(
+                                "New cycle started after grace expiry at %s "
+                                "(Indoor: %.1f, Target: %.1f)",
+                                timestamp,
+                                current_indoor_temp,
+                                current_target_temp,
+                            )
+                        continue
+
+                elif not mode_on and self._safety_shutoff_grace_minutes > 0:
+                    # First OFF event while a cycle is active → begin grace window
+                    grace_period_start = timestamp
+                    _LOGGER.debug(
+                        "Grace period started at %s (grace=%d min)",
+                        timestamp,
+                        self._safety_shutoff_grace_minutes,
+                    )
+                    continue
+                # --- End grace period state machine ---
+
+                # Normal cycle-end detection (target reached, max duration, mode off with grace=0)
                 cycle_ended, end_reason = self._should_end_cycle(
                     mode_on, current_indoor_temp, current_target_temp
                 )
@@ -242,6 +311,7 @@ class HeatingCycleService(IHeatingCycleService):
                     heating_start = None
                     cycle_start_indoor_temp = None
                     cycle_start_target_temp = None
+                    grace_period_start = None
 
         # Gérer un cycle potentiellement non terminé à la fin des données
         if heating_start is not None:
