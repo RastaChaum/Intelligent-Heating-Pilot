@@ -74,7 +74,7 @@ IHP now exposes 4 new configuration parameters in the UI to fine-tune cycle dete
   - When and how to adjust each setting
   - Warning indicators for edge cases
   - Step-by-step modification instructions
-  
+
 - **USER_GUIDE.md**: Updated with guidance on:
   - Understanding cycle detection
   - Troubleshooting detection issues
@@ -108,19 +108,19 @@ IHP now exposes 4 new configuration parameters in the UI to fine-tune cycle dete
 This release is perfect for:
 
 ### ❄️ Intermittent Heating Systems
-**Problem**: Heating turns on/off frequently, creating many short "cycles"  
+**Problem**: Heating turns on/off frequently, creating many short "cycles"
 **Solution**: Increase `temp_delta_threshold` to 0.3-0.5°C and `min_cycle_duration` to 10-15 min
 
 ### ⚡ Fast-Response Systems (Heat Pumps, Electric Radiators)
-**Problem**: Very short but legitimate heating cycles are ignored  
+**Problem**: Very short but legitimate heating cycles are ignored
 **Solution**: Lower `min_cycle_duration` to 1-3 minutes
 
 ### 🏠 Poorly Insulated Spaces
-**Problem**: Very long heating cycles (>5 hours) are excluded  
+**Problem**: Very long heating cycles (>5 hours) are excluded
 **Solution**: Increase `max_cycle_duration` to 360-720 minutes
 
 ### 🤖 ML Training Preparation
-**Problem**: Need more granular data for future ML features  
+**Problem**: Need more granular data for future ML features
 **Solution**: Enable `cycle_split_duration` at 30-60 minutes
 
 ---

@@ -1,14 +1,15 @@
 """Heating decision value object."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
-from datetime import datetime
 
 
 class HeatingAction(Enum):
     """Types of heating actions that can be taken."""
-    
+
     START_HEATING = "start_heating"
     STOP_HEATING = "stop_heating"
     SET_TEMPERATURE = "set_temperature"
@@ -18,19 +19,19 @@ class HeatingAction(Enum):
 @dataclass(frozen=True)
 class HeatingDecision:
     """Represents a decision about heating control.
-    
+
     This value object encapsulates what action should be taken and why.
-    
+
     Attributes:
         action: The type of action to take
         target_temp: Target temperature if starting heating (None otherwise)
         reason: Human-readable explanation for the decision
     """
-    
+
     action: HeatingAction
     target_temp: float | None = None
     reason: str = ""
-    
+
     def __post_init__(self) -> None:
         """Validate the heating decision data."""
         if self.action == HeatingAction.START_HEATING and self.target_temp is None:
@@ -43,6 +44,7 @@ class HeatingDecision:
 @dataclass(frozen=True)
 class TariffPeriodDetail:
     """Represents energy consumption and cost details for a specific tariff period."""
+
     tariff_price_eur_per_kwh: float
     energy_kwh: float
     heating_duration_minutes: float
@@ -52,10 +54,10 @@ class TariffPeriodDetail:
 @dataclass(frozen=True)
 class HeatingCycle:
     """Represents a single heating cycle, encapsulating all its relevant data.
-    
+
     This value object provides a complete and immutable snapshot of a heating period,
     including its duration, temperature changes, and energy consumption details.
-    
+
     Attributes:
         start_time: The exact datetime when the heating cycle started.
         end_time: The exact datetime when the heating cycle ended.
@@ -64,8 +66,17 @@ class HeatingCycle:
         start_temp: The temperature at the beginning of the heating cycle.
         tariff_details: A list of TariffDetail objects, breaking down energy, duration,
                         and cost by specific TariffPeriodDetail periods within the cycle.
+        dead_time_cycle_minutes: Dead time for this specific cycle in minutes. Time from
+                                 cycle start to first measurable temperature change.
+                                 None if cannot be determined.
+        min_effective_duration_minutes: Minimum effective heating duration (in minutes) required
+                                        to compute a valid slope. Effective duration is
+                                        total_duration − dead_time. Cycles whose effective window
+                                        is shorter than this threshold return 0.0 for
+                                        ``avg_heating_slope`` to prevent aberrant values caused by
+                                        near-zero denominators. Defaults to 5.0 minutes.
     """
-    
+
     device_id: str
     start_time: datetime
     end_time: datetime
@@ -73,16 +84,40 @@ class HeatingCycle:
     end_temp: float
     start_temp: float
     tariff_details: list[TariffPeriodDetail] | None = None
+    dead_time_cycle_minutes: float | None = None
+    min_effective_duration_minutes: float = 5.0
 
     @property
     def avg_heating_slope(self) -> float:
-        """Calculates the average heating slope in °C/hour for the heating cycle."""
-        duration_hours = (self.end_time - self.start_time).total_seconds() / 3600
-        if duration_hours == 0:
+        """Calculates the average heating slope in °C/hour for the heating cycle.
+
+        Excludes the dead_time_cycle period to get the true heating slope once
+        the system is actively heating (without initial inertia).
+
+        Returns 0.0 when the effective heating duration (after subtracting dead_time) is shorter
+        than ``min_effective_duration_minutes``. This guards against aberrant slope values that
+        arise when dead_time ≈ total_duration, leaving an effective duration of only a few
+        microseconds and producing slopes in the range of 100 000–200 000 °C/h.
+        """
+        # Calculate effective start time (after dead_time_cycle)
+        if self.dead_time_cycle_minutes and self.dead_time_cycle_minutes > 0:
+            effective_start_time = self.start_time + timedelta(minutes=self.dead_time_cycle_minutes)
+            duration_hours = (self.end_time - effective_start_time).total_seconds() / 3600
+        else:
+            duration_hours = (self.end_time - self.start_time).total_seconds() / 3600
+
+        if duration_hours <= 0:
             return 0.0
+
+        # Guard: reject cycles whose effective heating window is too narrow.
+        # When dead_time ≈ total_duration the slope formula amplifies noise by orders of magnitude.
+        effective_duration_minutes = duration_hours * 60.0
+        if effective_duration_minutes < self.min_effective_duration_minutes:
+            return 0.0
+
         temp_increase = self.end_temp - self.start_temp
         return temp_increase / duration_hours
-    
+
     @property
     def duration_minutes(self) -> float:
         """Calculates the total duration of the heating cycle in minutes."""

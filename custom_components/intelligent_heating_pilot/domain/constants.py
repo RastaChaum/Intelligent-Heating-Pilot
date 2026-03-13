@@ -10,8 +10,12 @@ MAX_ANTICIPATION_TIME = 360  # Maximum anticipation (6 hours)
 DEFAULT_ANTICIPATION_BUFFER = 5  # Safety buffer to ensure target is reached on time
 
 # Heating slope thresholds (in °C/hour)
-MIN_VALID_SLOPE = 0.1  # Minimum valid heating slope
+MIN_VALID_SLOPE = 0.1  # Minimum valid heating slope (technical threshold)
+MINIMUM_REALISTIC_LHS = 0.2  # Minimum realistic LHS for effective heating (business threshold)
 DEFAULT_LEARNED_SLOPE = 2.0  # Default slope when no learning data exists
+
+# Dead time (in minutes)
+DEFAULT_DEAD_TIME_MINUTES = 0.0  # Default dead time when no learning data exists
 
 # Environmental correction factors
 OUTDOOR_TEMP_REFERENCE = 20.0  # Reference outdoor temperature (°C)

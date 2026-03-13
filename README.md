@@ -1,7 +1,7 @@
 # Intelligent Heating Pilot (IHP)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-![Version](https://img.shields.io/badge/version-0.4.3-blue)
+![Version](https://img.shields.io/badge/version-0.6.0-blue)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 
 > **The Adaptive Brain for Versatile Thermostat**
@@ -14,7 +14,7 @@ A Home Assistant integration that learns your heating system and automatically s
 
 ```
 📅 Next heating: 18:00 (target 21°C)
-🧠 Learned slope: 2.3°C/hour  
+🧠 Learned slope: 2.3°C/hour
 ⏰ Start time: 16:42 (calculated automatically)
 ✅ Room reaches 21°C exactly at 18:00
 ```
@@ -57,14 +57,19 @@ Settings → Devices & Services → + Add Integration
 
 ## 🎯 Features
 
-### Current (v0.4.3)
+### Current (v0.6.0)
 
-- ✅ **Smart Pre-heating** - Automatically calculates optimal start time
-- ✅ **Cycle Detection** - Learns from real heating cycles, not VTherm slopes
+- ✅ **Smart Pre-heating** - Automatically calculates optimal start time based on learned heating performance
+- ✅ **Dead Time Learning** - Accounts for system lag in temperature response for more accurate predictions
+- ✅ **Enable/Disable Switch** - Toggle preheating on/off while maintaining learning data
+- ✅ **Cycle Detection** - Learns from real heating cycles, not thermostat slopes
 - ✅ **Configurable Detection Parameters** - Fine-tune cycle detection for your heating system
 - ✅ **Time-Contextual Learning** - Different heating speeds by time of day
+- ✅ **Optional Scheduler** - Works with or without HACS Scheduler via dynamic service calls
 - ✅ **Incremental Cache** - Reduces HA database load for long-term learning
-- ✅ **VTherm v8+ Compatible** - Works with latest Versatile Thermostat
+- ✅ **Zero-Retention Mode** - Option to disable history storage for minimal deployments
+- ✅ **VTherm v8+ Compatible** - Works with latest Versatile Thermostat versions
+- ✅ **Optimized Startup** - Lazy loading and smart filtering prevent HA watchdog timeouts
 - ✅ **Vacation Mode Ready** - Stops automatically when scheduler disabled
 
 ### Future Vision

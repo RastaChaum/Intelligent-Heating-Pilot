@@ -8,10 +8,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dead Time Learning** ([#62](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/62)) – Enhanced prediction accuracy with automatic dead time calculation
+  - Formula now includes dead time constant: `time_needed = dead_time + (temperature_delta / learned_slope) * 60`
+  - Dead time is automatically learned from historical heating cycles
+  - New sensor `sensor.intelligent_heating_pilot_<device>_dead_time` shows the learned dead time in seconds
+- **Zero-Retention Mode for Learning History** – New configuration option to disable LHS (Learning Heating Slope) data retention
+  - Set `lhs_retention_days=0` to disable historical data storage (useful for testing or minimal deployments)
+  - When disabled, system uses default LHS value (2.0°C/h) without attempting to persist or retrieve learning data
+  - No storage overhead when retention is disabled
+- **Integration Logo** ([#68](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/68)) – Added official logo icons (`icon.png` / `icon@2x.png`) for the Home Assistant integrations page
 
 ### Changed
+- **Contextual LHS Lazy Loading at Startup** ([#103](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/103)) – Refactored `LhsLifecycleManager` to use lazy loading for contextual LHS, reducing startup I/O and memory overhead
+  - At startup, only the current hour's contextual LHS is loaded (instead of all 24 hours)
+  - Other hours are loaded on-demand via `get_contextual_lhs()` or `ensure_contextual_lhs_populated()` when first requested
+  - Replaced `calculate_all_contextual_lhs()` with `calculate_contextual_lhs_for_hour()` for per-hour on-demand computation
+  - Bulk updates (`on_retention_change()`, `on_24h_timer()`) still recalculate and cache all 24 hours as before
+- **Coordinator Architecture Refactoring** – Improved code organization and DDD compliance
+  - Extracted `IntelligentHeatingPilotCoordinator` from `__init__.py` into dedicated `coordinator.py` module for better maintainability
+  - Consolidated `_as_bool()` utility function into `utils/config_helpers.py` to eliminate code duplication
+  - Added explicit type annotations for better IDE support and type safety
+  - Improved separation of concerns between domain, infrastructure, and application layers
+- **Timer-Based Anticipation Triggering** ([#84](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/84), [#70](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/70)) – Improved the reliability of the preheating system by replacing event-driven triggering with timer-based triggering, ensuring IHP always wakes up at the anticipated time even when no sensor events occur in the window between calculation and target time.
 
 ### Fixed
+- **Home Assistant Recorder Saturation** – Fixed HA restarts triggered by the supervisor when multiple IHP devices were configured with high retention periods (e.g. 30 days)
+  - Extraction tasks now cover configurable periods (default: 7 days) instead of a single day, reducing the number of Recorder queries by up to 7×
+  - Added a 10-second pause between extraction tasks to let the Recorder breathe and prevent query queue overflow
+  - Eliminated redundant SQL queries caused by fetching each historical data key separately: all keys are now retrieved in a single `get_significant_states` call per entity per period
+- **Fixed Configuration Values Being Ignored When Falsy** ([#91](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/91), [#85](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/85)) – Configuration values like `0` (false/disabled) are now properly read and applied
+  - `lhs_retention_days=0`, `cycle_split_duration_minutes=0`, `auto_learning=False` now correctly persist and are respected by the system
+  - Parameters `cycle_split_duration_minutes`, `min_cycle_duration_minutes`, `max_cycle_duration_minutes` are now properly read from config options instead of always using defaults
+  - `ihp_enabled=False` is now correctly persisted across Home Assistant restarts — the IHP Enable/Disable Switch state is reliably restored after a restart
+  - Centralized boolean parsing ensures consistent handling of stringified config values across the integration
+- **No-scheduler KeyError spam** ([#81](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/81))
+  - Fixed `KeyError: 'anticipated_start_time'` when IHP runs without a scheduler configured
+  - Event bridge now distinguishes between clear-values signals and full data payloads
+  - Users without scheduler configuration no longer see repeated errors; sensors stay `unknown` as expected
+- **IHP Enable/Disable Switch State Ignored in Event-Driven Updates** ([#90](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/90)) – Fixed a race condition in `HAEventBridge` where event-driven recalculations (triggered by entity state changes) did not pass the `ihp_enabled` parameter, causing it to default to `True`
+  - When IHP was disabled via the switch, preheating was still triggered by sensor events
+  - `HAEventBridge` now always passes the current enabled state from the coordinator when recalculating
+- **Startup Performance Improvements** – Optimizations to prevent HA watchdog timeout and reduce startup memory consumption
+  - Async incremental recorder loading prevents blocking HA startup
+  - FIFO RecorderAccessQueue serializes recorder access across multiple IHP instances to prevent OOM at startup
+  - Smart event filtering eliminates log flood and unnecessary HA state writes
+  - Contextual LHS lazy loading (see "Changed" section) further reduces I/O overhead
+
+## [0.5.0] - 2026-01-25
+
+### Added
+- **IHP Enable/Disable Switch** ([#77](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/77)) – New domain entity to toggle IHP preheating on/off per device while preserving learned data
+  - Switch entity `switch.intelligent_heating_pilot_<device>_enable_preheating` for each configured IHP device
+  - Full domain layer support with DDD-compliant abstraction
+  - Comprehensive unit tests for switch functionality
+  - Documented in user guides
+- **Optional Scheduler Support** ([#75](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/75)) – Schedulers now optional; new service for dynamic calculations without scheduler binding
+  - New service `calculate_anticipated_start_time` for on-demand calculations with custom parameters
+  - Service accepts input parameters: `target_temperature`, `current_temperature`, `outdoor_temperature` (optional)
+  - Service returns `anticipated_start_time` and `heating_slope_used` for transparency
+  - Enables integration with other heating automation systems beyond Scheduler
+- **RC workflow suite** – New GitHub Actions for release candidates (prepare, increment, promote) plus CLI helper `scripts/rc-helper.sh` and documentation to manage RC cycles safely in production.
+
+### Changed
+- **Release automation cleanup** – Legacy pre-release/release workflows removed in favor of the RC-based pipeline to avoid duplicate runs and align production releases with validated RCs.
+- **Documentation maintenance** – Updated README badges and version, aligned docs index, and referenced open issues [#20](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/20) and [#66](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/66) for tracking.
+
 
 ## [0.4.4] - 2026-01-14
 
@@ -69,7 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Incremental Cycle Cache for LHS Calculation** - New cache system to store heating cycles incrementally, drastically reducing Home Assistant recorder queries and enabling longer retention periods than HA's native history
   - New `CycleCacheData` value object to store cycles with metadata
-  - New `ICycleCache` interface for cache operations  
+  - New `ICycleCache` interface for cache operations
   - New `HACycleCache` adapter using HA Store for JSON persistence
   - Automatic deduplication and retention-based pruning
   - Graceful degradation to direct recorder queries if cache unavailable
@@ -243,7 +304,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Release Links
 
-[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.4...v0.5.0
 [0.4.3]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.0...v0.4.1

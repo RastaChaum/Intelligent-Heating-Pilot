@@ -72,12 +72,41 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 3. Value should be between 0.5-5.0 (°C per hour)
 4. If 0 or 99.9, IHP is still learning (wait 1-2 more cycles)
 
+### Task: Understand the Dead Time sensor
+
+**Steps:**
+1. Find your IHP device
+2. Look for "Dead Time" sensor (shows value in seconds)
+3. This represents system lag before temperature starts changing
+4. Higher values = slower response to heating commands
+
+**What is Dead Time?**
+- Time between when heating turns on and when temperature actually starts rising
+- IHP automatically learns this from your heating cycles
+- Improves prediction accuracy for your system
+- Value typically ranges from 30-300 seconds depending on system type
+
 ### Task: See next heating plan
 
 **Steps:**
-1. Find your IHP device  
+1. Find your IHP device
 2. Look for "Anticipation Time" sensor
 3. Shows when IHP will trigger heating next
+
+### Task: Enable or disable IHP preheating
+
+**Steps:**
+1. Find your IHP device
+2. Look for "IHP Preheating" switch
+3. Turn OFF to disable automatic preheating (IHP continues learning but won't trigger heating)
+4. Turn ON to re-enable automatic preheating
+
+**Why disable?**
+- 🎛️ You want manual control temporarily
+- 👀 You want to monitor IHP's predictions without it taking action
+- 🔧 You're testing or troubleshooting
+
+**Note:** When disabled, IHP continues to learn and calculate—you'll still see predictions in sensors.
 
 ### Task: Change configuration
 
@@ -163,6 +192,34 @@ See [Configuration Guide](CONFIGURATION.md#heating-cycle-detection-parameters) f
 
 **A:** Yes! Create multiple IHP instances (one per thermostat). Each learns independently.
 
+### Q: Can I use IHP without a scheduler? (New in v0.5.0+)
+
+**A:** Yes! The scheduler is now **optional**. When configured without a scheduler:
+
+- ✅ IHP continues to **learn** your heating slope
+- ✅ All learning sensors work normally
+- ⚠️ Anticipation sensors show **"unknown"** (no scheduled events)
+- ⚠️ IHP does **not auto-trigger** heating
+
+**Use case**: Call the `calculate_anticipated_start_time` service in your own automations for dynamic scheduling (e.g., based on phone alarm, voice commands, calendar events).
+
+See [Configuration Guide - Using IHP Without a Scheduler](CONFIGURATION.md#using-ihp-without-a-scheduler) for examples.
+
+### Q: How do I use the calculation service?
+
+**A:** **New in v0.5.0+**: Call `intelligent_heating_pilot.calculate_anticipated_start_time` in automations:
+
+```yaml
+service: intelligent_heating_pilot.calculate_anticipated_start_time
+data:
+  entity_id: sensor.intelligent_heating_pilot_living_room_anticipated_start_time
+  target_time: "{{ states('sensor.phone_next_alarm') }}"
+  target_temp: 21.0
+response_variable: heating_calc
+```
+
+The service returns when to start heating, estimated duration, learned slope, and confidence level. Use these values to create smart, adaptive heating automations!
+
 ### Q: What happens if I don't have outdoor temperature sensor?
 
 **A:** That's fine! IHP works without it, just uses default assumptions. Adding the sensor improves accuracy.
@@ -173,7 +230,13 @@ See [Configuration Guide](CONFIGURATION.md#heating-cycle-detection-parameters) f
 
 ### Q: Can I manually override IHP?
 
-**A:** Yes. You can manually turn on/off your thermostat anytime. IHP won't interfere with manual control.
+**A:** Yes! You have multiple options:
+
+1. **Use the IHP Preheating switch** - Turn OFF to disable automatic preheating while keeping learning active
+2. **Manual thermostat control** - You can manually turn on/off your thermostat anytime. IHP won't interfere.
+3. **Disable the scheduler** - IHP automatically stops when scheduler is disabled
+
+The switch is useful when you want temporary manual control but want IHP to continue learning in the background.
 
 ### Q: Where is IHP storing my data?
 
@@ -231,4 +294,4 @@ Rest assured, you can go on vacation without any additional configuration!
 
 **Happy heating!** 🔥
 
-_Intelligent Heating Pilot v0.4.3 - Documentation Last Updated: December 2025_
+_Intelligent Heating Pilot v0.6.0 - Documentation Last Updated: March 2026_

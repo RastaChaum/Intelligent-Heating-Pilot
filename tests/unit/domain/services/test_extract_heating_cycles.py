@@ -1,23 +1,26 @@
 """Integration tests for HeatingCycleService.extract_heating_cycles method."""
-import sys
+
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 
-# Add domain to path WITHOUT loading infrastructure layer
-DOMAIN_PATH = Path(__file__).parent.parent.parent.parent.parent / "custom_components" / "intelligent_heating_pilot" / "domain"
-sys.path.insert(0, str(DOMAIN_PATH.parent))
-
-from domain.services.heating_cycle_service import HeatingCycleService
-from domain.value_objects.historical_data import (
+from custom_components.intelligent_heating_pilot.domain.services.heating_cycle_service import (
+    HeatingCycleService,
+)
+from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
     HistoricalDataKey,
     HistoricalDataSet,
     HistoricalMeasurement,
 )
 
 
-def m(timestamp: datetime, value: float | str | bool, hvac_action: str | None = None, hvac_mode: str | None = None, device_id: str = "test.device") -> HistoricalMeasurement:
+def m(
+    timestamp: datetime,
+    value: float | str | bool,
+    hvac_action: str | None = None,
+    hvac_mode: str | None = None,
+    device_id: str = "test.device",
+) -> HistoricalMeasurement:
     """Helper to create HistoricalMeasurement with optional climate attributes."""
     attrs = {}
     if hvac_action:
@@ -32,7 +35,7 @@ def service():
     """Create HeatingCycleService for testing."""
     return HeatingCycleService(
         temp_delta_threshold=0.5,
-        cycle_split_duration_minutes=None,
+        cycle_split_duration_minutes=0,
         min_cycle_duration_minutes=5,
         max_cycle_duration_minutes=300,
     )
@@ -73,9 +76,9 @@ class TestExtractSingleHeatingCycle:
             data={
                 HistoricalDataKey.INDOOR_TEMP: [
                     m(t0, 18.0),
-                    m(t1, 19.0),      # 20.0 - 19.0 = 1.0 > 0.5 threshold
-                    m(t2, 19.2),      # 20.0 - 19.2 = 0.8 > 0.5 threshold, still heating
-                    m(t3, 19.6),      # 20.0 - 19.6 = 0.4 < 0.5 threshold -> cycle ends
+                    m(t1, 19.0),  # 20.0 - 19.0 = 1.0 > 0.5 threshold
+                    m(t2, 19.2),  # 20.0 - 19.2 = 0.8 > 0.5 threshold, still heating
+                    m(t3, 19.6),  # 20.0 - 19.6 = 0.4 < 0.5 threshold -> cycle ends
                     m(t4, 20.1),
                 ],
                 HistoricalDataKey.TARGET_TEMP: [
@@ -95,7 +98,9 @@ class TestExtractSingleHeatingCycle:
             }
         )
 
-        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t4 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles(
+            "my_device_id", dataset, t0, t4 + timedelta(minutes=5)
+        )
 
         assert len(cycles) == 1
         cycle = cycles[0]
@@ -131,7 +136,9 @@ class TestExtractSingleHeatingCycle:
             }
         )
 
-        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t3 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles(
+            "my_device_id", dataset, t0, t3 + timedelta(minutes=5)
+        )
 
         assert len(cycles) == 1
         assert cycles[0].end_time == t3
@@ -166,12 +173,16 @@ class TestExtractMultipleCycles:
                     m(t6, 19.6),  # Cycle 2: 19.6 >= 20.0 - 0.5, END
                     m(t7, 19.7),  # OUT OF CYLE
                 ],
-                HistoricalDataKey.TARGET_TEMP: [m(t, 20.0) for t in [t0, t1, t2, t3, t4, t5, t6, t7]],
+                HistoricalDataKey.TARGET_TEMP: [
+                    m(t, 20.0) for t in [t0, t1, t2, t3, t4, t5, t6, t7]
+                ],
                 HistoricalDataKey.HEATING_STATE: [
                     m(t0, False, hvac_action="off", hvac_mode="off"),
                     m(t1, True, hvac_action="heating", hvac_mode="heat"),  # CYCLE 1 START
                     m(t2, True, hvac_action="heating", hvac_mode="heat"),
-                    m(t3, False, hvac_action="heating", hvac_mode="heat"),  # CYCLE 1 END (threshold + mode off)
+                    m(
+                        t3, False, hvac_action="heating", hvac_mode="heat"
+                    ),  # CYCLE 1 END (threshold + mode off)
                     m(t4, True, hvac_action="heating", hvac_mode="heat"),  # CYCLE 2 START
                     m(t5, True, hvac_action="heating", hvac_mode="heat"),
                     m(t6, False, hvac_action="heating", hvac_mode="heat"),  # CYCLE 2 END
@@ -179,7 +190,9 @@ class TestExtractMultipleCycles:
             }
         )
 
-        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t6 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles(
+            "my_device_id", dataset, t0, t6 + timedelta(minutes=5)
+        )
 
         assert len(cycles) == 2
         assert cycles[0].start_time == t1
@@ -214,14 +227,20 @@ class TestExtractMultipleCycles:
                     m(t0, False, hvac_action="off", hvac_mode="off"),
                     m(t1, True, hvac_action="heating", hvac_mode="heat"),  # CYCLE 1 START
                     m(t2, True, hvac_action="heating", hvac_mode="heat"),
-                    m(t3, True, hvac_action="heating", hvac_mode="heat"),  # Still heating when reaching threshold
-                    m(t4, True, hvac_action="heating", hvac_mode="heat"),  # CYCLE 2 START (18.8 < 19.5)
+                    m(
+                        t3, True, hvac_action="heating", hvac_mode="heat"
+                    ),  # Still heating when reaching threshold
+                    m(
+                        t4, True, hvac_action="heating", hvac_mode="heat"
+                    ),  # CYCLE 2 START (18.8 < 19.5)
                     m(t5, False, hvac_action="off", hvac_mode="heat"),  # CYCLE 2 END
                 ],
             }
         )
 
-        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t5 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles(
+            "my_device_id", dataset, t0, t5 + timedelta(minutes=5)
+        )
 
         assert len(cycles) == 2
         assert cycles[0].start_time == t1
@@ -258,24 +277,24 @@ class TestExtractWithCycleSplitting:
                 HistoricalDataKey.TARGET_TEMP: [m(t, 20.0) for t in [t0, t1, t2, t3, t4, t5]],
                 HistoricalDataKey.HEATING_STATE: [
                     m(t0, False, hvac_action="off", hvac_mode="off"),
-                    m(t1, True, hvac_action="heating", hvac_mode="heat"), 
+                    m(t1, True, hvac_action="heating", hvac_mode="heat"),
                     m(t2, False, hvac_action="off", hvac_mode="heat"),  # END
                     m(t3, True, hvac_action="heating", hvac_mode="heat"),
-                    m(t4, False, hvac_action="off", hvac_mode="heat"),  # END    
+                    m(t4, False, hvac_action="off", hvac_mode="heat"),  # END
                     m(t5, False, hvac_action="off", hvac_mode="heat"),
                 ],
             }
         )
 
-        cycles = await service_with_splitting.extract_heating_cycles("my_device_id", dataset, t0, t3 + timedelta(minutes=5))
+        cycles = await service_with_splitting.extract_heating_cycles(
+            "my_device_id", dataset, t0, t3 + timedelta(minutes=5)
+        )
 
         # With 30-min split duration and ~90 min cycle: should get 3 sub-cycles + 1 remaining
         # or 3 complete + 1 remainder (90 = 3*30 + 10)
-        assert len(cycles) == 4 
+        assert len(cycles) == 4
         # Verify sub-cycles are contiguous and cover the full time range
-        total_duration = sum(
-            (c.end_time - c.start_time).total_seconds() / 60.0 for c in cycles
-        )
+        total_duration = sum((c.end_time - c.start_time).total_seconds() / 60.0 for c in cycles)
         expected_duration = (t4 - t1).total_seconds() / 60.0
         assert total_duration == pytest.approx(expected_duration, rel=0.1)
 
@@ -305,7 +324,9 @@ class TestExtractWithCycleSplitting:
             }
         )
 
-        cycles = await service_with_splitting.extract_heating_cycles("my_device_id", dataset, t0, t3 + timedelta(minutes=5))
+        cycles = await service_with_splitting.extract_heating_cycles(
+            "my_device_id", dataset, t0, t3 + timedelta(minutes=5)
+        )
 
         # Should not split (25 min < 30 min threshold)
         assert len(cycles) == 1
@@ -364,13 +385,17 @@ class TestExtractEdgeCases:
                 HistoricalDataKey.HEATING_STATE: [
                     m(t0, False, hvac_action="off", hvac_mode="off"),
                     m(t1, True, hvac_action="heating", hvac_mode="heat"),  # START
-                    m(t2, False, hvac_action="off", hvac_mode="heat"),  # END after 2 min (< 5 min min)
+                    m(
+                        t2, False, hvac_action="off", hvac_mode="heat"
+                    ),  # END after 2 min (< 5 min min)
                     m(t3, False, hvac_action="off", hvac_mode="heat"),
                 ],
             }
         )
 
-        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t3 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles(
+            "my_device_id", dataset, t0, t3 + timedelta(minutes=5)
+        )
 
         # Should reject the short cycle (2 min < 5 min minimum)
         assert len(cycles) == 0
@@ -390,8 +415,8 @@ class TestExtractEdgeCases:
                     m(t0, 18.0),
                     # Missing at t1 → _get_value_at_time(t1) returns t0's value (18.0)
                     m(t2, 19.2),  # Temperature updated at t2
-                    #m(t3, 19.5),  # At threshold
-                    #m(t4, 19.0),  # Below threshold
+                    # m(t3, 19.5),  # At threshold
+                    # m(t4, 19.0),  # Below threshold
                 ],
                 HistoricalDataKey.TARGET_TEMP: [
                     m(t0, 20.0),
@@ -410,7 +435,9 @@ class TestExtractEdgeCases:
             }
         )
 
-        cycles = await service.extract_heating_cycles("my_device_id", dataset, t0, t4 + timedelta(minutes=5))
+        cycles = await service.extract_heating_cycles(
+            "my_device_id", dataset, t0, t4 + timedelta(minutes=5)
+        )
 
         # Cycle detection uses closest prior temp when exact timestamp is unavailable.
         # At t1: mode=True, temp=18.0 (from t0 fallback), delta=2.0 > 0.5 → START
@@ -420,7 +447,7 @@ class TestExtractEdgeCases:
         assert cycles[0].start_time == t1  # Starts at t1 (even with fallback temp)
         assert cycles[0].start_temp == 18.0  # uses t0 temp fallback (18.0)
         assert cycles[0].end_time == t4 + timedelta(minutes=5)  # Ends at t4
-        assert cycles[0].end_temp == 19.2  # uses t2 temp fallback (19.2)        
+        assert cycles[0].end_temp == 19.2  # uses t2 temp fallback (19.2)
 
     @pytest.mark.asyncio
     async def test_empty_dataset_raises_error(self, service, base_time):
@@ -428,7 +455,9 @@ class TestExtractEdgeCases:
         dataset = HistoricalDataSet(data={})
 
         with pytest.raises(ValueError, match="Missing critical historical data"):
-            await service.extract_heating_cycles("my_device_id", dataset, base_time, base_time + timedelta(hours=1))
+            await service.extract_heating_cycles(
+                "my_device_id", dataset, base_time, base_time + timedelta(hours=1)
+            )
 
     @pytest.mark.asyncio
     async def test_cycle_split_duration_parameter_override(self, service, base_time):
@@ -437,7 +466,7 @@ class TestExtractEdgeCases:
         t1 = t0 + timedelta(minutes=5)
         t2 = t0 + timedelta(minutes=45)  # 45-min cycle
         t3 = t0 + timedelta(minutes=48)
-        
+
         dataset = HistoricalDataSet(
             data={
                 HistoricalDataKey.INDOOR_TEMP: [
@@ -480,7 +509,7 @@ class TestExtractEdgeCases:
         t1 = t0 + timedelta(minutes=10)
         t2 = t0 + timedelta(minutes=40)
         t3 = t0 + timedelta(minutes=50)
-        
+
         dataset = HistoricalDataSet(
             data={
                 HistoricalDataKey.INDOOR_TEMP: [
@@ -509,8 +538,239 @@ class TestExtractEdgeCases:
         cycles = await service.extract_heating_cycles(
             "my_device_id", dataset, t0, t3, cycle_split_duration_minutes=None
         )
-        
+
         # Should return 1 cycle (no splitting since instance default is None)
         assert len(cycles) == 1
         assert cycles[0].start_time == t0
         # Verify no TypeError was raised during extraction
+
+
+# =============================================================================
+# TestExtractHeatingCyclesGracePeriod
+# =============================================================================
+
+
+class TestExtractHeatingCyclesGracePeriod:
+    """RED-phase tests for grace period logic in extract_heating_cycles.
+
+    The grace period allows brief heating interruptions (safety / frost-protection cutoffs)
+    to be ignored when they are shorter than `safety_shutoff_grace_minutes`.  Without it,
+    a short OFF blip causes the cycle to be split into two micro-cycles whose effective
+    duration is near-zero, generating aberrant dead-time and slope values.
+
+    The logic is documented as a skeleton in HeatingCycleService (Developer TODO).
+    ALL tests in this class are expected to FAIL (RED) until the Developer implements
+    the grace-period state machine.
+    """
+
+    @pytest.fixture
+    def service_with_grace(self):
+        """HeatingCycleService with 10-minute grace period enabled."""
+        return HeatingCycleService(
+            temp_delta_threshold=0.5,
+            cycle_split_duration_minutes=0,
+            min_cycle_duration_minutes=5,
+            max_cycle_duration_minutes=300,
+            safety_shutoff_grace_minutes=10,
+        )
+
+    @pytest.fixture
+    def service_no_grace(self):
+        """HeatingCycleService with grace period disabled (grace = 0)."""
+        return HeatingCycleService(
+            temp_delta_threshold=0.5,
+            cycle_split_duration_minutes=0,
+            min_cycle_duration_minutes=5,
+            max_cycle_duration_minutes=300,
+            safety_shutoff_grace_minutes=0,
+        )
+
+    @pytest.fixture
+    def base_time(self):
+        """Base timestamp for grace period tests."""
+        return datetime(2024, 1, 1, 7, 0, 0)
+
+    @pytest.mark.asyncio
+    async def test_short_interruption_within_grace_does_not_split_cycle(
+        self, service_with_grace, base_time
+    ):
+        """A brief OFF (5 min < grace=10 min) must not split the active cycle.
+
+        Given: heating active from t0, mode OFF for 5 min at t1, resumes at t2, ends at t3
+        When: grace=10 min
+        Then: exactly 1 cycle is extracted (t0 → t3)
+
+        # RED: FAILS with current code (no grace logic → 2 cycles extracted)
+        # PASSES once Developer implements grace-period state machine
+        """
+        t0 = base_time
+        t1 = t0 + timedelta(minutes=20)  # Brief OFF starts here
+        t2 = t0 + timedelta(minutes=25)  # OFF for only 5 min → within grace
+        t3 = t0 + timedelta(minutes=40)  # Heating ends
+
+        dataset = HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(t0, 18.0),
+                    m(t1, 19.0),
+                    m(t2, 19.1),
+                    m(t3, 19.6),
+                ],
+                HistoricalDataKey.TARGET_TEMP: [m(t, 20.0) for t in [t0, t1, t2, t3]],
+                HistoricalDataKey.HEATING_STATE: [
+                    m(t0, True, hvac_action="heating", hvac_mode="heat"),  # START cycle
+                    m(t1, False, hvac_action="off", hvac_mode="off"),  # Brief OFF
+                    m(t2, True, hvac_action="heating", hvac_mode="heat"),  # Resumes
+                    m(t3, False, hvac_action="off", hvac_mode="heat"),  # END cycle
+                ],
+            }
+        )
+
+        cycles = await service_with_grace.extract_heating_cycles(
+            "my_device", dataset, t0, t3 + timedelta(minutes=5)
+        )
+
+        # Grace period: the brief interruption must be absorbed — single cycle expected
+        assert (
+            len(cycles) == 1
+        ), f"Expected 1 cycle (grace absorbs 5-min interruption), got {len(cycles)}"
+        assert cycles[0].start_time == t0
+        assert cycles[0].end_time == t3
+
+    @pytest.mark.asyncio
+    async def test_long_interruption_exceeds_grace_splits_cycle(
+        self, service_with_grace, base_time
+    ):
+        """An OFF period longer than grace (15 min > grace=10 min) must split the cycle.
+
+        Given: heating active from t0, mode OFF for 15 min at t1, resumes at t2, ends at t3
+        When: grace=10 min
+        Then: 2 cycles are extracted (t0→t1 and t2→t3)
+
+        # RED: This test currently passes accidentally (no grace logic, so OFF always splits).
+        # Its purpose is to act as a regression guard — it must STAY passing after the fix.
+        # Marking as RED here to document expected behaviour under the full implementation.
+        """
+        t0 = base_time
+        t1 = t0 + timedelta(minutes=20)  # Long OFF starts
+        t2 = t0 + timedelta(minutes=35)  # OFF for 15 min > grace
+        t3 = t0 + timedelta(minutes=50)  # Second cycle ends
+
+        dataset = HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(t0, 18.0),
+                    m(t1, 19.0),
+                    m(t2, 18.8),  # Temp dropped during long OFF
+                    m(t3, 19.5),
+                ],
+                HistoricalDataKey.TARGET_TEMP: [m(t, 20.0) for t in [t0, t1, t2, t3]],
+                HistoricalDataKey.HEATING_STATE: [
+                    m(t0, True, hvac_action="heating", hvac_mode="heat"),  # START cycle 1
+                    m(t1, False, hvac_action="off", hvac_mode="off"),  # Long OFF
+                    m(t2, True, hvac_action="heating", hvac_mode="heat"),  # START cycle 2
+                    m(t3, False, hvac_action="off", hvac_mode="heat"),  # END cycle 2
+                ],
+            }
+        )
+
+        cycles = await service_with_grace.extract_heating_cycles(
+            "my_device", dataset, t0, t3 + timedelta(minutes=5)
+        )
+
+        # Long interruption exceeds grace → 2 independent cycles
+        assert len(cycles) == 2, f"Expected 2 cycles (long interruption > grace), got {len(cycles)}"
+
+    @pytest.mark.asyncio
+    async def test_grace_zero_any_interruption_terminates_cycle(self, service_no_grace, base_time):
+        """With grace=0, even a 5-minute OFF must immediately terminate the cycle.
+
+        This verifies that disabling the grace period restores the original behaviour:
+        any mode-off event closes the active cycle.
+
+        Given: heating active from t0, mode OFF for 5 min at t1, resumes at t2
+        When: grace=0
+        Then: 2 cycles extracted (OFF at t1 terminates cycle 1)
+
+        # RED: FAILS with current code only after grace is implemented;
+        # kept here as a regression guard for the zero-grace edge case.
+        # Will PASS with fix once grace=0 path explicitly disables the grace window.
+        """
+        t0 = base_time
+        t1 = t0 + timedelta(minutes=20)
+        t2 = t0 + timedelta(minutes=25)  # 5-min OFF — short, but grace=0
+        t3 = t0 + timedelta(minutes=40)
+
+        dataset = HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(t0, 18.0),
+                    m(t1, 19.0),
+                    m(t2, 19.1),
+                    m(t3, 19.6),
+                ],
+                HistoricalDataKey.TARGET_TEMP: [m(t, 20.0) for t in [t0, t1, t2, t3]],
+                HistoricalDataKey.HEATING_STATE: [
+                    m(t0, True, hvac_action="heating", hvac_mode="heat"),
+                    m(t1, False, hvac_action="off", hvac_mode="off"),  # grace=0 → must end
+                    m(t2, True, hvac_action="heating", hvac_mode="heat"),
+                    m(t3, False, hvac_action="off", hvac_mode="heat"),
+                ],
+            }
+        )
+
+        cycles = await service_no_grace.extract_heating_cycles(
+            "my_device", dataset, t0, t3 + timedelta(minutes=5)
+        )
+
+        # grace=0: OFF at t1 must terminate cycle 1 immediately → 2 cycles
+        assert (
+            len(cycles) == 2
+        ), f"Expected 2 cycles with grace=0 (OFF terminates immediately), got {len(cycles)}"
+
+    @pytest.mark.asyncio
+    async def test_interruption_returns_on_before_grace_expires_cycle_continues(
+        self, service_with_grace, base_time
+    ):
+        """Heating resumes within the grace window → single cycle, slope computed on full span.
+
+        Given: cycle starts t0, OFF for 3 min at t1 (3 < grace=10), back ON at t2, ends t3
+        Then:  1 cycle from t0 to t3 (the 3-min gap is absorbed)
+              slope is computed on the full span (not on two sub-spans)
+
+        # RED: FAILS with current code (no grace logic)
+        # PASSES once Developer implements grace-period state machine
+        """
+        t0 = base_time
+        t1 = t0 + timedelta(minutes=15)  # Brief OFF
+        t2 = t0 + timedelta(minutes=18)  # Back ON — only 3 min later
+        t3 = t0 + timedelta(minutes=35)  # Cycle ends
+
+        dataset = HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(t0, 18.0),
+                    m(t1, 19.2),
+                    m(t2, 19.1),  # Slight dip during 3-min OFF
+                    m(t3, 19.6),
+                ],
+                HistoricalDataKey.TARGET_TEMP: [m(t, 20.0) for t in [t0, t1, t2, t3]],
+                HistoricalDataKey.HEATING_STATE: [
+                    m(t0, True, hvac_action="heating", hvac_mode="heat"),
+                    m(t1, False, hvac_action="off", hvac_mode="off"),  # 3-min blip
+                    m(t2, True, hvac_action="heating", hvac_mode="heat"),
+                    m(t3, False, hvac_action="off", hvac_mode="heat"),
+                ],
+            }
+        )
+
+        cycles = await service_with_grace.extract_heating_cycles(
+            "my_device", dataset, t0, t3 + timedelta(minutes=5)
+        )
+
+        assert (
+            len(cycles) == 1
+        ), f"Expected 1 cycle (3-min blip absorbed by 10-min grace), got {len(cycles)}"
+        # The single cycle must span from the original start to the final end
+        assert cycles[0].start_time == t0
+        assert cycles[0].end_time == t3

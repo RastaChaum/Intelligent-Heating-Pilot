@@ -1,6 +1,6 @@
 # Configuration Guide - Intelligent Heating Pilot
 
-## Quick Setup (5 minutes)
+## Device Setup
 
 ### Step 1: Open Integration Settings
 
@@ -13,11 +13,13 @@
 
 A configuration dialog will appear. Here's what you need:
 
-| Field | What It Is | How to Find |
-|-------|-----------|------------|
-| **Name** | A friendly name for this IHP instance | Any name you want (e.g., "Living Room") |
-| **VTherm Entity** | Your Versatile Thermostat climate entity | Go to **Devices** → Find your thermostat → Copy entity name (e.g., `climate.living_room`) |
-| **Scheduler Entity** | HACS Scheduler switch(es) that control the VTherm | Go to **Devices** → Find your scheduler → Copy entity name (e.g., `switch.schedule_heating`) |
+| Field | Required? | What It Is | How to Find |
+|-------|-----------|-----------|------------|
+| **Name** | ✅ Yes | A friendly name for this IHP instance | Any name you want (e.g., "Living Room") |
+| **VTherm Entity** | ✅ Yes | Your Versatile Thermostat climate entity | Go to **Devices** → Find your thermostat → Copy entity name (e.g., `climate.living_room`) |
+| **Scheduler Entity** | ⚠️ Optional | HACS Scheduler switch(es) that control the VTherm | Go to **Devices** → Find your scheduler → Copy entity name (e.g., `switch.schedule_heating`) |
+
+> **New in v0.5.0+**: The Scheduler Entity is now **optional**. See [Using IHP Without a Scheduler](#using-ihp-without-a-scheduler) below.
 
 ### Step 3: (Optional) Add Environmental Sensors
 
@@ -68,6 +70,82 @@ Once configured, IHP operates automatically:
 
 ---
 
+## Using IHP Without a Scheduler
+
+**New in v0.5.0+**: You can now use IHP without configuring a scheduler entity. This is useful for:
+
+- 🤖 **Dynamic scheduling** based on external triggers (e.g., smartphone alarm, calendar events)
+- 🔧 **Custom automations** that calculate start times programmatically
+- 📱 **Voice-controlled** heating schedules
+- 🧪 **Testing** IHP's prediction capabilities
+
+### What Happens Without a Scheduler?
+
+When no scheduler is configured:
+
+- ✅ IHP continues to **learn** from your heating cycles
+- ✅ The **Learned Heating Slope** sensor updates normally
+- ⚠️ Anticipation sensors show **"unknown"** (no scheduled events to anticipate)
+- ⚠️ IHP does **not automatically trigger** heating (you control this via automations)
+
+### Using the Calculation Service
+
+Without a scheduler, you can use the **`calculate_anticipated_start_time`** service in your own automations:
+
+**Example: Wake-up heating based on phone alarm**
+
+```yaml
+alias: "Dynamic Wake-up Heating"
+trigger:
+    - platform: state
+    entity_id: sensor.phone_next_alarm
+action:
+    # Calculate when to start heating
+    - service: intelligent_heating_pilot.calculate_anticipated_start_time
+    data:
+        entity_id: sensor.intelligent_heating_pilot_living_room_anticipated_start_time
+        target_time: "{{ states('sensor.phone_next_alarm') }}"
+        target_temp: 21.0
+    response_variable: heating_calc
+    
+    # Wait until the calculated start time
+    - delay:
+        seconds: "{{ (as_datetime(heating_calc.anticipated_start_time) - now()).total_seconds() }}"
+    
+    # Start heating
+    - service: climate.set_temperature
+    target:
+        entity_id: climate.living_room
+    data:
+        temperature: 21.0
+```
+
+**Service Parameters:**
+
+| Parameter | Required? | Description | Example |
+|-----------|-----------|-------------|---------|
+| `entity_id` | ✅ Yes | Any IHP sensor entity (to identify the device) | `sensor.intelligent_heating_pilot_living_room_anticipated_start_time` |
+| `target_time` | ✅ Yes | When you want target temperature reached | `"2024-01-15 07:00:00"` or template |
+| `target_temp` | ⚠️ Optional | Desired temperature (defaults to VTherm's current target) | `21.0` |
+
+**Service Response:**
+
+The service returns calculation results visible in Developer Tools:
+
+```yaml
+anticipated_start_time: "2024-01-15T06:27:00+01:00"
+target_time: "2024-01-15T07:00:00+01:00"
+target_temp: 21.0
+current_temp: 18.5
+estimated_duration_minutes: 33.0
+learned_heating_slope: 2.1
+confidence_level: 0.85
+```
+
+**Use these values in your automations** to create intelligent, adaptive heating schedules!
+
+---
+
 ## Modifying Configuration
 
 Need to change entities after setup?
@@ -85,18 +163,89 @@ The integration will reload automatically.
 
 ## Advanced Configuration (Optional)
 
-### Data Retention Settings
+### Initial Dead Time
 
-**New in v0.4.0+**: IHP now caches heating cycles for improved performance and longer learning history.
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| **Initial Dead Time** | 0 min | 0–60 min | Seed value for dead time before learning begins |
+
+When to use: If you know your heating system has a significant startup lag (e.g., hydronic radiators that take 2-3 minutes to warm up), set this to speed up initial learning accuracy. IHP will refine this value automatically after each heating cycle.
+
+**Example:** If your boiler takes 2 minutes to start heating the room, set this to 2 minutes for better initial predictions.
+
+---
+
+### Automatic Learning
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Data Retention Days** | 30 days | How long to keep cached heating cycles |
+| **Automatic Learning** | Enabled | When enabled, IHP updates learned heating slope and dead time after each cycle |
+
+When to disable: During testing or when you want to freeze parameters for a period while evaluating IHP's behavior with fixed values.
+
+---
+
+### Recorder Extraction Period
+
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| **Recorder Extraction Period** | 7 days | 1–30 days | Size of each batch when extracting recorder history |
+
+This controls how the initial recorder extraction is chunked. Smaller values = lighter database load per batch (good for low-power hardware like Raspberry Pi), but more total batches. Larger values = fewer batches (faster total extraction on powerful hardware).
+
+**Recommended values:**
+- **Low-power hardware (Raspberry Pi, HA Green)**: 3–5 days
+- **Standard hardware (NUC, mini PC)**: 7–14 days
+- **Powerful hardware**: 14–30 days
+
+---
+
+### Safety Shutoff Grace Period
+
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| **Safety Shutoff Grace Period** | 10 min | 0–30 min | How long IHP waits before closing a cycle after an unexpected heating stop |
+
+When heating stops unexpectedly (e.g., safety protection, frost mode), IHP waits this long. If heating resumes, the interruption is ignored and the cycle continues. If not, the cycle closes.
+
+**When to adjust:**
+- **Set lower (0–2 min)**: For systems that stop cleanly with no safety interruptions
+- **Set higher (15–20 min)**: For boilers with long safety cycle lockouts or heat pumps with regular defrost cycles
+
+---
+
+### Data Retention Settings
+
+**New in v0.4.0+**: IHP now caches heating cycles for improved performance and longer learning history. **Updated in v0.6.0**: New zero-retention mode for minimal deployments.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Data Retention Days** | 30 days | How long to keep cached heating cycles (0 = disabled, no history stored) |
 
 **What This Affects:**
-- 📊 **Cycle Cache**: Heating cycles older than this are automatically pruned
-- 🧠 **Learning History**: More retention = better slope calculations
-- 💾 **Storage**: Longer retention uses slightly more disk space (minimal)
+- Cycle Cache: Heating cycles older than this are automatically pruned
+- Learning History: More retention = better slope calculations
+- Storage: Longer retention uses slightly more disk space (minimal)
+
+**Initial Recorder Extraction:**
+
+When you first configure IHP or increase the **Data Retention Days** setting, IHP performs **progressive, batched extraction**:
+
+- Extraction is split into `task_range_days`-day periods (default: 7 days, configurable 1-30 days)
+- Each period is processed sequentially with brief pauses between batches
+- Multiple IHP instances are serialized via RecorderAccessQueue — they don't compete for the recorder simultaneously
+- Expected processing time: approximately **1-2 minutes per week of history** on typical hardware
+- Processing happens **in the background** — HA and IHP sensors remain responsive
+
+**Factors affecting processing time:**
+- Higher **Data Retention Days** = more history to extract = longer total time
+- Smaller **Recorder Extraction Period** = more batches but lighter load per batch
+- Slower hardware (e.g., Raspberry Pi, Home Assistant Green) = longer processing time
+
+**Recommendation**: If you experience slowness, consider:
+- Setting **Recorder Extraction Period** to 3–5 days (if on low-power hardware)
+- Reducing **Data Retention Days** to 30 days (default) or lower
+- Allowing the initial extraction to complete before making other configuration changes
 
 ### Heating Cycle Detection Parameters
 
@@ -195,13 +344,33 @@ You can configure multiple IHP instances—one per VTherm:
 
 ## Entities Created by IHP
 
-After configuration, IHP creates these sensors on your device:
+After configuration, IHP creates these entities on your device:
+
+### Control Switch
+
+| Switch | What It Does | Default State |
+|--------|-------------|--------------|
+| **IHP Preheating** | Enable/disable intelligent preheating | ON (enabled) |
+
+**When Enabled (ON):**
+- ✅ IHP triggers heating at calculated anticipation time
+- ✅ Learning and calculations continue normally
+- ✅ All sensors update as expected
+
+**When Disabled (OFF):**
+- ❌ IHP does NOT trigger heating (scheduler runs in legacy mode)
+- ✅ Learning continues (heating cycles still detected)
+- ✅ Calculations continue (predictions still shown in sensors)
+- ✅ You can monitor what IHP would do without it taking control
+
+**Use Case:** Temporarily disable preheating during manual heating control, or when you want to monitor IHP's predictions without automatic intervention.
 
 ### Main Sensors
 
 | Sensor | What It Shows | Updated |
 |--------|--------------|---------|
 | **Learned Heating Slope** | How fast your room heats (°C/hour) | Every heating cycle |
+| **Dead Time** | System delay in temperature response (seconds) | Every heating cycle |
 | **Anticipation Time** | When heating will start | Every update cycle |
 | **Next Schedule** | Details of next heating event | Every schedule change |
 
@@ -217,7 +386,7 @@ Before moving forward, verify:
 
 - [ ] IHP appears in integrations
 - [ ] At least one VTherm entity selected
-- [ ] At least one scheduler entity selected
+- [ ] Scheduler entity configured (optional — required for automatic preheating)
 - [ ] New sensors appear on your IHP device
 - [ ] No error messages in logs
 

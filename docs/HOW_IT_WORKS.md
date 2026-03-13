@@ -33,35 +33,81 @@ IHP computes the Learned Heating Slope from detected heating cycles:
 
 1. **Detect a heating cycle** using the start/stop rules described below.
 2. **Capture temps**: record indoor temperature at cycle start and at cycle end.
-3. **Calculate cycle slope**: 
+3. **Calculate cycle slope**:
    - Temperature gain = end temp − start temp
-   - Duration = end time − start time
-   - Cycle slope = (temperature gain ÷ duration hours)
-4. **Average the slopes** across observed cycles to produce the current LHS.
+   - Duration = end time − start time (minus dead time, see below)
+   - Cycle slope = (temperature gain ÷ effective duration hours)
+4. **Apply filters**: reject cycles with non-positive slopes and very short effective heating windows
+5. **Average the slopes** across filtered cycles to produce the current LHS.
+
+### Two Types of LHS
+
+IHP uses two complementary approaches:
+
+**Global LHS** — Simple average of ALL positive-slope cycles regardless of time of day
+- Used as a fallback when no contextual data is available
+- Represents your system's "typical" heating performance
+
+**Contextual LHS** — Per-hour-of-day averages (e.g., cycles starting at 6am average separately from 9pm)
+- More accurate because heating behavior varies by time (thermal mass, occupancy patterns, outdoor conditions)
+- IHP uses contextual LHS when available for the current hour, falls back to global LHS if insufficient data
+
+**Result:** More precise predictions as you use IHP throughout different times of day
+
+### Important: Dead Time in Slope Calculations
+
+When calculating a cycle's slope, IHP excludes the **dead time** (system startup lag) from the duration. Here's why:
+
+```
+Total cycle: 60 minutes
+Dead time: 5 minutes (system ramps up, no temperature change)
+Effective heating duration: 55 minutes
+
+Cycle slope = temperature_gain / (55 minutes / 60)
+NOT: temperature_gain / 60 minutes
+```
+
+This makes the slope more accurate by only counting the time when the room was actually heating.
+
+### Filters Applied Before LHS Calculation
+
+Before a cycle contributes to LHS:
+
+1. **Non-positive slope filter**: Cycles where temperature didn't rise (or fell) are discarded — they contain no useful heating data
+2. **Minimum effective duration filter**: Cycles whose effective heating window (after subtracting dead time) is too short are rejected
+   - Why? When dead time ≈ total duration, the slope formula amplifies noise by orders of magnitude (e.g., 100,000°C/h)
+   - Default threshold: 5 minutes of effective heating required
+   - Example: A 6-minute cycle with 5-minute dead time has only 1 minute effective duration → rejected
 
 ### Cycle Cache: Performance Optimization
 
-**New in v0.4.0+**: IHP now uses an **incremental cycle cache** to dramatically improve performance and data retention.
-
-**What Changed:**
-- **Before**: Every LHS calculation scanned the entire Home Assistant recorder history (heavy database load)
-- **After**: Detected cycles are cached locally, with only new cycles extracted every 24 hours
+**New in v0.4.0+**: IHP uses an **incremental cycle cache** with progressive extraction to optimize performance and data retention.
 
 **How It Works:**
-1. **First Run**: IHP scans recorder history and caches all detected heating cycles
-2. **24-Hour Refresh**: Every 24 hours, IHP queries only new data since last search
-3. **Incremental Updates**: New cycles are automatically appended to cache (no duplicates)
-4. **Automatic Pruning**: Old cycles beyond retention period (default: 30 days) are removed
-5. **LHS Calculation**: Uses cached cycles only—no recorder queries needed
+
+1. **Progressive Extraction**: Rather than loading the entire recorder history at once, IHP extracts the full retention window in batches (default: 7-day periods, configurable via `task_range_days`)
+2. **Sequential Batching**: Each batch is processed with brief pauses between, preventing database overload
+3. **RecorderAccessQueue**: A global FIFO serializer prevents multiple IHP instances from querying the recorder simultaneously — essential for multi-zone setups to avoid OOM and watchdog timeouts
+4. **Startup Staggering**: Each IHP instance adds a deterministic jitter delay so devices don't all start querying at the same time
+5. **Lazy LHS Loading**: At startup, only the current hour's contextual LHS is loaded into memory; other 23 hours are loaded on-demand when first requested
+6. **Automatic Refresh**: After initial extraction, new cycles are extracted every 24 hours (incremental updates only)
+7. **Automatic Pruning**: Old cycles beyond retention period (default: 30 days) are removed
 
 **Benefits:**
-- ⚡ **~95% reduction** in database queries (only searches new data every 24h)
+- ⚡ **Dramatic query reduction**: ~95% fewer database hits after initial extraction
 - 📈 **Longer retention**: Keeps 30 days of cycles even if HA recorder retention is only 7-10 days
 - 🚀 **Better learning**: More historical data = more accurate slope calculations
 - 💾 **Persistent**: Cache survives Home Assistant restarts
+- 🔄 **Multi-zone safe**: RecorderAccessQueue serialization prevents conflicts
+
+**Expected Processing Time:**
+- Initial extraction: approximately **1-2 minutes per week of history** on typical hardware
+- Subsequent updates: only new data, much faster
+- Processing happens **in the background** — HA and IHP sensors remain responsive
 
 **Configuration:**
-The cache retention period is controlled by `data_retention_days` (default: 30 days). This can be configured during setup or by reconfiguring the integration.
+- Cache retention period: `data_retention_days` (default: 30 days)
+- Extraction batch size: `task_range_days` (default: 7 days, range 1-30)
 
 **Note**: The old configuration key `lhs_retention_days` is still supported for backward compatibility but will be deprecated in future versions.
 
@@ -89,12 +135,16 @@ This logic is evaluated on every historical measurement; there is no additional 
 
 ### What Stops a Heating Cycle?
 
-A heating cycle **ends** as soon as **one** of these conditions is met:
+A heating cycle **ends** when one of these conditions is met:
 
 1. **Heating mode is disabled** (`hvac_mode` no longer in `heat`, `heat_cool`, or `auto`, or the entity state becomes falsy)
 2. **Room reached target**: indoor temperature is at or above `(target - delta)`, with delta defaulting to **0.2°C**
 
-There is **no 5-minute grace period** in the code today—cycle end is detected immediately on the measurement that satisfies one of the conditions.
+However, **brief heating interruptions** (< 10 minutes by default) do NOT immediately end the cycle:
+
+**Safety Shutoff Grace Period**: When heating stops unexpectedly (e.g., safety shutoff, frost protection mode), IHP waits up to **10 minutes** (configurable, default 10 min) before closing the cycle. If heating resumes within this window, the interruption is absorbed and the cycle continues.
+
+**Why?** Brief safety interruptions cause extreme slopes (100,000+ °C/h) if treated as separate micro-cycles. The grace period prevents these spurious learning events.
 
 **Example Scenarios:**
 
@@ -102,28 +152,30 @@ There is **no 5-minute grace period** in the code today—cycle end is detected 
 |----------|--------------|
 | Natural completion | Room hits target → End detected immediately |
 | Scheduler or manual stop | Mode switches off → End detected immediately |
+| Safety shutoff (brief, <10 min) | Mode stops → Grace period starts; if mode resumes within 10 min → interruption absorbed, cycle continues |
+| Safety shutoff (extended, >10 min) | Mode stops → Grace period expires after 10 min → Cycle closes at the moment grace started |
 | Early comfort | Target lowered while heating | Mode may stay on; end triggers when room is within 0.2°C of the new target |
-
 
 ### Why These Rules?
 
-The current logic favors **quick detection** over debounce: cycles start as soon as heating truly begins and stop as soon as the system is off or the room is effectively at target. This keeps slope calculations aligned with the exact heating window but means brief oscillations around the target can create short cycles if the temperature crosses the `(target - delta)` boundary repeatedly.
+The current logic favors **quick detection** for natural completions and manual stops, but protects against false micro-cycles caused by brief safety interruptions. This keeps slope calculations aligned with actual heating performance rather than sensor noise or transient protection events.
 
 ---
 
 ## 🧮 Prediction Algorithm
 
-Once IHP has learned the heating slope, it predicts when heating should start.
+Once IHP has learned the heating slope and dead time, it predicts when heating should start.
 
 ### The Calculation
 
-The core prediction formula is simple:
+**New in v0.6.0**: The prediction formula now includes dead time for more accurate predictions.
 
 ```
-Anticipation Time (minutes) = (Temperature Difference / Learned Slope) × 60
+Anticipation Time (minutes) = Dead Time + (Temperature Difference / Learned Slope) × 60
 
 Where:
-- Temperature Difference = Target Temp - Current Temp
+- Dead Time = System lag before temperature starts rising (minutes)
+- Temperature Difference = Target Temp - Current Temp (°C)
 - Learned Slope = °C per hour (learned from heating cycles)
 ```
 
@@ -131,10 +183,22 @@ Where:
 ```
 Need to heat: 3°C (from 18°C to 21°C)
 Learned Slope: 2.0°C/hour
-Anticipation Time = (3 / 2.0) × 60 = 90 minutes
+Dead Time: 1.5 minutes (system takes 1.5 minutes to respond)
+Anticipation Time = 1.5 + (3 / 2.0) × 60 = 1.5 + 90 = 91.5 minutes
 ```
 
-So IHP will trigger heating **90 minutes before the scheduled time**.
+So IHP will trigger heating **91.5 minutes before the scheduled time** (accounting for the 1.5-minute delay).
+
+### What is Dead Time?
+
+**Dead Time** is the delay between when your heating system turns on and when indoor temperature actually starts rising. It accounts for:
+
+- **Heat distribution delay**: Time for warm air to reach the temperature sensor
+- **Thermal inertia**: Building elements warming up before affecting room temperature
+- **System latency**: Time for boiler/heat pump to ramp up
+- **Sensor response**: Temperature sensor accuracy and measurement lag
+
+IHP automatically learns dead time from your heating cycles and refines it over time, similar to how it learns the heating slope.
 
 ### Environmental Adjustments
 
@@ -145,8 +209,12 @@ The basic calculation is then **adjusted** based on real-world conditions:
 Colder outdoor air = **More heat loss** = **Need to heat longer**
 
 ```
-Adjustment: If outdoor temp is below 15°C
-→ Add extra heating time (warmth escapes faster)
+Adjustment Factor = 1.0 + (20°C - outdoor_temp) × 0.05
+
+Examples:
+- Outdoor temp 20°C: factor = 1.0 (no adjustment)
+- Outdoor temp 0°C: factor = 2.0 (heat twice as long)
+- Outdoor temp -10°C: factor = 2.5 (heat 2.5× longer)
 ```
 
 #### 2. **Humidity Effect**
@@ -154,8 +222,12 @@ Adjustment: If outdoor temp is below 15°C
 Higher humidity = **Less efficient heating** = **Need to heat longer**
 
 ```
-Adjustment: High humidity (>70%)
-→ Add extra heating time (moisture affects thermal dynamics)
+Adjustment Factor = 1.0 + (humidity - 50%) × 0.002
+
+Examples:
+- Humidity 50%: factor = 1.0 (neutral reference)
+- Humidity 80%: factor = 1.06 (heat 6% longer)
+- Humidity 20%: factor = 0.94 (heat 6% faster)
 ```
 
 #### 3. **Solar Gain (Cloud Coverage)**
@@ -163,8 +235,12 @@ Adjustment: High humidity (>70%)
 Clear sky = **Solar heat gain** = **Might heat faster**
 
 ```
-Adjustment: If cloud coverage is low (<20%)
-→ Reduce anticipation time slightly (free solar energy helps)
+Adjustment Factor = 1.0 - (100 - cloud_coverage%) × 0.001
+
+Examples:
+- Cloud coverage 100%: factor = 1.0 (no solar gain)
+- Cloud coverage 0% (clear sky): factor = 0.9 (heat 10% faster)
+- Cloud coverage 50%: factor = 0.95 (heat 5% faster)
 ```
 
 ### Safety Bounds
@@ -173,8 +249,8 @@ IHP applies **minimum and maximum limits** to predictions to stay reasonable:
 
 | Limit | Value | Reason |
 |-------|-------|--------|
-| **Minimum Anticipation** | 5 minutes | Don't trigger too early if slope is very high |
-| **Maximum Anticipation** | 4 hours | Don't trigger too early for slow heating |
+| **Minimum Anticipation** | 10 minutes | Don't trigger too early if slope is very high |
+| **Maximum Anticipation** | 6 hours (360 minutes) | Don't trigger too early for slow heating |
 
 ---
 
