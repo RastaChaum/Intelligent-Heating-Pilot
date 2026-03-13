@@ -43,7 +43,8 @@ jobs:
         id: release-notes
         run: |
           # Extraction de la section Unreleased pour la transformer en release
-          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/,/## \[/' CHANGELOG.md | sed '1d;$d')
+          # Uses flag-based awk to avoid range pattern matching [Unreleased] header itself
+          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next} flag && /## \[/{flag=0} flag{print}' CHANGELOG.md)
 
           if [ -z "$CHANGELOG_CONTENT" ]; then
             echo "❌ Aucune entrée Unreleased dans CHANGELOG.md"
