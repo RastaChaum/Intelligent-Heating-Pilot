@@ -7,15 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-13
+
 ### Added
-<<<<<<< copilot/fix-ignored-config-values
+- **Dead Time Learning** ([#62](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/62)) – Enhanced prediction accuracy with automatic dead time calculation
+  - Formula now includes dead time constant: `time_needed = dead_time + (temperature_delta / learned_slope) * 60`
+  - Dead time is automatically learned from historical heating cycles
+  - New sensor `sensor.intelligent_heating_pilot_<device>_dead_time` shows the learned dead time in seconds
 - **Zero-Retention Mode for Learning History** – New configuration option to disable LHS (Learning Heating Slope) data retention
   - Set `lhs_retention_days=0` to disable historical data storage (useful for testing or minimal deployments)
   - When disabled, system uses default LHS value (2.0°C/h) without attempting to persist or retrieve learning data
   - No storage overhead when retention is disabled
-=======
-- Dead time calculation in heating time prediction ([#62](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/62)): Formula now includes dead time constant: `time_needed = dead_time + (temperature_delta / learned_slope) * 60`. Dead time is automatically learned from historical heating cycles.
->>>>>>> integration
 
 ### Changed
 - **Contextual LHS Lazy Loading at Startup** ([#103](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/103)) – Refactored `LhsLifecycleManager` to use lazy loading for contextual LHS, reducing startup I/O and memory overhead
@@ -42,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed `KeyError: 'anticipated_start_time'` when IHP runs without a scheduler configured
   - Event bridge now distinguishes between clear-values signals and full data payloads
   - Users without scheduler configuration no longer see repeated errors; sensors stay `unknown` as expected
+- **Startup Performance Improvements** – Optimizations to prevent HA watchdog timeout and reduce startup memory consumption
+  - Async incremental recorder loading prevents blocking HA startup
+  - FIFO RecorderAccessQueue serializes recorder access across multiple IHP instances to prevent OOM at startup
+  - Smart event filtering eliminates log flood and unnecessary HA state writes
+  - Contextual LHS lazy loading (see "Changed" section) further reduces I/O overhead
 
 ## [0.5.0] - 2026-01-25
 
@@ -293,8 +300,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Release Links
 
-[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.5.0-rc.1...HEAD
-[0.5.0-rc.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.4...v0.5.0-rc.1
+[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.4...v0.5.0
 [0.4.3]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.0...v0.4.1

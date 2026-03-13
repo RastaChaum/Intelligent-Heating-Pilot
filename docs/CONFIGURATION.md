@@ -1,6 +1,6 @@
 # Configuration Guide - Intelligent Heating Pilot
 
-## Quick Setup (5 minutes)
+## Device Setup
 
 ### Step 1: Open Integration Settings
 
@@ -163,38 +163,89 @@ The integration will reload automatically.
 
 ## Advanced Configuration (Optional)
 
-### Data Retention Settings
+### Initial Dead Time
 
-**New in v0.4.0+**: IHP now caches heating cycles for improved performance and longer learning history.
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| **Initial Dead Time** | 0 min | 0–60 min | Seed value for dead time before learning begins |
+
+When to use: If you know your heating system has a significant startup lag (e.g., hydronic radiators that take 2-3 minutes to warm up), set this to speed up initial learning accuracy. IHP will refine this value automatically after each heating cycle.
+
+**Example:** If your boiler takes 2 minutes to start heating the room, set this to 2 minutes for better initial predictions.
+
+---
+
+### Automatic Learning
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Data Retention Days** | 30 days | How long to keep cached heating cycles |
+| **Automatic Learning** | Enabled | When enabled, IHP updates learned heating slope and dead time after each cycle |
+
+When to disable: During testing or when you want to freeze parameters for a period while evaluating IHP's behavior with fixed values.
+
+---
+
+### Recorder Extraction Period
+
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| **Recorder Extraction Period** | 7 days | 1–30 days | Size of each batch when extracting recorder history |
+
+This controls how the initial recorder extraction is chunked. Smaller values = lighter database load per batch (good for low-power hardware like Raspberry Pi), but more total batches. Larger values = fewer batches (faster total extraction on powerful hardware).
+
+**Recommended values:**
+- **Low-power hardware (Raspberry Pi, HA Green)**: 3–5 days
+- **Standard hardware (NUC, mini PC)**: 7–14 days
+- **Powerful hardware**: 14–30 days
+
+---
+
+### Safety Shutoff Grace Period
+
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| **Safety Shutoff Grace Period** | 10 min | 0–30 min | How long IHP waits before closing a cycle after an unexpected heating stop |
+
+When heating stops unexpectedly (e.g., safety protection, frost mode), IHP waits this long. If heating resumes, the interruption is ignored and the cycle continues. If not, the cycle closes.
+
+**When to adjust:**
+- **Set lower (0–2 min)**: For systems that stop cleanly with no safety interruptions
+- **Set higher (15–20 min)**: For boilers with long safety cycle lockouts or heat pumps with regular defrost cycles
+
+---
+
+### Data Retention Settings
+
+**New in v0.4.0+**: IHP now caches heating cycles for improved performance and longer learning history. **Updated in v0.6.0**: New zero-retention mode for minimal deployments.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Data Retention Days** | 30 days | How long to keep cached heating cycles (0 = disabled, no history stored) |
 
 **What This Affects:**
-- 📊 **Cycle Cache**: Heating cycles older than this are automatically pruned
-- 🧠 **Learning History**: More retention = better slope calculations
-- 💾 **Storage**: Longer retention uses slightly more disk space (minimal)
+- Cycle Cache: Heating cycles older than this are automatically pruned
+- Learning History: More retention = better slope calculations
+- Storage: Longer retention uses slightly more disk space (minimal)
 
-**⚠️ Important Performance Note:**
+**Initial Recorder Extraction:**
 
-When you first configure IHP or increase the **Data Retention Days** setting, IHP will analyze your VTherm's historical data from Home Assistant's recorder database to extract heating cycles.
+When you first configure IHP or increase the **Data Retention Days** setting, IHP performs **progressive, batched extraction**:
 
-**Expected behavior during initial extraction:**
-- 🕒 **Processing time**: Up to **5 minutes** or more with high retention settings (>30 days)
-- 📊 **Typical example**: With `purge_keep_days` set to 60 days in recorder configuration, initial extraction takes approximately **2-3 minutes**
-- 🔄 **This only happens once**: After initial extraction, IHP uses incremental updates (every 24 hours) which are much faster
-- 📱 **UI may be slow**: Some features/UI elements may load slowly during this initial processing
+- Extraction is split into `task_range_days`-day periods (default: 7 days, configurable 1-30 days)
+- Each period is processed sequentially with brief pauses between batches
+- Multiple IHP instances are serialized via RecorderAccessQueue — they don't compete for the recorder simultaneously
+- Expected processing time: approximately **1-2 minutes per week of history** on typical hardware
+- Processing happens **in the background** — HA and IHP sensors remain responsive
 
 **Factors affecting processing time:**
-- Higher **Data Retention Days** = longer processing time
-- Higher **recorder `purge_keep_days`** = more historical data to process
+- Higher **Data Retention Days** = more history to extract = longer total time
+- Smaller **Recorder Extraction Period** = more batches but lighter load per batch
 - Slower hardware (e.g., Raspberry Pi, Home Assistant Green) = longer processing time
 
-**Recommendation**: If you experience slowness exceeding 5 minutes, consider:
+**Recommendation**: If you experience slowness, consider:
+- Setting **Recorder Extraction Period** to 3–5 days (if on low-power hardware)
 - Reducing **Data Retention Days** to 30 days (default) or lower
-- Checking your recorder's `purge_keep_days` setting (typically in `configuration.yaml`)
-- Allowing the initial extraction to complete before making configuration changes
+- Allowing the initial extraction to complete before making other configuration changes
 
 ### Heating Cycle Detection Parameters
 
@@ -319,6 +370,7 @@ After configuration, IHP creates these entities on your device:
 | Sensor | What It Shows | Updated |
 |--------|--------------|---------|
 | **Learned Heating Slope** | How fast your room heats (°C/hour) | Every heating cycle |
+| **Dead Time** | System delay in temperature response (seconds) | Every heating cycle |
 | **Anticipation Time** | When heating will start | Every update cycle |
 | **Next Schedule** | Details of next heating event | Every schedule change |
 
@@ -334,7 +386,7 @@ Before moving forward, verify:
 
 - [ ] IHP appears in integrations
 - [ ] At least one VTherm entity selected
-- [ ] At least one scheduler entity selected
+- [ ] Scheduler entity configured (optional — required for automatic preheating)
 - [ ] New sensors appear on your IHP device
 - [ ] No error messages in logs
 

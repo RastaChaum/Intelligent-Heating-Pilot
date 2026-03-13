@@ -72,10 +72,24 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 3. Value should be between 0.5-5.0 (°C per hour)
 4. If 0 or 99.9, IHP is still learning (wait 1-2 more cycles)
 
+### Task: Understand the Dead Time sensor
+
+**Steps:**
+1. Find your IHP device
+2. Look for "Dead Time" sensor (shows value in seconds)
+3. This represents system lag before temperature starts changing
+4. Higher values = slower response to heating commands
+
+**What is Dead Time?**
+- Time between when heating turns on and when temperature actually starts rising
+- IHP automatically learns this from your heating cycles
+- Improves prediction accuracy for your system
+- Value typically ranges from 30-300 seconds depending on system type
+
 ### Task: See next heating plan
 
 **Steps:**
-1. Find your IHP device  
+1. Find your IHP device
 2. Look for "Anticipation Time" sensor
 3. Shows when IHP will trigger heating next
 
@@ -280,4 +294,4 @@ Rest assured, you can go on vacation without any additional configuration!
 
 **Happy heating!** 🔥
 
-_Intelligent Heating Pilot v0.4.3 - Documentation Last Updated: December 2025_
+_Intelligent Heating Pilot v0.6.0 - Documentation Last Updated: March 2026_
