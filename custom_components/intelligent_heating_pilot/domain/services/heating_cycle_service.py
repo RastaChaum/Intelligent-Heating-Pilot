@@ -315,16 +315,25 @@ class HeatingCycleService(IHeatingCycleService):
 
         # Gérer un cycle potentiellement non terminé à la fin des données
         if heating_start is not None:
+            # If a grace window was still open when the data ended, the heating mode went OFF at
+            # grace_period_start → that is the real end of the cycle, not the dataset boundary.
+            effective_end_time = grace_period_start if grace_period_start is not None else end_time
             _LOGGER.debug(
-                "Unfinished heating cycle found, ending at data_set end time %s", end_time
+                "Unfinished heating cycle found, ending at %s%s",
+                effective_end_time,
+                " (grace period active at data end)"
+                if grace_period_start is not None
+                else " (dataset end)",
             )
             created = self._create_cycles(
                 device_id=device_id,
                 start_time=heating_start,
-                end_time=end_time,
+                end_time=effective_end_time,
                 start_indoor_temp=cycle_start_indoor_temp or 20.0,
                 end_indoor_temp=self._get_value_at_time(
-                    history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, []), end_time, float
+                    history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, []),
+                    effective_end_time,
+                    float,
                 )
                 or 20.0,
                 target_temp=cycle_start_target_temp or 20.0,
@@ -488,13 +497,6 @@ class HeatingCycleService(IHeatingCycleService):
             history_data_set=history_data_set,
         )
 
-        # Calculate dead_time_cycle for this cycle
-        dead_time_cycle_minutes = self._calculate_dead_time_cycle(
-            start_time=start_time,
-            start_temp=start_indoor_temp,
-            history_data_set=history_data_set,
-        )
-
         # Build HeatingCycle with computed tariff details (may be empty)
         cycle = HeatingCycle(
             device_id=device_id,
@@ -583,15 +585,6 @@ class HeatingCycleService(IHeatingCycleService):
             sub_cycle_end_temp = current_sub_cycle_start_temp + (
                 temp_per_minute * split_duration_minutes
             )
-
-            # Calculate dead_time_cycle only for the first sub-cycle
-            dead_time_cycle_minutes = None
-            if i == 0:
-                dead_time_cycle_minutes = self._calculate_dead_time_cycle(
-                    start_time=current_sub_cycle_start_time,
-                    start_temp=current_sub_cycle_start_temp,
-                    history_data_set=history_data_set,
-                )
 
             # Calculate dead_time_cycle only for the first sub-cycle
             dead_time_cycle_minutes = None

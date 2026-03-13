@@ -57,6 +57,9 @@ DEFAULT_MAX_CYCLE_DURATION_MINUTES = 300  # Maximum 5 hours
 
 # Safety shutoff grace period: brief interruptions shorter than this threshold (e.g. frost/safety mode)
 # will NOT terminate an in-progress heating cycle, preventing bogus slope values.
+# Note: 10 minutes is the recommended production default (enabled for all new/upgraded devices).
+# HeatingCycleService.__init__ defaults to 0 for test-isolation purposes; production always reads
+# this value from HA config (or falls back to DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES).
 CONF_SAFETY_SHUTOFF_GRACE_MINUTES = "safety_shutoff_grace_minutes"
 DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES = 10  # 10 minutes tolerance for safety/frost interruptions
 
