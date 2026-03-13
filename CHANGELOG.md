@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Set `lhs_retention_days=0` to disable historical data storage (useful for testing or minimal deployments)
   - When disabled, system uses default LHS value (2.0°C/h) without attempting to persist or retrieve learning data
   - No storage overhead when retention is disabled
+- **Integration Logo** ([#68](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/68)) – Added official logo icons (`icon.png` / `icon@2x.png`) for the Home Assistant integrations page
 
 ### Changed
 - **Contextual LHS Lazy Loading at Startup** ([#103](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/103)) – Refactored `LhsLifecycleManager` to use lazy loading for contextual LHS, reducing startup I/O and memory overhead
@@ -30,20 +31,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Consolidated `_as_bool()` utility function into `utils/config_helpers.py` to eliminate code duplication
   - Added explicit type annotations for better IDE support and type safety
   - Improved separation of concerns between domain, infrastructure, and application layers
-- **Timer-Based Anticipation Triggering** ([#84](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/84)) – Improved the reliability of the preheating system by replacing event-driven triggering with timer-based triggering, reducing unexpected triggers and enhancing the accuracy of heating predictions.
+- **Timer-Based Anticipation Triggering** ([#84](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/84), [#70](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/70)) – Improved the reliability of the preheating system by replacing event-driven triggering with timer-based triggering, ensuring IHP always wakes up at the anticipated time even when no sensor events occur in the window between calculation and target time.
 
 ### Fixed
 - **Home Assistant Recorder Saturation** – Fixed HA restarts triggered by the supervisor when multiple IHP devices were configured with high retention periods (e.g. 30 days)
   - Extraction tasks now cover configurable periods (default: 7 days) instead of a single day, reducing the number of Recorder queries by up to 7×
   - Added a 10-second pause between extraction tasks to let the Recorder breathe and prevent query queue overflow
   - Eliminated redundant SQL queries caused by fetching each historical data key separately: all keys are now retrieved in a single `get_significant_states` call per entity per period
-- **Fixed Configuration Values Being Ignored When Falsy** – Configuration values like `0` (false/disabled) are now properly read and applied
+- **Fixed Configuration Values Being Ignored When Falsy** ([#91](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/91), [#85](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/85)) – Configuration values like `0` (false/disabled) are now properly read and applied
   - `lhs_retention_days=0`, `cycle_split_duration_minutes=0`, `auto_learning=False` now correctly persist and are respected by the system
+  - Parameters `cycle_split_duration_minutes`, `min_cycle_duration_minutes`, `max_cycle_duration_minutes` are now properly read from config options instead of always using defaults
+  - `ihp_enabled=False` is now correctly persisted across Home Assistant restarts — the IHP Enable/Disable Switch state is reliably restored after a restart
   - Centralized boolean parsing ensures consistent handling of stringified config values across the integration
 - **No-scheduler KeyError spam** ([#81](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/81))
   - Fixed `KeyError: 'anticipated_start_time'` when IHP runs without a scheduler configured
   - Event bridge now distinguishes between clear-values signals and full data payloads
   - Users without scheduler configuration no longer see repeated errors; sensors stay `unknown` as expected
+- **IHP Enable/Disable Switch State Ignored in Event-Driven Updates** ([#90](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/90)) – Fixed a race condition in `HAEventBridge` where event-driven recalculations (triggered by entity state changes) did not pass the `ihp_enabled` parameter, causing it to default to `True`
+  - When IHP was disabled via the switch, preheating was still triggered by sensor events
+  - `HAEventBridge` now always passes the current enabled state from the coordinator when recalculating
 - **Startup Performance Improvements** – Optimizations to prevent HA watchdog timeout and reduce startup memory consumption
   - Async incremental recorder loading prevents blocking HA startup
   - FIFO RecorderAccessQueue serializes recorder access across multiple IHP instances to prevent OOM at startup
