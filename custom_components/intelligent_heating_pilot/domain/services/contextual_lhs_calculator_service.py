@@ -93,8 +93,14 @@ class ContextualLHSCalculatorService:
             _LOGGER.debug("No cycles found for hour %d", target_hour)
             return None
 
-        # Calculate average LHS
-        lhs_values = [c.avg_heating_slope for c in matching_cycles]
+        # Filter out non-positive slopes: cycles where temperature didn't rise
+        # carry no useful learning data about heating speed
+        lhs_values = [c.avg_heating_slope for c in matching_cycles if c.avg_heating_slope > 0]
+
+        if not lhs_values:
+            _LOGGER.debug("No cycles with positive heating slope for hour %d", target_hour)
+            return None
+
         avg_lhs = sum(lhs_values) / len(lhs_values)
 
         _LOGGER.info(

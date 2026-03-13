@@ -297,6 +297,83 @@ class TestContextualLHSCalculatorService:
         for h in [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23]:
             assert result[h] is None
 
+    # ===== Test: Non-positive slope filtering =====
+
+    def test_contextual_lhs_excludes_zero_slope_cycles(
+        self, service: ContextualLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """Test that zero-slope cycles are excluded from contextual LHS average.
+
+        Zero slope means no actual heating occurred — not useful for learning.
+        """
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime.replace(hour=6),
+                end_time=base_datetime.replace(hour=7),
+                start_temp=15.0,
+                end_temp=18.0,  # 3.0°C/h
+            ),
+            self._create_cycle(
+                start_time=(base_datetime + timedelta(days=1)).replace(hour=6),
+                end_time=(base_datetime + timedelta(days=1)).replace(hour=7),
+                start_temp=18.0,
+                end_temp=18.0,  # 0.0°C/h — should be excluded
+            ),
+        ]
+
+        result = service.calculate_contextual_lhs_for_hour(cycles, 6)
+
+        # Only the positive cycle (3.0°C/h) should count
+        assert result is not None
+        assert result == pytest.approx(3.0, abs=0.01)
+
+    def test_contextual_lhs_excludes_negative_slope_cycles(
+        self, service: ContextualLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """Test that negative-slope cycles are excluded from contextual LHS average."""
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime.replace(hour=6),
+                end_time=base_datetime.replace(hour=7),
+                start_temp=15.0,
+                end_temp=18.0,  # 3.0°C/h
+            ),
+            self._create_cycle(
+                start_time=(base_datetime + timedelta(days=1)).replace(hour=6),
+                end_time=(base_datetime + timedelta(days=1)).replace(hour=7),
+                start_temp=20.0,
+                end_temp=18.0,  # -2.0°C/h — should be excluded
+            ),
+        ]
+
+        result = service.calculate_contextual_lhs_for_hour(cycles, 6)
+
+        assert result is not None
+        assert result == pytest.approx(3.0, abs=0.01)
+
+    def test_contextual_lhs_returns_none_when_all_slopes_non_positive(
+        self, service: ContextualLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """Test that None is returned when all cycles for an hour have slope <= 0."""
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime.replace(hour=6),
+                end_time=base_datetime.replace(hour=7),
+                start_temp=20.0,
+                end_temp=20.0,  # 0.0°C/h
+            ),
+            self._create_cycle(
+                start_time=(base_datetime + timedelta(days=1)).replace(hour=6),
+                end_time=(base_datetime + timedelta(days=1)).replace(hour=7),
+                start_temp=20.0,
+                end_temp=18.0,  # -2.0°C/h
+            ),
+        ]
+
+        result = service.calculate_contextual_lhs_for_hour(cycles, 6)
+
+        assert result is None
+
     # ===== Helper Methods =====
 
     def _create_cycle(

@@ -202,71 +202,129 @@ class TestGlobalLHSCalculatorService:
 
     # ===== Test: Edge Cases =====
 
-    def test_calculate_global_lhs_cycles_with_zero_slope(
+    def test_calculate_global_lhs_excludes_zero_slope_cycles(
         self, service: GlobalLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """Test cycles where start_temp == end_temp (zero slope).
+        """Test that zero-slope cycles are excluded from LHS average.
 
-        RED: Ensure zero-slope cycles don't break the calculation.
-        """
-        cycle = self._create_cycle(
-            start_time=base_datetime,
-            end_time=base_datetime + timedelta(hours=1),
-            start_temp=20.0,
-            end_temp=20.0,  # No heating
-        )
-
-        result = service.calculate_global_lhs([cycle])
-
-        assert result == pytest.approx(0.0, abs=0.01)
-
-    def test_calculate_global_lhs_cycles_with_negative_slope(
-        self, service: GlobalLHSCalculatorService, base_datetime: datetime
-    ) -> None:
-        """Test cycles where temperature decreases (negative slope).
-
-        RED: Ensure negative slopes are handled gracefully.
-        """
-        cycle = self._create_cycle(
-            start_time=base_datetime,
-            end_time=base_datetime + timedelta(hours=1),
-            start_temp=20.0,
-            end_temp=18.0,  # Temperature decreased
-        )
-
-        result = service.calculate_global_lhs([cycle])
-
-        # Should be negative but calculation should work
-        assert result == pytest.approx(-2.0, abs=0.01)
-
-    def test_calculate_global_lhs_mixed_positive_negative_slopes(
-        self, service: GlobalLHSCalculatorService, base_datetime: datetime
-    ) -> None:
-        """Test average calculation with mixed positive and negative slopes.
-
-        RED: Test averaging when some cycles have positive, others negative.
-        Cycle 1: 2.0°C/h (heating)
-        Cycle 2: -1.0°C/h (cooling)
-        Expected: (2.0 - 1.0) / 2 = 0.5°C/h
+        Zero slope means no actual heating occurred — not useful for learning.
+        Only the positive-slope cycle should contribute to the average.
         """
         cycles = [
             self._create_cycle(
                 start_time=base_datetime,
                 end_time=base_datetime + timedelta(hours=1),
                 start_temp=18.0,
-                end_temp=20.0,  # Positive slope
+                end_temp=20.0,  # 2.0°C/h
             ),
             self._create_cycle(
                 start_time=base_datetime + timedelta(days=1),
                 end_time=base_datetime + timedelta(days=1, hours=1),
                 start_temp=20.0,
-                end_temp=19.0,  # Negative slope
+                end_temp=20.0,  # 0.0°C/h — should be excluded
             ),
         ]
 
         result = service.calculate_global_lhs(cycles)
 
-        assert result == pytest.approx(0.5, abs=0.01)
+        # Only the positive cycle (2.0°C/h) should count
+        assert result == pytest.approx(2.0, abs=0.01)
+
+    def test_calculate_global_lhs_excludes_negative_slope_cycles(
+        self, service: GlobalLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """Test that negative-slope cycles are excluded from LHS average.
+
+        Negative slope means temperature decreased during "heating" — not useful.
+        """
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime,
+                end_time=base_datetime + timedelta(hours=1),
+                start_temp=18.0,
+                end_temp=21.0,  # 3.0°C/h
+            ),
+            self._create_cycle(
+                start_time=base_datetime + timedelta(days=1),
+                end_time=base_datetime + timedelta(days=1, hours=1),
+                start_temp=20.0,
+                end_temp=18.0,  # -2.0°C/h — should be excluded
+            ),
+        ]
+
+        result = service.calculate_global_lhs(cycles)
+
+        # Only the positive cycle (3.0°C/h) should count
+        assert result == pytest.approx(3.0, abs=0.01)
+
+    def test_calculate_global_lhs_returns_default_when_all_slopes_non_positive(
+        self, service: GlobalLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """Test that DEFAULT_LEARNED_SLOPE is returned when all cycles have slope <= 0.
+
+        If no cycles have positive slopes, there is no useful learning data.
+        """
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime,
+                end_time=base_datetime + timedelta(hours=1),
+                start_temp=20.0,
+                end_temp=20.0,  # 0.0°C/h
+            ),
+            self._create_cycle(
+                start_time=base_datetime + timedelta(days=1),
+                end_time=base_datetime + timedelta(days=1, hours=1),
+                start_temp=20.0,
+                end_temp=18.0,  # -2.0°C/h
+            ),
+        ]
+
+        result = service.calculate_global_lhs(cycles)
+
+        assert result == DEFAULT_LEARNED_SLOPE
+
+    def test_calculate_global_lhs_mixed_positive_zero_negative_slopes(
+        self, service: GlobalLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """Test average with mix of positive, zero, and negative slopes.
+
+        Only positive slopes should contribute to the average.
+        Cycle 1: 2.0°C/h (positive — included)
+        Cycle 2: 0.0°C/h (zero — excluded)
+        Cycle 3: -1.0°C/h (negative — excluded)
+        Cycle 4: 4.0°C/h (positive — included)
+        Expected: (2.0 + 4.0) / 2 = 3.0°C/h
+        """
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime,
+                end_time=base_datetime + timedelta(hours=1),
+                start_temp=18.0,
+                end_temp=20.0,  # 2.0°C/h
+            ),
+            self._create_cycle(
+                start_time=base_datetime + timedelta(days=1),
+                end_time=base_datetime + timedelta(days=1, hours=1),
+                start_temp=20.0,
+                end_temp=20.0,  # 0.0°C/h
+            ),
+            self._create_cycle(
+                start_time=base_datetime + timedelta(days=2),
+                end_time=base_datetime + timedelta(days=2, hours=1),
+                start_temp=20.0,
+                end_temp=19.0,  # -1.0°C/h
+            ),
+            self._create_cycle(
+                start_time=base_datetime + timedelta(days=3),
+                end_time=base_datetime + timedelta(days=3, hours=1),
+                start_temp=18.0,
+                end_temp=22.0,  # 4.0°C/h
+            ),
+        ]
+
+        result = service.calculate_global_lhs(cycles)
+
+        assert result == pytest.approx(3.0, abs=0.01)
 
     # ===== Test: Variable Duration Cycles =====
 

@@ -378,15 +378,13 @@ class TestContextualLHSCalculatorServiceAdvanced:
 
     # ===== Test: Edge Cases with Zero/Negative Slopes =====
 
-    def test_contextual_lhs_includes_cycles_with_zero_slope(
+    def test_contextual_lhs_excludes_cycles_with_zero_slope(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """Test that cycles with zero slope are included in average.
+        """Test that cycles with zero slope are excluded from average.
 
-        RED: Even zero-slope cycles count in average.
-        Cycle 1: 2.0°C/h
-        Cycle 2: 0.0°C/h (no heating)
-        Expected: avg = 1.0°C/h
+        Zero slope means no actual heating occurred — not useful for learning.
+        Only positive-slope cycles contribute to the average.
         """
         cycles = [
             self._create_cycle(
@@ -399,44 +397,44 @@ class TestContextualLHSCalculatorServiceAdvanced:
                 start_time=base_datetime.replace(day=7, hour=6, minute=0),
                 end_time=base_datetime.replace(day=7, hour=7, minute=0),
                 start_temp=20.0,
-                end_temp=20.0,  # 0.0°C/h
+                end_temp=20.0,  # 0.0°C/h — excluded
             ),
         ]
 
         result = service.calculate_contextual_lhs_for_hour(cycles, 6)
 
         assert result is not None
-        assert result == pytest.approx(1.0, abs=0.01)
+        # Only the positive cycle (2.0°C/h) should count
+        assert result == pytest.approx(2.0, abs=0.01)
 
-    def test_contextual_lhs_handles_negative_slope_cycles(
+    def test_contextual_lhs_excludes_negative_slope_cycles(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """Test that cycles with negative slope (cooling) are included.
+        """Test that cycles with negative slope (cooling) are excluded.
 
-        RED: Negative slopes should work in average.
-        Cycle 1: 2.0°C/h (heating)
-        Cycle 2: -2.0°C/h (cooling)
-        Expected: avg = 0.0°C/h
+        Negative slope means temperature decreased — not useful for learning.
+        Only positive-slope cycles contribute to the average.
         """
         cycles = [
             self._create_cycle(
                 start_time=base_datetime.replace(hour=6, minute=0),
                 end_time=base_datetime.replace(hour=7, minute=0),
                 start_temp=18.0,
-                end_temp=20.0,  # Positive slope
+                end_temp=20.0,  # 2.0°C/h — included
             ),
             self._create_cycle(
                 start_time=base_datetime.replace(day=7, hour=6, minute=0),
                 end_time=base_datetime.replace(day=7, hour=7, minute=0),
                 start_temp=20.0,
-                end_temp=18.0,  # Negative slope
+                end_temp=18.0,  # -2.0°C/h — excluded
             ),
         ]
 
         result = service.calculate_contextual_lhs_for_hour(cycles, 6)
 
         assert result is not None
-        assert result == pytest.approx(0.0, abs=0.01)
+        # Only the positive cycle (2.0°C/h) should count
+        assert result == pytest.approx(2.0, abs=0.01)
 
     # ===== Test: Type Hints and Method Signatures =====
 

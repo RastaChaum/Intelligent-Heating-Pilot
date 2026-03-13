@@ -46,8 +46,17 @@ class GlobalLHSCalculatorService:
             )
             return DEFAULT_LEARNED_SLOPE
 
-        # Calculate average slope from all cycles
-        lhs_values = [cycle.avg_heating_slope for cycle in cycles]
+        # Filter out non-positive slopes: cycles where temperature didn't rise
+        # carry no useful learning data about heating speed
+        lhs_values = [cycle.avg_heating_slope for cycle in cycles if cycle.avg_heating_slope > 0]
+
+        if not lhs_values:
+            _LOGGER.info(
+                "No cycles with positive heating slope, returning default: %.2f°C/h",
+                DEFAULT_LEARNED_SLOPE,
+            )
+            return DEFAULT_LEARNED_SLOPE
+
         global_lhs = sum(lhs_values) / len(lhs_values)
 
         _LOGGER.info(
