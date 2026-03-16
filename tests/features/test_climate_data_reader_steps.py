@@ -8,7 +8,7 @@ RecorderAccessQueue serialization.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
@@ -54,6 +54,7 @@ def recorder_queue():
 # Helper
 # ------------------------------------------------------------------
 
+
 def _make_vtherm_state(
     state_value: str = "heat",
     attributes: dict | None = None,
@@ -67,6 +68,7 @@ def _make_vtherm_state(
 # ------------------------------------------------------------------
 # Background steps
 # ------------------------------------------------------------------
+
 
 @given("a Home Assistant instance is running")
 def ha_instance_running(climate_context, mock_hass):
@@ -89,6 +91,7 @@ def vtherm_entity_exists(climate_context, entity_id):
 # ------------------------------------------------------------------
 # Scenario: implements both interfaces
 # ------------------------------------------------------------------
+
 
 @when("I create a HAClimateDataReader with the VTherm entity and RecorderQueue")
 def create_reader_with_queue(climate_context):
@@ -122,6 +125,7 @@ def stores_entity_id(climate_context):
 # ------------------------------------------------------------------
 # Scenario: Historical data fetch uses RecorderQueue
 # ------------------------------------------------------------------
+
 
 @given("I have a HAClimateDataReader with RecorderQueue")
 def have_reader_with_queue(climate_context, mock_hass, recorder_queue):
@@ -208,6 +212,7 @@ def historical_data_returned(climate_context):
 # Scenario: Real-time slope does NOT use RecorderQueue
 # ------------------------------------------------------------------
 
+
 @given(parsers.parse("the VTherm has a current slope of {slope:g}"))
 def vtherm_has_slope(climate_context, slope):
     """GIVEN: The VTherm has a specific slope value."""
@@ -245,6 +250,7 @@ def should_return_value(climate_context, value):
 # Scenario: Real-time heating state does NOT use RecorderQueue
 # ------------------------------------------------------------------
 
+
 @given("the VTherm is actively heating")
 def vtherm_actively_heating(climate_context):
     """GIVEN: The VTherm is actively heating."""
@@ -274,6 +280,7 @@ def should_return_true(climate_context):
 # Scenario: VTherm entity ID is accessible
 # ------------------------------------------------------------------
 
+
 @given(parsers.parse('I have a HAClimateDataReader for "{entity_id}"'))
 def have_reader_for_entity(climate_context, mock_hass, recorder_queue, entity_id):
     """GIVEN: A HAClimateDataReader for a specific entity."""
@@ -297,6 +304,7 @@ def should_return_string(climate_context, expected):
 # ------------------------------------------------------------------
 # Scenario: RecorderQueue is mandatory
 # ------------------------------------------------------------------
+
 
 @when("I try to create a HAClimateDataReader without RecorderQueue")
 def create_without_queue(climate_context, mock_hass):

@@ -185,7 +185,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
                 entity_id,
                 err,
             )
-            return HistoricalDataSet(data={})
+            raise
 
         # Map the data_key to a domain concept
         concept = DATA_KEY_TO_CONCEPT.get(data_key)

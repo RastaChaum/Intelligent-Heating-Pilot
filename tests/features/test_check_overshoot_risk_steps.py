@@ -17,16 +17,12 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from custom_components.intelligent_heating_pilot.application.use_cases import (
-    ControlPreheatingUseCase,
-)
-
 # RED IMPORT — This class does not exist yet.
 # All tests in this file will fail with ImportError at collection time.
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     CheckOvershootRiskUseCase,
+    ControlPreheatingUseCase,
 )
-
 from custom_components.intelligent_heating_pilot.domain.interfaces import (
     IClimateDataReader,
     IEnvironmentReader,
@@ -244,9 +240,7 @@ def system_checks_overshoot(overshoot_context):
     """
     use_case = overshoot_context["use_case"]
     scheduler_entity = overshoot_context["scheduler_entity_id"]
-    result = asyncio.run(
-        use_case.check_and_prevent_overshoot(scheduler_entity_id=scheduler_entity)
-    )
+    result = asyncio.run(use_case.check_and_prevent_overshoot(scheduler_entity_id=scheduler_entity))
     overshoot_context["result"] = result
 
 
