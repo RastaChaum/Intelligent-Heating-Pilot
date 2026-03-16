@@ -804,8 +804,8 @@ class HeatingCycleService(IHeatingCycleService):
             start_temp: Initial temperature at cycle start
             history_data_set: Historical temperature data
             temp_change_threshold: Minimum temperature rise to detect (default: 0.2°C, must be
-                positive). Matches the cycle detection delta threshold to avoid false positives
-                from sensor noise.
+                positive). Chosen to be above typical sensor noise while remaining sensitive
+                enough to detect early heat propagation.
             max_dead_time_minutes: Maximum acceptable dead time (default: 180 minutes).
                 Floor heating systems can require 60–120 min to transfer heat to the room.
                 Values above this threshold are considered data artifacts.
