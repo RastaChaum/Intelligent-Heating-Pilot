@@ -513,6 +513,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
                     "hvac_mode",
                     "current_temperature",
                     "temperature",
+                    "target_temperature",
                     "humidity",
                 ):
                     val = raw_attrs.get(key)

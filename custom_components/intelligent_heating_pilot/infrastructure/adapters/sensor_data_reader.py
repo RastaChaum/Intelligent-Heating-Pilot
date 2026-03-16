@@ -232,7 +232,7 @@ class HASensorDataReader(IHistoricalDataAdapter):
                     {
                         "entity_id": state.entity_id,
                         "state": state.state,
-                        "attributes": {},
+                        "attributes": dict(state.attributes),
                         "last_changed": state.last_changed,
                         "last_updated": state.last_updated,
                     }
