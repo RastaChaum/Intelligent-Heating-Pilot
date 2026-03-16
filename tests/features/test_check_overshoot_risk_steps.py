@@ -3,9 +3,6 @@
 Implements BDD steps for testing the CheckOvershootRiskUseCase, which
 detects when current heating slope would cause temperature overshoot
 and cancels preheating to prevent overheating.
-
-These are RED tests — CheckOvershootRiskUseCase does NOT exist yet.
-Expected failure: ImportError at module collection time.
 """
 
 from __future__ import annotations
@@ -18,15 +15,9 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from custom_components.intelligent_heating_pilot.application.use_cases import (
+    CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
 )
-
-# RED IMPORT — This class does not exist yet.
-# All tests in this file will fail with ImportError at collection time.
-from custom_components.intelligent_heating_pilot.application.use_cases import (
-    CheckOvershootRiskUseCase,
-)
-
 from custom_components.intelligent_heating_pilot.domain.interfaces import (
     IClimateDataReader,
     IEnvironmentReader,
@@ -244,9 +235,7 @@ def system_checks_overshoot(overshoot_context):
     """
     use_case = overshoot_context["use_case"]
     scheduler_entity = overshoot_context["scheduler_entity_id"]
-    result = asyncio.run(
-        use_case.check_and_prevent_overshoot(scheduler_entity_id=scheduler_entity)
-    )
+    result = asyncio.run(use_case.check_and_prevent_overshoot(scheduler_entity_id=scheduler_entity))
     overshoot_context["result"] = result
 
 

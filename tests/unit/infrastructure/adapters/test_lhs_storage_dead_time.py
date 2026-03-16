@@ -150,8 +150,15 @@ class TestHALhsStorageDeadTimeStorage:
         """
         patch_path = _get_storage_patch_path()
 
-        # Simulate initial load with stored data
-        mock_store.async_load = AsyncMock(return_value={"learned_dead_time": 6.5})
+        # Simulate initial load with stored data (dict format used by set_learned_dead_time)
+        mock_store.async_load = AsyncMock(
+            return_value={
+                "learned_dead_time": {
+                    "value": 6.5,
+                    "updated_at": "2025-01-01T00:00:00",
+                }
+            }
+        )
 
         with patch(patch_path, return_value=mock_store):
             # Create storage and verify persistence

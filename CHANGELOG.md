@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Dead Time Thresholds for Floor Heating** – Corrected two default parameters in `_calculate_dead_time_cycle()` that caused all dead time measurements to be silently discarded on floor heating systems:
+  - `temp_change_threshold`: `0.1°C` → `0.2°C` to avoid false positives from sensor noise
+  - `max_dead_time_minutes`: `60 min` → `180 min` to correctly capture cold-start delays inherent to floor heating (realistic range: 60–120 min)
+  - Systems affected were falling back to the configured default dead time on every cycle instead of learning from historical data
+
 ## [0.6.0] - 2026-03-13
 
 ### Added

@@ -11,14 +11,14 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from custom_components.intelligent_heating_pilot.application.use_cases import (
-    CalculateAnticipationUseCase,
-)
 from custom_components.intelligent_heating_pilot.application.heating_cycle_lifecycle_manager import (
     HeatingCycleLifecycleManager,
 )
 from custom_components.intelligent_heating_pilot.application.lhs_lifecycle_manager import (
     LhsLifecycleManager,
+)
+from custom_components.intelligent_heating_pilot.application.use_cases import (
+    CalculateAnticipationUseCase,
 )
 from custom_components.intelligent_heating_pilot.domain.services import (
     DeadTimeCalculationService,
@@ -45,13 +45,15 @@ class TestCalculateAnticipationUseCase:
     def mock_environment_reader(self) -> Mock:
         """Create mock environment reader."""
         reader = Mock()
-        reader.get_current_environment = AsyncMock(return_value=EnvironmentState(
-            indoor_temperature=19.0,
-            outdoor_temp=5.0,
-            indoor_humidity=60.0,
-            cloud_coverage=50.0,
-            timestamp=datetime(2025, 2, 10, 6, 0, 0, tzinfo=timezone.utc),
-        ))
+        reader.get_current_environment = AsyncMock(
+            return_value=EnvironmentState(
+                indoor_temperature=19.0,
+                outdoor_temp=5.0,
+                indoor_humidity=60.0,
+                cloud_coverage=50.0,
+                timestamp=datetime(2025, 2, 10, 6, 0, 0, tzinfo=timezone.utc),
+            )
+        )
         return reader
 
     @pytest.fixture
@@ -75,18 +77,21 @@ class TestCalculateAnticipationUseCase:
         """Create mock LHS lifecycle manager."""
         mgr = AsyncMock(spec=LhsLifecycleManager)
         mgr.get_contextual_lhs = AsyncMock(return_value=2.0)
+        mgr.get_global_lhs = AsyncMock(return_value=2.0)
         return mgr
 
     @pytest.fixture
     def mock_prediction_service(self) -> Mock:
         """Create mock prediction service."""
         svc = Mock(spec=PredictionService)
-        svc.predict_heating_time = Mock(return_value=PredictionResult(
-            anticipated_start_time=datetime(2025, 2, 10, 9, 0, 0, tzinfo=timezone.utc),
-            estimated_duration_minutes=60.0,
-            confidence_level=0.8,
-            learned_heating_slope=2.0,
-        ))
+        svc.predict_heating_time = Mock(
+            return_value=PredictionResult(
+                anticipated_start_time=datetime(2025, 2, 10, 9, 0, 0, tzinfo=timezone.utc),
+                estimated_duration_minutes=60.0,
+                confidence_level=0.8,
+                learned_heating_slope=2.0,
+            )
+        )
         return svc
 
     @pytest.fixture

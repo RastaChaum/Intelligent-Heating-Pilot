@@ -30,7 +30,7 @@ except ImportError:
 # Concrete implementation for testing the abstract base class
 if BASE_STORAGE_AVAILABLE:
 
-    class TestHAStorage(BaseHAStorageAdapter[dict[str, Any]]):
+    class ConcreteHAStorage(BaseHAStorageAdapter[dict[str, Any]]):
         """Concrete test implementation of BaseHAStorageAdapter."""
 
         def _get_default_data(self) -> dict[str, Any]:
@@ -73,7 +73,7 @@ class TestBaseHAStorageAdapterInitialization:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             assert storage._hass == mock_hass
 
@@ -82,7 +82,7 @@ class TestBaseHAStorageAdapterInitialization:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             assert storage._entry_id == entry_id
 
@@ -91,7 +91,7 @@ class TestBaseHAStorageAdapterInitialization:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             assert storage._retention_days == 30
 
@@ -100,7 +100,7 @@ class TestBaseHAStorageAdapterInitialization:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id, retention_days=45)
+            storage = ConcreteHAStorage(mock_hass, entry_id, retention_days=45)
 
             assert storage._retention_days == 45
 
@@ -109,7 +109,7 @@ class TestBaseHAStorageAdapterInitialization:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             assert storage._loaded is False
 
@@ -118,7 +118,7 @@ class TestBaseHAStorageAdapterInitialization:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ) as mock_store_class:
-            storage = TestHAStorage(mock_hass, entry_id, storage_key="test_storage")
+            storage = ConcreteHAStorage(mock_hass, entry_id, storage_key="test_storage")
 
             mock_store_class.assert_called_once()
             # Verify Store was called with hass instance
@@ -138,7 +138,7 @@ class TestBaseHAStorageAdapterEnsureLoaded:
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store",
             return_value=mock_store,
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             # Act: Load storage
             await storage._ensure_loaded()
@@ -165,7 +165,7 @@ class TestBaseHAStorageAdapterEnsureLoaded:
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store",
             return_value=mock_store,
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             # Act: Load storage
             await storage._ensure_loaded()
@@ -185,7 +185,7 @@ class TestBaseHAStorageAdapterEnsureLoaded:
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store",
             return_value=mock_store,
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             # Act: Load multiple times
             await storage._ensure_loaded()
@@ -208,7 +208,7 @@ class TestBaseHAStorageAdapterSaveData:
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store",
             return_value=mock_store,
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
             await storage._ensure_loaded()
 
             # Act: Save data
@@ -226,7 +226,7 @@ class TestBaseHAStorageAdapterSaveData:
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store",
             return_value=mock_store,
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
             await storage._ensure_loaded()
 
             # Modify data
@@ -248,7 +248,7 @@ class TestBaseHAStorageAdapterParseDatetime:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             # Act: Parse valid ISO string
             result = storage._parse_datetime("2025-12-18T14:30:00+00:00")
@@ -263,7 +263,7 @@ class TestBaseHAStorageAdapterParseDatetime:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             # Act: Parse naive ISO string (no timezone)
             result = storage._parse_datetime("2025-12-18T14:30:00")
@@ -279,7 +279,7 @@ class TestBaseHAStorageAdapterParseDatetime:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             # Act & Assert: Empty string raises ValueError
             with pytest.raises(ValueError):
@@ -292,7 +292,7 @@ class TestBaseHAStorageAdapterParseDatetime:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             # Act & Assert: Invalid format raises ValueError
             with pytest.raises(ValueError):
@@ -307,7 +307,7 @@ class TestBaseHAStorageAdapterSerializeDatetime:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             # Act: Serialize datetime
             dt = datetime(2025, 12, 18, 14, 30, 0, tzinfo=timezone.utc)
@@ -321,7 +321,7 @@ class TestBaseHAStorageAdapterSerializeDatetime:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id)
+            storage = ConcreteHAStorage(mock_hass, entry_id)
 
             # Act: Serialize datetime with timezone
             dt = datetime(2025, 12, 18, 14, 30, 0, tzinfo=timezone.utc)
@@ -341,7 +341,7 @@ class TestBaseHAStorageAdapterCachingDisabled:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id, retention_days=0)
+            storage = ConcreteHAStorage(mock_hass, entry_id, retention_days=0)
 
             # Act & Assert
             assert storage._is_caching_disabled() is True
@@ -353,7 +353,7 @@ class TestBaseHAStorageAdapterCachingDisabled:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id, retention_days=30)
+            storage = ConcreteHAStorage(mock_hass, entry_id, retention_days=30)
 
             # Act & Assert
             assert storage._is_caching_disabled() is False
@@ -365,7 +365,7 @@ class TestBaseHAStorageAdapterCachingDisabled:
         with patch(
             "custom_components.intelligent_heating_pilot.infrastructure.adapters.base_ha_storage.Store"
         ):
-            storage = TestHAStorage(mock_hass, entry_id)  # default is 30
+            storage = ConcreteHAStorage(mock_hass, entry_id)  # default is 30
 
             # Act & Assert
             assert storage._is_caching_disabled() is False

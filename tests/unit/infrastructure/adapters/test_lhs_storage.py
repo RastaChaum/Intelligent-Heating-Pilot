@@ -208,8 +208,9 @@ async def test_get_learned_heating_slope_invalid_returns_default(storage: HALhsS
     from datetime import datetime
 
     # Set an invalid (too low) LHS using new format
+    # MINIMUM_REALISTIC_LHS = 0.2, so 0.15 is below threshold
     storage._data["cached_global_lhs"] = {
-        "value": 0.3,  # Below MINIMUM_REALISTIC_LHS (0.3)
+        "value": 0.15,  # Below MINIMUM_REALISTIC_LHS (0.2)
         "updated_at": datetime.now().isoformat(),
     }
 
@@ -220,14 +221,22 @@ async def test_get_learned_heating_slope_invalid_returns_default(storage: HALhsS
 @pytest.mark.asyncio
 async def test_clear_slope_history(storage: HALhsStorage, mock_store: Mock) -> None:
     """Test clearing learned slope history."""
-    # Set a custom LHS
-    storage._data["learned_heating_slope"] = 3.5
+    from datetime import datetime
+
+    # Set a custom LHS using new cached_global_lhs format
+    storage._data["cached_global_lhs"] = {
+        "value": 3.5,
+        "updated_at": datetime.now().isoformat(),
+    }
 
     # Clear history
     await storage.clear_slope_history()
 
-    # Should be reset to default
-    assert storage._data["learned_heating_slope"] == DEFAULT_HEATING_SLOPE
+    # Should reset cached_global_lhs to None
+    assert storage._data["cached_global_lhs"] is None
+    # And get_learned_heating_slope should return DEFAULT
+    lhs = await storage.get_learned_heating_slope()
+    assert lhs == DEFAULT_HEATING_SLOPE
 
     # Should persist to store
     mock_store.async_save.assert_called_once()
@@ -238,10 +247,18 @@ async def test_initialization_with_stored_lhs(
     mock_hass: Mock, entry_id: str, mock_store: Mock
 ) -> None:
     """Test initialization with previously stored LHS."""
+    from datetime import datetime
+
     stored_lhs = 2.8
+    # Use the current storage format: cached_global_lhs dict with value/updated_at
     mock_store.async_load = AsyncMock(
         return_value={
-            "learned_heating_slope": stored_lhs,
+            "cached_global_lhs": {
+                "value": stored_lhs,
+                "updated_at": datetime.now().isoformat(),
+            },
+            "cached_contextual_lhs": {},
+            "learned_dead_time": None,
         }
     )
 
