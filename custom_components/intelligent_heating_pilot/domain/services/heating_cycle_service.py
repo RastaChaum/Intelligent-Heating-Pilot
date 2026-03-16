@@ -791,8 +791,8 @@ class HeatingCycleService(IHeatingCycleService):
         start_time: datetime,
         start_temp: float,
         history_data_set: HistoricalDataSet,
-        temp_change_threshold: float = 0.1,
-        max_dead_time_minutes: float = 60.0,
+        temp_change_threshold: float = 0.2,
+        max_dead_time_minutes: float = 180.0,
     ) -> float | None:
         """Calculate the dead time for a specific cycle.
 
@@ -803,8 +803,11 @@ class HeatingCycleService(IHeatingCycleService):
             start_time: When the heating cycle started
             start_temp: Initial temperature at cycle start
             history_data_set: Historical temperature data
-            temp_change_threshold: Minimum temperature rise to detect (default: 0.1°C, must be positive)
-            max_dead_time_minutes: Maximum acceptable dead time (default: 60 minutes).
+            temp_change_threshold: Minimum temperature rise to detect (default: 0.2°C, must be
+                positive). Matches the cycle detection delta threshold to avoid false positives
+                from sensor noise.
+            max_dead_time_minutes: Maximum acceptable dead time (default: 180 minutes).
+                Floor heating systems can require 60–120 min to transfer heat to the room.
                 Values above this threshold are considered data artifacts.
 
         Returns:

@@ -817,3 +817,65 @@ class TestCalculateDeadTimeCycle:
         # Should skip invalid values and return dead time from valid measurement
         assert result is not None
         assert result == pytest.approx(3.0, abs=0.1)
+
+    def test_calculate_dead_time_cycle_accepts_long_dead_time_within_180_minutes(
+        self, service, base_time
+    ):
+        """Test that dead times up to 180 minutes are accepted (floor heating cold start).
+
+        GIVEN: Temp rises 0.2°C after 90 minutes (realistic for floor heating)
+        WHEN: _calculate_dead_time_cycle() called with default max_dead_time_minutes=180
+        THEN: Should return ~90 minutes (NOT rejected as artifact)
+
+        This test validates the fix for issue where 60-min cap caused all real floor
+        heating cold-start dead times to be silently discarded.
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),
+                m(start_time + timedelta(minutes=90), 18.25),  # 0.25°C rise after 90 min
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+        )
+
+        # 90 minutes is within the 180-min cap — must be accepted
+        assert result is not None, "Dead time of 90 min should be accepted (within 180-min cap)"
+        assert result == pytest.approx(90.0, abs=0.1)
+
+    def test_calculate_dead_time_cycle_rejects_dead_time_exceeding_180_minutes(
+        self, service, base_time
+    ):
+        """Test that dead times exceeding 180 minutes are still rejected as artifacts.
+
+        GIVEN: Temp rises 0.2°C only after 190 minutes
+        WHEN: _calculate_dead_time_cycle() called with default max_dead_time_minutes=180
+        THEN: Should return None (190 min exceeds the 180-min cap)
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),
+                m(start_time + timedelta(minutes=190), 18.25),  # 0.25°C rise after 190 min
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+        )
+
+        # 190 minutes exceeds the 180-min cap — must be rejected
+        assert result is None, "Dead time of 190 min should be rejected (exceeds 180-min cap)"
