@@ -3,9 +3,6 @@
 Implements BDD steps for testing the CheckOvershootRiskUseCase, which
 detects when current heating slope would cause temperature overshoot
 and cancels preheating to prevent overheating.
-
-These are RED tests — CheckOvershootRiskUseCase does NOT exist yet.
-Expected failure: ImportError at module collection time.
 """
 
 from __future__ import annotations
@@ -17,8 +14,6 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
-# RED IMPORT — This class does not exist yet.
-# All tests in this file will fail with ImportError at collection time.
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,

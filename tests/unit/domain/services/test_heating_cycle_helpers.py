@@ -823,7 +823,7 @@ class TestCalculateDeadTimeCycle:
     ):
         """Test that dead times up to 180 minutes are accepted (floor heating cold start).
 
-        GIVEN: Temp rises 0.2°C after 90 minutes (realistic for floor heating)
+        GIVEN: Temp rises 0.25°C after 90 minutes (realistic for floor heating)
         WHEN: _calculate_dead_time_cycle() called with default max_dead_time_minutes=180
         THEN: Should return ~90 minutes (NOT rejected as artifact)
 
@@ -856,7 +856,7 @@ class TestCalculateDeadTimeCycle:
     ):
         """Test that dead times exceeding 180 minutes are still rejected as artifacts.
 
-        GIVEN: Temp rises 0.2°C only after 190 minutes
+        GIVEN: Temp rises 0.25°C only after 190 minutes
         WHEN: _calculate_dead_time_cycle() called with default max_dead_time_minutes=180
         THEN: Should return None (190 min exceeds the 180-min cap)
         """
