@@ -1,0 +1,131 @@
+name: Update Pre-Release on Integration Merge
+
+on:
+  pull_request:
+    branches:
+      - integration
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  update-prerelease:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration
+        uses: actions/checkout@v4
+        with:
+          ref: integration
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Resolve pre-release target
+        id: target
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
+          DEV_TAG="v${VERSION}-dev"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "dev_tag=$DEV_TAG" >> $GITHUB_OUTPUT
+
+          # Query GitHub Releases API directly — the ground truth, not git tags
+          # git tags can exist without a corresponding GitHub release (e.g. after increment-rc-version deletes old RC releases)
+          LATEST_RC=$(gh release list --json tagName,isPrerelease \
+            --jq --arg v "$VERSION" \
+            '[.[] | select(.isPrerelease == true and (.tagName | test("^v" + $v + "-rc")))] | sort_by(.tagName) | last | .tagName // empty')
+
+          DEV_RELEASE=$(gh release view "$DEV_TAG" --json tagName --jq '.tagName' 2>/dev/null || echo "")
+
+          if [ -n "$LATEST_RC" ]; then
+            echo "tag=$LATEST_RC" >> $GITHUB_OUTPUT
+            echo "type=rc" >> $GITHUB_OUTPUT
+            echo "mode=update" >> $GITHUB_OUTPUT
+            echo "📋 Found RC release to update: $LATEST_RC"
+          elif [ -n "$DEV_RELEASE" ]; then
+            echo "tag=$DEV_TAG" >> $GITHUB_OUTPUT
+            echo "type=dev" >> $GITHUB_OUTPUT
+            echo "mode=update" >> $GITHUB_OUTPUT
+            echo "📋 Found dev release to update: $DEV_TAG"
+          else
+            echo "tag=$DEV_TAG" >> $GITHUB_OUTPUT
+            echo "type=dev" >> $GITHUB_OUTPUT
+            echo "mode=create" >> $GITHUB_OUTPUT
+            echo "📋 No pre-release found — will create: $DEV_TAG"
+          fi
+
+      - name: Build release notes
+        id: notes
+        run: |
+          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next} flag && /## \[/{flag=0} flag{print}' CHANGELOG.md | sed '/./,$!d')
+
+          if [ -z "$CHANGELOG_CONTENT" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "ℹ️ No [Unreleased] content in CHANGELOG — skipping"
+            exit 0
+          fi
+
+          echo "skip=false" >> $GITHUB_OUTPUT
+          TYPE="${{ steps.target.outputs.type }}"
+          VERSION="${{ steps.target.outputs.version }}"
+
+          if [ "$TYPE" = "rc" ]; then
+            {
+              echo "## 🧪 Release Candidate"
+              echo ""
+              echo "Cette version est une **release candidate** destinée aux tests en production et aux beta-testeurs."
+              echo ""
+              echo "$CHANGELOG_CONTENT"
+              echo ""
+              echo "---"
+              echo ""
+              echo "> ⚠️ Cette version est en phase de test. Veuillez remonter tout problème via les Issues GitHub."
+            } > /tmp/prerelease-notes.md
+          else
+            {
+              echo "## 🔧 Work in Progress — v${VERSION}"
+              echo ""
+              echo "Aperçu des changements en cours de développement sur la branche \`integration\`."
+              echo ""
+              echo "$CHANGELOG_CONTENT"
+              echo ""
+              echo "---"
+              echo ""
+              echo "> ⚠️ Version non testée — destinée aux développeurs uniquement. Utilisez les releases stables en production."
+            } > /tmp/prerelease-notes.md
+          fi
+
+      - name: Create dev pre-release
+        if: steps.target.outputs.mode == 'create' && steps.notes.outputs.skip == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.target.outputs.version }}"
+          DEV_TAG="${{ steps.target.outputs.dev_tag }}"
+
+          git tag "$DEV_TAG"
+          git push origin "$DEV_TAG"
+
+          gh release create "$DEV_TAG" \
+            --title "🔧 v${VERSION}-dev — Work in Progress" \
+            --notes-file /tmp/prerelease-notes.md \
+            --prerelease \
+            --target integration
+
+          echo "✅ Dev pre-release created: $DEV_TAG"
+
+      - name: Update existing pre-release notes
+        if: steps.target.outputs.mode == 'update' && steps.notes.outputs.skip == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.target.outputs.tag }}"
+          gh release edit "$TAG" --notes-file /tmp/prerelease-notes.md
+          echo "✅ Pre-release $TAG updated with latest CHANGELOG"

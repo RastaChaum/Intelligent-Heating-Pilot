@@ -56,27 +56,25 @@ jobs:
           echo "📊 Dernier RC: $LAST_RC"
           echo "📊 Prochain RC: v${VERSION}-rc${NEXT_RC_NUM}"
 
-      - name: Update release notes
+      - name: Build updated release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${{ inputs.version }}"
           RC_NUM="${{ steps.rc-number.outputs.next_rc_num }}"
+          LAST_RC="${{ steps.rc-number.outputs.last_rc }}"
 
-          # Ajouter les corrections au fichier de release notes
-          cat >> "GITHUB_RELEASE_v${VERSION}.md" << EOF
-
-          ---
-
-          ## 🔧 RC ${RC_NUM} - $(date +%Y-%m-%d)
-
-          ${{ inputs.fix_description }}
-
-          EOF
-
-      - name: Commit updated release notes
-        run: |
-          git add "GITHUB_RELEASE_v${{ inputs.version }}.md"
-          git commit -m "chore(release): update RC notes for v${{ inputs.version }}-rc${{ steps.rc-number.outputs.next_rc_num }}" -m "Corrections:" -m "${{ inputs.fix_description }}"
-          git push origin integration
+          # Fetch previous RC release notes and append new fixes (no file committed to the repo)
+          PREV_NOTES=$(gh release view "$LAST_RC" --json body --jq '.body')
+          {
+            echo "$PREV_NOTES"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## 🔧 RC ${RC_NUM} - $(date +%Y-%m-%d)"
+            echo ""
+            echo "${{ inputs.fix_description }}"
+          } > /tmp/new-rc-notes.md
+          echo "✅ Notes de version mises à jour"
 
       - name: Create new RC tag
         run: |
@@ -97,7 +95,7 @@ jobs:
         run: |
           gh release create "${{ steps.rc-number.outputs.next_rc_tag }}" \
             --title "🧪 v${{ inputs.version }}-rc${{ steps.rc-number.outputs.next_rc_num }} - Release Candidate" \
-            --notes-file "GITHUB_RELEASE_v${{ inputs.version }}.md" \
+            --notes-file /tmp/new-rc-notes.md \
             --prerelease \
             --target integration
 

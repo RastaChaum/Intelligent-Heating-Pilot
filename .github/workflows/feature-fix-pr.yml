@@ -23,8 +23,8 @@ jobs:
         run: |
           BRANCH="${{ github.head_ref }}"
 
-          if [[ ! "$BRANCH" =~ ^(copilot/)?(feature|fix)- ]]; then
-            echo "❌ La branche doit commencer par 'feature-' ou 'fix-'"
+          if [[ ! "$BRANCH" =~ ^(copilot/)?(feature|fix)/ ]]; then
+            echo "❌ La branche doit suivre le format 'feature/issue-XXX' ou 'fix/issue-XXX'"
             echo "Nom actuel : $BRANCH"
             exit 1
           fi
@@ -50,7 +50,7 @@ jobs:
           BRANCH="${{ github.head_ref }}"
           TYPE="Added"
 
-          if [[ "$BRANCH" =~ ^fix- ]]; then
+          if [[ "$BRANCH" =~ ^(copilot/)?fix/ ]]; then
             TYPE="Fixed"
           fi
 
@@ -99,12 +99,22 @@ jobs:
           python-version: '3.13.2'
 
       - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.2
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-
 
       - name: Install dependencies
-        run: poetry install
+        run: poetry install --no-interaction
 
       - name: Run tests
         run: poetry run pytest tests/unit -v

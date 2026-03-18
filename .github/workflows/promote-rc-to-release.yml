@@ -41,17 +41,33 @@ jobs:
 
       - name: Prepare release notes
         id: release-notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Extraction de la section Unreleased pour la transformer en release
-          # Uses flag-based awk to avoid range pattern matching [Unreleased] header itself
-          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next} flag && /## \[/{flag=0} flag{print}' CHANGELOG.md)
+          VERSION="${{ steps.version.outputs.version }}"
 
+          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next} flag && /## \[/{flag=0} flag{print}' CHANGELOG.md)
           if [ -z "$CHANGELOG_CONTENT" ]; then
             echo "❌ Aucune entrée Unreleased dans CHANGELOG.md"
             exit 1
           fi
 
-          echo "$CHANGELOG_CONTENT" > /tmp/release-notes.md
+          # Count RC iterations for traceability (GitHub Releases API = ground truth)
+          RC_TAGS=$(gh release list --json tagName,isPrerelease \
+            --jq --arg v "$VERSION" \
+            '[.[] | select(.isPrerelease == true and (.tagName | test("^v" + $v + "-rc")))] | sort_by(.tagName) | .[].tagName')
+          RC_COUNT=$(echo "$RC_TAGS" | grep -c . || true)
+          LATEST_RC=$(echo "$RC_TAGS" | tail -1)
+
+          {
+            echo "$CHANGELOG_CONTENT"
+            if [ "$RC_COUNT" -gt 0 ]; then
+              echo ""
+              echo "---"
+              echo ""
+              echo "> ✅ Validé via ${RC_COUNT} release candidate(s). Dernière RC : \`${LATEST_RC}\`"
+            fi
+          } > /tmp/release-notes.md
 
       - name: Update CHANGELOG with version
         run: |
@@ -67,13 +83,20 @@ jobs:
           git commit -m "chore: update CHANGELOG for v$VERSION"
           git push origin main
 
-      - name: Delete pre-release
+      - name: Delete RC and dev pre-releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Suppression de la pre-release beta
-          gh release delete "v${{ steps.version.outputs.version }}-beta" --yes 2>/dev/null || true
-          git push origin ":refs/tags/v${{ steps.version.outputs.version }}-beta" 2>/dev/null || true
+          VERSION="${{ steps.version.outputs.version }}"
+          # Query GitHub Releases API for all pre-releases matching this version (ground truth)
+          RC_TAGS=$(gh release list --json tagName,isPrerelease \
+            --jq --arg v "$VERSION" \
+            '[.[] | select(.isPrerelease == true and (.tagName | test("^v" + $v + "-(rc|dev)")))] | .[].tagName')
+          for tag in $RC_TAGS; do
+            echo "🗑️ Deleting GitHub release $tag..."
+            gh release delete "$tag" --yes 2>/dev/null || true
+            git push origin ":refs/tags/$tag" 2>/dev/null || true
+          done
 
       - name: Create release
         if: steps.tag-check.outputs.exists == 'false'
