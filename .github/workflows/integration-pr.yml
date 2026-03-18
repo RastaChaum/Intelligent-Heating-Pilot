@@ -69,13 +69,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
+          git fetch --tags
 
-          if gh release view "v$VERSION-beta" >/dev/null 2>&1; then
+          LATEST_RC=$(git tag -l "v${VERSION}-rc*" | sort -V | tail -1)
+          if [ -n "$LATEST_RC" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Pre-release v$VERSION-beta existe"
+            echo "rc_tag=$LATEST_RC" >> $GITHUB_OUTPUT
+            echo "✅ Release candidate $LATEST_RC existe"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "⚠️ Pre-release v$VERSION-beta n'existe pas"
+            echo "rc_tag=" >> $GITHUB_OUTPUT
+            echo "⚠️ Aucune release candidate trouvée pour v${VERSION}"
           fi
 
       - name: Set up Python
@@ -135,9 +139,9 @@ jobs:
           fi
 
           if [ "$PRERELEASE_OK" == "true" ]; then
-            MESSAGE+="✅ Pre-release existe et a été testée\n"
+            MESSAGE+="✅ Release candidate \`${{ steps.prerelease-check.outputs.rc_tag }}\` existe\n"
           else
-            MESSAGE+="⚠️ Pre-release non trouvée - assurez-vous d'avoir testé sur votre instance\n"
+            MESSAGE+="⚠️ Aucune release candidate trouvée - créer un RC via le workflow 'Prepare Release Candidate'\n"
           fi
 
           MESSAGE+="\n**Actions avant merge :**\n"
