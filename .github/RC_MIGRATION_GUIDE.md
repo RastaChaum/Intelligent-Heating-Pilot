@@ -35,11 +35,7 @@ integration → tag vX.Y.Z-rc1 → pre-release RC → tests
 - `.github/workflows/promote-rc-to-release.yml` - Promouvoir vers release finale
 - `.github/workflows/create-release.yml` - **Mis à jour** pour gérer RC et releases finales
 
-### Scripts
-- `scripts/rc-helper.sh` - CLI helper pour gérer les RC facilement
-
 ### Documentation
-- `AUTOMATED_RELEASE_GUIDE.md` - **Mis à jour** avec section RC
 - `.github/workflows/README_RC.md` - Documentation détaillée des workflows
 
 ## Migration pour releases existantes
@@ -53,27 +49,21 @@ Vous pouvez toujours :
 - La release sera créée automatiquement
 
 **Option 2 : Adopter le nouveau workflow (recommandé)**
-1. Créer un RC sur integration : `./scripts/rc-helper.sh prepare`
+1. Créer un RC sur integration via GitHub Actions → *Prepare Release Candidate*
 2. Tester le RC en production
 3. Si OK, créer PR integration → main
 4. Merger → release finale automatique
 
 ### Pour les prochaines releases
 
-**Utilisez TOUJOURS le workflow RC** :
+**Utilisez TOUJOURS le workflow RC via GitHub Actions** :
 
-```bash
-# Sur integration
-./scripts/rc-helper.sh prepare
-
-# Tester en production
-
-# Si corrections nécessaires
-./scripts/rc-helper.sh increment
-
-# Quand stable
-./scripts/rc-helper.sh promote
-gh pr create --base main --head integration
+```
+Actions → Prepare Release Candidate  (crée rc1)
+  → tester en production
+Actions → Increment RC Version        (crée rc2, rc3... si corrections)
+  → tester en production
+Créer PR integration → main           (merge = release finale automatique)
 ```
 
 ## Compatibilité avec l'ancien workflow
