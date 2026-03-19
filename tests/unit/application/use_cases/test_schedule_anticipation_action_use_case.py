@@ -361,3 +361,41 @@ class TestScheduleAnticipationActionRevertLogic:
             assert len(timer_scheduler.scheduled_timers) == 1  # type: ignore
             scheduled_time, _ = timer_scheduler.scheduled_timers[0]  # type: ignore
             assert scheduled_time == new_anticipated_start
+
+    @pytest.mark.asyncio
+    async def test_does_not_revert_when_lhs_change_is_not_improvement(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        control_preheating_use_case,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """Keep active preheating when anticipated time moves but LHS did not improve.
+
+        This prevents cancel/reschedule loops when recalculations produce the same
+        slope value repeatedly.
+        """
+        initial_target = test_now + timedelta(hours=2)
+
+        with patch.object(dt_util, "now", return_value=test_now):
+            schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
+            await control_preheating_use_case.start_preheating(
+                target_time=initial_target,
+                target_temp=21.0,
+                scheduler_entity_id="schedule.heating",
+            )
+
+            schedule_anticipation_action_use_case._last_scheduled_lhs = 1.50
+            scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+
+            await schedule_anticipation_action_use_case.schedule_action(
+                anticipated_start=test_now + timedelta(minutes=5),
+                target_time=initial_target,
+                target_temp=21.0,
+                scheduler_entity_id="schedule.heating",
+                lhs=1.50,  # no improvement
+            )
+
+            assert schedule_anticipation_action_use_case._control_preheating.is_preheating_active()
+            timer_scheduler = schedule_anticipation_action_use_case._timer_scheduler
+            assert len(timer_scheduler.scheduled_timers) == 0  # type: ignore
