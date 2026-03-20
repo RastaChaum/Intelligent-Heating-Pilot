@@ -390,18 +390,6 @@ def native_schedule_reader(mock_hass: Mock) -> HASchedulerReader:
     return HASchedulerReader(mock_hass, ["schedule.planning_chauffage"])
 
 
-@pytest.fixture
-def native_schedule_reader_with_climate_reader(mock_hass: Mock) -> HASchedulerReader:
-    """Create a HASchedulerReader with native HA schedule and an injected climate reader."""
-    mock_climate_reader = Mock()
-    mock_climate_reader.get_current_target_temperature.return_value = None
-    return HASchedulerReader(
-        mock_hass,
-        ["schedule.planning_chauffage"],
-        climate_reader=mock_climate_reader,
-    )
-
-
 @pytest.mark.asyncio
 async def test_get_next_timeslot_native_schedule_off_state(
     native_schedule_reader: HASchedulerReader, mock_hass: Mock
