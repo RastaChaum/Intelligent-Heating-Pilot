@@ -137,6 +137,33 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         except (ValueError, TypeError):
             return False
 
+    def get_current_target_temperature(self) -> float | None:
+        """Retrieve the current target temperature from the VTherm entity.
+
+        Reads the live state (does NOT use RecorderAccessQueue).
+
+        Returns:
+            Current target temperature in °C, or ``None`` if the entity is
+            unavailable or the temperature attribute cannot be parsed.
+        """
+        vtherm_state = self._hass.states.get(self._vtherm_entity_id)
+        if not vtherm_state:
+            _LOGGER.debug("VTherm entity not found when reading target temperature: %s", self._vtherm_entity_id)
+            return None
+
+        for key in ("temperature", "target_temperature", "target_temp"):
+            value = get_vtherm_attribute(vtherm_state, key)
+            if value is not None:
+                try:
+                    temp = float(value)
+                    if temp > 0:
+                        return temp
+                except (ValueError, TypeError):
+                    pass
+
+        _LOGGER.debug("Could not read target temperature from VTherm %s", self._vtherm_entity_id)
+        return None
+
     # ------------------------------------------------------------------
     # IHistoricalDataAdapter implementation (historical data)
     # ------------------------------------------------------------------

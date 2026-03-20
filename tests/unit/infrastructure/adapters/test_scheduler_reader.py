@@ -1,6 +1,6 @@
 """Tests for HASchedulerReader adapter."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import Mock
 
 import pytest
@@ -379,3 +379,300 @@ async def test_is_scheduler_enabled_entity_not_found(
 
     assert result is False
     mock_hass.states.get.assert_called_once_with("switch.heating_schedule")
+
+
+# ── Native HA Schedule (schedule.*) tests ─────────────────────────────────────
+
+
+@pytest.fixture
+def native_schedule_reader(mock_hass: Mock) -> HASchedulerReader:
+    """Create a HASchedulerReader configured with a native HA schedule entity."""
+    return HASchedulerReader(mock_hass, ["schedule.planning_chauffage"])
+
+
+@pytest.mark.asyncio
+async def test_get_next_timeslot_native_schedule_off_state(
+    native_schedule_reader: HASchedulerReader, mock_hass: Mock
+) -> None:
+    """Test that native schedule in OFF state provides next ON time for preheating.
+
+    When a native HA schedule is OFF, next_event points to the next ON time,
+    which is what we want for preheating anticipation.
+    """
+    mock_state = Mock()
+    mock_state.entity_id = "schedule.planning_chauffage"
+    mock_state.state = "off"  # Not in active timeslot
+    mock_state.attributes = {
+        "next_event": "2024-01-15T07:00:00+01:00",  # Next ON time
+        "friendly_name": "Planning Chauffage",
+    }
+    mock_hass.states.get.return_value = mock_state
+    mock_hass.is_running = True
+
+    result = await native_schedule_reader.get_next_timeslot()
+
+    assert result is not None
+    assert isinstance(result, ScheduledTimeslot)
+    assert result.target_time is not None
+    assert result.target_temp == 20.0  # Default temperature (no VTherm configured)
+    assert result.timeslot_id.startswith("schedule.planning_chauffage_")
+
+
+@pytest.mark.asyncio
+async def test_get_next_timeslot_native_schedule_on_state_skipped(
+    native_schedule_reader: HASchedulerReader, mock_hass: Mock
+) -> None:
+    """Test that native schedule in ON state is skipped (next_event = next OFF time).
+
+    When a native HA schedule is ON, next_event points to the next OFF time,
+    not an ON time. IHP should skip this to avoid anticipating the end of heating.
+    """
+    mock_state = Mock()
+    mock_state.entity_id = "schedule.planning_chauffage"
+    mock_state.state = "on"  # Currently in active timeslot
+    mock_state.attributes = {
+        "next_event": "2024-01-15T09:00:00+01:00",  # Next OFF time - should be ignored
+        "friendly_name": "Planning Chauffage",
+    }
+    mock_hass.states.get.return_value = mock_state
+    mock_hass.is_running = True
+
+    result = await native_schedule_reader.get_next_timeslot()
+
+    # Should be None because schedule is ON (next_event = next OFF time)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_next_timeslot_native_schedule_no_next_event(
+    native_schedule_reader: HASchedulerReader, mock_hass: Mock
+) -> None:
+    """Test that native schedule with missing next_event attribute returns None."""
+    mock_state = Mock()
+    mock_state.entity_id = "schedule.planning_chauffage"
+    mock_state.state = "off"
+    mock_state.attributes = {
+        "friendly_name": "Planning Chauffage",
+        # No next_event attribute
+    }
+    mock_hass.states.get.return_value = mock_state
+    mock_hass.is_running = True
+
+    result = await native_schedule_reader.get_next_timeslot()
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_next_timeslot_native_schedule_with_climate_reader_temperature(
+    mock_hass: Mock,
+) -> None:
+    """Test that native schedule resolves temperature via the injected climate reader."""
+    mock_climate_reader = Mock()
+    mock_climate_reader.get_current_target_temperature.return_value = 21.5
+
+    reader = HASchedulerReader(
+        mock_hass,
+        ["schedule.planning_chauffage"],
+        climate_reader=mock_climate_reader,
+    )
+
+    schedule_state = Mock()
+    schedule_state.entity_id = "schedule.planning_chauffage"
+    schedule_state.state = "off"
+    schedule_state.attributes = {
+        "next_event": "2024-01-15T07:00:00+01:00",
+        "friendly_name": "Planning Chauffage",
+    }
+
+    mock_hass.states.get.return_value = schedule_state
+    mock_hass.is_running = True
+
+    result = await reader.get_next_timeslot()
+
+    assert result is not None
+    assert result.target_temp == 21.5  # Temperature from climate reader
+    mock_climate_reader.get_current_target_temperature.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_is_scheduler_enabled_native_schedule_off_state_is_enabled(
+    native_schedule_reader: HASchedulerReader, mock_hass: Mock
+) -> None:
+    """Test that is_scheduler_enabled returns True for an existing OFF native schedule.
+
+    Native HA schedules are considered enabled when the entity exists,
+    even when their state is "off" (which just means outside an active timeslot).
+    """
+    mock_state = Mock()
+    mock_state.state = "off"
+    mock_hass.states.get.return_value = mock_state
+
+    result = await native_schedule_reader.is_scheduler_enabled("schedule.planning_chauffage")
+
+    assert result is True
+    mock_hass.states.get.assert_called_once_with("schedule.planning_chauffage")
+
+
+@pytest.mark.asyncio
+async def test_is_scheduler_enabled_native_schedule_on_also_true(
+    native_schedule_reader: HASchedulerReader, mock_hass: Mock
+) -> None:
+    """Test that is_scheduler_enabled returns True for ON native schedule entities."""
+    mock_state = Mock()
+    mock_state.state = "on"
+    mock_hass.states.get.return_value = mock_state
+
+    result = await native_schedule_reader.is_scheduler_enabled("schedule.planning_chauffage")
+
+    assert result is True
+    mock_hass.states.get.assert_called_once_with("schedule.planning_chauffage")
+
+
+@pytest.mark.asyncio
+async def test_is_scheduler_enabled_native_schedule_entity_not_found(
+    native_schedule_reader: HASchedulerReader, mock_hass: Mock
+) -> None:
+    """Test that is_scheduler_enabled returns False when the schedule entity does not exist."""
+    mock_hass.states.get.return_value = None
+
+    result = await native_schedule_reader.is_scheduler_enabled("schedule.planning_chauffage")
+
+    assert result is False
+    mock_hass.states.get.assert_called_once_with("schedule.planning_chauffage")
+
+
+@pytest.mark.asyncio
+async def test_is_scheduler_enabled_native_schedule_unavailable(
+    native_schedule_reader: HASchedulerReader, mock_hass: Mock
+) -> None:
+    """Test that is_scheduler_enabled returns False when the schedule entity is unavailable."""
+    mock_state = Mock()
+    mock_state.state = "unavailable"
+    mock_hass.states.get.return_value = mock_state
+
+    result = await native_schedule_reader.is_scheduler_enabled("schedule.planning_chauffage")
+
+    assert result is False
+
+
+def test_parse_datetime_value_datetime_object(reader: HASchedulerReader) -> None:
+    """Test that _parse_datetime_value handles datetime objects directly."""
+    dt = datetime(2024, 1, 15, 7, 0, 0, tzinfo=timezone.utc)
+
+    result = reader._parse_datetime_value(dt)
+
+    assert result == dt
+    assert result.tzinfo is not None
+
+
+def test_parse_datetime_value_iso_string(reader: HASchedulerReader) -> None:
+    """Test that _parse_datetime_value handles ISO format strings."""
+    iso_str = "2024-01-15T07:00:00+01:00"
+
+    result = reader._parse_datetime_value(iso_str)
+
+    assert result is not None
+    assert isinstance(result, datetime)
+    assert result.tzinfo is not None
+
+
+def test_parse_datetime_value_none(reader: HASchedulerReader) -> None:
+    """Test that _parse_datetime_value returns None for None input."""
+    result = reader._parse_datetime_value(None)
+
+    assert result is None
+
+
+def test_parse_datetime_value_naive_datetime_gets_timezone(reader: HASchedulerReader) -> None:
+    """Test that _parse_datetime_value adds timezone to naive datetime objects."""
+    naive_dt = datetime(2024, 1, 15, 7, 0, 0)  # No tzinfo
+
+    result = reader._parse_datetime_value(naive_dt)
+
+    assert result is not None
+    assert result.tzinfo is not None
+
+
+def test_get_native_schedule_temperature_no_climate_reader(reader: HASchedulerReader) -> None:
+    """Test that _get_native_schedule_temperature returns the default when no climate reader configured."""
+    result = reader._get_native_schedule_temperature()
+
+    assert result == 20.0
+
+
+def test_get_native_schedule_temperature_climate_reader_returns_none(mock_hass: Mock) -> None:
+    """Test that _get_native_schedule_temperature returns 20.0°C when climate reader returns None."""
+    mock_climate_reader = Mock()
+    mock_climate_reader.get_current_target_temperature.return_value = None
+    reader = HASchedulerReader(
+        mock_hass, ["schedule.test"], climate_reader=mock_climate_reader
+    )
+
+    result = reader._get_native_schedule_temperature()
+
+    assert result == 20.0
+    mock_climate_reader.get_current_target_temperature.assert_called_once()
+
+
+def test_get_native_schedule_temperature_from_climate_reader(mock_hass: Mock) -> None:
+    """Test that _get_native_schedule_temperature reads temperature from the climate reader."""
+    mock_climate_reader = Mock()
+    mock_climate_reader.get_current_target_temperature.return_value = 22.0
+    reader = HASchedulerReader(
+        mock_hass, ["schedule.test"], climate_reader=mock_climate_reader
+    )
+
+    result = reader._get_native_schedule_temperature()
+
+    assert result == 22.0
+    mock_climate_reader.get_current_target_temperature.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_next_timeslot_mixed_native_and_hacs(mock_hass: Mock) -> None:
+    """Test that native schedule and HACS scheduler work together correctly.
+
+    IHP should correctly handle a mix of native HA schedule and HACS switch
+    entities, picking the earliest valid timeslot.
+    """
+    reader = HASchedulerReader(
+        mock_hass,
+        ["schedule.native_schedule", "switch.hacs_schedule"],
+    )
+
+    # Native schedule: OFF, next_event at 07:00 (next ON time)
+    native_state = Mock()
+    native_state.entity_id = "schedule.native_schedule"
+    native_state.state = "off"
+    native_state.attributes = {
+        "next_event": "2024-01-15T07:00:00+01:00",
+        "friendly_name": "Native Schedule",
+    }
+
+    # HACS schedule: ON, next_trigger at 08:00
+    hacs_state = Mock()
+    hacs_state.entity_id = "switch.hacs_schedule"
+    hacs_state.state = "on"
+    hacs_state.attributes = {
+        "next_trigger": "2024-01-15T08:00:00+01:00",
+        "next_slot": 0,
+        "actions": [{"service": "climate.set_temperature", "data": {"temperature": 21.0}}],
+        "friendly_name": "HACS Schedule",
+    }
+
+    def mock_get_state(entity_id: str) -> Mock | None:
+        if entity_id == "schedule.native_schedule":
+            return native_state
+        if entity_id == "switch.hacs_schedule":
+            return hacs_state
+        return None
+
+    mock_hass.states.get.side_effect = mock_get_state
+    mock_hass.is_running = True
+
+    result = await reader.get_next_timeslot()
+
+    # Should pick the earlier native schedule timeslot
+    assert result is not None
+    assert result.scheduler_entity == "schedule.native_schedule"
