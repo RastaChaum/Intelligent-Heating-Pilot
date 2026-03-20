@@ -324,7 +324,8 @@ class HASchedulerReader(ISchedulerReader):
         Returns:
             Tuple of (next_time, target_temp), either can be None
         """
-        device_name = get_entity_name(self._hass, state.entity_id)
+        # Use the already-available state object to derive a friendly device name
+        device_name = cast(str, state.attributes.get("friendly_name") or state.entity_id)
 
         if state.state != "off":
             # Schedule is ON, next_event points to next OFF time - not useful for preheating
