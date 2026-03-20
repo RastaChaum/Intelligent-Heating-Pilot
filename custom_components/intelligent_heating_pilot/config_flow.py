@@ -94,9 +94,13 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
         # Get all scheduler entities with their friendly names
         scheduler_options = []
-        for state in self.hass.states.async_all("switch"):
+        for state in self.hass.states.async_all(["switch", "schedule"]):
             # Filter for scheduler entities (they typically have "schedule_" prefix or scheduler attributes)
-            if "schedule" in state.entity_id.lower() or state.attributes.get("next_trigger"):
+            if (
+                "schedule" in state.entity_id.lower()
+                or state.attributes.get("next_trigger")
+                or state.attributes.get("next_event")
+            ):
                 friendly_name = state.attributes.get("friendly_name", state.entity_id)
                 scheduler_options.append(
                     {"value": state.entity_id, "label": f"{friendly_name} ({state.entity_id})"}
@@ -117,7 +121,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             )
             if scheduler_options
             else selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="switch", multiple=True)
+                selector.EntitySelectorConfig(domain=["switch", "schedule"], multiple=True)
             )
         )
 
@@ -317,8 +321,12 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
 
         # Get all scheduler entities for SelectSelector
         scheduler_options = []
-        for state in self.hass.states.async_all("switch"):
-            if "schedule" in state.entity_id.lower() or state.attributes.get("next_trigger"):
+        for state in self.hass.states.async_all(["switch", "schedule"]):
+            if (
+                "schedule" in state.entity_id.lower()
+                or state.attributes.get("next_trigger")
+                or state.attributes.get("next_event")
+            ):
                 friendly_name = state.attributes.get("friendly_name", state.entity_id)
                 scheduler_options.append(
                     {"value": state.entity_id, "label": f"{friendly_name} ({state.entity_id})"}
@@ -358,7 +366,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             )
             if scheduler_options
             else selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="switch", multiple=True)
+                selector.EntitySelectorConfig(domain=["switch", "schedule"], multiple=True)
             )
         )
         schedulers_field = (

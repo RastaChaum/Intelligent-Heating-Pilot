@@ -23,6 +23,10 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Default temperature used for native HA schedule entities that don't store temperature.
+# The actual temperature is resolved from the linked VTherm entity when available.
+_DEFAULT_NATIVE_SCHEDULE_TEMPERATURE: float = 20.0
+
 
 class HASchedulerReader(ISchedulerReader):
     """Home Assistant implementation of scheduler reader.
@@ -59,6 +63,10 @@ class HASchedulerReader(ISchedulerReader):
         Scans all configured scheduler entities and returns the earliest
         upcoming timeslot with a valid time and temperature.
 
+        Supports both HACS Scheduler (switch.*) and native HA Schedule (schedule.*)
+        entities. Native schedules use the next_event attribute and require special
+        state-aware handling since "off" means "not in active timeslot", not disabled.
+
         Returns:
             The next schedule timeslot, or None if no valid timeslots found
             or if no scheduler entities are configured.
@@ -84,14 +92,20 @@ class HASchedulerReader(ISchedulerReader):
                     )
                 continue
 
-            # Skip disabled schedulers (state is "off")
-            if state.state == "off":
-                device_name = get_entity_name(self._hass, entity_id)
-                _LOGGER.debug("[%s] Scheduler is disabled (state: off), skipping", device_name)
-                continue
+            # Native HA schedule entities (schedule.*) use next_event and state-aware logic
+            if entity_id.startswith("schedule."):
+                next_time, target_temp = self._extract_native_schedule_data(state)
+            else:
+                # Skip disabled HACS schedulers (state is "off")
+                if state.state == "off":
+                    device_name = get_entity_name(self._hass, entity_id)
+                    _LOGGER.debug(
+                        "[%s] Scheduler is disabled (state: off), skipping", device_name
+                    )
+                    continue
 
-            # Extract next trigger time and target temperature
-            next_time, target_temp = self._extract_timeslot_data(state)
+                # Extract next trigger time and target temperature (HACS format)
+                next_time, target_temp = self._extract_timeslot_data(state)
 
             if next_time and target_temp is not None:
                 # Keep track of the earliest timeslot
@@ -290,19 +304,145 @@ class HASchedulerReader(ISchedulerReader):
 
         return None
 
+    def _extract_native_schedule_data(self, state: State) -> tuple[datetime | None, float | None]:
+        """Extract next timeslot from a native HA schedule entity.
+
+        Native HA schedule entities (schedule.*) use the next_event attribute,
+        which always points to the NEXT state change:
+        - State = "off" → next_event = next ON time (use for preheating anticipation)
+        - State = "on"  → next_event = next OFF time (skip - already in active period)
+
+        Args:
+            state: Native HA schedule entity state
+
+        Returns:
+            Tuple of (next_time, target_temp), either can be None
+        """
+        device_name = get_entity_name(self._hass, state.entity_id)
+
+        if state.state != "off":
+            # Schedule is ON, next_event points to next OFF time - not useful for preheating
+            _LOGGER.debug(
+                "[%s] Native schedule is ON (next_event = next OFF time), skipping for preheating",
+                device_name,
+            )
+            return None, None
+
+        # Schedule is OFF, next_event is the next ON time - use for preheating
+        attrs = state.attributes
+        next_time = self._parse_datetime_value(attrs.get("next_event"))
+        if not next_time:
+            _LOGGER.debug("[%s] Native schedule has no valid next_event attribute", device_name)
+            return None, None
+
+        target_temp = self._get_native_schedule_temperature()
+        _LOGGER.debug(
+            "[%s] Native schedule next ON event at %s (%.1f°C)",
+            device_name,
+            next_time.strftime("%H:%M"),
+            target_temp,
+        )
+        return next_time, target_temp
+
+    def _parse_datetime_value(self, value: object) -> datetime | None:
+        """Parse a datetime value that can be either a datetime object or an ISO string.
+
+        Native HA schedule entities can return next_event as either a datetime
+        object or an ISO format string, so both formats must be handled.
+
+        Args:
+            value: Value to parse (datetime object or string)
+
+        Returns:
+            Parsed datetime with timezone, or None if parsing fails
+        """
+        if value is None:
+            return None
+
+        if isinstance(value, datetime):
+            # Already a datetime - ensure timezone is set
+            if value.tzinfo is None:
+                return dt_util.as_local(value)
+            return value
+
+        # Try string parsing using existing method
+        return self._parse_next_trigger(str(value))
+
+    def _get_native_schedule_temperature(self) -> float:
+        """Get target temperature for native HA schedule entities.
+
+        Since native HA schedules don't store temperature, retrieve it from the
+        linked VTherm entity's current target temperature. Falls back to
+        _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE if VTherm is unavailable or its
+        temperature cannot be resolved.
+
+        Returns:
+            Target temperature in Celsius from VTherm, or the default value
+        """
+        if not self._vtherm_entity_id:
+            _LOGGER.debug(
+                "No VTherm entity configured for native schedule temperature resolution, "
+                "using %.1f°C default",
+                _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE,
+            )
+            return _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE
+
+        state = self._hass.states.get(self._vtherm_entity_id)
+        if not state:
+            _LOGGER.debug(
+                "VTherm entity %s not found for native schedule temperature resolution, "
+                "using %.1f°C default",
+                self._vtherm_entity_id,
+                _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE,
+            )
+            return _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE
+
+        # Try to get the current target temperature from VTherm
+        for key in ("temperature", "target_temperature", "target_temp"):
+            value = get_vtherm_attribute(state, key)
+            if value is not None:
+                try:
+                    temp = float(value)
+                    if temp > 0:
+                        _LOGGER.debug(
+                            "Native schedule temperature resolved from VTherm %s: %.1f°C",
+                            self._vtherm_entity_id,
+                            temp,
+                        )
+                        return temp
+                except (ValueError, TypeError):
+                    pass
+
+        _LOGGER.debug(
+            "Could not resolve temperature from VTherm %s, using %.1f°C default",
+            self._vtherm_entity_id,
+            _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE,
+        )
+        return _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE
+
     async def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
         """Check if a specific scheduler is enabled.
 
-        A scheduler is considered enabled if its state is NOT "off".
-        This includes states like "on", "idle", "waiting", etc.
-        Only the explicit "off" state means the scheduler is disabled.
+        For native HA schedule entities (schedule.*), always returns True since
+        the "off" state means the schedule is not in an active timeslot, not
+        that it is disabled. The schedule is always considered active.
+
+        For HACS switch-based schedulers, a scheduler is considered enabled if
+        its state is NOT "off". States like "on", "idle", "waiting" are enabled.
 
         Args:
             scheduler_entity_id: The scheduler entity ID to check
 
         Returns:
-            True if the scheduler is enabled (state != "off"), False otherwise
+            True if the scheduler is enabled, False otherwise
         """
+        # Native HA schedules are always considered enabled
+        if scheduler_entity_id.startswith("schedule."):
+            _LOGGER.debug(
+                "Native HA schedule %s is always considered enabled", scheduler_entity_id
+            )
+            return True
+
         state = self._hass.states.get(scheduler_entity_id)
         if not state:
             _LOGGER.debug("Scheduler entity not found when checking state: %s", scheduler_entity_id)
