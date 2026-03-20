@@ -55,6 +55,7 @@ class ScheduleAnticipationActionUseCase:
         self._last_scheduled_lhs: float | None = None
         self._anticipation_timer_cancel: Callable[[], None] | None = None
         self._preheating_target_temp: float | None = None  # Temp only (time/active delegated)
+        self._lhs_revert_min_delta = 0.05  # avoid churn on tiny/no-op LHS changes
 
     def set_preheating_temp(self, target_temp: float | None) -> None:
         """Update preheating target temperature.
@@ -178,7 +179,10 @@ class ScheduleAnticipationActionUseCase:
         # Handle revert logic: if LHS improved, cancel active preheating and reschedule
         if self._control_preheating.is_preheating_active():
             preheating_target = self._control_preheating.get_preheating_target_time()
-            if anticipated_start > now and preheating_target == target_time:
+            lhs_has_improved = self._last_scheduled_lhs is None or lhs > (
+                self._last_scheduled_lhs + self._lhs_revert_min_delta
+            )
+            if anticipated_start > now and preheating_target == target_time and lhs_has_improved:
                 _LOGGER.info(
                     "Anticipated start moved later (now: %s, new start: %s). "
                     "LHS improved from %.2f to %.2f°C/h. Reverting and rescheduling.",
@@ -239,12 +243,13 @@ class ScheduleAnticipationActionUseCase:
             return
 
         # Schedule timer for future start
-        await self._schedule_timer(
-            anticipated_start,
-            target_time,
-            target_temp,
-            scheduler_entity_id,
-        )
+        if not self._control_preheating.is_preheating_active():
+            await self._schedule_timer(
+                anticipated_start,
+                target_time,
+                target_temp,
+                scheduler_entity_id,
+            )
         _LOGGER.debug("Exiting schedule_action() -> timer scheduled")
 
     async def _schedule_timer(
