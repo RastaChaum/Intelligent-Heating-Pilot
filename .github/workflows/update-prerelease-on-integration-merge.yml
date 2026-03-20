@@ -38,9 +38,19 @@ jobs:
 
           # Query GitHub Releases API directly — the ground truth, not git tags
           # git tags can exist without a corresponding GitHub release (e.g. after increment-rc-version deletes old RC releases)
-          LATEST_RC=$(gh release list --json tagName,isPrerelease \
-            --jq --arg v "$VERSION" \
-            '[.[] | select(.isPrerelease == true and (.tagName | test("^v" + $v + "-rc")))] | sort_by(.tagName) | last | .tagName // empty')
+            LATEST_RC=$(gh release list --json tagName,isPrerelease \
+              | jq -r --arg v "$VERSION" '
+                  [
+                    .[]
+                    | select(
+                        .isPrerelease == true
+                        and (.tagName | test("^v" + $v + "-rc[0-9]+$"))
+                      )
+                  ]
+                  | sort_by(.tagName | capture("-rc(?<number>[0-9]+)$").number | tonumber)
+                  | last
+                  | .tagName // empty
+                ')
 
           DEV_RELEASE=$(gh release view "$DEV_TAG" --json tagName --jq '.tagName' 2>/dev/null || echo "")
 

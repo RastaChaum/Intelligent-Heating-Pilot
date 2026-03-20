@@ -53,9 +53,18 @@ jobs:
           fi
 
           # Count RC iterations for traceability (GitHub Releases API = ground truth)
-          RC_TAGS=$(gh release list --json tagName,isPrerelease \
-            --jq --arg v "$VERSION" \
-            '[.[] | select(.isPrerelease == true and (.tagName | test("^v" + $v + "-rc")))] | sort_by(.tagName) | .[].tagName')
+            RC_TAGS=$(gh release list --json tagName,isPrerelease \
+              | jq -r --arg v "$VERSION" '
+                  [
+                    .[]
+                    | select(
+                        .isPrerelease == true
+                        and (.tagName | test("^v" + $v + "-rc[0-9]+$"))
+                      )
+                  ]
+                  | sort_by(.tagName | capture("-rc(?<number>[0-9]+)$").number | tonumber)
+                  | .[].tagName
+                ')
           RC_COUNT=$(echo "$RC_TAGS" | grep -c . || true)
           LATEST_RC=$(echo "$RC_TAGS" | tail -1)
 
@@ -90,8 +99,14 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           # Query GitHub Releases API for all pre-releases matching this version (ground truth)
           RC_TAGS=$(gh release list --json tagName,isPrerelease \
-            --jq --arg v "$VERSION" \
-            '[.[] | select(.isPrerelease == true and (.tagName | test("^v" + $v + "-(rc|dev)")))] | .[].tagName')
+            | jq -r --arg v "$VERSION" '
+                .[]
+                | select(
+                    .isPrerelease == true
+                    and (.tagName | test("^v" + $v + "-(rc[0-9]+|dev)$"))
+                  )
+                | .tagName
+              ')
           for tag in $RC_TAGS; do
             echo "🗑️ Deleting GitHub release $tag..."
             gh release delete "$tag" --yes 2>/dev/null || true
