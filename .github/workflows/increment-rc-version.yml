@@ -60,11 +60,33 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          VERSION="${{ inputs.version }}"
           RC_NUM="${{ steps.rc-number.outputs.next_rc_num }}"
           LAST_RC="${{ steps.rc-number.outputs.last_rc }}"
 
-          # Fetch previous RC release notes and append new fixes (no file committed to the repo)
-          PREV_NOTES=$(gh release view "$LAST_RC" --json body --jq '.body')
+          # Prefer previous GitHub release notes, but tolerate a missing release when only the tag exists.
+          PREV_NOTES=$(gh release view "$LAST_RC" --json body --jq '.body' 2>/dev/null || true)
+
+          if [ -z "$PREV_NOTES" ]; then
+            CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next} flag && /^## \[/{flag=0} flag{print}' CHANGELOG.md | sed '/./,$!d')
+
+            {
+              echo "## 🧪 Release Candidate"
+              echo ""
+              echo "Cette version est une **release candidate** destinée aux tests en production et aux beta-testeurs."
+              echo ""
+              if [ -n "$CHANGELOG_CONTENT" ]; then
+                echo "$CHANGELOG_CONTENT"
+                echo ""
+              else
+                echo "> ℹ️ Notes initiales indisponibles : reconstruction à partir de l'état courant de la branche integration."
+                echo ""
+              fi
+              echo "---"
+            } > /tmp/prev-rc-notes.md
+            PREV_NOTES=$(cat /tmp/prev-rc-notes.md)
+          fi
+
           {
             echo "$PREV_NOTES"
             echo ""

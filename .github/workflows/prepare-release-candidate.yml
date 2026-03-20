@@ -37,12 +37,29 @@ jobs:
           echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
           echo "rc_tag=v${{ inputs.version }}-rc1" >> $GITHUB_OUTPUT
 
-      - name: Check if RC already exists
+      - name: Check RC tag and release state
+        id: rc_state
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if git rev-parse "v${{ inputs.version }}-rc1" >/dev/null 2>&1; then
-            echo "⚠️ Un RC existe déjà pour cette version"
-            echo "Utilisez le workflow 'Increment RC Version' pour créer rc2, rc3, etc."
-            exit 1
+          RC_TAG="v${{ inputs.version }}-rc1"
+
+          if git rev-parse "$RC_TAG" >/dev/null 2>&1; then
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+
+            if gh release view "$RC_TAG" --json tagName --jq '.tagName' >/dev/null 2>&1; then
+              echo "release_exists=true" >> $GITHUB_OUTPUT
+              echo "⚠️ Une RC complète existe déjà pour cette version"
+              echo "Utilisez le workflow 'Increment RC Version' pour créer rc2, rc3, etc."
+              exit 1
+            fi
+
+            echo "release_exists=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Le tag $RC_TAG existe déjà, mais la pre-release GitHub est absente"
+            echo "ℹ️ Le workflow va réutiliser ce tag et créer la pre-release manquante"
+          else
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+            echo "release_exists=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Clean up dev pre-release if exists
@@ -91,10 +108,16 @@ jobs:
           echo "✅ Notes de version prêtes"
 
       - name: Create RC tag
+        if: steps.rc_state.outputs.tag_exists != 'true'
         run: |
           git tag -a "${{ steps.validate.outputs.rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc1" -m "Release candidate pour tests en production." -m "Changements prévus :" -m "$(cat /tmp/rc-notes.md)"
 
           git push origin "${{ steps.validate.outputs.rc_tag }}"
+
+      - name: Reuse existing RC tag
+        if: steps.rc_state.outputs.tag_exists == 'true'
+        run: |
+          echo "✅ Réutilisation du tag existant ${{ steps.validate.outputs.rc_tag }}"
 
       - name: Create GitHub Pre-Release
         env:
