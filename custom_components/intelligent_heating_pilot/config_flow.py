@@ -12,6 +12,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
@@ -27,6 +28,7 @@ from .const import (
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
+    DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
     DEFAULT_DEAD_TIME_MINUTES,
@@ -220,6 +222,18 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         max=30,
                         step=1,
                         unit_of_measurement="days",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+                    default=DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=60,
+                        step=1,
+                        unit_of_measurement="minutes",
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
@@ -509,6 +523,23 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 max=30,
                 step=1,
                 unit_of_measurement="days",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        schema_dict[
+            vol.Optional(
+                CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+                default=_opt_or_data(
+                    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+                    DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+                ),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=60,
+                step=1,
+                unit_of_measurement="minutes",
                 mode=selector.NumberSelectorMode.BOX,
             )
         )

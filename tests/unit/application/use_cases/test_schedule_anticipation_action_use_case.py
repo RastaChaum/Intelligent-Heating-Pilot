@@ -305,20 +305,20 @@ class TestScheduleAnticipationActionScheduling:
 
 
 class TestScheduleAnticipationActionRevertLogic:
-    """Test revert logic when LHS improves during active preheating."""
+    """Test revert logic when anticipated time changes significantly."""
 
     @pytest.mark.asyncio
-    async def test_lhs_improvement_reverts_and_reschedules(
+    async def test_significant_time_shift_reverts_and_reschedules(
         self,
         schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
         control_preheating_use_case,
         scheduler_reader,
         test_now: datetime,
     ) -> None:
-        """Test that LHS improvement triggers revert and reschedule.
+        """Test that a significant anticipated-time shift reverts and reschedules.
 
         GIVEN: Preheating active with old start time, new start is later
-        WHEN: schedule_action called with improved LHS
+        WHEN: schedule_action called with a delta >= threshold
         THEN: Preheating is reverted and new timer scheduled for new start time
         """
         # GIVEN: Start preheating with initial timing
@@ -334,23 +334,24 @@ class TestScheduleAnticipationActionRevertLogic:
             # Verify preheating is active
             assert schedule_anticipation_action_use_case._control_preheating.is_preheating_active()
 
-            # Manually set LHS tracking
+            # Manually set previous scheduling tracking
             schedule_anticipation_action_use_case._last_scheduled_time = test_now + timedelta(
                 hours=1
             )
             schedule_anticipation_action_use_case._last_scheduled_lhs = 1.0  # Old LHS
+            schedule_anticipation_action_use_case._anticipation_recalc_tolerance_seconds = 15 * 60
 
             # Mock scheduler state
             scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
 
-            # WHEN: New calculation with improved LHS
-            new_anticipated_start = test_now + timedelta(hours=1, minutes=10)
+            # WHEN: New calculation with significant time delta (20 minutes)
+            new_anticipated_start = test_now + timedelta(hours=1, minutes=20)
             await schedule_anticipation_action_use_case.schedule_action(
                 anticipated_start=new_anticipated_start,
                 target_time=initial_target,
                 target_temp=21.0,
                 scheduler_entity_id="schedule.heating",
-                lhs=2.0,  # Improved!
+                lhs=2.0,
             )
 
             # THEN: Preheating reverted and new timer scheduled for new start time
@@ -363,18 +364,14 @@ class TestScheduleAnticipationActionRevertLogic:
             assert scheduled_time == new_anticipated_start
 
     @pytest.mark.asyncio
-    async def test_does_not_revert_when_lhs_change_is_not_improvement(
+    async def test_small_time_shift_keeps_active_preheating(
         self,
         schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
         control_preheating_use_case,
         scheduler_reader,
         test_now: datetime,
     ) -> None:
-        """Keep active preheating when anticipated time moves but LHS did not improve.
-
-        This prevents cancel/reschedule loops when recalculations produce the same
-        slope value repeatedly.
-        """
+        """Do not revert active preheating when time delta is below threshold."""
         initial_target = test_now + timedelta(hours=2)
 
         with patch.object(dt_util, "now", return_value=test_now):
@@ -385,15 +382,94 @@ class TestScheduleAnticipationActionRevertLogic:
                 scheduler_entity_id="schedule.heating",
             )
 
-            schedule_anticipation_action_use_case._last_scheduled_lhs = 1.50
+            schedule_anticipation_action_use_case._last_scheduled_time = test_now + timedelta(
+                hours=1
+            )
+            schedule_anticipation_action_use_case._anticipation_recalc_tolerance_seconds = 15 * 60
             scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
 
             await schedule_anticipation_action_use_case.schedule_action(
-                anticipated_start=test_now + timedelta(minutes=5),
+                anticipated_start=test_now + timedelta(hours=1, minutes=5),  # 5 minutes shift
                 target_time=initial_target,
                 target_temp=21.0,
                 scheduler_entity_id="schedule.heating",
-                lhs=1.50,  # no improvement
+                lhs=2.0,
+            )
+
+            assert schedule_anticipation_action_use_case._control_preheating.is_preheating_active()
+            timer_scheduler = schedule_anticipation_action_use_case._timer_scheduler
+            assert len(timer_scheduler.scheduled_timers) == 0  # type: ignore
+
+    @pytest.mark.asyncio
+    async def test_threshold_boundary_reverts_when_delta_equals_threshold(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        control_preheating_use_case,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """Revert must trigger when delta is exactly equal to the configured threshold."""
+        initial_target = test_now + timedelta(hours=2)
+
+        with patch.object(dt_util, "now", return_value=test_now):
+            schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
+            await control_preheating_use_case.start_preheating(
+                target_time=initial_target,
+                target_temp=21.0,
+                scheduler_entity_id="schedule.heating",
+            )
+
+            schedule_anticipation_action_use_case._last_scheduled_time = test_now + timedelta(
+                hours=1
+            )
+            schedule_anticipation_action_use_case._anticipation_recalc_tolerance_seconds = 15 * 60
+            scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+
+            await schedule_anticipation_action_use_case.schedule_action(
+                anticipated_start=test_now + timedelta(hours=1, minutes=15),
+                target_time=initial_target,
+                target_temp=21.0,
+                scheduler_entity_id="schedule.heating",
+                lhs=2.0,
+            )
+
+            assert (
+                not schedule_anticipation_action_use_case._control_preheating.is_preheating_active()
+            )
+            timer_scheduler = schedule_anticipation_action_use_case._timer_scheduler
+            assert len(timer_scheduler.scheduled_timers) == 1  # type: ignore
+
+    @pytest.mark.asyncio
+    async def test_earlier_time_does_not_revert_when_preheating_is_active(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        control_preheating_use_case,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """Do not revert when anticipated start moves earlier while preheating is active."""
+        initial_target = test_now + timedelta(hours=2)
+
+        with patch.object(dt_util, "now", return_value=test_now):
+            schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
+            await control_preheating_use_case.start_preheating(
+                target_time=initial_target,
+                target_temp=21.0,
+                scheduler_entity_id="schedule.heating",
+            )
+
+            schedule_anticipation_action_use_case._last_scheduled_time = test_now + timedelta(
+                hours=1
+            )
+            schedule_anticipation_action_use_case._anticipation_recalc_tolerance_seconds = 15 * 60
+            scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+
+            await schedule_anticipation_action_use_case.schedule_action(
+                anticipated_start=test_now + timedelta(minutes=40),  # moved earlier by 20 minutes
+                target_time=initial_target,
+                target_temp=21.0,
+                scheduler_entity_id="schedule.heating",
+                lhs=2.0,
             )
 
             assert schedule_anticipation_action_use_case._control_preheating.is_preheating_active()

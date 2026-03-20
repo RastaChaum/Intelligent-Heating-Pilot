@@ -244,6 +244,7 @@ class HeatingApplication:
             scheduler_commander=self._scheduler_commander,
             timer_scheduler=self._timer_scheduler,
             control_preheating_use_case=control_preheating,  # Delegate state management
+            anticipation_recalc_tolerance_minutes=self._device_config.anticipation_recalc_tolerance_minutes,
         )
 
         check_overshoot_risk = CheckOvershootRiskUseCase(

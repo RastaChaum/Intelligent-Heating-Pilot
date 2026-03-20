@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ...const import (
+    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
@@ -22,6 +23,7 @@ from ...const import (
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
+    DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
     DEFAULT_DEAD_TIME_MINUTES,
@@ -142,6 +144,17 @@ class HADeviceConfigReader(IDeviceConfigReader):
         task_range = self._get_config_value(config, options, CONF_TASK_RANGE_DAYS)
         task_range_days = int(task_range if task_range is not None else DEFAULT_TASK_RANGE_DAYS)
 
+        recalc_tolerance = self._get_config_value(
+            config,
+            options,
+            CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+        )
+        anticipation_recalc_tolerance_minutes = int(
+            recalc_tolerance
+            if recalc_tolerance is not None
+            else DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
+        )
+
         safety_grace = self._get_config_value(config, options, CONF_SAFETY_SHUTOFF_GRACE_MINUTES)
         safety_shutoff_grace_minutes = int(
             safety_grace if safety_grace is not None else DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES
@@ -163,6 +176,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
             max_cycle_duration_minutes=max_cycle_duration_minutes,
             ihp_enabled=ihp_enabled,
             task_range_days=task_range_days,
+            anticipation_recalc_tolerance_minutes=anticipation_recalc_tolerance_minutes,
             safety_shutoff_grace_minutes=safety_shutoff_grace_minutes,
         )
 

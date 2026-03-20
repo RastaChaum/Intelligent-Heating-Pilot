@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Callable
 
 from homeassistant.util import dt as dt_util
 
+from ...const import DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
+
 if TYPE_CHECKING:
     from datetime import datetime
 
@@ -24,7 +26,7 @@ class ScheduleAnticipationActionUseCase:
 
     This use case encapsulates the complex logic for:
     1. Checking scheduler state
-    2. Handling revert logic when LHS improvements occur
+    2. Handling revert logic when anticipated start is postponed significantly
     3. Scheduling preheating timers
     4. Triggering immediate preheating when needed
     """
@@ -35,6 +37,7 @@ class ScheduleAnticipationActionUseCase:
         scheduler_commander: ISchedulerCommander,
         timer_scheduler: ITimerScheduler,
         control_preheating_use_case,  # ControlPreheatingUseCase (avoid circular import)
+        anticipation_recalc_tolerance_minutes: int = DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     ) -> None:
         """Initialize the use case.
 
@@ -43,6 +46,8 @@ class ScheduleAnticipationActionUseCase:
             scheduler_commander: Triggers scheduler actions
             timer_scheduler: Schedules timer callbacks
             control_preheating_use_case: Use case for managing preheating state
+            anticipation_recalc_tolerance_minutes: Min absolute delta in anticipated
+                start time required to cancel active preheating and reschedule
         """
         _LOGGER.debug("Initializing ScheduleAnticipationActionUseCase")
         self._scheduler_reader = scheduler_reader
@@ -55,7 +60,7 @@ class ScheduleAnticipationActionUseCase:
         self._last_scheduled_lhs: float | None = None
         self._anticipation_timer_cancel: Callable[[], None] | None = None
         self._preheating_target_temp: float | None = None  # Temp only (time/active delegated)
-        self._lhs_revert_min_delta = 0.05  # avoid churn on tiny/no-op LHS changes
+        self._anticipation_recalc_tolerance_seconds = anticipation_recalc_tolerance_minutes * 60
 
     def set_preheating_temp(self, target_temp: float | None) -> None:
         """Update preheating target temperature.
@@ -145,7 +150,7 @@ class ScheduleAnticipationActionUseCase:
 
         This method handles all the scheduling logic including:
         - Checking scheduler state
-        - Handling revert when LHS improves
+        - Handling revert when anticipated time changes significantly
         - Scheduling timers for future starts
         - Triggering immediate preheating if start is in the past
 
@@ -176,37 +181,28 @@ class ScheduleAnticipationActionUseCase:
                 await self._clear_state()
             return
 
-        # Handle revert logic: if LHS improved, cancel active preheating and reschedule
+        # Handle revert logic: cancel active preheating only when anticipated start is pushed later
+        # by at least the configured tolerance.
         if self._control_preheating.is_preheating_active():
             preheating_target = self._control_preheating.get_preheating_target_time()
-            lhs_has_improved = self._last_scheduled_lhs is None or lhs > (
-                self._last_scheduled_lhs + self._lhs_revert_min_delta
-            )
-            if anticipated_start > now and preheating_target == target_time and lhs_has_improved:
+            postponed_seconds = 0.0
+            if self._last_scheduled_time is not None:
+                postponed_seconds = (anticipated_start - self._last_scheduled_time).total_seconds()
+            if (
+                preheating_target == target_time
+                and self._last_scheduled_time is not None
+                and postponed_seconds >= self._anticipation_recalc_tolerance_seconds
+            ):
+                delta_minutes = postponed_seconds / 60.0
                 _LOGGER.info(
-                    "Anticipated start moved later (now: %s, new start: %s). "
-                    "LHS improved from %.2f to %.2f°C/h. Reverting and rescheduling.",
-                    now.isoformat(),
-                    anticipated_start.isoformat(),
-                    self._last_scheduled_lhs or 0.0,
-                    lhs,
+                    "Anticipated start moved later significantly (delta: %.1f min, "
+                    "threshold: %.1f min). Reverting active preheating and rescheduling.",
+                    delta_minutes,
+                    self._anticipation_recalc_tolerance_seconds / 60.0,
                 )
 
                 # Delegate cancellation to ControlPreheatingUseCase
                 await self._control_preheating.cancel_preheating(scheduler_entity_id)
-
-                self._last_scheduled_time = anticipated_start
-                self._last_scheduled_lhs = lhs
-
-                # Schedule timer for new anticipated time
-                await self._schedule_timer(
-                    anticipated_start,
-                    target_time,
-                    target_temp,
-                    scheduler_entity_id,
-                )
-                _LOGGER.debug("Exiting schedule_action() -> rescheduled timer")
-                return
 
             # If target time reached, mark complete
             if now >= target_time:
@@ -242,7 +238,7 @@ class ScheduleAnticipationActionUseCase:
             await self._cancel_timer()
             return
 
-        # Schedule timer for future start
+        # Schedule timer for future start only if preheating is not already active.
         if not self._control_preheating.is_preheating_active():
             await self._schedule_timer(
                 anticipated_start,
