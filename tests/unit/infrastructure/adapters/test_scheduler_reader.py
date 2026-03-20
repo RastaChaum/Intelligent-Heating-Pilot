@@ -496,15 +496,14 @@ async def test_get_next_timeslot_native_schedule_with_climate_reader_temperature
 
 
 @pytest.mark.asyncio
-async def test_is_scheduler_enabled_native_schedule_always_true(
+async def test_is_scheduler_enabled_native_schedule_off_state_is_enabled(
     native_schedule_reader: HASchedulerReader, mock_hass: Mock
 ) -> None:
-    """Test that is_scheduler_enabled always returns True for native schedule entities.
+    """Test that is_scheduler_enabled returns True for an existing OFF native schedule.
 
-    Native HA schedules are always considered enabled, regardless of their state.
-    The "off" state means the schedule is not in an active timeslot, not disabled.
+    Native HA schedules are considered enabled when the entity exists,
+    even when their state is "off" (which just means outside an active timeslot).
     """
-    # Even when state is "off", native schedule should be considered enabled
     mock_state = Mock()
     mock_state.state = "off"
     mock_hass.states.get.return_value = mock_state
@@ -512,8 +511,7 @@ async def test_is_scheduler_enabled_native_schedule_always_true(
     result = await native_schedule_reader.is_scheduler_enabled("schedule.planning_chauffage")
 
     assert result is True
-    # Should NOT call hass.states.get since we return early for schedule.* entities
-    mock_hass.states.get.assert_not_called()
+    mock_hass.states.get.assert_called_once_with("schedule.planning_chauffage")
 
 
 @pytest.mark.asyncio
@@ -528,7 +526,34 @@ async def test_is_scheduler_enabled_native_schedule_on_also_true(
     result = await native_schedule_reader.is_scheduler_enabled("schedule.planning_chauffage")
 
     assert result is True
-    mock_hass.states.get.assert_not_called()
+    mock_hass.states.get.assert_called_once_with("schedule.planning_chauffage")
+
+
+@pytest.mark.asyncio
+async def test_is_scheduler_enabled_native_schedule_entity_not_found(
+    native_schedule_reader: HASchedulerReader, mock_hass: Mock
+) -> None:
+    """Test that is_scheduler_enabled returns False when the schedule entity does not exist."""
+    mock_hass.states.get.return_value = None
+
+    result = await native_schedule_reader.is_scheduler_enabled("schedule.planning_chauffage")
+
+    assert result is False
+    mock_hass.states.get.assert_called_once_with("schedule.planning_chauffage")
+
+
+@pytest.mark.asyncio
+async def test_is_scheduler_enabled_native_schedule_unavailable(
+    native_schedule_reader: HASchedulerReader, mock_hass: Mock
+) -> None:
+    """Test that is_scheduler_enabled returns False when the schedule entity is unavailable."""
+    mock_state = Mock()
+    mock_state.state = "unavailable"
+    mock_hass.states.get.return_value = mock_state
+
+    result = await native_schedule_reader.is_scheduler_enabled("schedule.planning_chauffage")
+
+    assert result is False
 
 
 def test_parse_datetime_value_datetime_object(reader: HASchedulerReader) -> None:

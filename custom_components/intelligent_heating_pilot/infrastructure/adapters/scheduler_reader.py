@@ -412,9 +412,10 @@ class HASchedulerReader(ISchedulerReader):
     async def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
         """Check if a specific scheduler is enabled.
 
-        For native HA schedule entities (schedule.*), always returns True since
-        the "off" state means the schedule is not in an active timeslot, not
-        that it is disabled. The schedule is always considered active.
+        For native HA schedule entities (schedule.*), the "off" state means the
+        schedule is not in an active timeslot — not that it is disabled.  These
+        entities are therefore always considered enabled *when the entity exists
+        and is available*.  Returns False if the entity cannot be found.
 
         For HACS switch-based schedulers, a scheduler is considered enabled if
         its state is NOT "off". States like "on", "idle", "waiting" are enabled.
@@ -425,17 +426,22 @@ class HASchedulerReader(ISchedulerReader):
         Returns:
             True if the scheduler is enabled, False otherwise
         """
-        # Native HA schedules are always considered enabled
-        if scheduler_entity_id.startswith("schedule."):
-            _LOGGER.debug(
-                "Native HA schedule %s is always considered enabled", scheduler_entity_id
-            )
-            return True
-
         state = self._hass.states.get(scheduler_entity_id)
         if not state:
             _LOGGER.debug("Scheduler entity not found when checking state: %s", scheduler_entity_id)
             return False
+
+        # Native HA schedules: "off" means outside an active timeslot, not disabled
+        if scheduler_entity_id.startswith("schedule."):
+            if state.state == "unavailable":
+                _LOGGER.debug("Native HA schedule %s is unavailable", scheduler_entity_id)
+                return False
+            _LOGGER.debug(
+                "Native HA schedule %s is considered enabled (state: %s)",
+                scheduler_entity_id,
+                state.state,
+            )
+            return True
 
         is_enabled = state.state != "off"
         _LOGGER.debug(
