@@ -391,12 +391,14 @@ def native_schedule_reader(mock_hass: Mock) -> HASchedulerReader:
 
 
 @pytest.fixture
-def native_schedule_reader_with_vtherm(mock_hass: Mock) -> HASchedulerReader:
-    """Create a HASchedulerReader with native HA schedule and a linked VTherm."""
+def native_schedule_reader_with_climate_reader(mock_hass: Mock) -> HASchedulerReader:
+    """Create a HASchedulerReader with native HA schedule and an injected climate reader."""
+    mock_climate_reader = Mock()
+    mock_climate_reader.get_current_target_temperature.return_value = None
     return HASchedulerReader(
         mock_hass,
         ["schedule.planning_chauffage"],
-        vtherm_entity_id="climate.salon_vtherm",
+        climate_reader=mock_climate_reader,
     )
 
 
@@ -474,13 +476,18 @@ async def test_get_next_timeslot_native_schedule_no_next_event(
 
 
 @pytest.mark.asyncio
-async def test_get_next_timeslot_native_schedule_with_vtherm_temperature(
-    native_schedule_reader_with_vtherm: HASchedulerReader, mock_hass: Mock
+async def test_get_next_timeslot_native_schedule_with_climate_reader_temperature(
+    mock_hass: Mock,
 ) -> None:
-    """Test that native schedule resolves temperature from linked VTherm entity."""
-    vtherm_state = Mock()
-    vtherm_state.entity_id = "climate.salon_vtherm"
-    vtherm_state.attributes = {"temperature": 21.5}
+    """Test that native schedule resolves temperature via the injected climate reader."""
+    mock_climate_reader = Mock()
+    mock_climate_reader.get_current_target_temperature.return_value = 21.5
+
+    reader = HASchedulerReader(
+        mock_hass,
+        ["schedule.planning_chauffage"],
+        climate_reader=mock_climate_reader,
+    )
 
     schedule_state = Mock()
     schedule_state.entity_id = "schedule.planning_chauffage"
@@ -490,20 +497,14 @@ async def test_get_next_timeslot_native_schedule_with_vtherm_temperature(
         "friendly_name": "Planning Chauffage",
     }
 
-    def mock_get_state(entity_id: str) -> Mock | None:
-        if entity_id == "schedule.planning_chauffage":
-            return schedule_state
-        if entity_id == "climate.salon_vtherm":
-            return vtherm_state
-        return None
-
-    mock_hass.states.get.side_effect = mock_get_state
+    mock_hass.states.get.return_value = schedule_state
     mock_hass.is_running = True
 
-    result = await native_schedule_reader_with_vtherm.get_next_timeslot()
+    result = await reader.get_next_timeslot()
 
     assert result is not None
-    assert result.target_temp == 21.5  # Temperature from VTherm
+    assert result.target_temp == 21.5  # Temperature from climate reader
+    mock_climate_reader.get_current_target_temperature.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -580,38 +581,39 @@ def test_parse_datetime_value_naive_datetime_gets_timezone(reader: HASchedulerRe
     assert result.tzinfo is not None
 
 
-def test_get_native_schedule_temperature_no_vtherm(reader: HASchedulerReader) -> None:
-    """Test that _get_native_schedule_temperature returns the default temperature when no VTherm configured."""
+def test_get_native_schedule_temperature_no_climate_reader(reader: HASchedulerReader) -> None:
+    """Test that _get_native_schedule_temperature returns the default when no climate reader configured."""
     result = reader._get_native_schedule_temperature()
 
     assert result == 20.0
 
 
-def test_get_native_schedule_temperature_vtherm_not_found(mock_hass: Mock) -> None:
-    """Test that _get_native_schedule_temperature returns 20.0°C when VTherm not found."""
+def test_get_native_schedule_temperature_climate_reader_returns_none(mock_hass: Mock) -> None:
+    """Test that _get_native_schedule_temperature returns 20.0°C when climate reader returns None."""
+    mock_climate_reader = Mock()
+    mock_climate_reader.get_current_target_temperature.return_value = None
     reader = HASchedulerReader(
-        mock_hass, ["schedule.test"], vtherm_entity_id="climate.nonexistent"
+        mock_hass, ["schedule.test"], climate_reader=mock_climate_reader
     )
-    mock_hass.states.get.return_value = None
 
     result = reader._get_native_schedule_temperature()
 
     assert result == 20.0
+    mock_climate_reader.get_current_target_temperature.assert_called_once()
 
 
-def test_get_native_schedule_temperature_from_vtherm(mock_hass: Mock) -> None:
-    """Test that _get_native_schedule_temperature reads temperature from VTherm entity."""
+def test_get_native_schedule_temperature_from_climate_reader(mock_hass: Mock) -> None:
+    """Test that _get_native_schedule_temperature reads temperature from the climate reader."""
+    mock_climate_reader = Mock()
+    mock_climate_reader.get_current_target_temperature.return_value = 22.0
     reader = HASchedulerReader(
-        mock_hass, ["schedule.test"], vtherm_entity_id="climate.salon_vtherm"
+        mock_hass, ["schedule.test"], climate_reader=mock_climate_reader
     )
-    vtherm_state = Mock()
-    vtherm_state.entity_id = "climate.salon_vtherm"
-    vtherm_state.attributes = {"temperature": 22.0}
-    mock_hass.states.get.return_value = vtherm_state
 
     result = reader._get_native_schedule_temperature()
 
     assert result == 22.0
+    mock_climate_reader.get_current_target_temperature.assert_called_once()
 
 
 @pytest.mark.asyncio

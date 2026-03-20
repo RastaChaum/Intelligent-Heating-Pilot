@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, cast
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from ...domain.interfaces.climate_data_reader_interface import IClimateDataReader
 from ...domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from ...domain.value_objects import ScheduledTimeslot
 from ..vtherm_compat import get_vtherm_attribute
@@ -44,6 +45,7 @@ class HASchedulerReader(ISchedulerReader):
         hass: HomeAssistant,
         scheduler_entity_ids: list[str],
         vtherm_entity_id: str | None = None,
+        climate_reader: IClimateDataReader | None = None,
     ) -> None:
         """Initialize the scheduler reader adapter.
 
@@ -52,10 +54,14 @@ class HASchedulerReader(ISchedulerReader):
             scheduler_entity_ids: List of scheduler entity IDs to monitor
             vtherm_entity_id: Optional VTherm climate entity ID used to resolve
                 preset temperatures (e.g., when actions use preset modes).
+            climate_reader: Optional climate data reader used to resolve the
+                current VTherm target temperature for native HA schedule entities
+                (schedule.*) that do not store a temperature themselves.
         """
         self._hass = hass
         self._scheduler_entity_ids = scheduler_entity_ids
         self._vtherm_entity_id = vtherm_entity_id
+        self._climate_reader = climate_reader
 
     async def get_next_timeslot(self) -> ScheduledTimeslot | None:
         """Retrieve the next scheduled heating timeslot.
@@ -371,51 +377,33 @@ class HASchedulerReader(ISchedulerReader):
     def _get_native_schedule_temperature(self) -> float:
         """Get target temperature for native HA schedule entities.
 
-        Since native HA schedules don't store temperature, retrieve it from the
-        linked VTherm entity's current target temperature. Falls back to
-        _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE if VTherm is unavailable or its
-        temperature cannot be resolved.
+        Since native HA schedules don't store temperature, retrieves it from the
+        injected climate data reader (IClimateDataReader), which is the designated
+        adapter for reading VTherm state. Falls back to
+        _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE if no climate reader is configured or
+        the VTherm temperature cannot be resolved.
 
         Returns:
             Target temperature in Celsius from VTherm, or the default value
         """
-        if not self._vtherm_entity_id:
+        if self._climate_reader is None:
             _LOGGER.debug(
-                "No VTherm entity configured for native schedule temperature resolution, "
+                "No climate reader configured for native schedule temperature resolution, "
                 "using %.1f°C default",
                 _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE,
             )
             return _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE
 
-        state = self._hass.states.get(self._vtherm_entity_id)
-        if not state:
+        temp = self._climate_reader.get_current_target_temperature()
+        if temp is not None:
             _LOGGER.debug(
-                "VTherm entity %s not found for native schedule temperature resolution, "
-                "using %.1f°C default",
-                self._vtherm_entity_id,
-                _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE,
+                "Native schedule temperature resolved from climate reader: %.1f°C",
+                temp,
             )
-            return _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE
-
-        # Try to get the current target temperature from VTherm
-        for key in ("temperature", "target_temperature", "target_temp"):
-            value = get_vtherm_attribute(state, key)
-            if value is not None:
-                try:
-                    temp = float(value)
-                    if temp > 0:
-                        _LOGGER.debug(
-                            "Native schedule temperature resolved from VTherm %s: %.1f°C",
-                            self._vtherm_entity_id,
-                            temp,
-                        )
-                        return temp
-                except (ValueError, TypeError):
-                    pass
+            return temp
 
         _LOGGER.debug(
-            "Could not resolve temperature from VTherm %s, using %.1f°C default",
-            self._vtherm_entity_id,
+            "Could not resolve temperature from climate reader, using %.1f°C default",
             _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE,
         )
         return _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE
