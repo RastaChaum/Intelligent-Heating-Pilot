@@ -287,19 +287,25 @@ class CalculateAnticipationUseCase:
         yield a valid dead time.
 
         Returns:
-            Persisted learned dead time if available, otherwise the configured
-            default dead time.
+            Persisted learned dead time if available and positive, otherwise the
+            configured default dead time.
         """
         if self._lhs_storage is not None:
             try:
                 stored = await self._lhs_storage.get_learned_dead_time()
-                if stored is not None:
+                if stored is not None and stored > 0:
                     _LOGGER.debug(
                         "Using persisted learned dead_time: %.1f minutes", stored
                     )
                     return stored
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.warning("Failed to read persisted dead time: %s", exc)
+                if stored is not None and stored <= 0:
+                    _LOGGER.debug(
+                        "Ignoring non-positive persisted dead_time %.1f minutes; "
+                        "falling back to configured default",
+                        stored,
+                    )
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning("Failed to read persisted dead time", exc_info=True)
 
         _LOGGER.debug(
             "No persisted dead_time found, using configured default: %.1f minutes",
