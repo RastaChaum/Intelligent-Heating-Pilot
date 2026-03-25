@@ -236,6 +236,7 @@ class HeatingApplication:
             dead_time_calculator=dead_time_calculator,
             auto_learning=self._auto_learning,
             default_dead_time_minutes=self._dead_time_minutes,
+            lhs_storage=self._lhs_storage,
         )
 
         control_preheating = ControlPreheatingUseCase(
