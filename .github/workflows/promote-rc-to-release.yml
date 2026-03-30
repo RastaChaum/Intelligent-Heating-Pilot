@@ -78,19 +78,40 @@ jobs:
             fi
           } > /tmp/release-notes.md
 
-      - name: Update CHANGELOG with version
+      - name: Update CHANGELOG with version (via PR)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TODAY=$(date +%Y-%m-%d)
           VERSION="${{ steps.version.outputs.version }}"
-
-          # Remplace [Unreleased] par la version actuelle
-          sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [$VERSION] - $TODAY/" CHANGELOG.md
+          BRANCH="chore/changelog-v${VERSION}"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create a dedicated branch from main for the CHANGELOG update
+          git checkout -b "$BRANCH"
+
+          # Replace [Unreleased] with the actual version
+          sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [$VERSION] - $TODAY/" CHANGELOG.md
+
           git add CHANGELOG.md
           git commit -m "chore: update CHANGELOG for v$VERSION"
-          git push origin main
+          git push origin "$BRANCH"
+
+          # Open a PR targeting main and enable auto-merge
+          PR_URL=$(gh pr create \
+            --title "chore: update CHANGELOG for v$VERSION" \
+            --body "🤖 Automatic CHANGELOG update triggered by the release of v${VERSION}.
+
+This PR was created automatically by the **Promote RC to Release** workflow after the \`integration\` → \`main\` merge. It replaces the \`[Unreleased]\` section header with the actual version number and today's date." \
+            --base main \
+            --head "$BRANCH")
+
+          echo "✅ PR created: $PR_URL"
+
+          # Enable auto-merge (squash) so the PR merges as soon as branch-protection checks pass
+          gh pr merge "$PR_URL" --auto --squash || echo "ℹ️ Auto-merge could not be enabled (may require repo setting). Please merge $PR_URL manually."
 
       - name: Delete RC and dev pre-releases
         env:
