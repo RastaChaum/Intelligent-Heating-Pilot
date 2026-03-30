@@ -647,6 +647,10 @@ class HeatingApplication:
             new_options[CONF_IHP_ENABLED] = enabled
             self.hass.config_entries.async_update_entry(self._config_entry, options=new_options)
 
+    def get_device_id(self) -> str:
+        """Get device identifier (config entry ID)."""
+        return self._device_id
+
     def get_vtherm_entity(self) -> str:
         """Get VTherm entity ID."""
         return self._vtherm_id

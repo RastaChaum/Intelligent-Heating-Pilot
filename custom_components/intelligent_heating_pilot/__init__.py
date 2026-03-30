@@ -217,7 +217,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         Delegates to orchestrator - no business logic here.
         """
-        await coordinator._orchestrator.reset_all_learning_data()
+        await coordinator._orchestrator.reset_all_learning_data(device_id=coordinator.get_device_id())
 
     async def handle_calculate_anticipated_start_time(call: ServiceCall):
         """Handle calculate_anticipated_start_time service.
