@@ -115,8 +115,8 @@ class DeviceConfig:
         if self.task_range_days < 1:
             raise ValueError("task_range_days must be at least 1")
 
-        if self.anticipation_recalc_tolerance_minutes < 0:
-            raise ValueError("anticipation_recalc_tolerance_minutes must be at least 0")
+        if self.anticipation_recalc_tolerance_minutes < 1:
+            raise ValueError("anticipation_recalc_tolerance_minutes must be at least 1")
 
         if self.safety_shutoff_grace_minutes < 0:
             raise ValueError("safety_shutoff_grace_minutes must be at least 0")

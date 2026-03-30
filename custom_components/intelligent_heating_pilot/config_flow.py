@@ -100,7 +100,9 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
         # Get all scheduler entities with their friendly names
         scheduler_options = []
-        for state in self.hass.states.async_all(["switch", "schedule"]):
+        for state in self.hass.states.async_all():
+            if state.domain not in ("switch", "schedule"):
+                continue
             # Filter for scheduler entities (they typically have "schedule_" prefix or scheduler attributes)
             if (
                 "schedule" in state.entity_id.lower()
@@ -339,7 +341,9 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
 
         # Get all scheduler entities for SelectSelector
         scheduler_options = []
-        for state in self.hass.states.async_all(["switch", "schedule"]):
+        for state in self.hass.states.async_all():
+            if state.domain not in ("switch", "schedule"):
+                continue
             if (
                 "schedule" in state.entity_id.lower()
                 or state.attributes.get("next_trigger")

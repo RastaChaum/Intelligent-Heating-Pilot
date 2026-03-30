@@ -120,8 +120,14 @@ jobs:
           VERSION="${{ steps.target.outputs.version }}"
           DEV_TAG="${{ steps.target.outputs.dev_tag }}"
 
-          git tag "$DEV_TAG"
-          git push origin "$DEV_TAG"
+          if git rev-parse "$DEV_TAG" >/dev/null 2>&1; then
+            echo "Tag $DEV_TAG already exists, updating to current commit"
+            git tag -f "$DEV_TAG"
+            git push origin "$DEV_TAG" --force
+          else
+            git tag "$DEV_TAG"
+            git push origin "$DEV_TAG"
+          fi
 
           gh release create "$DEV_TAG" \
             --title "🔧 v${VERSION}-dev — Work in Progress" \

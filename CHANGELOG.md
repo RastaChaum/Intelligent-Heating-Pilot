@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All workflows now use `snok/install-poetry@v1` with dependency caching for faster runs
   - RC pre-release detection uses the GitHub Releases API instead of git tags (ground truth)
   - Fixed `-beta` vs `-rcN` inconsistency: integration PR check and release promotion now correctly target RC releases
-  - RC release notes are generated on-the-fly — no `GITHUB_RELEASE_*.md` files committed to the repository
+  - RC release notes are generated on-the-fly by GitHub Actions workflows
   - New workflow: GitHub pre-release (dev or RC) is automatically created and updated on every merge to `integration`, keeping it in sync with the CHANGELOG `[Unreleased]` section
 - **Agent workflow documentation** – All agent files and workflow docs now explicitly require feature branches to be created from `integration`, not `main`
 
