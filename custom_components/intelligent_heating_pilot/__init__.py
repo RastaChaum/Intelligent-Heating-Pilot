@@ -211,131 +211,163 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register options update listener
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
-    # Register services
-    async def handle_reset_learning(call):
-        """Handle reset_learning service.
+    # Register services (once per integration, not per device)
+    def _resolve_coordinator(entity_id: str) -> HeatingApplication | None:
+        """Resolve an IHP coordinator from an entity ID.
 
-        Delegates to orchestrator - no business logic here.
+        Looks up the entity in the entity registry to find its config entry,
+        then returns the corresponding HeatingApplication coordinator.
+        Returns None and logs an error if no coordinator can be found.
         """
-        await coordinator._orchestrator.reset_all_learning_data(device_id=coordinator.get_device_id())
+        entity_reg = er.async_get(hass)
+        entity_entry = entity_reg.async_get(entity_id)
+        if not entity_entry:
+            _LOGGER.error("IHP service: entity not found in registry: %s", entity_id)
+            return None
+        coord = hass.data[DOMAIN].get(entity_entry.config_entry_id)
+        if not coord or not isinstance(coord, HeatingApplication):
+            _LOGGER.error(
+                "IHP service: no coordinator for entity %s (entry_id=%s)",
+                entity_id,
+                entity_entry.config_entry_id,
+            )
+            return None
+        return coord
 
-    async def handle_calculate_anticipated_start_time(call: ServiceCall):
-        """Handle calculate_anticipated_start_time service.
+    if not hass.services.has_service(DOMAIN, "reset_learning"):
 
-        This service calculates the anticipated start time for a given IHP device
-        to reach a target temperature at a specified time.
+        async def handle_reset_learning(call: ServiceCall) -> None:
+            """Handle reset_learning service.
 
-        Delegates to orchestrator's calculate_anticipation_only() - no business logic here.
-        """
-        _LOGGER.debug("Entering handle_calculate_anticipated_start_time")
+            Resolves the target IHP device from the entity_id provided in the service
+            call, then delegates to that device's orchestrator.  This allows callers
+            to choose which device to reset when multiple IHP config entries exist.
+            """
+            _LOGGER.debug("Entering handle_reset_learning")
 
-        # Extract service call parameters
-        entity_id = call.data["entity_id"]
-        target_time = call.data["target_time"]
-        target_temp = call.data.get("target_temp")
+            coord = _resolve_coordinator(call.data["entity_id"])
+            if coord is None:
+                return
 
-        # Ensure target_time has timezone
-        if target_time.tzinfo is None:
-            target_time = dt_util.as_local(target_time)
+            await coord._orchestrator.reset_all_learning_data(
+                device_id=coord.get_device_id()
+            )
+            _LOGGER.info(
+                "reset_learning: learning data cleared for device %s", coord.get_device_id()
+            )
 
-        # Extract entry_id from entity_id
-        # Entity IDs follow pattern: sensor.{name}_{sensor_type}
-        # We need to find the config entry that owns this entity
-        entry_id_found = None
-        for entry_id, coord in hass.data[DOMAIN].items():
-            if isinstance(coord, HeatingApplication):
-                # Check if this coordinator owns the entity by checking entity registry
-                entity_reg = er.async_get(hass)
-                entity_entry = entity_reg.async_get(entity_id)
-                if entity_entry and entity_entry.config_entry_id == entry_id:
-                    entry_id_found = entry_id
-                    break
-
-        if not entry_id_found:
-            _LOGGER.error("Could not find IHP device for entity_id: %s", entity_id)
-            return
-
-        # Get the coordinator for this device
-        device_coordinator = hass.data[DOMAIN].get(entry_id_found)
-        if not device_coordinator or not isinstance(device_coordinator, HeatingApplication):
-            _LOGGER.error("Invalid coordinator for entry_id: %s", entry_id_found)
-            return
-
-        # Get target_temp from service call or VTherm
-        if target_temp is None:
-            # Try to get target temp from VTherm
-            vtherm_state = hass.states.get(device_coordinator._vtherm_id)
-            if vtherm_state:
-                target_temp = vtherm_state.attributes.get("temperature")
-        if target_temp is not None:
-            target_temp = float(target_temp)
-
-        # Delegate to orchestrator (pure routing - no business logic)
-        anticipation_data = await device_coordinator._orchestrator.calculate_anticipation_only(
-            target_time=target_time,
-            target_temp=target_temp,
+        reset_learning_schema = vol.Schema(
+            {
+                vol.Required("entity_id"): cv.entity_id,
+            }
         )
 
-        # Extract fields from anticipation_data (which is already structured)
-        anticipated_start_time = anticipation_data.get("anticipated_start_time")
-        response_target_time = anticipation_data.get("next_schedule_time") or target_time
-        response_target_temp = anticipation_data.get("next_target_temperature")
-        if response_target_temp is None:
-            response_target_temp = target_temp
-        if anticipated_start_time is None:
-            _LOGGER.warning("Could not calculate anticipated start time (insufficient data)")
-            # Return structure with None values
+        hass.services.async_register(
+            DOMAIN,
+            "reset_learning",
+            handle_reset_learning,
+            schema=reset_learning_schema,
+        )
+
+    if not hass.services.has_service(DOMAIN, SERVICE_CALCULATE_ANTICIPATED_START_TIME):
+
+        async def handle_calculate_anticipated_start_time(call: ServiceCall):
+            """Handle calculate_anticipated_start_time service.
+
+            This service calculates the anticipated start time for a given IHP device
+            to reach a target temperature at a specified time.
+
+            Delegates to orchestrator's calculate_anticipation_only() - no business logic here.
+            """
+            _LOGGER.debug("Entering handle_calculate_anticipated_start_time")
+
+            # Extract service call parameters
+            entity_id = call.data["entity_id"]
+            target_time = call.data["target_time"]
+            target_temp = call.data.get("target_temp")
+
+            # Ensure target_time has timezone
+            if target_time.tzinfo is None:
+                target_time = dt_util.as_local(target_time)
+
+            # Resolve the coordinator for this device
+            device_coordinator = _resolve_coordinator(entity_id)
+            if not device_coordinator:
+                return
+
+            # Get target_temp from service call or VTherm
+            if target_temp is None:
+                # Try to get target temp from VTherm
+                vtherm_state = hass.states.get(device_coordinator._vtherm_id)
+                if vtherm_state:
+                    target_temp = vtherm_state.attributes.get("temperature")
+            if target_temp is not None:
+                target_temp = float(target_temp)
+
+            # Delegate to orchestrator (pure routing - no business logic)
+            anticipation_data = await device_coordinator._orchestrator.calculate_anticipation_only(
+                target_time=target_time,
+                target_temp=target_temp,
+            )
+
+            # Extract fields from anticipation_data (which is already structured)
+            anticipated_start_time = anticipation_data.get("anticipated_start_time")
+            response_target_time = anticipation_data.get("next_schedule_time") or target_time
+            response_target_temp = anticipation_data.get("next_target_temperature")
+            if response_target_temp is None:
+                response_target_temp = target_temp
+            if anticipated_start_time is None:
+                _LOGGER.warning("Could not calculate anticipated start time (insufficient data)")
+                # Return structure with None values
+                return {
+                    "anticipated_start_time": None,
+                    "target_time": response_target_time.isoformat(),
+                    "target_temp": response_target_temp,
+                    "current_temp": anticipation_data.get("current_temp"),
+                    "estimated_duration_minutes": None,
+                    "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
+                    "confidence_level": None,
+                }
+
+            _LOGGER.info(
+                "Service calculate_anticipated_start_time: "
+                "anticipated_start=%s, target_time=%s, target_temp=%.1f°C, "
+                "current_temp=%.1f°C, LHS=%.2f°C/h, confidence=%.2f",
+                anticipated_start_time.isoformat(),
+                response_target_time.isoformat(),
+                response_target_temp or 0.0,
+                anticipation_data.get("current_temp") or 0.0,
+                anticipation_data.get("learned_heating_slope") or 0.0,
+                anticipation_data.get("confidence_level") or 0.0,
+            )
+
+            # Return the result as service response data
             return {
-                "anticipated_start_time": None,
+                "anticipated_start_time": anticipated_start_time.isoformat(),
                 "target_time": response_target_time.isoformat(),
                 "target_temp": response_target_temp,
                 "current_temp": anticipation_data.get("current_temp"),
-                "estimated_duration_minutes": None,
+                "estimated_duration_minutes": anticipation_data.get("estimated_duration_minutes"),
                 "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
-                "confidence_level": None,
+                "confidence_level": anticipation_data.get("confidence_level"),
             }
 
-        _LOGGER.info(
-            "Service calculate_anticipated_start_time: "
-            "anticipated_start=%s, target_time=%s, target_temp=%.1f°C, "
-            "current_temp=%.1f°C, LHS=%.2f°C/h, confidence=%.2f",
-            anticipated_start_time.isoformat(),
-            response_target_time.isoformat(),
-            response_target_temp or 0.0,
-            anticipation_data.get("current_temp") or 0.0,
-            anticipation_data.get("learned_heating_slope") or 0.0,
-            anticipation_data.get("confidence_level") or 0.0,
+        # Define service schema
+        calculate_anticipated_start_time_schema = vol.Schema(
+            {
+                vol.Required("entity_id"): cv.entity_id,
+                vol.Required("target_time"): cv.datetime,
+                vol.Optional("target_temp"): vol.Coerce(float),
+            }
         )
 
-        # Return the result as service response data
-        return {
-            "anticipated_start_time": anticipated_start_time.isoformat(),
-            "target_time": response_target_time.isoformat(),
-            "target_temp": response_target_temp,
-            "current_temp": anticipation_data.get("current_temp"),
-            "estimated_duration_minutes": anticipation_data.get("estimated_duration_minutes"),
-            "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
-            "confidence_level": anticipation_data.get("confidence_level"),
-        }
-
-    # Define service schema
-    calculate_anticipated_start_time_schema = vol.Schema(
-        {
-            vol.Required("entity_id"): cv.entity_id,
-            vol.Required("target_time"): cv.datetime,
-            vol.Optional("target_temp"): vol.Coerce(float),
-        }
-    )
-
-    hass.services.async_register(DOMAIN, "reset_learning", handle_reset_learning)
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_CALCULATE_ANTICIPATED_START_TIME,
-        handle_calculate_anticipated_start_time,
-        schema=calculate_anticipated_start_time_schema,
-        supports_response=SupportsResponse.ONLY,
-    )
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_CALCULATE_ANTICIPATED_START_TIME,
+            handle_calculate_anticipated_start_time,
+            schema=calculate_anticipated_start_time_schema,
+            supports_response=SupportsResponse.ONLY,
+        )
 
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
