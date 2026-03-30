@@ -17,9 +17,7 @@ Ce dossier contient les workflows GitHub Actions pour gérer les Release Candida
 - Crée une pre-release GitHub
 - Crée une issue de suivi pour les tests
 
-**Usage**:
-- Via GitHub Actions UI: Actions → Prepare Release Candidate → Run workflow
-- Via CLI: `./scripts/rc-helper.sh prepare`
+**Usage**: GitHub Actions UI → Actions → Prepare Release Candidate → Run workflow
 
 ### 2. `increment-rc-version.yml`
 **Déclenchement**: Manuel (workflow_dispatch)
@@ -35,9 +33,7 @@ Ce dossier contient les workflows GitHub Actions pour gérer les Release Candida
 - Crée une nouvelle pre-release
 - Commente sur l'issue de suivi
 
-**Usage**:
-- Via GitHub Actions UI: Actions → Increment RC Version → Run workflow
-- Via CLI: `./scripts/rc-helper.sh increment`
+**Usage**: GitHub Actions UI → Actions → Increment RC Version → Run workflow
 
 ### 3. `promote-rc-to-release.yml`
 **Déclenchement**: Automatique (PR merge `integration` → `main`)
@@ -136,6 +132,5 @@ git push origin :refs/tags/v0.5.0-rc3
 
 ## Voir aussi
 
-- [AUTOMATED_RELEASE_GUIDE.md](../../AUTOMATED_RELEASE_GUIDE.md) - Guide complet
-- [scripts/rc-helper.sh](../../scripts/rc-helper.sh) - Script CLI helper
+- [RC_MIGRATION_GUIDE.md](../RC_MIGRATION_GUIDE.md) - Guide de migration et bonnes pratiques
 - [CHANGELOG.md](../../CHANGELOG.md) - Historique des versions

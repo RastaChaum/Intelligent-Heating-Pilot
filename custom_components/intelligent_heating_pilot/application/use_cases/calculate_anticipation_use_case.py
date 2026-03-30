@@ -15,7 +15,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ...domain.interfaces import IClimateDataReader, IEnvironmentReader, ISchedulerReader
+    from ...domain.interfaces import (
+        IClimateDataReader,
+        IEnvironmentReader,
+        ILhsStorage,
+        ISchedulerReader,
+    )
     from ...domain.services import DeadTimeCalculationService, PredictionService
     from ..heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
     from ..lhs_lifecycle_manager import LhsLifecycleManager
@@ -46,6 +51,7 @@ class CalculateAnticipationUseCase:
         dead_time_calculator: DeadTimeCalculationService,
         auto_learning: bool = True,
         default_dead_time_minutes: float = 0.0,
+        lhs_storage: ILhsStorage | None = None,
     ) -> None:
         """Initialize the use case.
 
@@ -59,6 +65,10 @@ class CalculateAnticipationUseCase:
             dead_time_calculator: Calculates dead time from cycles
             auto_learning: Whether auto-learning is enabled
             default_dead_time_minutes: Default dead time when not learned
+            lhs_storage: Optional persistent storage for learned values. When provided
+                and auto_learning is True, the stored learned dead time is used as a
+                fallback before the configured default, so that the persisted value
+                is restored immediately after a Home Assistant restart.
         """
         _LOGGER.debug("Initializing CalculateAnticipationUseCase")
         self._scheduler_reader = scheduler_reader
@@ -70,6 +80,7 @@ class CalculateAnticipationUseCase:
         self._dead_time_calculator = dead_time_calculator
         self._auto_learning = auto_learning
         self._default_dead_time_minutes = default_dead_time_minutes
+        self._lhs_storage = lhs_storage
 
     async def calculate_anticipation_datas(
         self,
@@ -191,7 +202,12 @@ class CalculateAnticipationUseCase:
                     dead_time,
                 )
             else:
-                dead_time = self._default_dead_time_minutes
+                dead_time = await self._get_persisted_dead_time_or_default()
+        elif self._auto_learning:
+            # No cycles available yet (e.g. immediately after restart before extraction).
+            # Fall back to the persisted learned dead time so the correct value is used
+            # before the first cycle extraction completes.
+            dead_time = await self._get_persisted_dead_time_or_default()
         else:
             dead_time = self._default_dead_time_minutes
 
@@ -261,3 +277,38 @@ class CalculateAnticipationUseCase:
             "scheduler_entity": scheduler_entity,
             "dead_time": dead_time,
         }
+
+    async def _get_persisted_dead_time_or_default(self) -> float:
+        """Return the persisted learned dead time or the configured default.
+
+        When auto_learning is enabled, this method tries to restore the last
+        learned dead time from persistent storage. This is the correct fallback
+        during startup (before cycle extraction completes) or when cycles do not
+        yield a valid dead time.
+
+        Returns:
+            Persisted learned dead time if available and positive, otherwise the
+            configured default dead time.
+        """
+        if self._lhs_storage is not None:
+            try:
+                stored = await self._lhs_storage.get_learned_dead_time()
+                if stored is not None and stored > 0:
+                    _LOGGER.debug(
+                        "Using persisted learned dead_time: %.1f minutes", stored
+                    )
+                    return stored
+                if stored is not None and stored <= 0:
+                    _LOGGER.debug(
+                        "Ignoring non-positive persisted dead_time %.1f minutes; "
+                        "falling back to configured default",
+                        stored,
+                    )
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning("Failed to read persisted dead time", exc_info=True)
+
+        _LOGGER.debug(
+            "No persisted dead_time found, using configured default: %.1f minutes",
+            self._default_dead_time_minutes,
+        )
+        return self._default_dead_time_minutes

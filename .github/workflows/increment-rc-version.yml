@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout integration branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: integration
           fetch-depth: 0
@@ -56,27 +56,47 @@ jobs:
           echo "📊 Dernier RC: $LAST_RC"
           echo "📊 Prochain RC: v${VERSION}-rc${NEXT_RC_NUM}"
 
-      - name: Update release notes
+      - name: Build updated release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ inputs.version }}"
           RC_NUM="${{ steps.rc-number.outputs.next_rc_num }}"
+          LAST_RC="${{ steps.rc-number.outputs.last_rc }}"
 
-          # Ajouter les corrections au fichier de release notes
-          cat >> "GITHUB_RELEASE_v${VERSION}.md" << EOF
+          # Prefer previous GitHub release notes, but tolerate a missing release when only the tag exists.
+          PREV_NOTES=$(gh release view "$LAST_RC" --json body --jq '.body' 2>/dev/null || true)
 
-          ---
+          if [ -z "$PREV_NOTES" ]; then
+            CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next} flag && /^## \[/{flag=0} flag{print}' CHANGELOG.md | sed '/./,$!d')
 
-          ## 🔧 RC ${RC_NUM} - $(date +%Y-%m-%d)
+            {
+              echo "## 🧪 Release Candidate"
+              echo ""
+              echo "Cette version est une **release candidate** destinée aux tests en production et aux beta-testeurs."
+              echo ""
+              if [ -n "$CHANGELOG_CONTENT" ]; then
+                echo "$CHANGELOG_CONTENT"
+                echo ""
+              else
+                echo "> ℹ️ Notes initiales indisponibles : reconstruction à partir de l'état courant de la branche integration."
+                echo ""
+              fi
+              echo "---"
+            } > /tmp/prev-rc-notes.md
+            PREV_NOTES=$(cat /tmp/prev-rc-notes.md)
+          fi
 
-          ${{ inputs.fix_description }}
-
-          EOF
-
-      - name: Commit updated release notes
-        run: |
-          git add "GITHUB_RELEASE_v${{ inputs.version }}.md"
-          git commit -m "chore(release): update RC notes for v${{ inputs.version }}-rc${{ steps.rc-number.outputs.next_rc_num }}" -m "Corrections:" -m "${{ inputs.fix_description }}"
-          git push origin integration
+          {
+            echo "$PREV_NOTES"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## 🔧 RC ${RC_NUM} - $(date +%Y-%m-%d)"
+            echo ""
+            echo "${{ inputs.fix_description }}"
+          } > /tmp/new-rc-notes.md
+          echo "✅ Notes de version mises à jour"
 
       - name: Create new RC tag
         run: |
@@ -97,7 +117,7 @@ jobs:
         run: |
           gh release create "${{ steps.rc-number.outputs.next_rc_tag }}" \
             --title "🧪 v${{ inputs.version }}-rc${{ steps.rc-number.outputs.next_rc_num }} - Release Candidate" \
-            --notes-file "GITHUB_RELEASE_v${{ inputs.version }}.md" \
+            --notes-file /tmp/new-rc-notes.md \
             --prerelease \
             --target integration
 

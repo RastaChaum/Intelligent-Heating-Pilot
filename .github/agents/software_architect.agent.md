@@ -83,7 +83,8 @@ Provide a concise plan with:
 ## Execution & Iteration
 
 1. **Create design** following DDD/SOLID principles (see "Output Format" below)
-2. **Commit to feature branch** (`git commit -m "design: ..."`)
+2. **Commit to feature branch** — the branch must have been created from `integration`, not `main`
+   (`git commit -m "design: ..."`)
 3. **Push to branch** (`git push origin feature/issue-XXX`)
 4. **Wait for human validation gate** (PM will ask user for approval)
 5. **On feedback/changes needed**:

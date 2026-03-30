@@ -46,7 +46,7 @@ You are the **Developer** for the Intelligent Heating Pilot project. Your respon
    poetry run pytest tests/ -v
    ```
 4. **Commit implementation** (`git commit -m "feat: implement heating cache logic"`)
-5. **Push to feature branch** (`git push origin feature/issue-XXX`)
+5. **Push to feature branch** — must target `integration`, not `main` (`git push origin feature/issue-XXX`)
 6. **Wait for human validation gate** (PM will ask user for functional approval)
 7. **On feedback/bugs**:
    - Fix issues

@@ -62,9 +62,9 @@ Before any merge, engage in **collaborative peer discussion** with:
    - Peer feedback resolved
    - Code is ready for production
 
-6. **Merge only when satisfied**:
+6. **Merge only when satisfied** — always to `integration`, never directly to `main`:
    ```bash
-   git merge feature/issue-XXX (to main/integration)
+   git merge feature/issue-XXX  # target: integration
    ```
    (This closes the single PR)
 
@@ -80,7 +80,7 @@ Example:
 ```markdown
 ✅ **Feature Merged: Heating Cycle Cache**
 
-**Branch merged**: feature/issue-XXX → integration
+**Branch merged**: feature/issue-XXX → integration (never directly to main)
 
 **Changes**:
 - Architecture: 2 new interfaces, 3 value objects

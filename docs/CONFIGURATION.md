@@ -107,11 +107,11 @@ action:
         target_time: "{{ states('sensor.phone_next_alarm') }}"
         target_temp: 21.0
     response_variable: heating_calc
-    
+
     # Wait until the calculated start time
     - delay:
         seconds: "{{ (as_datetime(heating_calc.anticipated_start_time) - now()).total_seconds() }}"
-    
+
     # Start heating
     - service: climate.set_temperature
     target:
@@ -211,6 +211,25 @@ When heating stops unexpectedly (e.g., safety protection, frost mode), IHP waits
 **When to adjust:**
 - **Set lower (0–2 min)**: For systems that stop cleanly with no safety interruptions
 - **Set higher (15–20 min)**: For boilers with long safety cycle lockouts or heat pumps with regular defrost cycles
+
+---
+
+### Preheating Revert Time Delta
+
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| **Preheating Revert Time Delta** | 15 min | 1–60 min | Minimum postponement required to cancel an active preheating and reschedule |
+
+This setting controls how IHP reacts when anticipation is recalculated while preheating is already active.
+
+**Current behavior:**
+- IHP cancels active preheating only when the newly calculated anticipated start is pushed later by at least this threshold
+- If the new anticipated start moves earlier, IHP keeps active preheating running
+- If the postponement is below threshold, IHP keeps active preheating running
+
+**When to adjust:**
+- **Lower (5–10 min)**: More reactive to schedule shifts, but may increase cancel/reschedule churn
+- **Higher (20–30 min)**: More stable behavior, but less reactive to moderate postponements
 
 ---
 

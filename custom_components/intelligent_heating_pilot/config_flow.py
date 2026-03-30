@@ -7,10 +7,12 @@ from typing import Any, cast
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
@@ -26,6 +28,7 @@ from .const import (
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
+    DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
     DEFAULT_DEAD_TIME_MINUTES,
@@ -48,7 +51,10 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
     VERSION = 1
 
     @staticmethod
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> IntelligentHeatingPilotOptionsFlow:
         """Get the options flow for this handler."""
         return IntelligentHeatingPilotOptionsFlow()
 
@@ -94,9 +100,15 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
         # Get all scheduler entities with their friendly names
         scheduler_options = []
-        for state in self.hass.states.async_all("switch"):
+        for state in self.hass.states.async_all():
+            if state.domain not in ("switch", "schedule"):
+                continue
             # Filter for scheduler entities (they typically have "schedule_" prefix or scheduler attributes)
-            if "schedule" in state.entity_id.lower() or state.attributes.get("next_trigger"):
+            if (
+                "schedule" in state.entity_id.lower()
+                or state.attributes.get("next_trigger")
+                or state.attributes.get("next_event")
+            ):
                 friendly_name = state.attributes.get("friendly_name", state.entity_id)
                 scheduler_options.append(
                     {"value": state.entity_id, "label": f"{friendly_name} ({state.entity_id})"}
@@ -117,7 +129,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             )
             if scheduler_options
             else selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="switch", multiple=True)
+                selector.EntitySelectorConfig(domain=["switch", "schedule"], multiple=True)
             )
         )
 
@@ -220,6 +232,18 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                     )
                 ),
                 vol.Optional(
+                    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+                    default=DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=60,
+                        step=1,
+                        unit_of_measurement="minutes",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
                     CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
                     default=DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES,
                 ): selector.NumberSelector(
@@ -317,8 +341,14 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
 
         # Get all scheduler entities for SelectSelector
         scheduler_options = []
-        for state in self.hass.states.async_all("switch"):
-            if "schedule" in state.entity_id.lower() or state.attributes.get("next_trigger"):
+        for state in self.hass.states.async_all():
+            if state.domain not in ("switch", "schedule"):
+                continue
+            if (
+                "schedule" in state.entity_id.lower()
+                or state.attributes.get("next_trigger")
+                or state.attributes.get("next_event")
+            ):
                 friendly_name = state.attributes.get("friendly_name", state.entity_id)
                 scheduler_options.append(
                     {"value": state.entity_id, "label": f"{friendly_name} ({state.entity_id})"}
@@ -358,7 +388,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             )
             if scheduler_options
             else selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="switch", multiple=True)
+                selector.EntitySelectorConfig(domain=["switch", "schedule"], multiple=True)
             )
         )
         schedulers_field = (
@@ -505,6 +535,23 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 max=30,
                 step=1,
                 unit_of_measurement="days",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+        schema_dict[
+            vol.Optional(
+                CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+                default=_opt_or_data(
+                    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+                    DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+                ),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=60,
+                step=1,
+                unit_of_measurement="minutes",
                 mode=selector.NumberSelectorMode.BOX,
             )
         )

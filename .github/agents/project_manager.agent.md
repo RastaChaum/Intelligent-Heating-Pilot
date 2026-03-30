@@ -52,7 +52,7 @@ Your full tool set includes:
 
 ```
 User Request
-  ↓ [Create feature branch: git checkout -b feature/issue-XXX]
+  ↓ [Create feature branch from integration: git checkout integration && git checkout -b feature/issue-XXX]
   ↓
 1. Requirement Analysis (PM)
   ↓
@@ -76,7 +76,7 @@ User Request
   ↓
 8. Tech Lead (peer feedback with QA/Architect, refactor + commits)
   ↓
-9. Tech Lead Merges PR (single feature branch → main/integration)
+9. Tech Lead Merges PR (single feature branch → integration)
   ↓
 10. Documentation Agent (update docs/CHANGELOG)
   ↓
@@ -125,12 +125,13 @@ When a user request arrives:
 ### Phase 1.5: Setup Feature Branch
 
 **Before delegating to Architect**:
-1. Create feature branch (or user should do this):
+1. Create feature branch from `integration` (not `main`):
    ```bash
+   git checkout integration
    git checkout -b feature/issue-XXX
    ```
 2. This is the SINGLE branch all agents will commit to
-3. At the end, Tech Lead merges this branch to main/integration
+3. At the end, Tech Lead merges this branch to `integration` (never directly to `main`)
 
 ---
 

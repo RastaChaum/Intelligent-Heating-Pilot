@@ -35,14 +35,14 @@ et orchestre le développement de [feature/bug description].
 
 ```
 Feature/Bug Request
-  → [Branch: git checkout -b feature/issue-XXX]
+  → [Branch: git checkout integration && git checkout -b feature/issue-XXX]
   → Software Architect  (design + skeletons, commit "design: ...")
   → [GATE: user reviews design]
   → QA Engineer         (BDD + TDD tests RED, commit "test: ...")
   → [GATE: user reviews coverage]
   → Developer           (implementation GREEN, commit "feat/fix: ...")
   → [GATE: user validates behavior]
-  → Tech Lead           (review, refactor, merge to integration/main)
+  → Tech Lead           (review, refactor, merge to integration)
   → Documentation Agent (CHANGELOG, docs update)
 ```
 

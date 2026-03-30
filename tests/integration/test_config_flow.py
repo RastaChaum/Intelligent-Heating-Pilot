@@ -8,6 +8,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
@@ -21,6 +22,7 @@ from custom_components.intelligent_heating_pilot.const import (
     CONF_SCHEDULER_ENTITIES,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_VTHERM_ENTITY,
+    DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
     DEFAULT_DEAD_TIME_MINUTES,
@@ -79,6 +81,7 @@ async def test_user_flow_creates_entry_with_all_values(hass) -> None:
         CONF_CYCLE_SPLIT_DURATION_MINUTES: 15,
         CONF_MIN_CYCLE_DURATION_MINUTES: 6,
         CONF_MAX_CYCLE_DURATION_MINUTES: 180,
+        CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: 18,
     }
 
     result2 = await hass.config_entries.flow.async_configure(result["flow_id"], user_input)
@@ -100,6 +103,7 @@ async def test_user_flow_creates_entry_with_all_values(hass) -> None:
     assert data[CONF_CYCLE_SPLIT_DURATION_MINUTES] == 15
     assert data[CONF_MIN_CYCLE_DURATION_MINUTES] == 6
     assert data[CONF_MAX_CYCLE_DURATION_MINUTES] == 180
+    assert data[CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES] == 18
 
 
 @pytest.mark.asyncio
@@ -133,6 +137,7 @@ async def test_options_flow_persists_and_reopens_with_last_values(hass) -> None:
         CONF_CYCLE_SPLIT_DURATION_MINUTES: 25,
         CONF_MIN_CYCLE_DURATION_MINUTES: 8,
         CONF_MAX_CYCLE_DURATION_MINUTES: 200,
+        CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: 22,
     }
 
     result2 = await hass.config_entries.options.async_configure(
@@ -172,6 +177,10 @@ async def test_options_flow_persists_and_reopens_with_last_values(hass) -> None:
     assert _get_default_value(_find_schema_key(schema, CONF_CYCLE_SPLIT_DURATION_MINUTES)) == 25
     assert _get_default_value(_find_schema_key(schema, CONF_MIN_CYCLE_DURATION_MINUTES)) == 8
     assert _get_default_value(_find_schema_key(schema, CONF_MAX_CYCLE_DURATION_MINUTES)) == 200
+    assert (
+        _get_default_value(_find_schema_key(schema, CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES))
+        == 22
+    )
 
 
 @pytest.mark.asyncio
@@ -205,6 +214,7 @@ async def test_options_flow_values_used_by_device_config_reader(hass) -> None:
         CONF_CYCLE_SPLIT_DURATION_MINUTES: 20,
         CONF_MIN_CYCLE_DURATION_MINUTES: 7,
         CONF_MAX_CYCLE_DURATION_MINUTES: 240,
+        CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: 11,
     }
 
     result2 = await hass.config_entries.options.async_configure(
@@ -229,6 +239,7 @@ async def test_options_flow_values_used_by_device_config_reader(hass) -> None:
     assert device_config.cycle_split_duration_minutes == 20
     assert device_config.min_cycle_duration_minutes == 7
     assert device_config.max_cycle_duration_minutes == 240
+    assert device_config.anticipation_recalc_tolerance_minutes == 11
 
 
 @pytest.mark.asyncio
@@ -278,4 +289,8 @@ async def test_options_flow_defaults_when_no_overrides(hass) -> None:
     assert (
         _get_default_value(_find_schema_key(schema, CONF_MAX_CYCLE_DURATION_MINUTES))
         == DEFAULT_MAX_CYCLE_DURATION_MINUTES
+    )
+    assert (
+        _get_default_value(_find_schema_key(schema, CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES))
+        == DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
     )

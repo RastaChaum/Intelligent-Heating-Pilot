@@ -124,7 +124,7 @@ At minimum:
 1. **Write BDD feature files** in `tests/features/` (Gherkin format)
 2. **Write unit & integration tests** (RED phase, all should fail with pytest)
 3. **Commit all test files** (`git commit -m "test: BDD + unit tests (RED)"`)
-4. **Push to feature branch** (`git push origin feature/issue-XXX`)
+4. **Push to feature branch** — must target `integration`, not `main` (`git push origin feature/issue-XXX`)
 5. **Run tests to confirm RED**:
    ```bash
    poetry run pytest tests/features/ tests/unit/ -v

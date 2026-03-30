@@ -7,7 +7,7 @@
 ```
 Issue/Feature
   ↓
-[Create branch: git checkout -b feature/issue-XXX]
+[Create branch: git checkout integration && git checkout -b feature/issue-XXX]
   ↓
 PHASE 1: SOFTWARE ARCHITECT
   ├─ Creates interfaces, value objects, skeletons
@@ -37,7 +37,7 @@ PHASE 4: TECH LEAD
   ├─ Peer review with Architect/QA Engineer (via PR comments)
   ├─ Refactors if needed, commits
   ├─ Pushes to feature/issue-XXX
-  └─ Merges feature/issue-XXX → main/integration
+  └─ Merges feature/issue-XXX → integration
      (This closes the single PR)
 
 PHASE 5: DOCUMENTATION AGENT
@@ -134,8 +134,8 @@ A: They refactor and commit more to the same branch. The branch isn't closed unt
 **Q: What if QA finds a huge hole in coverage?**
 A: QA adds more tests, commits, pushes. No new PR. Developer then implements against the expanded test suite.
 
-**Q: What if the branch gets out of sync with main?**
-A: Rebase before merge (or merge main into feature first). Tech Lead handles this during finalization.
+**Q: What if the branch gets out of sync with integration?**
+A: Rebase before merge (or merge integration into feature first). Tech Lead handles this during finalization.
 
 **Q: Can agents work in parallel (Architect + QA + Developer at same time)?**
 A: Not on the same branch—merge conflicts. Workflow is sequential by design (ensures Quality gates).

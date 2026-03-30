@@ -5,11 +5,13 @@ from unittest.mock import Mock
 import pytest
 
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
     CONF_DEAD_TIME_MINUTES,
     CONF_LHS_RETENTION_DAYS,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
+    DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
     DEFAULT_DEAD_TIME_MINUTES,
     DEFAULT_LHS_RETENTION_DAYS,
@@ -120,6 +122,10 @@ async def test_get_device_config_uses_defaults_when_not_configured(
     assert device_config.lhs_retention_days == DEFAULT_LHS_RETENTION_DAYS
     assert device_config.dead_time_minutes == DEFAULT_DEAD_TIME_MINUTES
     assert device_config.auto_learning == DEFAULT_AUTO_LEARNING
+    assert (
+        device_config.anticipation_recalc_tolerance_minutes
+        == DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
+    )
 
 
 @pytest.mark.asyncio
@@ -132,6 +138,7 @@ async def test_get_device_config_with_valid_non_zero_values(
         CONF_LHS_RETENTION_DAYS: 60,
         CONF_DEAD_TIME_MINUTES: 15.5,
         CONF_AUTO_LEARNING: True,
+        CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: 12,
     }
 
     reader = HADeviceConfigReader(mock_hass, mock_config_entry)
@@ -143,3 +150,4 @@ async def test_get_device_config_with_valid_non_zero_values(
     assert device_config.lhs_retention_days == 60
     assert device_config.dead_time_minutes == 15.5
     assert device_config.auto_learning is True
+    assert device_config.anticipation_recalc_tolerance_minutes == 12

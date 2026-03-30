@@ -166,6 +166,19 @@ The current logic favors **quick detection** for natural completions and manual 
 
 Once IHP has learned the heating slope and dead time, it predicts when heating should start.
 
+### Active Preheating Recalculation Rule
+
+When preheating is already active, IHP does not cancel it on every recalculation.
+
+IHP cancels and reschedules active preheating only if:
+
+1. The recalculation targets the same schedule target time
+2. The newly anticipated start is later than the previously scheduled start
+3. The postponement is at least the configured threshold (default: 15 minutes)
+
+If the new anticipated start moves earlier, IHP keeps current preheating active.
+If the new anticipated start is only slightly later (below threshold), IHP keeps current preheating active.
+
 ### The Calculation
 
 **New in v0.6.0**: The prediction formula now includes dead time for more accurate predictions.
@@ -499,7 +512,7 @@ condition:
 
 **Solution:**
 1. Check IHP is configured with correct scheduler entity
-2. Create a test schedule 
+2. Create a test schedule
 3. Check logs: `logger: custom_components.intelligent_heating_pilot: debug`
 
 ---

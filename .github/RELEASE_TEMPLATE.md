@@ -137,7 +137,7 @@ Before creating a release, ensure:
 
 ### Code Quality
 - [ ] All tests pass (`pytest tests/unit/`)
-- [ ] No linting errors (`black --check .`)
+- [ ] No linting errors (`ruff check .`)
 - [ ] No type errors (`mypy custom_components/intelligent_heating_pilot/`)
 - [ ] Code review completed for all merged PRs
 

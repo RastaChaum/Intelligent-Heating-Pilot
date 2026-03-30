@@ -3,14 +3,8 @@ name: CI - Code Quality & Tests
 on:
   push:
     branches:
-      - main
-      - integration
       - 'feature/**'
       - 'fix/**'
-  pull_request:
-    branches:
-      - main
-      - integration
 
 permissions:
   contents: read
@@ -23,10 +17,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -38,7 +32,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .venv
           key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
@@ -76,10 +70,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -91,7 +85,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .venv
           key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
@@ -112,22 +106,3 @@ jobs:
           file: ./coverage.xml
           fail_ci_if_error: false
         continue-on-error: true
-
-  syntax-check-only:
-    name: Quick Syntax Check (Fast Fail)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Check Python syntax (no dependencies)
-        run: |
-          echo "Running quick syntax check..."
-          python -m compileall -q custom_components/
-          echo "✓ All files compile successfully"

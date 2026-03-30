@@ -1,7 +1,7 @@
 # Intelligent Heating Pilot (IHP)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-![Version](https://img.shields.io/badge/version-0.6.0-blue)
+![Version](https://img.shields.io/badge/version-0.6.2-blue)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 
 > **The Adaptive Brain for Versatile Thermostat**
@@ -62,6 +62,7 @@ Settings → Devices & Services → + Add Integration
 - ✅ **Smart Pre-heating** - Automatically calculates optimal start time based on learned heating performance
 - ✅ **Dead Time Learning** - Accounts for system lag in temperature response for more accurate predictions
 - ✅ **Enable/Disable Switch** - Toggle preheating on/off while maintaining learning data
+- ✅ **Configurable Revert Threshold** - Active preheating is only canceled when anticipated start is pushed later by a configurable time delta
 - ✅ **Cycle Detection** - Learns from real heating cycles, not thermostat slopes
 - ✅ **Configurable Detection Parameters** - Fine-tune cycle detection for your heating system
 - ✅ **Time-Contextual Learning** - Different heating speeds by time of day
