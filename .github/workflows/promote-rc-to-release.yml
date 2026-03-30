@@ -89,29 +89,61 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Create a dedicated branch from main for the CHANGELOG update
-          git checkout -b "$BRANCH"
+          # Create or reuse a dedicated branch from main for the CHANGELOG update
+          if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+            echo "Branch $BRANCH already exists on origin, reusing it"
+            git fetch origin "$BRANCH":"$BRANCH"
+            git checkout "$BRANCH"
+          else
+            echo "Branch $BRANCH does not exist yet, creating it from main"
+            git checkout -b "$BRANCH"
+          fi
 
-          # Replace [Unreleased] with the actual version
-          sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [$VERSION] - $TODAY/" CHANGELOG.md
+          # Guard against duplicate entries: only update CHANGELOG if this version is not already stamped
+          if grep -qF "## [$VERSION]" CHANGELOG.md; then
+            echo "ℹ️ CHANGELOG already contains ## [$VERSION] — skipping sed substitution"
+          else
+            sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [$VERSION] - $TODAY/" CHANGELOG.md
+          fi
 
           git add CHANGELOG.md
-          git commit -m "chore: update CHANGELOG for v$VERSION"
+          # Only commit if there are actual changes to avoid empty-commit errors on re-runs
+          git diff --cached --quiet && echo "ℹ️ No CHANGELOG changes to commit" || git commit -m "chore: update CHANGELOG for v$VERSION"
           git push origin "$BRANCH"
 
-          # Open a PR targeting main and enable auto-merge
-          PR_URL=$(gh pr create \
-            --title "chore: update CHANGELOG for v$VERSION" \
-            --body "🤖 Automatic CHANGELOG update triggered by the release of v${VERSION}.
+          # Open a PR targeting main, or retrieve the existing one on re-runs
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --base main --json url --jq '.[0].url' 2>/dev/null || true)
+          if [ -n "$EXISTING_PR" ]; then
+            PR_URL="$EXISTING_PR"
+            echo "ℹ️ Reusing existing PR: $PR_URL"
+          else
+            PR_URL=$(gh pr create \
+              --title "chore: update CHANGELOG for v$VERSION" \
+              --body "🤖 Automatic CHANGELOG update triggered by the release of v${VERSION}.
 
 This PR was created automatically by the **Promote RC to Release** workflow after the \`integration\` → \`main\` merge. It replaces the \`[Unreleased]\` section header with the actual version number and today's date." \
-            --base main \
-            --head "$BRANCH")
+              --base main \
+              --head "$BRANCH")
+            echo "✅ PR created: $PR_URL"
+          fi
 
-          echo "✅ PR created: $PR_URL"
-
-          # Enable auto-merge (squash) so the PR merges as soon as branch-protection checks pass
-          gh pr merge "$PR_URL" --auto --squash || echo "ℹ️ Auto-merge could not be enabled (may require repo setting). Please merge $PR_URL manually."
+          # Enable auto-merge (squash) so the PR merges as soon as branch-protection checks pass.
+          # If auto-merge is disabled at the repo level, fall back to a manual-merge message.
+          # For all other errors (auth, API, non-mergeable PR, etc.), fail the job.
+          set +e
+          MERGE_OUTPUT=$(gh pr merge "$PR_URL" --auto --squash 2>&1)
+          MERGE_EXIT_CODE=$?
+          set -e
+          if [ "$MERGE_EXIT_CODE" -ne 0 ]; then
+            echo "gh pr merge failed with exit code $MERGE_EXIT_CODE"
+            echo "$MERGE_OUTPUT"
+            if echo "$MERGE_OUTPUT" | grep -qi "auto-merge is disabled"; then
+              echo "ℹ️ Auto-merge could not be enabled (may require repo setting). Please merge $PR_URL manually."
+            else
+              echo "❌ Unexpected error while attempting to enable auto-merge for $PR_URL. Failing the job."
+              exit "$MERGE_EXIT_CODE"
+            fi
+          fi
 
       - name: Delete RC and dev pre-releases
         env:
