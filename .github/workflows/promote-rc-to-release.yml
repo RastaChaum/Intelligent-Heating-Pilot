@@ -114,10 +114,10 @@ jobs:
             git commit -m "chore: update CHANGELOG for v$VERSION"
           fi
 
-          # Short-circuit if there are no changes between this branch and origin/main
+          # Short-circuit if there are no CHANGELOG changes between this branch and origin/main
           if git rev-parse --verify origin/main >/dev/null 2>&1; then
-            if git diff --quiet HEAD origin/main; then
-              echo "ℹ️ No changes between branch $BRANCH and origin/main — skipping push and PR creation"
+            if git diff --quiet origin/main...HEAD -- CHANGELOG.md; then
+              echo "ℹ️ No CHANGELOG changes between branch $BRANCH and origin/main — skipping push and PR creation"
               exit 0
             fi
           fi
