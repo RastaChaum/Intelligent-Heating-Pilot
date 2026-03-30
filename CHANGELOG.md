@@ -7,23 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Native Home Assistant Schedule Support** ([#122](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/122)) – IHP can now use native `schedule.*` entities (from the Home Assistant Scheduler integration) directly as schedulers, in addition to the existing `switch.*` scheduler entities.
+  - `schedule.*` entities are automatically discovered and listed in the scheduler selector
+  - Native schedule entities are always treated as enabled (no on/off state check needed)
+  - Target temperature is read from the active VTherm climate entity when using a native schedule
+  - Next event time is derived from `next_trigger` / `next_event` attributes of the schedule entity
+- **Configurable Preheating Revert Time Delta** – Added a new integration option to control when active preheating can be canceled and rescheduled during anticipation recalculation.
+  - New option: `anticipation_recalc_tolerance_minutes` (default: 15, range: 1–60)
+  - Exposed in both initial setup and options flow
+  - Prevents spurious preheating cancellations caused by minor recalculation jitter
+
 ### Changed
 - **CI/CD Workflow overhaul** – Eliminated duplicate quality checks, standardized Poetry install, and corrected branch naming convention
   - Quality checks no longer run twice when a PR is open on a feature branch
-  - Branch naming validation now enforces the documented `feature/issue-XXX` slash format
-  - All workflows now use `snok/install-poetry@v1` with dependency caching for faster runs
+  - Branch naming validation now enforces the documented `feature/issue-XXX` format (including the `issue-<number>` suffix)
+  - All workflows now use `snok/install-poetry@v1` with dependency caching for faster builds
   - RC pre-release detection uses the GitHub Releases API instead of git tags (ground truth)
   - Fixed `-beta` vs `-rcN` inconsistency: integration PR check and release promotion now correctly target RC releases
   - RC release notes are generated on-the-fly by GitHub Actions workflows
   - New workflow: GitHub pre-release (dev or RC) is automatically created and updated on every merge to `integration`, keeping it in sync with the CHANGELOG `[Unreleased]` section
+  - Dev pre-release tag creation is now idempotent — force-updates existing tags instead of failing
 - **Agent workflow documentation** – All agent files and workflow docs now explicitly require feature branches to be created from `integration`, not `main`
 
-### Added
-- **Configurable Preheating Revert Time Delta** – Added a new integration option to control when active preheating can be canceled and rescheduled during anticipation recalculation.
-  - New option: `anticipation_recalc_tolerance_minutes` (default: 15, range: 1-60)
-  - Exposed in both initial setup and options flow
-
 ### Fixed
+- **Dead Time Startup Hydration** ([#124](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/124)) – Fixed an issue where IHP would fall back to the configured default dead time (0 s) right after a Home Assistant restart, before any heating cycles had been extracted from the Recorder.
+  - When `auto_learning` is enabled and no cycles are available yet, the use case now falls back to the last persisted learned dead time from storage
+  - Dead time learned from actual cycles always takes precedence; configured default is only used when both cycle data and stored value are unavailable
+- **Prevent Anticipation Revert Loop** ([#121](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/121)) – Fixed a loop where IHP would repeatedly cancel and reschedule preheating when the predicted LHS (Learning Heating Slope) was unchanged between recalculations.
+  - Preheating is now only reverted when the anticipated start time has actually shifted by more than the configured tolerance
+- **Config Flow Scheduler Discovery** – Fixed a runtime crash in the scheduler entity selector caused by passing a list of domains to `async_all()`, which only accepts a single domain string or no argument.
+  - Both the initial setup flow and options flow now call `async_all()` without arguments and filter by domain in Python
 - **Dead Time Thresholds for Floor Heating** – Corrected two default parameters in `_calculate_dead_time_cycle()` that caused all dead time measurements to be silently discarded on floor heating systems:
   - `temp_change_threshold`: `0.1°C` → `0.2°C` to avoid false positives from sensor noise
   - `max_dead_time_minutes`: `60 min` → `180 min` to correctly capture cold-start delays inherent to floor heating (realistic range: 60–120 min)
