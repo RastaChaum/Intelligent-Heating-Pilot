@@ -17,6 +17,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_point_in_time
@@ -212,26 +213,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
     # Register services (once per integration, not per device)
-    def _resolve_coordinator(entity_id: str) -> HeatingApplication | None:
+    def _resolve_coordinator(entity_id: str) -> HeatingApplication:
         """Resolve an IHP coordinator from an entity ID.
 
         Looks up the entity in the entity registry to find its config entry,
         then returns the corresponding HeatingApplication coordinator.
-        Returns None and logs an error if no coordinator can be found.
+
+        Raises:
+            ServiceValidationError: If the entity or its coordinator cannot be found,
+                so callers receive immediate actionable feedback in the HA UI.
         """
         entity_reg = er.async_get(hass)
         entity_entry = entity_reg.async_get(entity_id)
         if not entity_entry:
-            _LOGGER.error("IHP service: entity not found in registry: %s", entity_id)
-            return None
+            raise ServiceValidationError(
+                f"Entity '{entity_id}' was not found in the Home Assistant entity registry. "
+                "Please provide a valid IHP sensor entity ID, for example: "
+                "sensor.intelligent_heating_pilot_<device_name>_anticipated_start_time."
+            )
         coord = hass.data[DOMAIN].get(entity_entry.config_entry_id)
         if not coord or not isinstance(coord, HeatingApplication):
-            _LOGGER.error(
-                "IHP service: no coordinator for entity %s (entry_id=%s)",
-                entity_id,
-                entity_entry.config_entry_id,
+            raise ServiceValidationError(
+                f"No IHP device found for entity '{entity_id}' "
+                f"(config_entry_id={entity_entry.config_entry_id}). "
+                "Make sure the IHP integration is properly configured."
             )
-            return None
         return coord
 
     if not hass.services.has_service(DOMAIN, "reset_learning"):
@@ -246,9 +252,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("Entering handle_reset_learning")
 
             coord = _resolve_coordinator(call.data["entity_id"])
-            if coord is None:
-                return
-
             await coord._orchestrator.reset_all_learning_data(
                 device_id=coord.get_device_id()
             )
@@ -292,8 +295,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             # Resolve the coordinator for this device
             device_coordinator = _resolve_coordinator(entity_id)
-            if not device_coordinator:
-                return
 
             # Get target_temp from service call or VTherm
             if target_temp is None:
