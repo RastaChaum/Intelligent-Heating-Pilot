@@ -297,10 +297,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             # Get target_temp from service call or VTherm
             if target_temp is None:
-                # Try to get target temp from VTherm
-                vtherm_state = hass.states.get(device_coordinator._vtherm_id)
-                if vtherm_state:
-                    target_temp = vtherm_state.attributes.get("temperature")
+                # Try to get target temp from VTherm using public accessor
+                vtherm_entity_id = device_coordinator.get_vtherm_entity()
+                if vtherm_entity_id:
+                    vtherm_state = hass.states.get(vtherm_entity_id)
+                    if vtherm_state:
+                        target_temp = vtherm_state.attributes.get("temperature")
             if target_temp is not None:
                 target_temp = float(target_temp)
 
