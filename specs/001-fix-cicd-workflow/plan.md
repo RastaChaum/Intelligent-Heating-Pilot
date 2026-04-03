@@ -2,7 +2,7 @@
 stage: planning
 producer_agent: speckit.plan
 critical_reviewer_agent: speckit.checklist
-review_status: pending
+review_status: in_review
 ---
 
 # Implementation Plan: Fix CI/CD Workflow Enforcement
