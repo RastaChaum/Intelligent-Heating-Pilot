@@ -34,16 +34,29 @@ jobs:
       - name: Check CHANGELOG update
         id: changelog-check
         run: |
-          if ! git diff origin/integration --name-only | grep -q "CHANGELOG.md"; then
-            echo "updated=false" >> $GITHUB_OUTPUT
-            echo "❌ CHANGELOG.md n'a pas été mis à jour"
-          else
-            echo "updated=true" >> $GITHUB_OUTPUT
-            echo "✅ CHANGELOG.md a été mis à jour"
+          HEAD_UNRELEASED=$(awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' CHANGELOG.md \
+            | grep -v '^[[:space:]]*$')
+          BASE_UNRELEASED=$(git show origin/integration:CHANGELOG.md \
+            | awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' \
+            | grep -v '^[[:space:]]*$')
+
+          NEW_LINES=$(diff <(echo "$BASE_UNRELEASED") <(echo "$HEAD_UNRELEASED") \
+            | grep '^>' | wc -l)
+
+          if [ "$NEW_LINES" -eq 0 ]; then
+            echo "❌ No new lines added to the [Unreleased] section of CHANGELOG.md"
+            echo "Please add an entry under ## [Unreleased] describing your change:"
+            echo ""
+            echo "  ## [Unreleased]"
+            echo ""
+            echo "  ### Added"
+            echo "  - [User-facing description of your change]"
+            exit 1
           fi
+          echo "✅ CHANGELOG [Unreleased] section updated ($NEW_LINES new line(s))"
 
       - name: Suggest CHANGELOG template
-        if: steps.changelog-check.outputs.updated == 'false'
+        if: steps.changelog-check.outcome == 'failure'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
