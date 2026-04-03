@@ -1,0 +1,9 @@
+{
+  "ai": "copilot",
+  "branch_numbering": "sequential",
+  "here": false,
+  "integration": "copilot",
+  "preset": null,
+  "script": "sh",
+  "speckit_version": "0.5.1.dev0"
+}

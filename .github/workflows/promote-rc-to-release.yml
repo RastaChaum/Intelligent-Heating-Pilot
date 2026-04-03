@@ -108,11 +108,24 @@ jobs:
 
           git add CHANGELOG.md
           # Only commit if there are actual changes to avoid empty-commit errors on re-runs
-          git diff --cached --quiet && echo "ℹ️ No CHANGELOG changes to commit" || git commit -m "chore: update CHANGELOG for v$VERSION"
+          if git diff --cached --quiet; then
+            echo "ℹ️ No CHANGELOG changes to commit"
+          else
+            git commit -m "chore: update CHANGELOG for v$VERSION"
+          fi
+
+          # Short-circuit if there are no CHANGELOG changes between this branch and origin/main
+          if git rev-parse --verify origin/main >/dev/null 2>&1; then
+            if git diff --quiet origin/main...HEAD -- CHANGELOG.md; then
+              echo "ℹ️ No CHANGELOG changes between branch $BRANCH and origin/main — skipping push and PR creation"
+              exit 0
+            fi
+          fi
+
           git push origin "$BRANCH"
 
           # Open a PR targeting main, or retrieve the existing one on re-runs
-          EXISTING_PR=$(gh pr list --head "$BRANCH" --base main --json url --jq '.[0].url' 2>/dev/null || true)
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --base main --json url --jq '.[0].url // empty' 2>/dev/null || true)
           if [ -n "$EXISTING_PR" ]; then
             PR_URL="$EXISTING_PR"
             echo "ℹ️ Reusing existing PR: $PR_URL"
