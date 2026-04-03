@@ -34,5 +34,14 @@ calculate_anticipated_start_time:
 
 reset_learning:
   name: Reset Learning History
-  description: Clear all learned heating slopes and reset to default values
-  fields: {}
+  description: Clear all learned heating slopes for a specific IHP device and reset to default values
+  fields:
+    entity_id:
+      name: IHP Entity ID
+      description: The entity ID of the IHP device whose learning data should be reset (e.g., sensor.intelligent_heating_pilot_anticipated_start_time)
+      required: true
+      example: "sensor.intelligent_heating_pilot_anticipated_start_time"
+      selector:
+        entity:
+          domain: sensor
+          integration: intelligent_heating_pilot
