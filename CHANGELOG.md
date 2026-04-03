@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Reset Learning Service** – Fixed the `intelligent_heating_pilot.reset_learning` service which was crashing with a `TypeError` when triggered from Developer Tools or automations. The service now also accepts an `entity_id` parameter so users with multiple IHP devices can choose which device's learning data to reset, consistent with the `calculate_anticipated_start_time` service.
+- **Integration PR CHANGELOG check** – Fixed the `awk` range pattern in `integration-pr.yml` that caused the `[Unreleased]` section extraction to terminate immediately because `## [Unreleased]` matched both the start and end selectors. Now uses a flag-based approach with `^## \[[0-9]` as the end guard.
+- **Integration PR RC detection** – Fixed the RC pre-release check to find any RC newer than the current main release, rather than filtering by the version in `manifest.json`. This correctly handles the case where the RC is tagged with the *next* version (e.g. `v0.6.3-rc2`) while `manifest.json` on `integration` still reports the *current* version (`0.6.2`). Updated `scripts/test-rc-check.sh` with five scenarios covering the new version-agnostic logic.
 
 ## [0.6.2] - 2026-03-25
 
