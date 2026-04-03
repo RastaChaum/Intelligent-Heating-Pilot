@@ -23,8 +23,9 @@ jobs:
         run: |
           BRANCH="${{ github.head_ref }}"
 
-          if [[ ! "$BRANCH" =~ ^(copilot/)?(feature|fix)/issue-[0-9]+ ]]; then
-            echo "❌ La branche doit suivre le format 'feature/issue-XXX' ou 'fix/issue-XXX'"
+          if [[ ! "$BRANCH" =~ ^(copilot/)?(feature|fix)/issue-[0-9]+ ]] && \
+             [[ ! "$BRANCH" =~ ^[0-9]{3,}-[a-z][a-z0-9-]*$ ]]; then
+            echo "❌ La branche doit suivre le format 'feature/issue-XXX', 'fix/issue-XXX' ou 'NNN-description'"
             echo "Nom actuel : $BRANCH"
             exit 1
           fi
