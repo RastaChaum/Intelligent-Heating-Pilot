@@ -42,26 +42,28 @@ jobs:
       - name: Type checking with mypy
         id: mypy
         run: |
-          poetry run mypy custom_components/intelligent_heating_pilot/ --ignore-missing-imports --no-error-summary > mypy-output.txt 2>&1 || true
+          poetry run mypy custom_components/intelligent_heating_pilot/ --ignore-missing-imports --no-error-summary > mypy-output.txt 2>&1
           echo "exitcode=$?" >> $GITHUB_OUTPUT
         continue-on-error: true
 
       - name: Linting with pylint
         id: pylint
         run: |
-          poetry run pylint custom_components/intelligent_heating_pilot/ --fail-under=7.0 > pylint-output.txt 2>&1 || true
+          poetry run pylint custom_components/intelligent_heating_pilot/ --fail-under=7.0 > pylint-output.txt 2>&1
+          PYLINT_EXIT=$?
           SCORE=$(grep -oP 'rated at \K[0-9.]+' pylint-output.txt || echo "0.0")
           echo "score=$SCORE" >> $GITHUB_OUTPUT
-          echo "exitcode=$?" >> $GITHUB_OUTPUT
+          echo "exitcode=$PYLINT_EXIT" >> $GITHUB_OUTPUT
         continue-on-error: true
 
       - name: Check test coverage
         id: coverage
         run: |
-          poetry run pytest tests/unit --cov=custom_components/intelligent_heating_pilot --cov-report=term --cov-report=xml > coverage-output.txt 2>&1 || true
-          COVERAGE=$(poetry run coverage report | grep TOTAL | awk '{print $4}' | sed 's/%//')
+          poetry run pytest tests/unit --cov=custom_components/intelligent_heating_pilot --cov-report=term --cov-report=xml > coverage-output.txt 2>&1
+          COVERAGE_EXIT=$?
+          COVERAGE=$(grep "^TOTAL" coverage-output.txt | awk '{print $NF}' | sed 's/%//')
           echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
-          echo "exitcode=$?" >> $GITHUB_OUTPUT
+          echo "exitcode=$COVERAGE_EXIT" >> $GITHUB_OUTPUT
         continue-on-error: true
 
       - name: Comment results on PR
