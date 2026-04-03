@@ -59,8 +59,8 @@ See quickstart.md Scenarios 1 and 2.
 ### Implementation for User Story 1
 
 - [ ] T004 [US1] Replace the body of the `Check CHANGELOG update` step in `.github/workflows/feature-fix-pr.yml` with the two-pass diff implementation from plan.md Decision 1: extract `[Unreleased]` content from `HEAD` and from `origin/integration`, count new non-blank lines via `diff | grep '^>'`, and call `exit 1` with a human-readable message and the appropriate `Added`/`Fixed` suggestion template when `NEW_LINES -eq 0` (implements FR-001, FR-002, FR-006)
-- [ ] T005 [US1] Update the `if:` condition on the `Suggest CHANGELOG template` step in `.github/workflows/feature-fix-pr.yml` from `steps.changelog-check.outputs.updated == 'false'` to `failure()` so the PR comment is still posted when the new check step fails
-- [ ] T006 [US1] Run `bash scripts/test-changelog-check.sh` again after the workflow edit and confirm all five scenarios now behave correctly
+- [ ] T005 [US1] Update the `if:` condition on the `Suggest CHANGELOG template` step in `.github/workflows/feature-fix-pr.yml` from `steps.changelog-check.outputs.updated == 'false'` to `steps.changelog-check.outcome == 'failure'` so the PR comment is still posted when the new check step fails
+- [ ] T006 [US1] Run `bash scripts/test-changelog-check.sh` again after the workflow edit and confirm all five scenarios now behave correctly — in particular that scenario (c) (valid `[Unreleased]` addition) exits 0 (happy-path passing test, SC-005)
 
 **Checkpoint**: US1 complete — `feature-fix-pr.yml` enforces `[Unreleased]` content-level
 check and exits 1 on violation. All test scenarios pass. ✅
@@ -80,15 +80,14 @@ See quickstart.md Scenarios 3 and 4.
 
 > Write and run tests BEFORE editing the workflow.
 
-- [ ] T007 [P] [US2] Write `scripts/test-rc-check.sh` — a self-contained bash test that exercises the `jq` RC count expression from plan.md Decision 3 against four mock `gh release list` JSON payloads: (a) empty list, (b) one dev pre-release only, (c) one RC pre-release, (d) multiple RCs
+- [ ] T007 [P] [US2] Write `scripts/test-rc-check.sh` — a self-contained bash test that exercises the `jq` RC count expression (same pattern as plan.md Decision 3, applied to `integration-pr.yml`) against four mock `gh release list` JSON payloads: (a) empty list, (b) one dev pre-release only, (c) one RC pre-release, (d) multiple RCs
 - [ ] T008 [US2] Run `bash scripts/test-rc-check.sh` before the workflow edit and confirm scenarios (a) and (b) evaluate to count=0 and scenarios (c) and (d) evaluate to count≥1
 
 ### Implementation for User Story 2
 
-- [ ] T009 [US2] Remove the job-level `if: github.head_ref == 'integration'` condition from the `validate-integration-pr` job in `.github/workflows/integration-pr.yml` (implements FR-004 — eliminates the `skipped` false-pass)
-- [ ] T010 [US2] Insert the `Enforce integration-only source branch` guard step as the **first** step of `validate-integration-pr` in `.github/workflows/integration-pr.yml` per plan.md Decision 2: fail with `exit 1` and a clear message when `github.head_ref != 'integration'` (implements FR-004, FR-006)
-- [ ] T011 [US2] Add `exit 1` with a human-readable message to the `Check pre-release exists` step in `.github/workflows/integration-pr.yml` when `LATEST_RC` is empty, before the step sets `exists=false` (implements FR-003, FR-006)
-- [ ] T012 [US2] Run `bash scripts/test-rc-check.sh` again after the workflow edit and confirm all four mock scenarios evaluate correctly
+- [ ] T009 [US2] In `.github/workflows/integration-pr.yml`, atomically: (a) remove the job-level `if: github.head_ref == 'integration'` condition from `validate-integration-pr`, **and** (b) insert the `Enforce integration-only source branch` guard step as the **first** step of that job per plan.md Decision 2 — fail with `exit 1` when `github.head_ref != 'integration'` (implements FR-004, FR-006; both edits in one commit to avoid a transient broken state)
+- [ ] T011 [US2] Add `exit 1` with a human-readable message to the `Check pre-release exists` step in `.github/workflows/integration-pr.yml` when `LATEST_RC` is empty, inside the `else` branch of the `LATEST_RC` check (implements FR-003, FR-006)
+- [ ] T012 [US2] Run `bash scripts/test-rc-check.sh` again after the workflow edit and confirm all four mock scenarios evaluate correctly — in particular that scenarios (c) and (d) (RC pre-release present) evaluate to count≥1 (happy-path passing tests, SC-005)
 
 **Checkpoint**: US2 complete — `integration-pr.yml` fails on invalid source branch and on
 missing RC. Job-level `if:` replaced by explicit guard step. ✅
@@ -103,7 +102,7 @@ or deleted) when no RC pre-release exists at merge time.
 **Independent Test**: Code-review validation — confirm step order and fail-fast position.
 See quickstart.md Scenario 5.
 
-### Tests for User Story 3 (MANDATORY) ⚠️
+### Pre-Implementation Inspection for User Story 3
 
 - [ ] T013 [P] [US3] Code-review validation: read `.github/workflows/promote-rc-to-release.yml` and confirm the following step order: `Extract version` → `Check if tag already exists` → *(new)* `Verify RC exists` → `Prepare release notes`; also confirm no step between `Verify RC exists` and `Prepare release notes` has `if: always()` that could bypass the failure
 
@@ -124,6 +123,7 @@ exists; no release, CHANGELOG PR, or cleanup steps execute on failure. ✅
 - [ ] T016 [P] Cross-read all three workflows and verify consistent patterns: same version extraction path (`custom_components/intelligent_heating_pilot/manifest.json`), same `jq` RC filter style, same `gh release list` flag usage as the unmodified workflows
 - [ ] T017 Perform final manual validation per quickstart.md Scenarios 1–4 against real GitHub PR events (or code-review Scenario 5 for promote workflow)
 - [ ] T018 Update `specs/001-fix-cicd-workflow/spec.md` and `specs/001-fix-cicd-workflow/plan.md` front matter `review_status` from `pending` to `complete` after final review passes
+- [ ] T020 Verify that `validate-pr` and `validate-integration-pr` are registered as required status checks in GitHub Settings → Branches → Branch protection rules (on `integration` and `main` respectively), ensuring guard-step failures produce `failure` conclusion (not `skipped`) as mandated by SC-002
 
 ---
 
@@ -131,7 +131,7 @@ exists; no release, CHANGELOG PR, or cleanup steps execute on failure. ✅
 
 **Reviewer**: `speckit.review` (different from `speckit.implement` — constitution WR-001)
 
-- [ ] T019 Critical review: verify the three modified YAML files implement exactly what FR-001 through FR-008 require — no more, no less — and that no existing passing step was accidentally broken (SC-005)
+- [ ] T019 Critical review: verify the three modified YAML files implement exactly what FR-001 through FR-008 require — no more, no less — and that no existing passing step was accidentally broken (SC-005); explicitly confirm each user story's happy-path scenario (CHANGELOG entry present → US1 passes; `integration` source branch → US2 passes; RC exists → US3 passes)
 
 ---
 
@@ -140,7 +140,7 @@ exists; no release, CHANGELOG PR, or cleanup steps execute on failure. ✅
 ```
 T001
   ├── T002 (P, US1) ──► T003 ──► T004 ──► T005 ──► T006
-  ├── T007 (P, US2) ──► T008 ──► T009 ──► T010 ──► T011 ──► T012
+  ├── T007 (P, US2) ──► T008 ──► T009 ─────────────► T011 ──► T012
   └── T013 (P, US3) ──────────────────────────────► T014
 
 T006 ─┐
@@ -157,7 +157,7 @@ in parallel after T001 completes.
 **Per user story** (all start after T001):
 ```
 Stream A (US1): T002 → T003 → T004 → T005 → T006
-Stream B (US2): T007 → T008 → T009 → T010 → T011 → T012
+Stream B (US2): T007 → T008 → T009 → T011 → T012
 Stream C (US3): T013 → T014
 ```
 
@@ -171,5 +171,5 @@ will be checked for CHANGELOG content. US2 and US3 can follow in any order.
 **Recommended order**: US1 → US2 → US3 (decreasing frequency of the guarded operation).
 
 **Total tasks**: 19
-**Tasks per story**: US1 = 5, US2 = 6, US3 = 3, Final = 5
+**Tasks per story**: US1 = 5, US2 = 5, US3 = 2, Final = 6, Phase N = 1
 **Parallelizable tasks**: T002, T007, T013, T015, T016
