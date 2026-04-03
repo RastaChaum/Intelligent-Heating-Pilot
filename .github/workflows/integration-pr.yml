@@ -61,7 +61,7 @@ jobs:
       - name: Check CHANGELOG has unreleased content
         id: changelog-check
         run: |
-          UNRELEASED=$(awk '/## \[Unreleased\]/,/## \[/' CHANGELOG.md | sed '1d;$d' | grep -v '^$' | wc -l)
+          UNRELEASED=$(awk '/## \[Unreleased\]/{flag=1; next} /^## \[[0-9]/{flag=0} flag' CHANGELOG.md | grep -v '^[[:space:]]*$' | wc -l)
 
           if [ "$UNRELEASED" -eq "0" ]; then
             echo "has_content=false" >> $GITHUB_OUTPUT
@@ -76,19 +76,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
+          MAIN_VERSION=$(git show origin/main:custom_components/intelligent_heating_pilot/manifest.json | jq -r '.version')
 
+          # Find the latest RC for any version newer than the current main release
           LATEST_RC=$(gh release list --limit 100 --json tagName,isPrerelease \
-            | jq -r --arg v "$VERSION" '.[] | select(.isPrerelease and (.tagName | test("^v" + $v + "-rc[0-9]+$"))) | .tagName' \
+            | jq -r '.[] | select(.isPrerelease and (.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-rc[0-9]+$"))) | .tagName' \
             | sort -V | tail -1)
-          if [ -n "$LATEST_RC" ]; then
+          RC_VERSION=$(echo "$LATEST_RC" | sed 's/^v//; s/-rc[0-9]*$//')
+
+          if [ -n "$LATEST_RC" ] && [ "$RC_VERSION" != "$MAIN_VERSION" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "rc_tag=$LATEST_RC" >> $GITHUB_OUTPUT
-            echo "✅ Release candidate $LATEST_RC existe"
+            echo "✅ Release candidate $LATEST_RC existe (v${MAIN_VERSION} → v${RC_VERSION})"
           else
-            echo "❌ No release candidate found for v${VERSION}."
-            echo "A validated RC (vX.Y.Z-rcN) must exist before merging integration into main."
-            echo "Use the 'Prepare Release Candidate' or 'Increment RC Version' workflows first."
+            echo "❌ Aucune release candidate trouvée pour une version supérieure à v${MAIN_VERSION}."
+            echo "Un RC validé (vX.Y.Z-rcN avec X.Y.Z > ${MAIN_VERSION}) doit exister avant de merger integration dans main."
+            echo "Utilisez le workflow 'Prepare Release Candidate' ou 'Increment RC Version'."
             exit 1
           fi
 
