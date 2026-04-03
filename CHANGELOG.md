@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent workflow documentation** – All agent files and workflow docs now explicitly require feature branches to be created from `integration`, not `main`
 
 ### Fixed
+- **CI/CD Enforcement Gaps** – Converted previously warn-only workflow checks into hard-failing guards to prevent accidental incomplete releases.
+  - Feature/fix PRs now fail immediately when the `[Unreleased]` section of CHANGELOG.md has not been updated (two-pass diff against `origin/integration`)
+  - Integration → main PRs are blocked when the source branch is not `integration` or when no validated RC pre-release (`vX.Y.Z-rcN`) exists for the current version
+  - The release promotion workflow now fails fast when no matching RC pre-release is found before attempting to create a final release
 - **Reset Learning Service** – Fixed the `intelligent_heating_pilot.reset_learning` service which was crashing with a `TypeError` when triggered from Developer Tools or automations. The service now also accepts an `entity_id` parameter so users with multiple IHP devices can choose which device's learning data to reset, consistent with the `calculate_anticipated_start_time` service.
 - **Dead Time Startup Hydration** ([#124](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/124)) – Fixed an issue where IHP would fall back to the configured default dead time (0 s) right after a Home Assistant restart, before any heating cycles had been extracted from the Recorder.
   - When `auto_learning` is enabled and no cycles are available yet, the use case now falls back to the last persisted learned dead time from storage
