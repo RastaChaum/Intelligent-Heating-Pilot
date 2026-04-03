@@ -200,4 +200,4 @@ class HASchedulerAdapter:
 - `.github/agents/TESTING_STRATEGY.md` — BDD vs TDD decision guide
 - `docs/contributors/DEVELOPMENT_STANDARDS.md` — team development standards
 - `docs/contributors/WORKFLOW_MODEL.md` — detailed one-PR-per-feature model
-- `ARCHITECTURE.md` — component architecture overview
+- `docs/architecture/OVERVIEW.md` — component architecture overview

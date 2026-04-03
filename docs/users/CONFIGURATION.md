@@ -235,11 +235,20 @@ This setting controls how IHP reacts when anticipation is recalculated while pre
 
 ### Data Retention Settings
 
-**New in v0.4.0+**: IHP now caches heating cycles for improved performance and longer learning history. **Updated in v0.6.0**: New zero-retention mode for minimal deployments.
+**New in v0.4.0+**: IHP now caches heating cycles for improved performance and longer learning history.
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **Data Retention Days** | 30 days | How long to keep cached heating cycles (0 = disabled, no history stored) |
+| Setting | Default | Range | Description |
+|---------|---------|-------|-------------|
+| **Slope Data Retention** | 30 days | 7–90 days | How long to keep cached heating cycles |
+
+**Recommended Values:**
+- **7 days**: Matches typical HA recorder retention, minimal history
+- **30 days** (default): Optimal balance of learning quality and storage
+- **90 days**: For detailed historical analysis and seasonal patterns
+
+**When to Change:**
+- ✅ **Increase** if you want longer learning history for seasonal accuracy
+- ⚠️ **Decrease** if disk space is very limited (not recommended)
 
 **What This Affects:**
 - Cycle Cache: Heating cycles older than this are automatically pruned
@@ -248,7 +257,7 @@ This setting controls how IHP reacts when anticipation is recalculated while pre
 
 **Initial Recorder Extraction:**
 
-When you first configure IHP or increase the **Data Retention Days** setting, IHP performs **progressive, batched extraction**:
+When you first configure IHP or increase the **Slope Data Retention** setting, IHP performs **progressive, batched extraction**:
 
 - Extraction is split into `task_range_days`-day periods (default: 7 days, configurable 1-30 days)
 - Each period is processed sequentially with brief pauses between batches
@@ -257,13 +266,13 @@ When you first configure IHP or increase the **Data Retention Days** setting, IH
 - Processing happens **in the background** — HA and IHP sensors remain responsive
 
 **Factors affecting processing time:**
-- Higher **Data Retention Days** = more history to extract = longer total time
+- Higher **Slope Data Retention** = more history to extract = longer total time
 - Smaller **Recorder Extraction Period** = more batches but lighter load per batch
 - Slower hardware (e.g., Raspberry Pi, Home Assistant Green) = longer processing time
 
 **Recommendation**: If you experience slowness, consider:
 - Setting **Recorder Extraction Period** to 3–5 days (if on low-power hardware)
-- Reducing **Data Retention Days** to 30 days (default) or lower
+- Reducing **Slope Data Retention** to 30 days (default) or lower
 - Allowing the initial extraction to complete before making other configuration changes
 
 ### Heating Cycle Detection Parameters
@@ -287,7 +296,7 @@ When you first configure IHP or increase the **Data Retention Days** setting, IH
 | Setting | Default | Range | Description |
 |---------|---------|-------|-------------|
 | **Minimum Cycle Duration** | 5 minutes | 1 - 30 min | Shortest valid heating cycle |
-| **Maximum Cycle Duration** | 300 minutes (5h) | 60 - 720 min | Longest valid heating cycle |
+| **Maximum Cycle Duration** | 300 minutes (5h) | 15 - 360 min | Longest valid heating cycle |
 
 **When to Adjust:**
 
@@ -299,7 +308,7 @@ When you first configure IHP or increase the **Data Retention Days** setting, IH
 
 **Maximum Duration:**
 - 🔻 **Lower (120-180 min)**: For well-insulated homes or powerful heating systems
-- 🔺 **Higher (360-720 min)**: For poorly insulated spaces or weak heating systems
+- 🔺 **Higher (240-360 min)**: For poorly insulated spaces or weak heating systems
 - ⚠️ **Too low**: May exclude long but valid heating cycles
 - ⚠️ **Too high**: May include abnormal cycles from sensor malfunctions
 
@@ -307,7 +316,7 @@ When you first configure IHP or increase the **Data Retention Days** setting, IH
 
 | Setting | Default | Range | Description |
 |---------|---------|-------|-------------|
-| **Cycle Split Duration** | None (disabled) | 15 - 120 min | Split long cycles into sub-cycles for ML |
+| **Cycle Split Duration** | 0 (disabled) | 0 - 120 min | Split long cycles into sub-cycles for ML (0 = disabled) |
 
 **When to Enable:**
 - ✅ **Planning to use ML mode** (future feature): Increases training data samples
@@ -317,7 +326,7 @@ When you first configure IHP or increase the **Data Retention Days** setting, IH
 **Recommended Values:**
 - 30 minutes: Good balance for most systems
 - 60 minutes: For very long heating cycles
-- Disabled (None): For simple mode users
+- Disabled (0): For simple mode users
 
 ---
 
@@ -331,17 +340,6 @@ When you first configure IHP or increase the **Data Retention Days** setting, IH
 6. Click **Submit**
 
 **Tip**: Start with defaults and only adjust if you notice issues with cycle detection in the logs.
-
-**Recommended Values:**
-- **Minimum**: 7 days (matches typical HA recorder retention)
-- **Default**: 30 days (optimal balance of learning quality and storage)
-- **Maximum**: 90 days (for very detailed historical analysis)
-
-**When to Change:**
-- ✅ **Increase** if you want longer learning history for seasonal patterns
-- ⚠️ **Decrease** if disk space is very limited (not recommended)
-
-**Note**: This setting replaces the old `lhs_retention_days` configuration. Both keys are supported for backward compatibility.
 
 ### Disabling Optional Sensors
 

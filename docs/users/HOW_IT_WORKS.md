@@ -108,10 +108,8 @@ Before a cycle contributes to LHS:
 - Processing happens **in the background** — HA and IHP sensors remain responsive
 
 **Configuration:**
-- Cache retention period: `data_retention_days` (default: 30 days)
+- Cache retention period: `lhs_retention_days` (default: 30 days, range 7–90 days)
 - Extraction batch size: `task_range_days` (default: 7 days, range 1-30)
-
-**Note**: The old configuration key `lhs_retention_days` is still supported for backward compatibility but will be deprecated in future versions.
 
 ### Why This Matters
 

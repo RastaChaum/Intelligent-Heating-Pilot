@@ -190,7 +190,7 @@ The cache automatically refreshes every 24 hours to include new cycles and remov
 
 - **Intermittent heating** (on/off frequently): Increase temperature threshold to 0.3-0.5°C
 - **Fast-response systems** (heat pumps, electric): Lower minimum cycle duration to 1-3 minutes
-- **Long heating cycles** (poorly insulated): Increase maximum cycle duration to 360-720 minutes
+- **Long heating cycles** (poorly insulated): Increase maximum cycle duration to 240-360 minutes
 - **Micro-cutoffs/noise**: Increase minimum cycle duration to 10-15 minutes
 
 See [Configuration Guide](CONFIGURATION.md#heating-cycle-detection-parameters) for detailed parameter descriptions.

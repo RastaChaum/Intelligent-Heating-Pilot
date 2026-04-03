@@ -16,6 +16,7 @@ This repository uses the speckit workflow on a single feature branch from specif
 
 ## Branching Rule
 
+- Feature branches must follow the naming format: `NNN-description`, `NNNN-description`, or `YYYYMMDD-HHMMSS-description` (e.g. `001-add-scheduler`, `20260319-143022-fix-slope`). The speckit tooling enforces this pattern.
 - Keep the same feature branch for the full workflow.
 - Do not create one pull request per stage.
 - Refine artifacts and implementation on the same branch when review feedback arrives.
