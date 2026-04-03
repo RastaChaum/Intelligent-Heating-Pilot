@@ -118,6 +118,7 @@ jobs:
           poetry run pytest tests/ -v
 
       - name: Summary comment
+        if: always() && github.head_ref == 'integration'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

@@ -34,6 +34,12 @@ jobs:
       - name: Check CHANGELOG update
         id: changelog-check
         run: |
+          BRANCH="${{ github.head_ref }}"
+          SECTION="Added"
+          if [[ "$BRANCH" =~ ^(copilot/)?fix/ ]]; then
+            SECTION="Fixed"
+          fi
+
           HEAD_UNRELEASED=$(awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' CHANGELOG.md \
             | grep -v '^[[:space:]]*$')
           BASE_UNRELEASED=$(git show origin/integration:CHANGELOG.md \
@@ -49,7 +55,7 @@ jobs:
             echo ""
             echo "  ## [Unreleased]"
             echo ""
-            echo "  ### Added"
+            echo "  ### $SECTION"
             echo "  - [User-facing description of your change]"
             exit 1
           fi
