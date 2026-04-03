@@ -7,7 +7,7 @@ contact_links:
     url: https://github.com/RastaChaum/Intelligent-Heating-Pilot/blob/main/README.md
     about: Read the documentation and user guide
   - name: 🏗️ Architecture
-    url: https://github.com/RastaChaum/Intelligent-Heating-Pilot/blob/main/ARCHITECTURE.md
+    url: https://github.com/RastaChaum/Intelligent-Heating-Pilot/blob/main/docs/architecture/OVERVIEW.md
     about: Learn about the technical architecture
   - name: 🤝 Contributing
     url: https://github.com/RastaChaum/Intelligent-Heating-Pilot/blob/main/CONTRIBUTING.md

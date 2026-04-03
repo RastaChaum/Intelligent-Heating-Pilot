@@ -4,6 +4,11 @@
 
 The Intelligent Heating Pilot (IHP) employs a **4-tier cache architecture** to optimize performance and minimize computational overhead. This document describes the cache layers, population strategies, invalidation mechanisms, and cascade update flows.
 
+Related references:
+
+- [How IHP Works](../users/HOW_IT_WORKS.md)
+- [Contributor Guide](../contributors/CONTRIBUTING.md)
+
 ---
 
 ## 1. Cache Architecture Layers
@@ -299,9 +304,9 @@ cycles = await update_cycles_for_window(device_id, start_time, end_time)
 
 ## 9. Related Documentation
 
-- [ARCHITECTURE.md](../../ARCHITECTURE.md) - Overall IHP architecture and DDD principles
-- [ARCHITECTURE_CONTEXTUAL_LHS.md](../../ARCHITECTURE_CONTEXTUAL_LHS.md) - Contextual LHS calculation details
-- [HOW_IT_WORKS.md](../HOW_IT_WORKS.md) - User-facing explanation of anticipation algorithm
+- [OVERVIEW.md](./OVERVIEW.md) - Overall IHP architecture and DDD principles
+- [../users/HOW_IT_WORKS.md](../users/HOW_IT_WORKS.md) - User-facing explanation of anticipation algorithm
+- [../contributors/CONTRIBUTING.md](../contributors/CONTRIBUTING.md) - Contributor workflow and documentation policy
 
 ---
 
@@ -313,9 +318,7 @@ cycles = await update_cycles_for_window(device_id, start_time, end_time)
 
 ---
 
-**Document Status:** ✅ **APPROVED** - Ready for implementation
+**Document Status:** Reference architecture
 
-**Review Cycle:** Quarterly (next review: May 2026)
-
-**Maintainer:** IHP Architecture Team
+**Maintainer:** IHP maintainers
 

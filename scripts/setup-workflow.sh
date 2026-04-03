@@ -75,7 +75,7 @@ echo ""
 echo "  Allez sur : https://github.com/RastaChaum/Intelligent-Heating-Pilot/settings/branches"
 echo ""
 echo "  📋 Suivez les instructions dans :"
-echo "     .github/RC_MIGRATION_GUIDE.md"
+echo "     docs/maintainers/RELEASE_PROCESS.md"
 echo ""
 echo "  Ou lisez directement :"
 cat << 'EOF'

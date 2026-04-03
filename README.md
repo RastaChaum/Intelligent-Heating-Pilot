@@ -12,7 +12,7 @@ A Home Assistant integration that learns your heating system and automatically s
 
 ## What IHP Does
 
-```
+```text
 📅 Next heating: 18:00 (target 21°C)
 🧠 Learned slope: 2.3°C/hour
 ⏰ Start time: 16:42 (calculated automatically)
@@ -27,23 +27,23 @@ IHP monitors your VTherm, learns how fast your room heats, and triggers your sch
 
 ### 1. Install via HACS
 
-```
+```text
 HACS → Integrations → ⋮ → Custom repositories
 → Add: https://github.com/RastaChaum/Intelligent-Heating-Pilot
 → Search "Intelligent Heating Pilot" → Download → Restart HA
 ```
 
-**[Full installation guide →](docs/INSTALLATION.md)**
+**[Full installation guide →](docs/users/INSTALLATION.md)**
 
 ### 2. Configure
 
-```
+```text
 Settings → Devices & Services → + Add Integration
 → Search "Intelligent Heating Pilot"
 → Select VTherm + Scheduler → Submit
 ```
 
-**[Full configuration guide →](docs/CONFIGURATION.md)**
+**[Full configuration guide →](docs/users/CONFIGURATION.md)**
 
 ### 3. Let It Learn
 
@@ -51,7 +51,7 @@ Settings → Devices & Services → + Add Integration
 - After 20+ cycles: very accurate predictions
 - No manual intervention needed
 
-**[How IHP works →](docs/HOW_IT_WORKS.md)**
+**[How IHP works →](docs/users/HOW_IT_WORKS.md)**
 
 ---
 
@@ -85,13 +85,14 @@ Settings → Devices & Services → + Add Integration
 ## 📚 Documentation
 
 | For | Start Here |
-|-----|-----------|
-| **New Users** | [User Guide](docs/USER_GUIDE.md) - Overview and quick navigation |
-| **Installation** | [Installation Guide](docs/INSTALLATION.md) - HACS or manual setup |
-| **Configuration** | [Configuration Guide](docs/CONFIGURATION.md) - Entity setup and options |
-| **Understanding** | [How IHP Works](docs/HOW_IT_WORKS.md) - Cycle detection and prediction |
-| **Issues** | [Troubleshooting](docs/TROUBLESHOOTING.md) - Common problems and fixes |
-| **Contributors** | [Contributing Guide](CONTRIBUTING.md) - Development and architecture |
+| --- | --- |
+| **New Users** | [User Guide](docs/users/USER_GUIDE.md) - Overview and quick navigation |
+| **Installation** | [Installation Guide](docs/users/INSTALLATION.md) - HACS or manual setup |
+| **Configuration** | [Configuration Guide](docs/users/CONFIGURATION.md) - Entity setup and options |
+| **Understanding** | [How IHP Works](docs/users/HOW_IT_WORKS.md) - Cycle detection and prediction |
+| **Issues** | [Troubleshooting](docs/users/TROUBLESHOOTING.md) - Common problems and fixes |
+| **Contributors** | [Contributing Guide](docs/contributors/CONTRIBUTING.md) - Development workflow and standards |
+| **Documentation Hub** | [docs/README.md](docs/README.md) - Full user, contributor, and maintainer docs |
 
 **Quick Links:** [Changelog](CHANGELOG.md) · [Report Bug](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/new?template=bug_report.md) · [Discussions](https://github.com/RastaChaum/Intelligent-Heating-Pilot/discussions) · [Releases](https://github.com/RastaChaum/Intelligent-Heating-Pilot/releases)
 
@@ -100,6 +101,7 @@ Settings → Devices & Services → + Add Integration
 ## 💡 Key Concepts
 
 **Learned Heating Slope** - How fast your room heats (°C/hour)
+
 - Calculated from detected heating cycles (start temp → end temp)
 - Refined over time with trimmed mean algorithm
 - Used to predict exact start time for next event
@@ -107,27 +109,20 @@ Settings → Devices & Services → + Add Integration
 **Example:** To heat 3°C at 2°C/hour → Start 90 minutes early ✅
 
 **Vacation Mode** - No action needed!
+
 - IHP automatically stops when scheduler disabled
 - Re-enables when you turn scheduler back on
 - Preserves learned data across vacation periods
 
 ---
 
-## 🛠️ Services
-
-Reset learning data if you modify your heating system:
-
-Choose your path below based on who you are:
-
----
-
----
-
 Contributions welcome! Report bugs, suggest features, or submit code improvements.
 
-**[Read Contributing Guide →](CONTRIBUTING.md)**
+**[Read Contributing Guide →](docs/contributors/CONTRIBUTING.md)**
 
-For technical architecture: [Architecture Documentation](ARCHITECTURE.md)
+For technical architecture: [Architecture Overview](docs/architecture/OVERVIEW.md)
+
+For all long-form documentation: [Documentation Hub](docs/README.md)
 
 ---
 

@@ -21,7 +21,6 @@ You are an expert technical writer specializing in Home Assistant custom integra
 **Out of scope (never touch):**
 - `.github/agents/` — agent role definitions
 - `.github/CONTRIBUTOR_STANDARDS.md`, `.github/WORKFLOW_MODEL.md`, `.github/copilot-instructions.md`
-- `ARCHITECTURE.md`
 - Any file primarily targeting developers or contributors
 
 ---
