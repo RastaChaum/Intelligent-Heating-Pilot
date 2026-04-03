@@ -162,8 +162,11 @@ docs: ...     # Documentation Agent
 
 - **No unsolicited markdown reports** — summaries go in PR descriptions or conversation
 - **No French in code or documentation** — all code artifacts in English
-- `CONTRIBUTOR_STANDARDS.md` is the single source of truth for dev standards
+- `docs/contributors/DEVELOPMENT_STANDARDS.md` is the single source of truth for dev standards
 - Docstrings explain the "why", not just the "what"
+- User and contributor documentation belongs in `docs/`
+- Architecture references belong in `docs/architecture/`; maintainer procedures belong in `docs/maintainers/`
+- Do not commit non-standard documentation files at the repository root
 
 ---
 
@@ -195,6 +198,6 @@ class HASchedulerAdapter:
 
 - `.github/copilot-instructions.md` — full DDD/SOLID/TDD rules with examples
 - `.github/agents/TESTING_STRATEGY.md` — BDD vs TDD decision guide
-- `.github/CONTRIBUTOR_STANDARDS.md` — team development standards
-- `.github/WORKFLOW_MODEL.md` — detailed one-PR-per-feature model
+- `docs/contributors/DEVELOPMENT_STANDARDS.md` — team development standards
+- `docs/contributors/WORKFLOW_MODEL.md` — detailed one-PR-per-feature model
 - `ARCHITECTURE.md` — component architecture overview

@@ -5,7 +5,7 @@
 **This document is for direct Copilot interactions.** For team-based development:
 
 - **See [`.github/agents/`](./agents/README.md)** for specialized agent roles and orchestration workflow
-- **See [`.github/CONTRIBUTOR_STANDARDS.md`](./CONTRIBUTOR_STANDARDS.md)** for practical development standards
+- **See [`docs/contributors/DEVELOPMENT_STANDARDS.md`](../docs/contributors/DEVELOPMENT_STANDARDS.md)** for practical development standards
 
 ## 🤖 Local Agent Invocation
 
@@ -60,7 +60,7 @@ The **infrastructure layer** bridges the domain to Home Assistant:
 
 All new features must be developed using **Hybrid BDD/TDD strategy** to avoid redundancy and maximize clarity.
 
-**⚠️ MANDATORY**: Agents MUST follow the comprehensive testing strategy defined in [`.github/agents/TESTING_STRATEGY.md`](.github/agents/TESTING_STRATEGY.md)
+**⚠️ MANDATORY**: Agents MUST follow the comprehensive testing strategy defined in [`agents/TESTING_STRATEGY.md`](./agents/TESTING_STRATEGY.md)
 
 ### Quick Decision Guide
 
@@ -141,7 +141,9 @@ tests/
 1. **No unsolicited documentation** - Do NOT create markdown files to document changes, summarize work, or write reports UNLESS explicitly requested by the user.
 2. **Code-level documentation required** - Docstrings and inline comments are mandatory and should be maintained.
 3. **PR descriptions only** - Summaries of work belong in pull request descriptions or conversation responses, not in repository markdown files.
-4. **CONTRIBUTOR_STANDARDS.md** - This is the single source of truth for development standards (see `.github/CONTRIBUTOR_STANDARDS.md`). Keep it updated with team learnings.
+4. **DEVELOPMENT_STANDARDS.md** - This is the single source of truth for development standards (see `docs/contributors/DEVELOPMENT_STANDARDS.md`). Keep it updated with team learnings.
+5. **Docs location policy** - User and contributor documentation belongs in `docs/`; architecture docs belong in `docs/architecture/`; maintainer procedures belong in `docs/maintainers/`.
+6. **Root markdown policy** - Do not add non-standard documentation files at the repository root. Keep the root limited to standard GitHub entry documents such as `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, and `LICENSE`.
 
 ### Example: Testing with Interfaces
 

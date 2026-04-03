@@ -28,7 +28,7 @@ These features are planned for future versions:
 ### 1. Install IHP
 Follow [Installation Guide](INSTALLATION.md)
 
-### 2. Configure IHP  
+### 2. Configure IHP
 Follow [Configuration Guide](CONFIGURATION.md)
 
 ### 3. Learn How It Works
@@ -118,6 +118,12 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 5. Update entities, click Submit
 6. Integration reloads automatically
 
+## Related Documentation
+
+- [Architecture Overview](../architecture/OVERVIEW.md)
+- [Contributor Guide](../contributors/CONTRIBUTING.md)
+- [Documentation Hub](../README.md)
+
 ---
 
 ## 💡 Tips & Best Practices
@@ -154,9 +160,10 @@ Check Home Assistant logs if:
 
 ## 🔗 Related Documentation
 
-- **[CHANGELOG](../CHANGELOG.md)** - What's new in this version?
-- **[Architecture Guide](../ARCHITECTURE.md)** - For developers: How IHP is built
-- **[CONTRIBUTING Guide](../CONTRIBUTING.md)** - How to contribute improvements
+- **[CHANGELOG](../../CHANGELOG.md)** - What's new in this version?
+- **[Architecture Guide](../architecture/OVERVIEW.md)** - For developers: How IHP is built
+- **[CONTRIBUTING Guide](../contributors/CONTRIBUTING.md)** - How to contribute improvements
+- **[Documentation Hub](../README.md)** - Full documentation map
 
 ---
 

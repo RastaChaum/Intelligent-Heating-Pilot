@@ -69,6 +69,8 @@ NOT: temperature_gain / 60 minutes
 
 This makes the slope more accurate by only counting the time when the room was actually heating.
 
+For the system structure and DDD boundaries behind these calculations, see [Architecture Overview](../architecture/OVERVIEW.md).
+
 ### Filters Applied Before LHS Calculation
 
 Before a cycle contributes to LHS:
@@ -559,7 +561,7 @@ Then check Home Assistant logs for detailed calculations and decision-making.
 
 - **[Configuration Guide](CONFIGURATION.md)** - How to set up IHP
 - **[Troubleshooting](TROUBLESHOOTING.md)** - Common issues and solutions
-- **[Architecture Guide](../ARCHITECTURE.md)** - For developers: How IHP is built
+- **[Architecture Guide](../architecture/OVERVIEW.md)** - For developers: How IHP is built
 
 ---
 

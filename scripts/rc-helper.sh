@@ -314,7 +314,7 @@ Workflow typique:
      - Le merge déclenche la release finale
 
 Documentation:
-  Voir AUTOMATED_RELEASE_GUIDE.md pour plus de détails
+    Voir docs/maintainers/RELEASE_PROCESS.md pour plus de détails
 EOF
 }
 

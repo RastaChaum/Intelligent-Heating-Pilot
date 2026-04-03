@@ -44,6 +44,6 @@ validation is enforced through YAML front matter plus `.specify/scripts/bash/val
 
 ## Documentation Index
 
-1. [../WORKFLOW_MODEL.md](../WORKFLOW_MODEL.md) — end-to-end speckit workflow
+1. [../../docs/contributors/WORKFLOW_MODEL.md](../../docs/contributors/WORKFLOW_MODEL.md) — end-to-end speckit workflow
 2. [../copilot-instructions.md](../copilot-instructions.md) — architectural and development constraints
 3. [TESTING_STRATEGY.md](TESTING_STRATEGY.md) — BDD vs technical test decision framework

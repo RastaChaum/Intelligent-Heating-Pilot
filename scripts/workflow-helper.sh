@@ -151,7 +151,7 @@ function show_workflow() {
 
       → Choisissez le type (major/minor/patch)
       → Version incrémentée (v0.4.4 → v0.5.0-rc1)
-      → GITHUB_RELEASE_v0.5.0-rc1.md créé
+            → GitHub release notes préparées pour v0.5.0-rc1
       → Tag v0.5.0-rc1 créé
       → Pre-release GitHub créée
       → Issue de suivi créée
