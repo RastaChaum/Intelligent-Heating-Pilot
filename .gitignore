@@ -207,3 +207,9 @@ marimo/_lsp/
 __marimo__/
 examples/config/
 lcov.info
+
+# speckit transient artifacts (kept on disk for local governance checks, not committed)
+specs/*/plan.md
+specs/*/tasks.md
+specs/*/quickstart.md
+specs/*/checklists/
