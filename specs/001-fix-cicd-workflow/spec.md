@@ -87,15 +87,15 @@ Releases API and verifying the workflow step exits with an error before any rele
 
 **Acceptance Scenarios**:
 
-1. **Given** an `integration`→`main` merge has occurred, **When** no RC tag exists for the current version, **Then** the promotion workflow fails and does NOT create a GitHub release.
+1. **Given** an `integration`→`main` merge has occurred, **When** no RC tag exists for the current version, **Then** the promotion workflow fails immediately on the RC verification step, and does NOT create a GitHub release, does NOT open a CHANGELOG PR, and does NOT delete any pre-releases.
 2. **Given** an `integration`→`main` merge has occurred, **When** at least one RC exists for the current version, **Then** the promotion workflow creates the final release and cleans up pre-releases.
 
 ---
 
 ### Edge Cases
 
-- What if `CHANGELOG.md` is modified in the PR but only outside the `[Unreleased]` section?
-  → The check must specifically verify the diff intersects the `[Unreleased]` section content.
+- What if `CHANGELOG.md` is modified in the PR but only outside the `[Unreleased]` section (e.g., a past version's notes are edited)?
+  → The check must extract added lines (`+` prefix) from the diff that fall strictly between the `## [Unreleased]` header and the next `## [` header. If no such lines exist, the check fails.
 - What if no `[Unreleased]` section exists in `CHANGELOG.md`?
   → The check must fail with a message indicating the section is missing.
 - What if the version in `manifest.json` on `integration` was not bumped relative to `main`?
@@ -107,11 +107,11 @@ Releases API and verifying the workflow step exits with an error before any rele
 
 ### Functional Requirements
 
-- **FR-001**: The `feature-fix-pr.yml` workflow MUST cause a CI failure (non-zero exit) when the PR does not include a modification touching the `[Unreleased]` section of `CHANGELOG.md`.
+- **FR-001**: The `feature-fix-pr.yml` workflow MUST cause a CI failure (non-zero exit) when the diff of the PR branch against `origin/integration` does not include at least one added line (`+`) located within the `[Unreleased]` section of `CHANGELOG.md` (i.e., between the `## [Unreleased]` header and the next `## [` version header).
 - **FR-002**: The failure message in FR-001 MUST include a suggested template for the appropriate change type (`Added` for features, `Fixed` for fixes).
-- **FR-003**: The `integration-pr.yml` workflow MUST cause a CI failure when no GitHub pre-release matching the pattern `vX.Y.Z-rcN` exists for the version in `manifest.json`.
-- **FR-004**: The `integration-pr.yml` workflow MUST cause a CI failure when the PR source branch is not `integration`.
-- **FR-005**: The `promote-rc-to-release.yml` workflow MUST fail before creating any release artifact if no RC pre-release exists for the current version.
+- **FR-003**: The `integration-pr.yml` workflow MUST cause a CI failure (non-zero exit) when no GitHub pre-release matching the pattern `vX.Y.Z-rcN` exists for the version in `manifest.json`. The SC-002 guarantee (blocked 100% of the time) requires this check to be registered as a **required status check** in the `main` branch protection rules; this is an operational prerequisite documented in the Assumptions section.
+- **FR-004**: The `integration-pr.yml` workflow MUST fail with a non-zero exit when the PR source branch is not `integration`. This MUST be implemented as an explicit guard step (not a job-level `if:` condition, which produces a `skipped` status that does not block merges). The workflow trigger (`on: pull_request: branches: [main]`) already restricts execution to PRs targeting `main`; FR-004 only concerns the source branch check within that scope.
+- **FR-005**: The `promote-rc-to-release.yml` workflow MUST fail fast (non-zero exit on the RC verification step) if no RC pre-release exists for the current version. When this step fails, no subsequent steps SHALL execute — no GitHub release is created, no CHANGELOG PR is opened, and no pre-release cleanup is performed.
 - **FR-006**: All failure steps MUST output a human-readable error message explaining what is missing and what action the contributor must take.
 - **FR-007**: No existing passing scenarios must be broken; only missing `exit 1` guards need to be added.
 - **FR-008**: No new workflow files are to be created; changes are confined to the three existing files: `feature-fix-pr.yml`, `integration-pr.yml`, and `promote-rc-to-release.yml`.
@@ -132,15 +132,23 @@ Releases API and verifying the workflow step exits with an error before any rele
 ### Measurable Outcomes
 
 - **SC-001**: A PR from a feature/fix branch that does not touch `CHANGELOG.md` is blocked by CI (check status = failed) 100% of the time.
-- **SC-002**: A PR from `integration` to `main` is blocked by CI when no RC exists for the current version 100% of the time.
+- **SC-002**: A PR from `integration` to `main` is blocked by CI when no RC exists for the current version 100% of the time, provided the `validate-integration-pr` job is registered as a required status check in the `main` branch protection rules (see Assumptions).
 - **SC-003**: A PR from any branch other than `integration` to `main` is blocked immediately with a clear error.
 - **SC-004**: The `promote-rc-to-release.yml` workflow never creates a final GitHub release when no RC has been published.
 - **SC-005**: All existing passing CI scenarios continue to pass after the fix (zero regressions).
 
+## Clarifications
+
+### Session 2026-04-03
+
+- Q: At what level should the CHANGELOG check operate — file presence in the diff, or actual added content within the `[Unreleased]` section? → A: Content level — the diff must include at least one added line (`+`) within the `[Unreleased]` section (between `## [Unreleased]` and the next `## [` header).
+- Q: When the RC verification fails in `promote-rc-to-release.yml`, should the job fail fast (no subsequent steps run) or skip only the destructive steps? → A: Fail fast — `exit 1` on the RC verification step; no subsequent steps execute (no release created, no CHANGELOG PR opened, no pre-release cleanup).
+- Q: For SC-002 ("blocked 100% of the time"), is documenting branch protection as a required status check part of the spec scope? → A: Yes — the spec must explicitly state that the `validate-integration-pr` job and the `Check CHANGELOG update` step must be registered as required status checks in branch protection rules to provide the 100% blocking guarantee. — via the existing job-level `if:` condition (produces `skipped`, not `failure`) or via an explicit guard step? → A: Explicit guard step (`exit 1`) so the status is `failure` and blocks the merge. The `on: pull_request: branches: [main]` trigger already restricts the workflow to PRs targeting `main`; no scope change occurs.
+
 ## Assumptions
 
 - The project relies on GitHub branch protection rules to enforce required status checks.
-  The `Check CHANGELOG update` step in `feature-fix-pr.yml` must be listed as a required check.
+  Both the `Check CHANGELOG update` step in `feature-fix-pr.yml` and the `validate-integration-pr` job in `integration-pr.yml` MUST be registered as required status checks on their respective target branches (`integration` and `main`) for the 100% blocking guarantees in SC-001 and SC-002 to hold.
 - `custom_components/intelligent_heating_pilot/manifest.json` is the single source of truth for
   the current version number.
 - GitHub Releases (not git tags alone) are the authoritative source for RC existence, consistent
