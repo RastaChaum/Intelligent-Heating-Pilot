@@ -84,7 +84,8 @@ jobs:
             | sort -V | tail -1)
           RC_VERSION=$(echo "$LATEST_RC" | sed 's/^v//; s/-rc[0-9]*$//')
 
-          if [ -n "$LATEST_RC" ] && [ "$RC_VERSION" != "$MAIN_VERSION" ]; then
+          NEWER=$(printf '%s\n%s\n' "$RC_VERSION" "$MAIN_VERSION" | sort -V | tail -1)
+          if [ -n "$LATEST_RC" ] && [ "$NEWER" = "$RC_VERSION" ] && [ "$RC_VERSION" != "$MAIN_VERSION" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "rc_tag=$LATEST_RC" >> $GITHUB_OUTPUT
             echo "✅ Release candidate $LATEST_RC existe (v${MAIN_VERSION} → v${RC_VERSION})"
