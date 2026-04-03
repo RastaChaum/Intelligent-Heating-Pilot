@@ -41,13 +41,33 @@ jobs:
             SECTION="Fixed"
           fi
 
-          HEAD_UNRELEASED=$(awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' CHANGELOG.md \
-            | grep -v '^[[:space:]]*$')
-          BASE_UNRELEASED=$(git show origin/integration:CHANGELOG.md \
-            | awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' \
-            | grep -v '^[[:space:]]*$')
+          HEAD_CHANGELOG_CONTENT=$(cat CHANGELOG.md)
+          BASE_CHANGELOG_CONTENT=$(git show origin/integration:CHANGELOG.md)
 
-          NEW_LINES=$(diff <(echo "$BASE_UNRELEASED") <(echo "$HEAD_UNRELEASED") \
+          if ! printf '%s\n' "$HEAD_CHANGELOG_CONTENT" | grep -q '^## \[Unreleased\]'; then
+            echo "❌ CHANGELOG.md is missing the ## [Unreleased] header"
+            echo "Please add an entry under ## [Unreleased] describing your change:"
+            echo ""
+            echo "  ## [Unreleased]"
+            echo ""
+            echo "  ### $SECTION"
+            echo "  - [User-facing description of your change]"
+            exit 1
+          fi
+
+          if ! printf '%s\n' "$BASE_CHANGELOG_CONTENT" | grep -q '^## \[Unreleased\]'; then
+            echo "❌ Base CHANGELOG.md on origin/integration is missing the ## [Unreleased] header"
+            exit 1
+          fi
+
+          HEAD_UNRELEASED=$(printf '%s\n' "$HEAD_CHANGELOG_CONTENT" \
+            | awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' \
+            | grep -v '^[[:space:]]*$' || true)
+          BASE_UNRELEASED=$(printf '%s\n' "$BASE_CHANGELOG_CONTENT" \
+            | awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' \
+            | grep -v '^[[:space:]]*$' || true)
+
+          NEW_LINES=$(diff <(printf '%s\n' "$BASE_UNRELEASED") <(printf '%s\n' "$HEAD_UNRELEASED") \
             | grep '^>' | wc -l)
 
           if [ "$NEW_LINES" -eq 0 ]; then

@@ -45,7 +45,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          RC_COUNT=$(gh release list --json tagName,isPrerelease \
+          RC_COUNT=$(gh release list --limit 100 --json tagName,isPrerelease \
             | jq -r --arg v "$VERSION" \
                 '[.[] | select(.isPrerelease and (.tagName | test("^v" + $v + "-rc[0-9]+$")))] | length')
           if [ "$RC_COUNT" -eq 0 ]; then

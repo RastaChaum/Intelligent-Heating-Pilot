@@ -78,8 +78,8 @@ jobs:
         run: |
           VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
 
-          LATEST_RC=$(gh release list --limit 20 --json tagName,isPrerelease \
-            | jq -r --arg v "$VERSION" '.[] | select(.isPrerelease and (.tagName | startswith("v\($v)-rc"))) | .tagName' \
+          LATEST_RC=$(gh release list --limit 100 --json tagName,isPrerelease \
+            | jq -r --arg v "$VERSION" '.[] | select(.isPrerelease and (.tagName | test("^v" + $v + "-rc[0-9]+$"))) | .tagName' \
             | sort -V | tail -1)
           if [ -n "$LATEST_RC" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
