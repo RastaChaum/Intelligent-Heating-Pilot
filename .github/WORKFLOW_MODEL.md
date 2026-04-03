@@ -1,54 +1,40 @@
 # Workflow Model: One PR Per Feature (Iterative)
 
-**TL;DR**: All agents commit to the SAME feature branch. No new PRs at each phase. Iterative refinement until done.
+**TL;DR**: The repository uses speckit workflow agents only. Each stage writes to the
+same feature branch and a different speckit agent performs the critical review.
 
 ## Visual Workflow
 
-```
+```text
 Issue/Feature
   ↓
-[Create branch: git checkout integration && git checkout -b feature/issue-XXX]
+[Create branch via speckit.specify]
   ↓
-PHASE 1: SOFTWARE ARCHITECT
-  ├─ Creates interfaces, value objects, skeletons
-  ├─ Commits to feature/issue-XXX
-  ├─ Pushes to GitHub
-  └─ [GATE: User reviews design]
-     If feedback → Architect refactors, commits more, pushes again
-     If approved → Continue to Phase 2
+PHASE 1: speckit.specify
+  ├─ Creates spec.md
+  └─ Reviewed by speckit.clarify
 
-PHASE 2: QA ENGINEER
-  ├─ Creates BDD features + unit tests (RED)
-  ├─ Commits to feature/issue-XXX
-  ├─ Pushes to GitHub
-  └─ [GATE: User reviews test coverage]
-     If feedback → QA adds more tests, commits more, pushes again
-     If approved → Continue to Phase 3
+PHASE 2: speckit.plan
+  ├─ Creates plan.md and design artifacts
+  └─ Reviewed by speckit.checklist
 
-PHASE 3: DEVELOPER
-  ├─ Implements code to pass tests (GREEN)
-  ├─ Commits to feature/issue-XXX
-  ├─ Pushes to GitHub
-  └─ [GATE: User validates functionality]
-     If bugs found → Developer fixes, commits more, pushes again
-     If approved → Continue to Phase 4
+PHASE 3: speckit.tasks
+  ├─ Creates tasks.md
+  └─ Reviewed by speckit.analyze
 
-PHASE 4: TECH LEAD
-  ├─ Peer review with Architect/QA Engineer (via PR comments)
-  ├─ Refactors if needed, commits
-  ├─ Pushes to feature/issue-XXX
-  └─ Merges feature/issue-XXX → integration
-     (This closes the single PR)
+PHASE 4: speckit.implement
+  ├─ Executes tasks on the same feature branch
+  └─ Reviewed by speckit.review
 
-PHASE 5: DOCUMENTATION AGENT
-  └─ Updates CHANGELOG, docs
+PHASE 5: speckit.docs
+  └─ Updates documentation when impacted, then returns to speckit.review if needed
 ```
 
 ## Key Rules
 
 ### ✅ **DO**
 
-- **Commit to the SAME branch** all phases
+- **Commit to the SAME branch** all speckit phases
 - **Push after each commit** (so PM can see progress)
 - **If feedback received**: Refactor and commit more (don't create new PR)
 - **Iterate until satisfied** at each gate before moving to next phase
@@ -56,48 +42,48 @@ PHASE 5: DOCUMENTATION AGENT
 ### ❌ **DON'T**
 
 - Don't create new PRs at each phase
-- Don't create new branches (Architect design, QA tests, Developer impl, etc.)
+- Don't create per-role branches or revive legacy role-based agent flow
 - Don't use different commit strategies—be consistent
 - Don't skip gates (user needs to validate before continuing)
 
 ## Example Flow (Iterative)
 
-### Gate 1: Design Review
+### Gate 1: Specification and Plan Review
 
-```
-[User feedback]: "Can you move the temperature calculation to domain?"
-[Architect action]: Refactor, git commit, git push
+```text
+[Reviewer feedback]: "The boundary between domain and infrastructure is underspecified"
+[Producer action]: Refine the artifact, commit, push
 [User re-approval]: "Good, proceed to testing"
 ```
 
 NO new PR created. Just more commits on the same branch.
 
-### Gate 2: Test Coverage
+### Gate 2: Task and Test Coverage Review
 
-```
-[User feedback]: "Add tests for missing outdoor sensor"
-[QA action]: Add scenario + unit test, git commit, git push
+```text
+[Reviewer feedback]: "Add regression coverage for missing outdoor sensor"
+[Producer action]: Update plan/tasks, commit, push
 [User re-approval]: "Coverage looks good"
 ```
 
 Again, same branch, more commits.
 
-### Gate 3: Functionality
+### Gate 3: Implementation Review
 
-```
-[User feedback]: "Heating doesn't start on cold days"
-[Developer action]: Fix bug, git commit, git push, verify tests still GREEN
+```text
+[Reviewer feedback]: "Implementation violates the documented boundary"
+[Producer action]: Fix implementation, commit, push, verify tests still GREEN
 [User re-approval]: "Bug fixed, looks good"
 ```
 
 Same branch, more commits.
 
-### Merge (Tech Lead)
+### Final Validation
 
-```
-[Tech Lead]: Review all commits (Architect + QA + Developer + own refactors)
-[Tech Lead]: Engage peers in PR comments
-[Tech Lead]: Once satisfied, merge feature/issue-XXX → main
+```text
+[speckit.review]: Verify code, tests, and documentation impact
+[speckit.docs]: Update documentation when needed
+[Repository workflow]: Merge once review and governance checks pass
 ```
 
 Single PR, now closed with merge.
@@ -106,7 +92,7 @@ Single PR, now closed with merge.
 
 Use conventional commits to keep history clear:
 
-```
+```bash
 git commit -m "design: add IHeatingCycleCache interface"
 git commit -m "design: fix domain layer purity in coordinator"
 git commit -m "test(bdd): add heating cycle cache scenario"
@@ -119,7 +105,7 @@ git commit -m "refactor(app): simplify coordinator orchestration"
 ## Benefits of This Model
 
 | Aspect | Benefit |
-|--------|---------|
+| ------ | ------- |
 | **Single PR** | Fewer GitHub notifications, cleaner history |
 | **Iterative** | Design/test/implementation can be refined without new PRs |
 | **Collaborative** | All peer feedback in one PR conversation |
@@ -128,18 +114,18 @@ git commit -m "refactor(app): simplify coordinator orchestration"
 
 ## Common Questions
 
-**Q: What if the Architect made a huge mistake?**
-A: They refactor and commit more to the same branch. The branch isn't closed until Tech Lead merges. User can always reject the entire branch if needed.
+**Q: What if an early artifact is wrong?**
+A: The producing speckit agent refines it on the same branch and the paired reviewer checks it again.
 
-**Q: What if QA finds a huge hole in coverage?**
-A: QA adds more tests, commits, pushes. No new PR. Developer then implements against the expanded test suite.
+**Q: What if analyze or review finds a coverage hole?**
+A: Update tasks or implementation on the same branch, then rerun the paired review stage.
 
 **Q: What if the branch gets out of sync with integration?**
 A: Rebase before merge (or merge integration into feature first). Tech Lead handles this during finalization.
 
-**Q: Can agents work in parallel (Architect + QA + Developer at same time)?**
-A: Not on the same branch—merge conflicts. Workflow is sequential by design (ensures Quality gates).
+**Q: Can agents work in parallel?**
+A: Read-only analysis can run in parallel, but artifact production stays sequential so each reviewer validates a stable input.
 
 ---
 
-**Reference**: See [Project Manager instructions](./agents/project_manager.agent.md) for detailed phase description.
+**Reference**: See [agents/README.md](./agents/README.md) for the supported speckit agent set.

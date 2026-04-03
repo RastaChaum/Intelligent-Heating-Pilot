@@ -57,9 +57,14 @@ You **MUST** consider the user input before proceeding (if not empty).
 1. **Setup**: Run `.specify/scripts/bash/setup-plan.sh --json` from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load context**: Read FEATURE_SPEC and `.specify/memory/constitution.md`. Load IMPL_PLAN template (already copied).
-  Record the producer agent for the plan and a different critical reviewer agent.
+  Validate the specification first with `bash .specify/scripts/bash/validate-governance.sh --stage spec`.
 
 3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:
+  - Define the domain model, value objects, entities, interfaces, and integration boundaries
+  - Define application orchestration and infrastructure responsibilities without implementation logic
+  - Produce acceptance criteria in Gherkin-ready form and concrete test scenario guidance
+  - Keep domain assumptions compatible with zero `homeassistant.*` imports and standard-library-only domain logic
+  - Ensure public contracts are typed and documented
    - Fill Technical Context (mark unknowns as "NEEDS CLARIFICATION")
    - Fill Constitution Check section from constitution
    - Evaluate gates (ERROR if violations unjustified)
@@ -68,7 +73,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Phase 1: Update agent context by running the agent script
    - Re-evaluate Constitution Check post-design
 
-4. **Stop and report**: Command ends after Phase 2 planning. Report branch, IMPL_PLAN path, and generated artifacts.
+4. **Stop and report**: Command ends after Phase 2 planning. Preserve the YAML front matter in `plan.md`. Before reporting, run `bash .specify/scripts/bash/validate-governance.sh --stage plan` and fix any governance errors. Then report branch, IMPL_PLAN path, and generated artifacts.
 
 5. **Check for extension hooks**: After reporting, check if `.specify/extensions.yml` exists in the project root.
    - If it exists, read it and look for entries under the `hooks.after_plan` key
@@ -152,3 +157,6 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 - Use absolute paths
 - ERROR on gate failures or unresolved clarifications
+- Do not write implementation logic in planning artifacts
+- Prefer explicit interfaces and immutable domain data structures in the design
+- When the design implies code skeletons or contracts, method bodies must remain stubs only

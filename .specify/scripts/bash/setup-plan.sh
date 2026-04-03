@@ -35,6 +35,12 @@ unset _paths_output
 # Check if we're on a proper feature branch (only for git repos)
 check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
 
+if ! bash "$SCRIPT_DIR/validate-governance.sh" --stage spec >/dev/null; then
+    echo "ERROR: Governance validation failed for spec.md" >&2
+    echo "Run .specify/scripts/bash/validate-governance.sh --stage spec for details." >&2
+    exit 1
+fi
+
 # Ensure the feature directory exists
 mkdir -p "$FEATURE_DIR"
 

@@ -3,47 +3,48 @@
 ## Project Overview
 
 Home Assistant custom integration for intelligent preheating using predictive algorithms and machine learning.
-Repository: https://github.com/RastaChaum/Intelligent-Heating-Pilot
+Repository: <https://github.com/RastaChaum/Intelligent-Heating-Pilot>
 
 ---
 
-## Invoking Specialized Agent Roles
+## Invoking Speckit Agents
 
-Claude does not use `@mentions`. To activate a specialized role, say:
+This repository now uses speckit workflow agents instead of legacy role-based agents.
 
-> "Adopte le rôle de **[role]** défini dans `.github/agents/[file]` et..."
-
-| Role | File | Responsibilities |
-|------|------|-----------------|
-| Project Manager | `project_manager.agent.md` | Orchestration, validation gates, delegation |
-| Software Architect | `software_architect.agent.md` | DDD/SOLID design, interfaces, skeletons (no logic) |
-| QA Engineer | `qa_engineer.agent.md` | BDD + TDD tests (RED phase) |
-| Developer | `developer.agent.md` | Implementation to make tests GREEN |
-| Tech Lead | `tech_lead.agent.md` | Code review, refactoring, merge validation |
-| Documentation Agent | `documentation_agent.agent.md` | CHANGELOG, README, release notes |
+| Speckit Agent | File | Responsibilities |
+| ------------- | ---- | ---------------- |
+| Specify | `speckit.specify.agent.md` | Write the feature specification |
+| Clarify | `speckit.clarify.agent.md` | Critically challenge the specification |
+| Plan | `speckit.plan.agent.md` | Produce the architecture and implementation plan |
+| Checklist | `speckit.checklist.agent.md` | Critically challenge requirement and plan quality |
+| Tasks | `speckit.tasks.agent.md` | Generate dependency-ordered execution tasks |
+| Analyze | `speckit.analyze.agent.md` | Critically review spec, plan, and tasks consistency |
+| Implement | `speckit.implement.agent.md` | Execute the implementation |
+| Review | `speckit.review.agent.md` | Perform final critical review |
+| Docs | `speckit.docs.agent.md` | Update impacted documentation |
 
 **Typical entry point** — for a feature or bug fix:
 
-```
-Adopte le rôle de Project Manager défini dans .github/agents/project_manager.agent.md
-et orchestre le développement de [feature/bug description].
+```text
+Use speckit.specify for the feature request, then follow the speckit workflow through
+clarify, plan, checklist, tasks, analyze, implement, review, and docs when needed.
 ```
 
 ---
 
 ## Development Workflow (One PR per feature)
 
-```
+```text
 Feature/Bug Request
-  → [Branch: git checkout integration && git checkout -b feature/issue-XXX]
-  → Software Architect  (design + skeletons, commit "design: ...")
-  → [GATE: user reviews design]
-  → QA Engineer         (BDD + TDD tests RED, commit "test: ...")
-  → [GATE: user reviews coverage]
-  → Developer           (implementation GREEN, commit "feat/fix: ...")
-  → [GATE: user validates behavior]
-  → Tech Lead           (review, refactor, merge to integration)
-  → Documentation Agent (CHANGELOG, docs update)
+    → speckit.specify
+    → speckit.clarify
+    → speckit.plan
+    → speckit.checklist
+    → speckit.tasks
+    → speckit.analyze
+    → speckit.implement
+    → speckit.review
+    → speckit.docs (if documentation is impacted)
 ```
 
 All agents commit to **the same feature branch**. No new PRs between phases.
@@ -52,7 +53,7 @@ All agents commit to **the same feature branch**. No new PRs between phases.
 
 ## Architecture: Domain-Driven Design (CRITICAL)
 
-```
+```text
 custom_components/intelligent_heating_pilot/
 ├── domain/              # Pure business logic — ZERO homeassistant.* imports
 │   ├── value_objects/   # @dataclass(frozen=True) immutable carriers
@@ -86,19 +87,19 @@ custom_components/intelligent_heating_pilot/
 Full strategy: `.github/agents/TESTING_STRATEGY.md`
 
 **Use pytest-bdd (Gherkin)** for:
+
 - Business-observable behavior (happy paths, user scenarios)
 - Features a Product Owner can understand
 
 **Use pytest unit tests (TDD)** for:
+
 - Edge cases (None, empty, overflow)
 - Exception handling, error paths
 - Algorithmic correctness
 
-**Non-redundancy rule**: if a happy path is covered by BDD, do NOT duplicate it as a unit test.
-
 ### Test Structure
 
-```
+```text
 tests/
 ├── features/            # BDD: Gherkin .feature files + conftest.py step definitions
 ├── unit/

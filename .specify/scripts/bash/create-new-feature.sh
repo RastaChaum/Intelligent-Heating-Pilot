@@ -364,6 +364,12 @@ if [ "$DRY_RUN" != true ]; then
         fi
     fi
 
+    if ! bash "$SCRIPT_DIR/validate-governance.sh" --stage spec >/dev/null; then
+        >&2 echo "Error: Generated spec template does not satisfy governance validation."
+        >&2 echo "Run .specify/scripts/bash/validate-governance.sh --stage spec for details."
+        exit 1
+    fi
+
     # Inform the user how to persist the feature variable in their own shell
     printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
 fi

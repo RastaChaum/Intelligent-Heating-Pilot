@@ -11,6 +11,7 @@
 #   --json              Output in JSON format
 #   --require-tasks     Require tasks.md to exist (for implementation phase)
 #   --include-tasks     Include tasks.md in AVAILABLE_DOCS list
+#   --validate-governance <stage>
 #   --paths-only        Only output path variables (no validation)
 #   --help, -h          Show help message
 #
@@ -26,20 +27,29 @@ JSON_MODE=false
 REQUIRE_TASKS=false
 INCLUDE_TASKS=false
 PATHS_ONLY=false
+VALIDATE_GOVERNANCE=""
 
-for arg in "$@"; do
-    case "$arg" in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --json)
             JSON_MODE=true
+            shift
             ;;
         --require-tasks)
             REQUIRE_TASKS=true
+            shift
             ;;
         --include-tasks)
             INCLUDE_TASKS=true
+            shift
             ;;
         --paths-only)
             PATHS_ONLY=true
+            shift
+            ;;
+        --validate-governance)
+            VALIDATE_GOVERNANCE="$2"
+            shift 2
             ;;
         --help|-h)
             cat << 'EOF'
@@ -51,6 +61,8 @@ OPTIONS:
   --json              Output in JSON format
   --require-tasks     Require tasks.md to exist (for implementation phase)
   --include-tasks     Include tasks.md in AVAILABLE_DOCS list
+    --validate-governance <stage>
+                                            Validate governance metadata for spec, plan, tasks, implement, or final
   --paths-only        Only output path variables (no prerequisite validation)
   --help, -h          Show this help message
 
@@ -61,6 +73,9 @@ EXAMPLES:
   # Check implementation prerequisites (plan.md + tasks.md required)
   ./check-prerequisites.sh --json --require-tasks --include-tasks
 
+    # Check implementation prerequisites and governance metadata
+    ./check-prerequisites.sh --json --require-tasks --include-tasks --validate-governance implement
+
   # Get feature paths only (no validation)
   ./check-prerequisites.sh --paths-only
 
@@ -68,7 +83,7 @@ EOF
             exit 0
             ;;
         *)
-            echo "ERROR: Unknown option '$arg'. Use --help for usage information." >&2
+            echo "ERROR: Unknown option '$1'. Use --help for usage information." >&2
             exit 1
             ;;
     esac
@@ -130,6 +145,18 @@ if $REQUIRE_TASKS && [[ ! -f "$TASKS" ]]; then
     echo "ERROR: tasks.md not found in $FEATURE_DIR" >&2
     echo "Run /speckit.tasks first to create the task list." >&2
     exit 1
+fi
+
+if [[ -n "$VALIDATE_GOVERNANCE" ]]; then
+    VALIDATE_ARGS=(--stage "$VALIDATE_GOVERNANCE")
+    if $JSON_MODE; then
+        VALIDATE_ARGS+=(--json)
+    fi
+    if ! bash "$SCRIPT_DIR/validate-governance.sh" "${VALIDATE_ARGS[@]}" >/dev/null; then
+        echo "ERROR: Governance validation failed for stage '$VALIDATE_GOVERNANCE'" >&2
+        echo "Run .specify/scripts/bash/validate-governance.sh --stage $VALIDATE_GOVERNANCE for details." >&2
+        exit 1
+    fi
 fi
 
 # Build list of available documents

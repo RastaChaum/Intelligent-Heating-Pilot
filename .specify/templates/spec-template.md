@@ -1,11 +1,18 @@
+---
+stage: specification
+producer_agent: speckit.specify
+critical_reviewer_agent: speckit.clarify
+plan_reviewer_agent: speckit.checklist
+tasks_reviewer_agent: speckit.analyze
+implementation_reviewer_agent: speckit.review
+review_status: pending
+---
+
 # Feature Specification: [FEATURE NAME]
 
 **Feature Branch**: `[###-feature-name]`
 **Created**: [DATE]
 **Status**: Draft
-**Producer Agent**: [agent-name]
-**Critical Reviewer Agent**: [different-agent-name]
-**Review Status**: Pending
 **Input**: User description: "$ARGUMENTS"
 
 ## User Scenarios & Testing *(mandatory)*

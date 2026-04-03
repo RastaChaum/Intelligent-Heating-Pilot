@@ -1,14 +1,17 @@
 ---
-
 description: "Task list template for feature implementation"
+stage: task-generation
+producer_agent: speckit.tasks
+critical_reviewer_agent: speckit.analyze
+implementation_producer_agent: speckit.implement
+implementation_reviewer_agent: speckit.review
+review_status: pending
 ---
 
 # Tasks: [FEATURE NAME]
 
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
-**Producer Agent**: [agent-name]
-**Critical Reviewer Agent**: [different-agent-name]
 
 **Tests**: Tests are MANDATORY. Every user story MUST include:
 
@@ -157,7 +160,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Purpose**: Ensure a different agent critically reviews the completed work before closure
 
-- [ ] TXXX Assign a critical reviewer agent different from the implementation agent
+- [ ] TXXX Assign `speckit.review` as a critical reviewer agent different from the implementation agent
 - [ ] TXXX Run critical review for constitution compliance, requirement traceability, and test evidence
 - [ ] TXXX Resolve or explicitly accept all review findings before closure
 
@@ -169,7 +172,7 @@ Examples of foundational tasks (adjust based on your project):
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] TXXX [P] Documentation updates in docs/
+- [ ] TXXX [P] Documentation updates in README.md, CHANGELOG.md, docs/, or contributor docs when impacted
 - [ ] TXXX Code cleanup and refactoring
 - [ ] TXXX Performance optimization across all stories
 - [ ] TXXX [P] Additional unit robustness tests in tests/unit/

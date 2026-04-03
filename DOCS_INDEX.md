@@ -118,12 +118,16 @@ If you want to **contribute code or documentation**:
 - **[.github/AGENT_WORKFLOW.md](.github/AGENT_WORKFLOW.md)** - Complete orchestrated workflow
 - **[.github/agents/README.md](.github/agents/README.md)** - Agent system overview
 
-**🤖 Specialized Agents**:
-- **[software_architect.agent.md](.github/agents/software_architect.agent.md)** - Design interfaces and types
-- **[qa_engineer.agent.md](.github/agents/qa_engineer.agent.md)** - TDD Red phase (write tests)
-- **[developer.agent.md](.github/agents/developer.agent.md)** - TDD Green (implement code)
-- **[tech_lead.agent.md](.github/agents/tech_lead.agent.md)** - Review and refactor
-- **[documentation_agent.agent.md](.github/agents/documentation_agent.agent.md)** - Update docs
+**🤖 Speckit Workflow Agents**:
+- **[speckit.specify.agent.md](.github/agents/speckit.specify.agent.md)** - Write the feature specification
+- **[speckit.clarify.agent.md](.github/agents/speckit.clarify.agent.md)** - Critically challenge the specification
+- **[speckit.plan.agent.md](.github/agents/speckit.plan.agent.md)** - Produce the architecture and implementation plan
+- **[speckit.checklist.agent.md](.github/agents/speckit.checklist.agent.md)** - Challenge requirement and plan quality
+- **[speckit.tasks.agent.md](.github/agents/speckit.tasks.agent.md)** - Generate the task list
+- **[speckit.analyze.agent.md](.github/agents/speckit.analyze.agent.md)** - Review spec, plan, and tasks consistency
+- **[speckit.implement.agent.md](.github/agents/speckit.implement.agent.md)** - Execute implementation
+- **[speckit.review.agent.md](.github/agents/speckit.review.agent.md)** - Final critical review
+- **[speckit.docs.agent.md](.github/agents/speckit.docs.agent.md)** - Update impacted documentation
 
 **📋 General Development**:
 - **[.github/copilot-instructions.md](.github/copilot-instructions.md)** - AI-assisted development guidelines

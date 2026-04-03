@@ -1,5 +1,10 @@
 ---
 description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
+handoffs:
+  - label: Critical Review
+    agent: speckit.review
+    prompt: Critically review the implementation before closure
+    send: true
 ---
 
 ## Critical Review Requirement
@@ -7,6 +12,16 @@ description: Execute the implementation plan by processing and executing all tas
 This command may execute implementation work, but it MUST NOT self-approve the
 result. Completion requires a different agent to perform a critical review of the
 implemented work against the constitution, spec, plan, tasks, and test evidence.
+
+## Implementation Rules
+
+- Read failing tests first and implement only what is required to satisfy the declared behavior.
+- Do not introduce extra features beyond the specification and approved tasks.
+- Keep domain code free of direct Home Assistant usage.
+- Preserve typed contracts, Google-style docstrings, and callee-side validation.
+- Prefer minimal changes first; refactor only after tests are green.
+- Use Poetry for Python commands and tests.
+- If the change affects user or contributor documentation, update those files as part of implementation or hand off to `speckit.docs`.
 
 ## User Input
 
@@ -52,7 +67,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-1. Run `.specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. Run `.specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks --validate-governance implement` from repo root and parse FEATURE_DIR and AVAILABLE_DOCS list. All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Check checklists status** (if FEATURE_DIR/checklists/ exists):
    - Scan all checklist files in the checklists/ directory
@@ -155,7 +170,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios
    - **Core development**: Implement models, services, CLI commands, endpoints
    - **Integration work**: Database connections, middleware, logging, external services
-   - **Polish and validation**: Unit tests, performance optimization, documentation
+  - **Polish and validation**: Unit tests, performance optimization, documentation
 
 8. Progress tracking and error handling:
    - Report progress after each completed task
@@ -171,7 +186,10 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Validate that tests pass and coverage meets requirements
    - Confirm the implementation follows the technical plan
   - Report final status with summary of completed work
-  - Hand off to a different critical reviewer agent before closure
+  - Hand off to `speckit.review` before closure
+  - Before handoff, run `bash .specify/scripts/bash/validate-governance.sh --stage implement`
+
+10. If documentation updates are required after implementation stabilizes, delegate them to `speckit.docs` or complete the matching documentation tasks before review closure.
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.
 

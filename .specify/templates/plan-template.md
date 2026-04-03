@@ -1,7 +1,13 @@
+---
+stage: planning
+producer_agent: speckit.plan
+critical_reviewer_agent: speckit.checklist
+review_status: pending
+---
+
 # Implementation Plan: [FEATURE]
 
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Producer Agent**: [agent-name] | **Critical Reviewer Agent**: [different-agent-name]
 **Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
