@@ -119,8 +119,9 @@ planning, task generation, implementation, and final validation. Each stage MUST
   design, stateless service expectations, logging obligations, and documentation impact.
 
 Every implementation task list MUST include tests before implementation for the
-same scope and a final critical review task performed by an agent different from
-the implementation agent.
+same scope, a mandatory update to the `CHANGELOG.md` `[Unreleased]` section with
+a user-facing description of the change, and a final critical review task performed
+by an agent different from the implementation agent.
 
 ## Governance
 

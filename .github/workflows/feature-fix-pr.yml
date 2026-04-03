@@ -33,17 +33,6 @@ jobs:
 
       - name: Check CHANGELOG update
         id: changelog-check
-        run: |
-          if ! git diff origin/integration --name-only | grep -q "CHANGELOG.md"; then
-            echo "updated=false" >> $GITHUB_OUTPUT
-            echo "❌ CHANGELOG.md n'a pas été mis à jour"
-          else
-            echo "updated=true" >> $GITHUB_OUTPUT
-            echo "✅ CHANGELOG.md a été mis à jour"
-          fi
-
-      - name: Suggest CHANGELOG template
-        if: steps.changelog-check.outputs.updated == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -54,26 +43,35 @@ jobs:
             TYPE="Fixed"
           fi
 
-          gh pr comment ${{ github.event.pull_request.number }} --body "⚠️ **CHANGELOG non mis à jour**
+          if ! bash .specify/scripts/bash/check-changelog.sh --check-diff; then
+            echo "updated=false" >> $GITHUB_OUTPUT
 
-          Veuillez ajouter une entrée dans la section \`[Unreleased]\` du CHANGELOG.md :
+            gh pr comment ${{ github.event.pull_request.number }} --body "⚠️ **CHANGELOG not updated**
+
+          Please add an entry in the \`[Unreleased]\` section of CHANGELOG.md:
 
           \`\`\`markdown
           ## [Unreleased]
 
           ### $TYPE
-          - [Description orientée utilisateur de votre changement]
+          - [User-facing description of your change]
           \`\`\`
 
-          **Bonnes pratiques :**
-          - Utilisez un langage simple et compréhensible par l'utilisateur final
-          - Évitez les détails techniques sauf si pertinent
-          - Décrivez le bénéfice, pas l'implémentation
+          **Best practices:**
+          - Use language that is simple and understandable by the end user
+          - Avoid technical details unless relevant
+          - Describe the benefit, not the implementation
 
-          **Exemples :**
-          - ✅ \`Amélioration du calcul du temps de préchauffage\`
-          - ❌ \`Refactorisation de PilotController.calculate_preheat_duration()\`
+          **Examples:**
+          - ✅ \`Improved preheat duration calculation\`
+          - ❌ \`Refactored PilotController.calculate_preheat_duration()\`
           "
+
+            exit 1
+          fi
+
+          echo "updated=true" >> $GITHUB_OUTPUT
+          echo "✅ CHANGELOG.md [Unreleased] section is present and contains content"
 
       - name: Check for documentation updates on features
         if: startsWith(github.head_ref, 'feature-')
