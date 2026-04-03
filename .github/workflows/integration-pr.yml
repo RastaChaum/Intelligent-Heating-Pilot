@@ -12,9 +12,17 @@ permissions:
 
 jobs:
   validate-integration-pr:
-    if: github.head_ref == 'integration'
     runs-on: ubuntu-latest
     steps:
+      - name: Enforce integration-only source branch
+        run: |
+          if [ "${{ github.head_ref }}" != "integration" ]; then
+            echo "❌ Only the 'integration' branch may merge into 'main'."
+            echo "Source branch detected: ${{ github.head_ref }}"
+            exit 1
+          fi
+          echo "✅ Source branch is 'integration'"
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -70,17 +78,18 @@ jobs:
         run: |
           VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
 
-          LATEST_RC=$(gh release list --limit 20 --json tagName,isPrerelease \
-            | jq -r --arg v "$VERSION" '.[] | select(.isPrerelease and (.tagName | startswith("v\($v)-rc"))) | .tagName' \
+          LATEST_RC=$(gh release list --limit 100 --json tagName,isPrerelease \
+            | jq -r --arg v "$VERSION" '.[] | select(.isPrerelease and (.tagName | test("^v" + $v + "-rc[0-9]+$"))) | .tagName' \
             | sort -V | tail -1)
           if [ -n "$LATEST_RC" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "rc_tag=$LATEST_RC" >> $GITHUB_OUTPUT
             echo "✅ Release candidate $LATEST_RC existe"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "rc_tag=" >> $GITHUB_OUTPUT
-            echo "⚠️ Aucune release candidate trouvée pour v${VERSION}"
+            echo "❌ No release candidate found for v${VERSION}."
+            echo "A validated RC (vX.Y.Z-rcN) must exist before merging integration into main."
+            echo "Use the 'Prepare Release Candidate' or 'Increment RC Version' workflows first."
+            exit 1
           fi
 
       - name: Set up Python
@@ -109,6 +118,7 @@ jobs:
           poetry run pytest tests/ -v
 
       - name: Summary comment
+        if: always() && github.head_ref == 'integration'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

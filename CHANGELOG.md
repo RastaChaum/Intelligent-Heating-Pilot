@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI/CD Workflow fixes** – Fixed code quality workflow to properly handle exit codes from linting and test tools
   - Use `set +e`/`set -e` to safely capture exit codes from mypy, pylint and pytest
   - Fixed pylint exit code capture and coverage percentage extraction in `code-quality.yml`
+- **CI/CD Enforcement Gaps** – Converted previously warn-only workflow checks into hard-failing guards to prevent accidental incomplete releases.
+  - Feature/fix PRs now fail immediately when the `[Unreleased]` section of CHANGELOG.md has not been updated (two-pass diff against `origin/integration`)
+  - Integration → main PRs are blocked when the source branch is not `integration` or when no validated RC pre-release (`vX.Y.Z-rcN`) exists for the current version
+  - The release promotion workflow now fails fast when no matching RC pre-release is found before attempting to create a final release
 
 ### Fixed
 - **Reset Learning Service** – Fixed the `intelligent_heating_pilot.reset_learning` service which was crashing with a `TypeError` when triggered from Developer Tools or automations. The service now also accepts an `entity_id` parameter so users with multiple IHP devices can choose which device's learning data to reset, consistent with the `calculate_anticipated_start_time` service.
