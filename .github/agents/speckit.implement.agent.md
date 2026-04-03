@@ -2,6 +2,12 @@
 description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
 ---
 
+## Critical Review Requirement
+
+This command may execute implementation work, but it MUST NOT self-approve the
+result. Completion requires a different agent to perform a critical review of the
+implemented work against the constitution, spec, plan, tasks, and test evidence.
+
 ## User Input
 
 ```text
@@ -164,7 +170,8 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Check that implemented features match the original specification
    - Validate that tests pass and coverage meets requirements
    - Confirm the implementation follows the technical plan
-   - Report final status with summary of completed work
+  - Report final status with summary of completed work
+  - Hand off to a different critical reviewer agent before closure
 
 Note: This command assumes a complete task breakdown exists in tasks.md. If tasks are incomplete or missing, suggest running `/speckit.tasks` first to regenerate the task list.
 

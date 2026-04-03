@@ -7,10 +7,14 @@ description: "Task list template for feature implementation"
 
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
+**Producer Agent**: [agent-name]
+**Critical Reviewer Agent**: [different-agent-name]
 
 **Tests**: Tests are MANDATORY. Every user story MUST include:
-- unit tests for robustness, boundaries, and out-of-range behavior;
-- BDD tests in Gherkin for user-observable behavior.
+
+- BDD tests in Gherkin for user-observable behavior;
+- technical validation tasks for the failure, boundary, and algorithmic risks that
+  are actually relevant to that story.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -148,6 +152,14 @@ Examples of foundational tasks (adjust based on your project):
 **Checkpoint**: All user stories should now be independently functional
 
 ---
+
+## Phase N: Critical Review & Validation
+
+**Purpose**: Ensure a different agent critically reviews the completed work before closure
+
+- [ ] TXXX Assign a critical reviewer agent different from the implementation agent
+- [ ] TXXX Run critical review for constitution compliance, requirement traceability, and test evidence
+- [ ] TXXX Resolve or explicitly accept all review findings before closure
 
 [Add more user story phases as needed, following the same pattern]
 

@@ -3,14 +3,18 @@
 **Feature Branch**: `[###-feature-name]`
 **Created**: [DATE]
 **Status**: Draft
+**Producer Agent**: [agent-name]
+**Critical Reviewer Agent**: [different-agent-name]
+**Review Status**: Pending
 **Input**: User description: "$ARGUMENTS"
 
 ## User Scenarios & Testing *(mandatory)*
 
 Constitution-driven test requirements:
+
 - Every user story MUST include at least one BDD scenario written in Gherkin.
-- Every user story MUST define corresponding unit robustness checks for boundary
-  and out-of-range conditions.
+- Every user story MUST define technical validation for the failure, boundary, or
+  algorithmic risks that are actually relevant to that story.
 
 <!--
   IMPORTANT: User stories should be PRIORITIZED as user journeys ordered by importance.
@@ -102,6 +106,19 @@ Constitution-driven test requirements:
   Home Assistant events (emission + subscription).
 - **FR-008**: System MUST provide explicit typing expectations for all public
   interfaces involved in the feature.
+- **FR-009**: System MUST identify any logging obligations introduced or changed
+  by the feature.
+- **FR-010**: System MUST state whether new services remain stateless or justify
+  any shared mutable state.
+
+### Workflow Requirements *(mandatory)*
+
+- **WR-001**: The specification MUST name a producer agent and a different
+  critical reviewer agent.
+- **WR-002**: The specification MUST identify the expected reviewer agent for the
+  planning, task-generation, and implementation stages.
+- **WR-003**: Any unresolved reviewer challenge MUST be tracked explicitly before
+  implementation begins.
 
 *Example of marking unclear requirements:*
 
@@ -115,6 +132,8 @@ Constitution-driven test requirements:
 - **DR-002**: Contributor-facing documentation updates MUST be identified in scope
   when architecture, rules, or development workflow change.
 - **DR-003**: All new or updated documentation and code artifacts MUST be in English.
+- **DR-004**: Documentation changes MUST avoid duplicated guidance and ad-hoc
+  markdown reports unless explicitly requested.
 
 ### Key Entities *(include if feature involves data)*
 

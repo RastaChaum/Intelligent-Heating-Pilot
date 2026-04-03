@@ -6,7 +6,7 @@ handoffs:
     prompt: Create a plan for the spec. I am building with...
   - label: Clarify Spec Requirements
     agent: speckit.clarify
-    prompt: Clarify specification requirements
+      prompt: Critically challenge the specification for ambiguity, missing constraints, and weak acceptance criteria
     send: true
 ---
 
@@ -97,6 +97,8 @@ Given that feature description, do this:
        If empty: ERROR "No feature description provided"
     2. Extract key concepts from description
        Identify: actors, actions, data, constraints
+    2.5. Name the producer agent for this specification and name a different
+         critical reviewer agent before drafting final content
     3. For unclear aspects:
        - Make informed guesses based on context and industry standards
        - Only mark with [NEEDS CLARIFICATION: specific question] if:

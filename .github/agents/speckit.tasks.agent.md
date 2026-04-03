@@ -3,7 +3,7 @@ description: Generate an actionable, dependency-ordered tasks.md for the feature
 handoffs:
   - label: Analyze For Consistency
     agent: speckit.analyze
-    prompt: Run a project analysis for consistency
+    prompt: Critically review the generated tasks for constitution compliance, coverage gaps, and weak sequencing
     send: true
   - label: Implement Project
     agent: speckit.implement
@@ -61,6 +61,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Required**: plan.md (tech stack, libraries, structure), spec.md (user stories with priorities)
    - **Optional**: data-model.md (entities), contracts/ (interface contracts), research.md (decisions), quickstart.md (test scenarios)
    - Note: Not all projects have all documents. Generate tasks based on what's available.
+  - Record the producer agent for tasks and a different critical reviewer agent.
 
 3. **Execute task generation workflow**:
    - Load plan.md and extract tech stack, libraries, project structure

@@ -1,6 +1,7 @@
 # Implementation Plan: [FEATURE]
 
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
+**Producer Agent**: [agent-name] | **Critical Reviewer Agent**: [different-agent-name]
 **Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
@@ -31,13 +32,17 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- [ ] Home Assistant compliance gate: design aligns with https://developers.home-assistant.io/
-- [ ] Hexagonal DDD gate: domain logic is isolated from infrastructure concerns
-- [ ] Typed OOP gate: public interfaces and core models are strongly typed
-- [ ] SOLID microservices gate: responsibilities are split into cohesive services
-- [ ] Event-driven gate: inter-service coordination uses HA events and subscriptions
-- [ ] Test strategy gate: TDD plan includes both unit robustness tests and BDD Gherkin scenarios
-- [ ] Documentation gate: user and contributor docs are identified, concise, and English-only
+- [ ] Home Assistant compliance gate: design aligns with <https://developers.home-assistant.io/>
+- [ ] Hexagonal DDD gate: domain logic has zero `homeassistant.*` imports and uses explicit interfaces
+- [ ] Immutable domain gate: domain value objects are immutable and domain tests can run without Home Assistant
+- [ ] Typed OOP gate: public interfaces, docstrings, and models are strongly typed and documented
+- [ ] Stateless service gate: shared mutable process-wide state is absent or explicitly justified
+- [ ] Cohesive integration gate: service boundaries and direct calls vs HA events are justified explicitly
+- [ ] Test strategy gate: BDD scenarios and technical validation match the feature's real risks
+- [ ] Logging gate: DEBUG/INFO obligations and user-facing device naming are identified
+- [ ] Poetry gate: commands, tooling, and examples use Poetry for Python execution
+- [ ] Agent review gate: the plan names a producer agent and a different critical reviewer agent
+- [ ] Documentation gate: user and contributor docs are identified, concise, easy to navigate, and English-only
 
 ## Project Structure
 
@@ -105,6 +110,6 @@ directories captured above]
 > **Fill ONLY if Constitution Check has violations that must be justified**
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
+| --------- | ---------- | ----------------------------------- |
 | [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
 | [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |

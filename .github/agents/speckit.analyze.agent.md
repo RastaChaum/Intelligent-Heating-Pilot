@@ -13,6 +13,9 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Goal
 
 Identify inconsistencies, duplications, ambiguities, and underspecified items across the three core artifacts (`spec.md`, `plan.md`, `tasks.md`) before implementation. This command MUST run only after `/speckit.tasks` has successfully produced a complete `tasks.md`.
+When invoked as a reviewer, this agent MUST be critical rather than confirmatory:
+it should actively look for weak assumptions, missing coverage, and constitution
+violations.
 
 ## Operating Constraints
 
