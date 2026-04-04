@@ -558,7 +558,22 @@ class HeatingApplication:
             )
 
     def _on_extraction_complete(self) -> None:
-        """Trigger sensor recalculation after background extraction completes."""
+        """Trigger LHS cache refresh and sensor recalculation after extraction.
+
+        Background extraction updates the LHS in LhsLifecycleManager but not
+        the HeatingApplication._lhs_cache that sensors read from. This method
+        schedules an async refresh of the cache before triggering the event
+        bridge recalculation, ensuring sensors see the updated LHS value.
+        """
+        self.hass.async_create_task(self._refresh_and_recalculate())
+
+    async def _refresh_and_recalculate(self) -> None:
+        """Refresh LHS caches then trigger sensor recalculation.
+
+        Ensures _lhs_cache is up-to-date before the event bridge fires
+        the anticipation event that sensors read from.
+        """
+        await self.refresh_caches()
         if self._event_bridge is not None:
             self._event_bridge._request_recalculate()
 
