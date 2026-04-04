@@ -23,8 +23,9 @@ jobs:
         run: |
           BRANCH="${{ github.head_ref }}"
 
-          if [[ ! "$BRANCH" =~ ^(copilot/)?(feature|fix)/issue-[0-9]+ ]]; then
-            echo "❌ La branche doit suivre le format 'feature/issue-XXX' ou 'fix/issue-XXX'"
+          if [[ ! "$BRANCH" =~ ^(copilot/)?(feature|fix)/issue-[0-9]+ ]] && \
+             [[ ! "$BRANCH" =~ ^[0-9]{3,}-[a-z][a-z0-9-]*$ ]]; then
+            echo "❌ La branche doit suivre le format 'feature/issue-XXX', 'fix/issue-XXX' ou 'NNN-description'"
             echo "Nom actuel : $BRANCH"
             exit 1
           fi
@@ -34,16 +35,55 @@ jobs:
       - name: Check CHANGELOG update
         id: changelog-check
         run: |
-          if ! git diff origin/integration --name-only | grep -q "CHANGELOG.md"; then
-            echo "updated=false" >> $GITHUB_OUTPUT
-            echo "❌ CHANGELOG.md n'a pas été mis à jour"
-          else
-            echo "updated=true" >> $GITHUB_OUTPUT
-            echo "✅ CHANGELOG.md a été mis à jour"
+          BRANCH="${{ github.head_ref }}"
+          SECTION="Added"
+          if [[ "$BRANCH" =~ ^(copilot/)?fix/ ]]; then
+            SECTION="Fixed"
           fi
 
+          HEAD_CHANGELOG_CONTENT=$(cat CHANGELOG.md)
+          BASE_CHANGELOG_CONTENT=$(git show origin/integration:CHANGELOG.md)
+
+          if ! printf '%s\n' "$HEAD_CHANGELOG_CONTENT" | grep -q '^## \[Unreleased\]'; then
+            echo "❌ CHANGELOG.md is missing the ## [Unreleased] header"
+            echo "Please add an entry under ## [Unreleased] describing your change:"
+            echo ""
+            echo "  ## [Unreleased]"
+            echo ""
+            echo "  ### $SECTION"
+            echo "  - [User-facing description of your change]"
+            exit 1
+          fi
+
+          if ! printf '%s\n' "$BASE_CHANGELOG_CONTENT" | grep -q '^## \[Unreleased\]'; then
+            echo "❌ Base CHANGELOG.md on origin/integration is missing the ## [Unreleased] header"
+            exit 1
+          fi
+
+          HEAD_UNRELEASED=$(printf '%s\n' "$HEAD_CHANGELOG_CONTENT" \
+            | awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' \
+            | grep -v '^[[:space:]]*$' || true)
+          BASE_UNRELEASED=$(printf '%s\n' "$BASE_CHANGELOG_CONTENT" \
+            | awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' \
+            | grep -v '^[[:space:]]*$' || true)
+
+          NEW_LINES=$(diff <(printf '%s\n' "$BASE_UNRELEASED") <(printf '%s\n' "$HEAD_UNRELEASED") \
+            | grep '^>' | wc -l)
+
+          if [ "$NEW_LINES" -eq 0 ]; then
+            echo "❌ No new lines added to the [Unreleased] section of CHANGELOG.md"
+            echo "Please add an entry under ## [Unreleased] describing your change:"
+            echo ""
+            echo "  ## [Unreleased]"
+            echo ""
+            echo "  ### $SECTION"
+            echo "  - [User-facing description of your change]"
+            exit 1
+          fi
+          echo "✅ CHANGELOG [Unreleased] section updated ($NEW_LINES new line(s))"
+
       - name: Suggest CHANGELOG template
-        if: steps.changelog-check.outputs.updated == 'false'
+        if: steps.changelog-check.outcome == 'failure'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -94,9 +134,10 @@ jobs:
           fi
 
       - name: Set up Python
+        id: setup-python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.13.2'
+          python-version: '3.13'
 
       - name: Install Poetry
         uses: snok/install-poetry@v1
@@ -109,9 +150,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: .venv
-          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            venv-${{ runner.os }}-
+            venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-
 
       - name: Install dependencies
         run: poetry install --no-interaction

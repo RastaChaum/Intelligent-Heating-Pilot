@@ -12,9 +12,17 @@ permissions:
 
 jobs:
   validate-integration-pr:
-    if: github.head_ref == 'integration'
     runs-on: ubuntu-latest
     steps:
+      - name: Enforce integration-only source branch
+        run: |
+          if [ "${{ github.head_ref }}" != "integration" ]; then
+            echo "❌ Only the 'integration' branch may merge into 'main'."
+            echo "Source branch detected: ${{ github.head_ref }}"
+            exit 1
+          fi
+          echo "✅ Source branch is 'integration'"
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -53,7 +61,7 @@ jobs:
       - name: Check CHANGELOG has unreleased content
         id: changelog-check
         run: |
-          UNRELEASED=$(awk '/## \[Unreleased\]/,/## \[/' CHANGELOG.md | sed '1d;$d' | grep -v '^$' | wc -l)
+          UNRELEASED=$(awk '/## \[Unreleased\]/{flag=1; next} /^## \[[0-9]/{flag=0} flag' CHANGELOG.md | grep -v '^[[:space:]]*$' | wc -l)
 
           if [ "$UNRELEASED" -eq "0" ]; then
             echo "has_content=false" >> $GITHUB_OUTPUT
@@ -68,19 +76,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
+          MAIN_VERSION=$(git show origin/main:custom_components/intelligent_heating_pilot/manifest.json | jq -r '.version')
 
-          LATEST_RC=$(gh release list --limit 20 --json tagName,isPrerelease \
-            | jq -r --arg v "$VERSION" '.[] | select(.isPrerelease and (.tagName | startswith("v\($v)-rc"))) | .tagName' \
+          # Find the latest RC for any version newer than the current main release
+          LATEST_RC=$(gh release list --limit 100 --json tagName,isPrerelease \
+            | jq -r '.[] | select(.isPrerelease and (.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-rc[0-9]+$"))) | .tagName' \
             | sort -V | tail -1)
-          if [ -n "$LATEST_RC" ]; then
+          RC_VERSION=$(echo "$LATEST_RC" | sed 's/^v//; s/-rc[0-9]*$//')
+
+          NEWER=$(printf '%s\n%s\n' "$RC_VERSION" "$MAIN_VERSION" | sort -V | tail -1)
+          if [ -n "$LATEST_RC" ] && [ "$NEWER" = "$RC_VERSION" ] && [ "$RC_VERSION" != "$MAIN_VERSION" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "rc_tag=$LATEST_RC" >> $GITHUB_OUTPUT
-            echo "✅ Release candidate $LATEST_RC existe"
+            echo "✅ Release candidate $LATEST_RC existe (v${MAIN_VERSION} → v${RC_VERSION})"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "rc_tag=" >> $GITHUB_OUTPUT
-            echo "⚠️ Aucune release candidate trouvée pour v${VERSION}"
+            echo "❌ Aucune release candidate trouvée pour une version supérieure à v${MAIN_VERSION}."
+            echo "Un RC validé (vX.Y.Z-rcN avec X.Y.Z > ${MAIN_VERSION}) doit exister avant de merger integration dans main."
+            echo "Utilisez le workflow 'Prepare Release Candidate' ou 'Increment RC Version'."
+            exit 1
           fi
 
       - name: Set up Python
@@ -109,6 +122,7 @@ jobs:
           poetry run pytest tests/ -v
 
       - name: Summary comment
+        if: always() && github.head_ref == 'integration'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

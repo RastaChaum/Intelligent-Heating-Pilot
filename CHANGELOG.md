@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Migration from agent workflow to speckit workflow** – Agents now follow the speckit workflow for feature development, replacing the legacy role-based agent workflow
+- **CI/CD Workflow fixes** – Fixed code quality workflow to properly handle exit codes from linting and test tools
+  - Use `set +e`/`set -e` to safely capture exit codes from mypy, pylint and pytest
+  - Fixed pylint exit code capture and coverage percentage extraction in `code-quality.yml`
+- **CI/CD Enforcement Gaps** – Converted previously warn-only workflow checks into hard-failing guards to prevent accidental incomplete releases.
+  - Feature/fix PRs now fail immediately when the `[Unreleased]` section of CHANGELOG.md has not been updated (two-pass diff against `origin/integration`)
+  - Integration → main PRs are blocked when the source branch is not `integration` or when no validated RC pre-release (`vX.Y.Z-rcN`) exists for the current version
+  - The release promotion workflow now fails fast when no matching RC pre-release is found before attempting to create a final release
+
+### Fixed
+- **Reset Learning Service** – Fixed the `intelligent_heating_pilot.reset_learning` service which was crashing with a `TypeError` when triggered from Developer Tools or automations. The service now also accepts an `entity_id` parameter so users with multiple IHP devices can choose which device's learning data to reset, consistent with the `calculate_anticipated_start_time` service.
+- **Integration PR CHANGELOG check** – Fixed the `awk` range pattern in `integration-pr.yml` that caused the `[Unreleased]` section extraction to terminate immediately because `## [Unreleased]` matched both the start and end selectors. Now uses a flag-based approach with `^## \[[0-9]` as the end guard.
+- **Integration PR RC detection** – Fixed the RC pre-release check to find any RC newer than the current main release, rather than filtering by the version in `manifest.json`. This correctly handles the case where the RC is tagged with the *next* version (e.g. `v0.6.3-rc2`) while `manifest.json` on `integration` still reports the *current* version (`0.6.2`). Updated `scripts/test-rc-check.sh` with five scenarios covering the new version-agnostic logic.
+
+## [0.6.2] - 2026-03-25
+
 ### Added
 - **Native Home Assistant Schedule Support** ([#122](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/122)) – IHP can now use native `schedule.*` entities (from the Home Assistant Scheduler integration) directly as schedulers, in addition to the existing `switch.*` scheduler entities.
   - `schedule.*` entities are automatically discovered and listed in the scheduler selector
@@ -21,17 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **CI/CD Workflow overhaul** – Eliminated duplicate quality checks, standardized Poetry install, and corrected branch naming convention
   - Quality checks no longer run twice when a PR is open on a feature branch
-  - Branch naming validation now enforces the documented `feature/issue-XXX` format (including the `issue-<number>` suffix)
-  - All workflows now use `snok/install-poetry@v1` with dependency caching for faster builds
+  - Branch naming validation now enforces the documented `feature/issue-XXX` slash format
+  - All workflows now use `snok/install-poetry@v1` with dependency caching for faster runs
   - RC pre-release detection uses the GitHub Releases API instead of git tags (ground truth)
   - Fixed `-beta` vs `-rcN` inconsistency: integration PR check and release promotion now correctly target RC releases
-  - RC release notes are generated on-the-fly by GitHub Actions workflows
+  - RC release notes are generated on-the-fly — no `GITHUB_RELEASE_*.md` files committed to the repository
   - New workflow: GitHub pre-release (dev or RC) is automatically created and updated on every merge to `integration`, keeping it in sync with the CHANGELOG `[Unreleased]` section
-  - Dev pre-release tag creation is now idempotent — force-updates existing tags instead of failing
 - **Agent workflow documentation** – All agent files and workflow docs now explicitly require feature branches to be created from `integration`, not `main`
 
 ### Fixed
-- **Reset Learning Service** – Fixed the `intelligent_heating_pilot.reset_learning` service which was crashing with a `TypeError` when triggered from Developer Tools or automations. The service now also accepts an `entity_id` parameter so users with multiple IHP devices can choose which device's learning data to reset, consistent with the `calculate_anticipated_start_time` service.
 - **Dead Time Startup Hydration** ([#124](https://github.com/RastaChaum/Intelligent-Heating-Pilot/pull/124)) – Fixed an issue where IHP would fall back to the configured default dead time (0 s) right after a Home Assistant restart, before any heating cycles had been extracted from the Recorder.
   - When `auto_learning` is enabled and no cycles are available yet, the use case now falls back to the last persisted learned dead time from storage
   - Dead time learned from actual cycles always takes precedence; configured default is only used when both cycle data and stored value are unavailable
@@ -39,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Preheating is now only reverted when the anticipated start time has actually shifted by more than the configured tolerance
 - **Config Flow Scheduler Discovery** – Fixed a runtime crash in the scheduler entity selector caused by passing a list of domains to `async_all()`, which only accepts a single domain string or no argument.
   - Both the initial setup flow and options flow now call `async_all()` without arguments and filter by domain in Python
+
+## [0.6.1] - 2026-03-16
+
+### Fixed
 - **Dead Time Thresholds for Floor Heating** – Corrected two default parameters in `_calculate_dead_time_cycle()` that caused all dead time measurements to be silently discarded on floor heating systems:
   - `temp_change_threshold`: `0.1°C` → `0.2°C` to avoid false positives from sensor noise
   - `max_dead_time_minutes`: `60 min` → `180 min` to correctly capture cold-start delays inherent to floor heating (realistic range: 60–120 min)

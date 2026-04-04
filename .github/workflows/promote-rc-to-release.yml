@@ -39,6 +39,23 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Verify RC exists
+        id: rc-check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          RC_COUNT=$(gh release list --limit 100 --json tagName,isPrerelease \
+            | jq -r --arg v "$VERSION" \
+                '[.[] | select(.isPrerelease and (.tagName | test("^v" + $v + "-rc[0-9]+$")))] | length')
+          if [ "$RC_COUNT" -eq 0 ]; then
+            echo "❌ No release candidate found for v${VERSION}."
+            echo "A validated RC (vX.Y.Z-rcN) must exist before promoting to a final release."
+            echo "Use the 'Prepare Release Candidate' or 'Increment RC Version' workflows first."
+            exit 1
+          fi
+          echo "✅ Found ${RC_COUNT} RC(s) for v${VERSION} — proceeding with promotion"
+
       - name: Prepare release notes
         id: release-notes
         env:
@@ -130,11 +147,12 @@ jobs:
             PR_URL="$EXISTING_PR"
             echo "ℹ️ Reusing existing PR: $PR_URL"
           else
+            PR_BODY=$(printf '%s\n\n%s' \
+              "🤖 Automatic CHANGELOG update triggered by the release of v${VERSION}." \
+              "This PR was created automatically by the **Promote RC to Release** workflow after the \`integration\` → \`main\` merge. It replaces the \`[Unreleased]\` section header with the actual version number and today's date.")
             PR_URL=$(gh pr create \
               --title "chore: update CHANGELOG for v$VERSION" \
-              --body "🤖 Automatic CHANGELOG update triggered by the release of v${VERSION}.
-
-This PR was created automatically by the **Promote RC to Release** workflow after the \`integration\` → \`main\` merge. It replaces the \`[Unreleased]\` section header with the actual version number and today's date." \
+              --body "$PR_BODY" \
               --base main \
               --head "$BRANCH")
             echo "✅ PR created: $PR_URL"

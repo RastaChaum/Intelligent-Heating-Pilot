@@ -512,3 +512,9 @@ For each bug-driven test addition, record:
 - Coverage categories (state transitions, edge cases, race conditions, etc.)
 - Verification: Bug-triggered tests FAIL on original, PASS on fix
 - Integration: New tests work seamlessly with existing suite
+
+## Active Technologies
+- YAML (GitHub Actions workflow syntax), Bash (GNU coreutils, awk, diff, git, jq, GitHub CLI `gh`) + `actions/checkout@v6`, `gh` CLI (pre-installed on `ubuntu-latest` runners), `jq` (pre-installed), standard POSIX utilities (001-fix-cicd-workflow)
+
+## Recent Changes
+- 001-fix-cicd-workflow: Added YAML (GitHub Actions workflow syntax), Bash (GNU coreutils, awk, diff, git, jq, GitHub CLI `gh`) + `actions/checkout@v6`, `gh` CLI (pre-installed on `ubuntu-latest` runners), `jq` (pre-installed), standard POSIX utilities
