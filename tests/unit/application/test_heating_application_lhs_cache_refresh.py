@@ -62,12 +62,14 @@ def mock_event_bridge() -> Mock:
 
 def make_app(
     device_config: DeviceConfig,
-    lhs_manager: Mock,
+    lhs_manager: Mock | None,
     event_bridge: Mock | None = None,
 ) -> HeatingApplication:
     """Construct HeatingApplication with mocked dependencies.
 
     Bypasses async_load(); only injects what _on_extraction_complete needs.
+    Note: async_create_task stores the coroutine without awaiting it;
+    async behaviour is tested directly via _refresh_and_recalculate().
     """
     mock_hass = Mock()
     mock_hass.async_create_task = Mock(side_effect=lambda coro: coro)
@@ -154,8 +156,7 @@ class TestLHSCacheRefreshAfterExtraction:
 
         Edge case: _lhs_manager is None (e.g., partially initialized).
         """
-        app = make_app(device_config, lhs_manager=Mock(), event_bridge=mock_event_bridge)
-        app._lhs_manager = None
+        app = make_app(device_config, lhs_manager=None, event_bridge=mock_event_bridge)
         app._lhs_cache = 2.0
 
         # Should not raise
