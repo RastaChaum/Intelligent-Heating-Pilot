@@ -24,7 +24,7 @@ pytest-asyncio = "^1.2.0"
 pytest-homeassistant-custom-component = "^0.13.0"
 pytest-bdd = "^7.2"  # BDD support with Gherkin
 ruff = "^0.6.0"
-mypy = "^1.10"
+mypy = ">=1.10,<3.0"
 types-setuptools = "^68.0.0"
 pysqlite3-binary = "^0.5.4.post2"
 pre-commit = "^3.5.0"
