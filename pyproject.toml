@@ -15,7 +15,7 @@ python = ">=3.13.2,<3.14"
 
 # Runtime dependencies for standalone domain experimentation (keep minimal)
 # Domain code is pure standard library; no extra runtime deps required here.
-pycares = "<5"
+pycares = "<6"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2"
