@@ -22,7 +22,7 @@ pytest = "^8.2"
 # pytest-asyncio 1.2 is required by HA test plugin
 pytest-asyncio = "^1.2.0"
 pytest-homeassistant-custom-component = "^0.13.0"
-pytest-bdd = "^7.2"  # BDD support with Gherkin
+pytest-bdd = ">=7.2,<9.0"  # BDD support with Gherkin
 ruff = "^0.6.0"
 mypy = "^1.10"
 types-setuptools = "^68.0.0"
