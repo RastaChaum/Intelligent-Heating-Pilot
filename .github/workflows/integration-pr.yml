@@ -24,7 +24,7 @@ jobs:
           echo "✅ Source branch is 'integration'"
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
