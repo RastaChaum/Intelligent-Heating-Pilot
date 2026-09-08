@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
         id: setup-python
@@ -33,7 +33,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Cache dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .venv
           key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
@@ -71,7 +71,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
         id: setup-python
@@ -87,7 +87,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Cache dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .venv
           key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
@@ -102,7 +102,7 @@ jobs:
           poetry run pytest tests/unit/ -v --cov=custom_components.intelligent_heating_pilot --cov-report=xml --cov-report=term
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         if: always()
         with:
           file: ./coverage.xml
