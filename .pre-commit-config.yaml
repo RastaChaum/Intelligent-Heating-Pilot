@@ -1,0 +1,71 @@
+# Pre-commit hooks configuration for Intelligent Heating Pilot
+# See https://pre-commit.com for more information
+
+repos:
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(tests/fixtures/|docs/)
+      - id: end-of-file-fixer
+        exclude: ^(tests/fixtures/|docs/)
+      - id: check-yaml
+        args: ['--unsafe']  # Allow custom tags in HA yaml files
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+      - id: detect-private-key
+
+  # Python syntax and import checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-ast  # Verify Python syntax
+      - id: check-builtin-literals
+      - id: check-docstring-first
+      - id: debug-statements  # Check for debugger imports and breakpoints
+
+  # Python code formatting with Ruff
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.0
+    hooks:
+      # Run the linter
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+      # Run the formatter
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # Python type checking with mypy
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        args: [--ignore-missing-imports, --python-version=3.13, --explicit-package-bases, --namespace-packages]
+        additional_dependencies:
+          - types-setuptools
+        files: ^custom_components/intelligent_heating_pilot/
+        exclude: ^tests/
+
+  # Security: Check for common security issues
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: ['-c', 'pyproject.toml']
+        additional_dependencies: ['bandit[toml]', 'pbr']
+        exclude: ^tests/
+
+# Configuration for specific hooks
+default_language_version:
+  python: python3.13
+
+# Prevent committing to main branch directly
+fail_fast: false

@@ -1,0 +1,73 @@
+# ============================================
+# .claudeignore — Intelligent Heating Pilot
+# Limite le contexte envoyé à Claude
+# ============================================
+
+# --- Environnement Python / Build ---
+.venv/
+.vscode/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+*.so
+*.whl
+
+# --- Couverture et rapports ---
+htmlcov/
+coverage.xml
+coverage.lcov
+lcov.info
+.coverage
+.coverage.*
+
+# --- Caches outils ---
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+
+# --- Git internals ---
+.git/
+
+# --- IDE / Editor ---
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Images / Assets binaires ---
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.svg
+
+# --- Lock files (volumineux, peu utiles au contexte) ---
+poetry.lock
+
+# --- Fichiers de release / changelog historiques ---
+GITHUB_RELEASE_*.md
+AUTOMATED_RELEASE_GUIDE.md
+
+# --- GitHub workflows / templates (rarement nécessaires) ---
+.github/workflows/
+.github/ISSUE_TEMPLATE/
+.github/PULL_REQUEST_TEMPLATE.md
+.github/pull_request_template.md
+.github/RELEASE_TEMPLATE.md
+.github/dependabot.yml
+.github/CODEOWNERS
+.github/RC_MIGRATION_GUIDE.md
+.github/README.md
+
+# --- Scripts utilitaires ---
+scripts/
+
+# --- Exemples ---
+examples/

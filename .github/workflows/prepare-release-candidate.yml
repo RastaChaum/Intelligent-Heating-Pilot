@@ -1,0 +1,146 @@
+name: Prepare Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 0.5.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare-rc:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v7
+        with:
+          ref: integration
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate version format
+        id: validate
+        run: |
+          if [[ ! "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Version invalide. Format attendu: X.Y.Z"
+            exit 1
+          fi
+          echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          echo "rc_tag=v${{ inputs.version }}-rc1" >> $GITHUB_OUTPUT
+
+      - name: Check RC tag and release state
+        id: rc_state
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RC_TAG="v${{ inputs.version }}-rc1"
+
+          if git rev-parse "$RC_TAG" >/dev/null 2>&1; then
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+
+            if gh release view "$RC_TAG" --json tagName --jq '.tagName' >/dev/null 2>&1; then
+              echo "release_exists=true" >> $GITHUB_OUTPUT
+              echo "⚠️ Une RC complète existe déjà pour cette version"
+              echo "Utilisez le workflow 'Increment RC Version' pour créer rc2, rc3, etc."
+              exit 1
+            fi
+
+            echo "release_exists=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Le tag $RC_TAG existe déjà, mais la pre-release GitHub est absente"
+            echo "ℹ️ Le workflow va réutiliser ce tag et créer la pre-release manquante"
+          else
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+            echo "release_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Clean up dev pre-release if exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DEV_TAG="v${{ inputs.version }}-dev"
+          # Query GitHub Releases API — source of truth
+          DEV_RELEASE=$(gh release view "$DEV_TAG" --json tagName --jq '.tagName' 2>/dev/null || echo "")
+          if [ -n "$DEV_RELEASE" ]; then
+            echo "🗑️ Suppression de la dev pre-release $DEV_TAG..."
+            gh release delete "$DEV_TAG" --yes 2>/dev/null || true
+            git push origin ":refs/tags/$DEV_TAG" 2>/dev/null || true
+            echo "✅ Dev pre-release supprimée"
+          else
+            echo "ℹ️ Aucune dev pre-release à supprimer"
+          fi
+
+      - name: Extract unreleased changes from CHANGELOG
+        id: changelog
+        run: |
+          # Extraction de la section Unreleased (entre ## [Unreleased] et la prochaine section ##)
+          CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next}/^## \[/{flag=0}flag' CHANGELOG.md)
+
+          # Supprimer les lignes vides au début et à la fin
+          CHANGELOG_CONTENT=$(echo "$CHANGELOG_CONTENT" | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
+
+          if [ -z "$CHANGELOG_CONTENT" ]; then
+            echo "❌ Aucun changement dans la section Unreleased du CHANGELOG.md"
+            echo "Veuillez d'abord documenter vos changements dans CHANGELOG.md"
+            exit 1
+          fi
+
+          # Build complete release notes on-the-fly (no file committed to the repo)
+          {
+            echo "## 🧪 Release Candidate"
+            echo ""
+            echo "Cette version est une **release candidate** destinée aux tests en production et aux beta-testeurs."
+            echo ""
+            echo "$CHANGELOG_CONTENT"
+            echo ""
+            echo "---"
+            echo ""
+            echo "> ⚠️ Cette version est en phase de test. Veuillez remonter tout problème via les Issues GitHub."
+          } > /tmp/rc-notes.md
+          echo "✅ Notes de version prêtes"
+
+      - name: Create RC tag
+        if: steps.rc_state.outputs.tag_exists != 'true'
+        run: |
+          git tag -a "${{ steps.validate.outputs.rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc1" -m "Release candidate pour tests en production." -m "Changements prévus :" -m "$(cat /tmp/rc-notes.md)"
+
+          git push origin "${{ steps.validate.outputs.rc_tag }}"
+
+      - name: Reuse existing RC tag
+        if: steps.rc_state.outputs.tag_exists == 'true'
+        run: |
+          echo "✅ Réutilisation du tag existant ${{ steps.validate.outputs.rc_tag }}"
+
+      - name: Create GitHub Pre-Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.validate.outputs.rc_tag }}" \
+            --title "🧪 v${{ inputs.version }}-rc1 - Release Candidate" \
+            --notes-file /tmp/rc-notes.md \
+            --prerelease \
+            --target integration
+
+      - name: Summary
+        run: |
+          echo "## ✅ Release Candidate créée avec succès" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`${{ steps.validate.outputs.rc_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branche:** \`integration\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Prochaines étapes" >> $GITHUB_STEP_SUMMARY
+          echo "1. Testez la RC en production" >> $GITHUB_STEP_SUMMARY
+          echo "2. Si corrections nécessaires:" >> $GITHUB_STEP_SUMMARY
+          echo "   - Faire les corrections sur \`integration\`" >> $GITHUB_STEP_SUMMARY
+          echo "   - Utiliser le workflow 'Increment RC Version'" >> $GITHUB_STEP_SUMMARY
+          echo "3. Si tout OK:" >> $GITHUB_STEP_SUMMARY
+          echo "   - Créer une PR \`integration\` → \`main\`" >> $GITHUB_STEP_SUMMARY
+          echo "   - Le merge déclenchera la release finale" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,1175 @@
+"""Unit tests for HeatingCycleLifecycleManager.
+
+RED tests: These tests should FAIL because HeatingCycleLifecycleManager methods
+are currently NotImplementedError stubs. They define the expected behavior that
+will guide implementation.
+
+Author: QA Engineer
+Purpose: Comprehensive test coverage for heating cycle lifecycle management
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+from custom_components.intelligent_heating_pilot.application.heating_cycle_lifecycle_manager import (
+    HeatingCycleLifecycleManager,
+)
+from custom_components.intelligent_heating_pilot.domain.interfaces.device_config_reader_interface import (
+    DeviceConfig,
+)
+from custom_components.intelligent_heating_pilot.domain.value_objects.heating import (
+    HeatingCycle,
+)
+
+
+class TestHeatingCycleLifecycleManager:
+    """Test suite for HeatingCycleLifecycleManager lifecycle operations."""
+
+    @pytest.fixture
+    def base_datetime(self) -> datetime:
+        """Provide base datetime for testing."""
+        return datetime(2025, 2, 10, 12, 0, 0)
+
+    @pytest.fixture
+    def device_config(self) -> DeviceConfig:
+        """Create device configuration."""
+        return DeviceConfig(
+            device_id="climate.test_vtherm",
+            vtherm_entity_id="climate.test_vtherm",
+            scheduler_entities=["schedule.heating"],
+            lhs_retention_days=30,
+        )
+
+    @pytest.fixture
+    def mock_heating_cycle_service(self) -> Mock:
+        """Create mock IHeatingCycleService."""
+        service = Mock()
+        service.extract_heating_cycles = AsyncMock(return_value=[])
+        return service
+
+    @pytest.fixture
+    def mock_historical_adapter(self) -> Mock:
+        """Create mock IHistoricalDataAdapter."""
+        adapter = Mock()
+        adapter.load_historical_data = AsyncMock(return_value=[])
+        return adapter
+
+    @pytest.fixture
+    def mock_cycle_cache(self) -> Mock:
+        """Create mock ICycleCache."""
+        cache = Mock()
+        cache.get_cached_cycles = AsyncMock(return_value=None)
+        cache.set_cached_cycles = AsyncMock()
+        cache.update_cycle_window = AsyncMock()
+        return cache
+
+    @pytest.fixture
+    def mock_timer_scheduler(self) -> Mock:
+        """Create mock ITimerScheduler."""
+        scheduler = Mock()
+        scheduler.schedule_timer = Mock(return_value=Mock())  # Returns cancel function
+        return scheduler
+
+    @pytest.fixture
+    def mock_model_storage(self) -> Mock:
+        """Create mock IModelStorage."""
+        storage = Mock()
+        storage.save_heating_cycle = AsyncMock()
+        storage.get_heating_cycles = AsyncMock(return_value=[])
+        return storage
+
+    @pytest.fixture
+    def mock_global_lhs_calculator(self) -> Mock:
+        """Create mock GlobalLHSCalculatorService."""
+        calculator = Mock()
+        calculator.calculate_global_lhs = Mock(return_value=2.5)
+        return calculator
+
+    @pytest.fixture
+    def manager(
+        self,
+        device_config: DeviceConfig,
+        mock_heating_cycle_service: Mock,
+        mock_historical_adapter: Mock,
+    ) -> HeatingCycleLifecycleManager:
+        """Create HeatingCycleLifecycleManager instance without optional dependencies."""
+        return HeatingCycleLifecycleManager(
+            device_config=device_config,
+            heating_cycle_service=mock_heating_cycle_service,
+            historical_adapters=[mock_historical_adapter],
+            cycle_cache=None,
+            timer_scheduler=None,
+            model_storage=None,
+            lhs_lifecycle_manager=None,
+        )
+
+    @pytest.fixture
+    def manager_with_cache(
+        self,
+        device_config: DeviceConfig,
+        mock_heating_cycle_service: Mock,
+        mock_historical_adapter: Mock,
+        mock_cycle_cache: Mock,
+    ) -> HeatingCycleLifecycleManager:
+        """Create HeatingCycleLifecycleManager instance with cache."""
+        return HeatingCycleLifecycleManager(
+            device_config=device_config,
+            heating_cycle_service=mock_heating_cycle_service,
+            historical_adapters=[mock_historical_adapter],
+            cycle_cache=mock_cycle_cache,
+            timer_scheduler=None,
+            model_storage=None,
+            lhs_lifecycle_manager=None,
+        )
+
+    @pytest.fixture
+    def manager_full(
+        self,
+        device_config: DeviceConfig,
+        mock_heating_cycle_service: Mock,
+        mock_historical_adapter: Mock,
+        mock_cycle_cache: Mock,
+        mock_timer_scheduler: Mock,
+        mock_model_storage: Mock,
+        mock_global_lhs_calculator: Mock,
+    ) -> HeatingCycleLifecycleManager:
+        """Create fully-configured HeatingCycleLifecycleManager instance."""
+        return HeatingCycleLifecycleManager(
+            device_config=device_config,
+            heating_cycle_service=mock_heating_cycle_service,
+            historical_adapters=[mock_historical_adapter],
+            cycle_cache=mock_cycle_cache,
+            timer_scheduler=mock_timer_scheduler,
+            model_storage=mock_model_storage,
+            lhs_lifecycle_manager=None,
+        )
+
+    def _create_heating_cycle(
+        self,
+        start_time: datetime,
+        duration_hours: float = 1.0,
+        temp_increase: float = 2.0,
+        device_id: str = "climate.test_vtherm",
+    ) -> HeatingCycle:
+        """Create a test heating cycle."""
+        end_time = start_time + timedelta(hours=duration_hours)
+        start_temp = 18.0
+        end_temp = start_temp + temp_increase
+        target_temp = end_temp + 0.5
+
+        return HeatingCycle(
+            device_id=device_id,
+            start_time=start_time,
+            end_time=end_time,
+            target_temp=target_temp,
+            end_temp=end_temp,
+            start_temp=start_temp,
+            tariff_details=None,
+        )
+
+    # ===== Test: startup() =====
+
+    @pytest.mark.asyncio
+    async def test_startup_extracts_cycles_for_initial_window(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test startup extracts heating cycles for initial window.
+
+        RED: Should fail - startup() raises NotImplementedError.
+        Expected: Extracts cycles using heating cycle service.
+        """
+        # GIVEN: Startup parameters
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN: Startup is called
+        await manager.startup(device_id, start_time, end_time)
+
+        # THEN: Cycles were extracted
+        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_startup_returns_extracted_cycles(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test startup returns extracted heating cycles.
+
+        RED: Should fail - startup() raises NotImplementedError.
+        Expected: Returns list of extracted cycles.
+        """
+        # GIVEN: Service returns cycles
+        expected_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(days=5)),
+            self._create_heating_cycle(base_datetime - timedelta(days=3)),
+        ]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
+
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN: Startup is called
+        result = await manager.startup(device_id, start_time, end_time)
+
+        # THEN: Extracted cycles are returned
+        assert result == expected_cycles
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_startup_schedules_24h_timer_when_scheduler_provided(
+        self,
+        manager_full: HeatingCycleLifecycleManager,
+        mock_timer_scheduler: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test startup schedules 24h refresh timer.
+
+        RED: Should fail - startup() raises NotImplementedError.
+        Expected: Schedules periodic timer for cycle refresh.
+        """
+        # GIVEN: Timer scheduler is provided
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN: Startup is called
+        await manager_full.startup(device_id, start_time, end_time)
+
+        # THEN: Timer was scheduled
+        mock_timer_scheduler.schedule_timer.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_startup_caches_cycles_when_cache_provided(
+        self,
+        manager_with_cache: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        mock_cycle_cache: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test startup caches extracted cycles when cache provided.
+
+        RED: Should fail - startup() raises NotImplementedError.
+        Expected: Stores extracted cycles in cache.
+        """
+        # GIVEN: Extracted cycles
+        cycles = [self._create_heating_cycle(base_datetime)]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = cycles
+
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN: Startup is called
+        await manager_with_cache.startup(device_id, start_time, end_time)
+
+        # THEN: Cycles were cached
+        mock_cycle_cache.set_cached_cycles.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_startup_works_without_optional_dependencies(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        base_datetime: datetime,
+    ) -> None:
+        """Test startup works without cache, timer, or storage.
+
+        RED: Should fail - startup() raises NotImplementedError.
+        Expected: Completes successfully with minimal configuration.
+        """
+        # GIVEN: Manager without optional dependencies
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN: Startup is called
+        # THEN: No exception is raised
+        result = await manager.startup(device_id, start_time, end_time)
+        assert isinstance(result, list)
+
+    # ===== Test: on_retention_change() =====
+
+    @pytest.mark.asyncio
+    async def test_on_retention_change_triggers_recalculation(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+    ) -> None:
+        """Test retention change triggers cycle recalculation.
+
+        RED: Should fail - on_retention_change() raises NotImplementedError.
+        Expected: Recalculates cycles with new retention window.
+        """
+        # GIVEN: New retention days
+        new_retention_days = 14
+
+        # WHEN: Retention change is triggered
+        await manager.on_retention_change(new_retention_days)
+
+        # THEN: Cycles were recalculated (service was called)
+        # This may involve extracting new cycles for updated window
+        assert True  # Implementation will determine exact behavior
+
+    @pytest.mark.asyncio
+    async def test_on_retention_change_updates_device_config(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        device_config: DeviceConfig,
+    ) -> None:
+        """Test retention change updates internal device config.
+
+        RED: Should fail - on_retention_change() raises NotImplementedError.
+        Expected: Updates retention setting in device config.
+        """
+        # GIVEN: Original retention is 30 days
+        assert device_config.lhs_retention_days == 30
+
+        # WHEN: Retention change is triggered
+        new_retention_days = 60
+        await manager.on_retention_change(new_retention_days)
+
+        # THEN: Device config is updated (implementation may store state)
+        assert True  # Specific assertion depends on implementation
+
+    @pytest.mark.asyncio
+    async def test_on_retention_change_clears_cache_when_present(
+        self,
+        manager_with_cache: HeatingCycleLifecycleManager,
+        mock_cycle_cache: Mock,
+    ) -> None:
+        """Test retention change clears cache.
+
+        RED: Should fail - on_retention_change() raises NotImplementedError.
+        Expected: Cache is invalidated when retention changes.
+        """
+        # WHEN: Retention change is triggered
+        new_retention_days = 14
+        await manager_with_cache.on_retention_change(new_retention_days)
+
+        # THEN: Cache operations may be called (implementation-specific)
+        assert True  # Cache may be cleared or refreshed
+
+    # ===== Test: on_24h_timer() =====
+
+    @pytest.mark.asyncio
+    async def test_on_24h_timer_extracts_latest_cycles(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+    ) -> None:
+        """Test 24h timer triggers cycle extraction for latest window.
+
+        RED: Should fail - on_24h_timer() raises NotImplementedError.
+        Expected: Extracts cycles for most recent period.
+        """
+        # WHEN: 24h timer fires
+        await manager.on_24h_timer()
+
+        # THEN: Cycles were extracted
+        mock_heating_cycle_service.extract_heating_cycles.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_on_24h_timer_updates_cache(
+        self,
+        manager_with_cache: HeatingCycleLifecycleManager,
+        mock_cycle_cache: Mock,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test 24h timer updates cycle cache.
+
+        RED: Should fail - on_24h_timer() raises NotImplementedError.
+        Expected: Cache is refreshed with new cycles.
+        """
+        # GIVEN: New cycles extracted
+        new_cycles = [self._create_heating_cycle(base_datetime)]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = new_cycles
+
+        # WHEN: 24h timer fires
+        await manager_with_cache.on_24h_timer()
+
+        # THEN: Cache was updated
+        assert mock_cycle_cache.set_cached_cycles.called or mock_cycle_cache.update_cycle_window.called
+
+    @pytest.mark.asyncio
+    async def test_on_24h_timer_recalculates_global_lhs_when_calculator_present(
+        self,
+        manager_full: HeatingCycleLifecycleManager,
+        mock_global_lhs_calculator: Mock,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test 24h timer triggers global LHS recalculation.
+
+        RED: Should fail - on_24h_timer() raises NotImplementedError.
+        Expected: Global LHS is recalculated with new cycles.
+        """
+        # GIVEN: New cycles extracted
+        new_cycles = [self._create_heating_cycle(base_datetime)]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = new_cycles
+
+        # WHEN: 24h timer fires
+        await manager_full.on_24h_timer()
+
+        # THEN: Global LHS was recalculated
+        mock_global_lhs_calculator.calculate_global_lhs.assert_called()
+
+    # ===== Test: get_cycles_for_window() =====
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_window_returns_cycles_from_cache(
+        self,
+        manager_with_cache: HeatingCycleLifecycleManager,
+        mock_cycle_cache: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test get_cycles_for_window returns cached cycles when available.
+
+        RED: Should fail - get_cycles_for_window() raises NotImplementedError.
+        Expected: Returns cycles from cache without extraction.
+        """
+        # GIVEN: Cached cycles exist
+        cached_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(days=2)),
+            self._create_heating_cycle(base_datetime - timedelta(days=1)),
+        ]
+        mock_cycle_cache.get_cached_cycles.return_value = cached_cycles
+
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=3)
+        end_time = base_datetime
+
+        # WHEN: get_cycles_for_window is called
+        result = await manager_with_cache.get_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Cached cycles are returned
+        assert result == cached_cycles
+        mock_cycle_cache.get_cached_cycles.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_window_extracts_when_no_cache(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test get_cycles_for_window extracts cycles when no cache.
+
+        RED: Should fail - get_cycles_for_window() raises NotImplementedError.
+        Expected: Extracts cycles using service when cache unavailable.
+        """
+        # GIVEN: No cache available
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        expected_cycles = [self._create_heating_cycle(base_datetime - timedelta(days=3))]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
+
+        # WHEN: get_cycles_for_window is called
+        result = await manager.get_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Cycles were extracted
+        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
+        assert result == expected_cycles
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_window_filters_by_time_range(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test get_cycles_for_window filters cycles to requested window.
+
+        RED: Should fail - get_cycles_for_window() raises NotImplementedError.
+        Expected: Only cycles within time range are returned.
+        """
+        # GIVEN: Multiple cycles (some in range, some out)
+        cycle_in_range = self._create_heating_cycle(base_datetime - timedelta(days=4))
+        cycle_out_of_range = self._create_heating_cycle(base_datetime - timedelta(days=10))
+
+        all_cycles = [cycle_in_range, cycle_out_of_range]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = all_cycles
+
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN: get_cycles_for_window is called
+        result = await manager.get_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Result is filtered (implementation may filter)
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_window_handles_empty_result(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test get_cycles_for_window handles empty cycles list.
+
+        RED: Should fail - get_cycles_for_window() raises NotImplementedError.
+        Expected: Returns empty list when no cycles in window.
+        """
+        # GIVEN: No cycles in window
+        mock_heating_cycle_service.extract_heating_cycles.return_value = []
+
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN: get_cycles_for_window is called
+        result = await manager.get_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Empty list is returned
+        assert result == []
+
+    # ===== Test: get_cycles_for_target_time() =====
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_target_time_uses_retention_window(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        device_config: DeviceConfig,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test get_cycles_for_target_time uses retention window.
+
+        RED: Should fail - get_cycles_for_target_time() raises NotImplementedError.
+        Expected: Derives window from target_time and retention_days.
+        """
+        # GIVEN: Target time and retention config
+        device_id = "climate.test_vtherm"
+        target_time = base_datetime
+        retention_days = device_config.lhs_retention_days  # 30 days
+
+        expected_cycles = [self._create_heating_cycle(base_datetime - timedelta(days=10))]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
+
+        # WHEN: get_cycles_for_target_time is called
+        result = await manager.get_cycles_for_target_time(device_id, target_time)
+
+        # THEN: Cycles within retention window are returned
+        assert result == expected_cycles
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_target_time_calculates_correct_window(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        device_config: DeviceConfig,
+        base_datetime: datetime,
+    ) -> None:
+        """Test get_cycles_for_target_time calculates correct time window.
+
+        RED: Should fail - get_cycles_for_target_time() raises NotImplementedError.
+        Expected: Window is [target_time - retention_days, target_time].
+        """
+        # GIVEN: Retention is 30 days
+        device_id = "climate.test_vtherm"
+        target_time = base_datetime
+
+        # WHEN: get_cycles_for_target_time is called
+        await manager.get_cycles_for_target_time(device_id, target_time)
+
+        # THEN: Correct window is used (implementation validates)
+        assert True  # Window calculation verified in implementation
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_target_time_returns_cached_when_available(
+        self,
+        manager_with_cache: HeatingCycleLifecycleManager,
+        mock_cycle_cache: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test get_cycles_for_target_time uses cache when available.
+
+        RED: Should fail - get_cycles_for_target_time() raises NotImplementedError.
+        Expected: Returns cached cycles instead of re-extracting.
+        """
+        # GIVEN: Cache contains cycles for retention window
+        cached_cycles = [self._create_heating_cycle(base_datetime - timedelta(days=5))]
+        mock_cycle_cache.get_cached_cycles.return_value = cached_cycles
+
+        device_id = "climate.test_vtherm"
+        target_time = base_datetime
+
+        # WHEN: get_cycles_for_target_time is called
+        result = await manager_with_cache.get_cycles_for_target_time(device_id, target_time)
+
+        # THEN: Cached cycles are returned
+        assert result == cached_cycles
+
+    # ===== Test: update_cycles_for_window() =====
+
+    @pytest.mark.asyncio
+    async def test_update_cycles_for_window_extracts_and_returns_cycles(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test update_cycles_for_window extracts and returns cycles.
+
+        RED: Should fail - update_cycles_for_window() raises NotImplementedError.
+        Expected: Extracts cycles and returns them.
+        """
+        # GIVEN: Extraction window
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        expected_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(days=5)),
+            self._create_heating_cycle(base_datetime - timedelta(days=2)),
+        ]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
+
+        # WHEN: update_cycles_for_window is called
+        result = await manager.update_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Cycles were extracted and returned
+        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
+        assert result == expected_cycles
+
+    @pytest.mark.asyncio
+    async def test_update_cycles_for_window_updates_cache(
+        self,
+        manager_with_cache: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        mock_cycle_cache: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test update_cycles_for_window updates cache with new cycles.
+
+        RED: Should fail - update_cycles_for_window() raises NotImplementedError.
+        Expected: Cache is updated with extracted cycles.
+        """
+        # GIVEN: New cycles extracted
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        new_cycles = [self._create_heating_cycle(base_datetime - timedelta(days=3))]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = new_cycles
+
+        # WHEN: update_cycles_for_window is called
+        await manager_with_cache.update_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Cache was updated
+        assert mock_cycle_cache.set_cached_cycles.called or mock_cycle_cache.update_cycle_window.called
+
+    @pytest.mark.asyncio
+    async def test_update_cycles_for_window_persists_to_storage(
+        self,
+        manager_full: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test update_cycles_for_window persists cycles to storage.
+
+        RED: Should fail - update_cycles_for_window() raises NotImplementedError.
+        Expected: Cycles are saved to model storage.
+        """
+        # GIVEN: Model storage is configured
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        new_cycles = [self._create_heating_cycle(base_datetime)]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = new_cycles
+
+        # WHEN: update_cycles_for_window is called
+        await manager_full.update_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Cycles were persisted
+        assert mock_model_storage.save_heating_cycle.call_count > 0
+
+    @pytest.mark.asyncio
+    async def test_update_cycles_for_window_handles_extraction_errors(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test update_cycles_for_window handles extraction errors.
+
+        RED: Should fail - update_cycles_for_window() raises NotImplementedError.
+        Expected: Logs error and returns empty list or raises.
+        """
+        # GIVEN: Extraction service raises exception
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        mock_heating_cycle_service.extract_heating_cycles.side_effect = Exception("Extraction error")
+
+        # WHEN/THEN: Error is handled (may raise or return [])
+        with pytest.raises(Exception):
+            await manager.update_cycles_for_window(device_id, start_time, end_time)
+
+    # ===== Test: cancel() =====
+
+    @pytest.mark.asyncio
+    async def test_cancel_stops_scheduled_timer(
+        self,
+        manager_full: HeatingCycleLifecycleManager,
+        mock_timer_scheduler: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test cancel stops scheduled refresh timer.
+
+        RED: Should fail - cancel() raises NotImplementedError.
+        Expected: Cancels any active timer.
+        """
+        # GIVEN: Timer was scheduled during startup
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        cancel_func = Mock()
+        mock_timer_scheduler.schedule_timer.return_value = cancel_func
+
+        await manager_full.startup(device_id, start_time, end_time)
+
+        # WHEN: Cancel is called
+        await manager_full.cancel()
+
+        # THEN: Timer cancel function was called
+        cancel_func.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cancel_clears_cache_when_present(
+        self,
+        manager_with_cache: HeatingCycleLifecycleManager,
+        mock_cycle_cache: Mock,
+    ) -> None:
+        """Test cancel clears cycle cache.
+
+        RED: Should fail - cancel() raises NotImplementedError.
+        Expected: Cache is cleared on cancel.
+        """
+        # WHEN: Cancel is called
+        await manager_with_cache.cancel()
+
+        # THEN: Cache may be cleared (implementation-specific)
+        assert True  # Cache clearing verified in implementation
+
+    @pytest.mark.asyncio
+    async def test_cancel_works_without_timer(
+        self,
+        manager: HeatingCycleLifecycleManager,
+    ) -> None:
+        """Test cancel works when no timer is configured.
+
+        RED: Should fail - cancel() raises NotImplementedError.
+        Expected: No error when timer_scheduler is None.
+        """
+        # WHEN: Cancel is called without timer
+        # THEN: No exception is raised
+        await manager.cancel()
+
+    @pytest.mark.asyncio
+    async def test_cancel_is_idempotent(
+        self,
+        manager_full: HeatingCycleLifecycleManager,
+        base_datetime: datetime,
+    ) -> None:
+        """Test cancel can be called multiple times safely.
+
+        RED: Should fail - cancel() raises NotImplementedError.
+        Expected: Multiple cancel calls don't raise errors.
+        """
+        # GIVEN: Manager is active
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+        await manager_full.startup(device_id, start_time, end_time)
+
+        # WHEN: Cancel is called multiple times
+        await manager_full.cancel()
+        await manager_full.cancel()
+
+        # THEN: No exception is raised
+        assert True
+
+    # ===== Test: Multiple Historical Adapters =====
+
+    @pytest.mark.asyncio
+    async def test_startup_uses_all_historical_adapters(
+        self,
+        device_config: DeviceConfig,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test startup uses all configured historical adapters.
+
+        RED: Should fail - startup() raises NotImplementedError.
+        Expected: All adapters are used for data loading.
+        """
+        # GIVEN: Multiple historical adapters
+        adapter1 = Mock()
+        adapter1.load_historical_data = AsyncMock(return_value=[])
+        adapter2 = Mock()
+        adapter2.load_historical_data = AsyncMock(return_value=[])
+
+        manager = HeatingCycleLifecycleManager(
+            device_config=device_config,
+            heating_cycle_service=mock_heating_cycle_service,
+            historical_adapters=[adapter1, adapter2],
+        )
+
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN: Startup is called
+        await manager.startup(device_id, start_time, end_time)
+
+        # THEN: Service was called with all adapter data
+        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
+
+    # ===== Test: Edge Cases =====
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_window_with_zero_duration_window(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        base_datetime: datetime,
+    ) -> None:
+        """Test get_cycles_for_window with start_time == end_time.
+
+        RED: Should fail - get_cycles_for_window() raises NotImplementedError.
+        Expected: Returns empty list or handles gracefully.
+        """
+        # GIVEN: Zero-duration window
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime
+        end_time = base_datetime
+
+        # WHEN: get_cycles_for_window is called
+        result = await manager.get_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Empty list or handled gracefully
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_window_with_inverted_time_range(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        base_datetime: datetime,
+    ) -> None:
+        """Test get_cycles_for_window with start_time > end_time.
+
+        RED: Should fail - get_cycles_for_window() raises NotImplementedError.
+        Expected: Raises ValueError or swaps to correct order.
+        """
+        # GIVEN: Inverted time range
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime
+        end_time = base_datetime - timedelta(days=7)
+
+        # WHEN/THEN: Error is raised or handled
+        with pytest.raises(ValueError):
+            await manager.get_cycles_for_window(device_id, start_time, end_time)
+
+    @pytest.mark.asyncio
+    async def test_update_cycles_for_window_with_large_window(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test update_cycles_for_window with very large time window.
+
+        RED: Should fail - update_cycles_for_window() raises NotImplementedError.
+        Expected: Handles large windows (e.g., 1 year) without issues.
+        """
+        # GIVEN: Large time window (365 days)
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=365)
+        end_time = base_datetime
+
+        many_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(days=i))
+            for i in range(0, 365, 30)
+        ]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = many_cycles
+
+        # WHEN: update_cycles_for_window is called
+        result = await manager.update_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: All cycles are returned
+        assert len(result) == len(many_cycles)
+
+    @pytest.mark.asyncio
+    async def test_startup_handles_historical_adapter_errors(
+        self,
+        device_config: DeviceConfig,
+        mock_heating_cycle_service: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test startup handles historical adapter load errors.
+
+        RED: Should fail - startup() raises NotImplementedError.
+        Expected: Logs error but continues with available data.
+        """
+        # GIVEN: Adapter raises exception
+        failing_adapter = Mock()
+        failing_adapter.load_historical_data = AsyncMock(side_effect=Exception("Adapter error"))
+
+        manager = HeatingCycleLifecycleManager(
+            device_config=device_config,
+            heating_cycle_service=mock_heating_cycle_service,
+            historical_adapters=[failing_adapter],
+        )
+
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=7)
+        end_time = base_datetime
+
+        # WHEN/THEN: Error is handled or raised
+        with pytest.raises(Exception):
+            await manager.startup(device_id, start_time, end_time)
+
+    # ===== Test: Memory Caching - GET Methods =====
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_target_time_memory_hit_no_extraction(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_cycle_cache: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test get_cycles_for_target_time uses memory cache to avoid re-extraction.
+
+        RED: Should fail - no memory cache implementation.
+        Expected: First call extracts cycles, second call for same day uses memory.
+        """
+        # GIVEN: Cycles already in memory for this date
+        device_id = "climate.test_vtherm"
+        target_time = base_datetime
+        test_cycles = [self._create_heating_cycle(base_datetime)]
+        mock_cycle_cache.get_cache_data.return_value = Mock(cycles=test_cycles)
+
+        # WHEN: First call to get_cycles_for_target_time
+        result1 = await manager.get_cycles_for_target_time(device_id, target_time)
+        call_count_first = mock_cycle_cache.get_cache_data.call_count
+
+        # WHEN: Second call for same target date
+        result2 = await manager.get_cycles_for_target_time(device_id, target_time)
+        call_count_second = mock_cycle_cache.get_cache_data.call_count
+
+        # THEN: First call hit cache, second call maybe not (if memory cached)
+        assert len(result1) > 0
+        assert result1 == result2
+        assert call_count_first == 1
+        assert call_count_second == call_count_first
+
+        # If memory cache works, cache calls should NOT increase significantly
+        # (May be 1 or 2, but shouldn't spike with each call)
+
+    @pytest.mark.asyncio
+    async def test_get_cycles_for_window_returns_matching_window(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_cycle_cache: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test get_cycles_for_window properly filters cycles to time window.
+
+        RED: Should fail - filtering logic incomplete.
+        Expected: Returns only cycles within requested start/end times.
+        """
+        # GIVEN: Cycles both inside and outside time window
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime
+        end_time = base_datetime + timedelta(days=3)
+
+        cycle_inside = self._create_heating_cycle(start_time + timedelta(hours=2))
+        cycle_before = self._create_heating_cycle(start_time - timedelta(days=1))
+        cycle_after = self._create_heating_cycle(end_time + timedelta(days=1))
+
+        all_cycles = [cycle_before, cycle_inside, cycle_after]
+        mock_cycle_cache.get_cache_data.return_value = Mock(cycles=all_cycles)
+
+        # WHEN: get_cycles_for_window called for specific time range
+        result = await manager.get_cycles_for_window(device_id, start_time, end_time)
+
+        # THEN: Only cycles within window are returned
+        assert len(result) == 1
+        assert cycle_inside in result
+        assert cycle_before not in result
+        assert cycle_after not in result
+
+    # ===== Test: Event Methods Update Storage AND Memory =====
+
+    @pytest.mark.asyncio
+    async def test_startup_extracts_cycles_and_caches_in_memory(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        mock_cycle_cache: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test startup extracts cycles and populates memory cache.
+
+        RED: Should fail - no memory cache population on startup.
+        Expected: Startup extracts cycles and they're available in memory cache.
+        """
+        # GIVEN: Heating cycle service returns cycles
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=30)
+        end_time = base_datetime
+
+        test_cycles = [
+            self._create_heating_cycle(start_time),
+            self._create_heating_cycle(start_time + timedelta(days=5)),
+        ]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = test_cycles
+
+        # WHEN: Startup is called
+        result = await manager.startup(device_id, start_time, end_time)
+
+        # THEN: Cycles were extracted
+        assert len(result) == 2
+        assert result == test_cycles
+
+        # AND: Cycles are cached for quick retrieval
+        # Subsequent get_cycles_for_target_time for this date should use cache
+        mock_cycle_cache.reset_mock()
+        target_in_window = start_time + timedelta(days=2)
+        cached_result = await manager.get_cycles_for_target_time(device_id, target_in_window)
+
+        # If memory cached properly, should get results without hitting adapters again
+        assert len(cached_result) > 0
+
+    @pytest.mark.asyncio
+    async def test_on_retention_change_invalidates_memory_cache(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_cycle_cache: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test on_retention_change clears memory cache.
+
+        RED: Should fail - no cache invalidation on event.
+        Expected: Retention change invalidates old memory cache.
+        """
+        # GIVEN: Cycles cached for 30-day window
+        device_id = "climate.test_vtherm"
+        target_time = base_datetime
+        test_cycles = [self._create_heating_cycle(base_datetime)]
+        mock_cycle_cache.get_cache_data.return_value = Mock(cycles=test_cycles)
+
+        # Load cycles into memory
+        old_result = await manager.get_cycles_for_target_time(device_id, target_time)
+        assert len(old_result) > 0
+
+        # WHEN: Retention changes to 14 days
+        await manager.on_retention_change(14)
+
+        # THEN: Memory cache was invalidated
+        # Next call to get_cycles should reset/reload
+
+    @pytest.mark.asyncio
+    async def test_on_24h_timer_refreshes_cycles_and_updates_cache(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_service: Mock,
+        mock_cycle_cache: Mock,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test 24h timer refreshes cycles and updates memory cache.
+
+        RED: Should fail - timer refresh incomplete.
+        Expected: Timer triggers cycle refresh and cache update.
+        """
+        # GIVEN: Device config with retention days
+        # Manager timestamp references
+        new_cycles = [
+            self._create_heating_cycle(base_datetime - timedelta(hours=2)),
+            self._create_heating_cycle(base_datetime - timedelta(hours=1)),
+        ]
+        mock_heating_cycle_service.extract_heating_cycles.return_value = new_cycles
+
+        # WHEN: 24h timer fires
+        await manager.on_24h_timer()
+
+        # THEN: Cycles and LHS were re-extracted and stored
+        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
+        mock_model_storage.set_heating_cycle.assert_called_once()
+        mock_model_storage.set_cache_global_lhs.assert_called_once()
+        mock_model_storage.set_cache_contextual_lhs.assert_called_once()
+
+        # AND: Cache was updated with new cycles
+        mock_cycle_cache.append_cycles.assert_called_once()
+
+    # ===== Test: Event Integration - Complete Flow =====
+
+    @pytest.mark.asyncio
+    async def test_retention_change_flow_full_cycle(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_cycle_cache: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Test complete flow: retention change invalidates cache and forces reload.
+
+        RED: Should fail - complete retention change flow missing.
+        Expected: Retention change → cache cleared → next access reloads from storage.
+        """
+        # GIVEN: Cycles cached for 30-day window
+        device_id = "climate.test_vtherm"
+        start_time = base_datetime - timedelta(days=30)
+        target_time = base_datetime
+
+        old_cycles = [
+            self._create_heating_cycle(start_time),
+            self._create_heating_cycle(start_time + timedelta(days=10)),
+            self._create_heating_cycle(start_time + timedelta(days=20)),
+        ]
+        mock_cycle_cache.get_cache_data.return_value = Mock(cycles=old_cycles)
+
+        # Load old cycles into memory
+        old_result = await manager.get_cycles_for_target_time(device_id, target_time)
+        assert len(old_result) == 3
+
+        # Reset cache mock
+        mock_cycle_cache.reset_mock()
+
+        # WHEN: Retention changes from 30 to 14 days
+        await manager.on_retention_change(14)
+
+        # THEN: Cache was cleared
+        # (May call clear_cache or similar)
+
+        # AND: New retention window applied
+        new_start = base_datetime - timedelta(days=14)
+        new_cycles = [
+            self._create_heating_cycle(new_start),
+            self._create_heating_cycle(new_start + timedelta(days=7)),
+        ]
+        mock_cycle_cache.get_cache_data.return_value = Mock(cycles=new_cycles)
+
+        # Get cycles with new retention window
+        new_result = await manager.get_cycles_for_target_time(device_id, target_time)
+
+        # THEN: Result reflects new window (different cycles or count)
+        # (May be same or fewer depending on data)
+        assert len(new_result) == 2

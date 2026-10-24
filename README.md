@@ -1,0 +1,143 @@
+# Intelligent Heating Pilot (IHP)
+
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
+![Version](https://img.shields.io/badge/version-0.6.2-blue)
+![Status](https://img.shields.io/badge/status-beta-yellow)
+
+> **The Adaptive Brain for Versatile Thermostat**
+
+A Home Assistant integration that learns your heating system and automatically starts heating at exactly the right time—no manual tuning required.
+
+---
+
+## What IHP Does
+
+```text
+📅 Next heating: 18:00 (target 21°C)
+🧠 Learned slope: 2.3°C/hour
+⏰ Start time: 16:42 (calculated automatically)
+✅ Room reaches 21°C exactly at 18:00
+```
+
+IHP monitors your VTherm, learns how fast your room heats, and triggers your scheduler at the perfect moment so you arrive to a warm home—every time.
+
+---
+
+## ⚡ Quick Start
+
+### 1. Install via HACS
+
+```text
+HACS → Integrations → ⋮ → Custom repositories
+→ Add: https://github.com/RastaChaum/Intelligent-Heating-Pilot
+→ Search "Intelligent Heating Pilot" → Download → Restart HA
+```
+
+**[Full installation guide →](docs/users/INSTALLATION.md)**
+
+### 2. Configure
+
+```text
+Settings → Devices & Services → + Add Integration
+→ Search "Intelligent Heating Pilot"
+→ Select VTherm + Scheduler → Submit
+```
+
+**[Full configuration guide →](docs/users/CONFIGURATION.md)**
+
+### 3. Let It Learn
+
+- First 5 cycles: conservative (starts early)
+- After 20+ cycles: very accurate predictions
+- No manual intervention needed
+
+**[How IHP works →](docs/users/HOW_IT_WORKS.md)**
+
+---
+
+## 🎯 Features
+
+### Current (v0.6.0)
+
+- ✅ **Smart Pre-heating** - Automatically calculates optimal start time based on learned heating performance
+- ✅ **Dead Time Learning** - Accounts for system lag in temperature response for more accurate predictions
+- ✅ **Enable/Disable Switch** - Toggle preheating on/off while maintaining learning data
+- ✅ **Configurable Revert Threshold** - Active preheating is only canceled when anticipated start is pushed later by a configurable time delta
+- ✅ **Cycle Detection** - Learns from real heating cycles, not thermostat slopes
+- ✅ **Configurable Detection Parameters** - Fine-tune cycle detection for your heating system
+- ✅ **Time-Contextual Learning** - Different heating speeds by time of day
+- ✅ **Optional Scheduler** - Works with or without HACS Scheduler via dynamic service calls
+- ✅ **Incremental Cache** - Reduces HA database load for long-term learning
+- ✅ **Zero-Retention Mode** - Option to disable history storage for minimal deployments
+- ✅ **VTherm v8+ Compatible** - Works with latest Versatile Thermostat versions
+- ✅ **Optimized Startup** - Lazy loading and smart filtering prevent HA watchdog timeouts
+- ✅ **Vacation Mode Ready** - Stops automatically when scheduler disabled
+
+### Future Vision
+
+- 🔮 Setback optimization
+- 🔮 Occupancy-aware scheduling
+- 🔮 Multi-zone coordination
+- 🔮 Energy cost optimization
+
+---
+
+## 📚 Documentation
+
+| For | Start Here |
+| --- | --- |
+| **New Users** | [User Guide](docs/users/USER_GUIDE.md) - Overview and quick navigation |
+| **Installation** | [Installation Guide](docs/users/INSTALLATION.md) - HACS or manual setup |
+| **Configuration** | [Configuration Guide](docs/users/CONFIGURATION.md) - Entity setup and options |
+| **Understanding** | [How IHP Works](docs/users/HOW_IT_WORKS.md) - Cycle detection and prediction |
+| **Issues** | [Troubleshooting](docs/users/TROUBLESHOOTING.md) - Common problems and fixes |
+| **Contributors** | [Contributing Guide](docs/contributors/CONTRIBUTING.md) - Development workflow and standards |
+| **Documentation Hub** | [docs/README.md](docs/README.md) - Full user, contributor, and maintainer docs |
+
+**Quick Links:** [Changelog](CHANGELOG.md) · [Report Bug](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues/new?template=bug_report.md) · [Discussions](https://github.com/RastaChaum/Intelligent-Heating-Pilot/discussions) · [Releases](https://github.com/RastaChaum/Intelligent-Heating-Pilot/releases)
+
+---
+
+## 💡 Key Concepts
+
+**Learned Heating Slope** - How fast your room heats (°C/hour)
+
+- Calculated from detected heating cycles (start temp → end temp)
+- Refined over time with trimmed mean algorithm
+- Used to predict exact start time for next event
+
+**Example:** To heat 3°C at 2°C/hour → Start 90 minutes early ✅
+
+**Vacation Mode** - No action needed!
+
+- IHP automatically stops when scheduler disabled
+- Re-enables when you turn scheduler back on
+- Preserves learned data across vacation periods
+
+---
+
+Contributions welcome! Report bugs, suggest features, or submit code improvements.
+
+**[Read Contributing Guide →](docs/contributors/CONTRIBUTING.md)**
+
+For technical architecture: [Architecture Overview](docs/architecture/OVERVIEW.md)
+
+For all long-form documentation: [Documentation Hub](docs/README.md)
+
+---
+
+## 📝 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## 👏 Acknowledgements
+
+- [Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat) by @jmcollin78
+- [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) by @nielsfaber
+- Home Assistant community
+
+---
+
+**⭐ If you find IHP useful, please star the project!**
+
+[![Star History Chart](https://api.star-history.com/svg?repos=RastaChaum/Intelligent-Heating-Pilot&type=Date)](https://star-history.com/#RastaChaum/Intelligent-Heating-Pilot&Date)

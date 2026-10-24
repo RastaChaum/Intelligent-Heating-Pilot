@@ -1,0 +1,172 @@
+name: Integration PR (to main)
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-integration-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce integration-only source branch
+        run: |
+          if [ "${{ github.head_ref }}" != "integration" ]; then
+            echo "❌ Only the 'integration' branch may merge into 'main'."
+            echo "Source branch detected: ${{ github.head_ref }}"
+            exit 1
+          fi
+          echo "✅ Source branch is 'integration'"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check version increment
+        id: version-check
+        run: |
+          # Version dans integration (manifest.json)
+          NEW_VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
+
+          # Version dans main
+          git fetch origin main
+          OLD_VERSION=$(git show origin/main:custom_components/intelligent_heating_pilot/manifest.json | jq -r '.version')
+
+          echo "old=$OLD_VERSION" >> $GITHUB_OUTPUT
+          echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          if [ "$NEW_VERSION" == "$OLD_VERSION" ]; then
+            echo "incremented=false" >> $GITHUB_OUTPUT
+            echo "❌ La version n'a pas été incrémentée"
+          else
+            echo "incremented=true" >> $GITHUB_OUTPUT
+            echo "✅ Version incrémentée : $OLD_VERSION → $NEW_VERSION"
+          fi
+
+          # Vérifier hacs.json aussi
+          HACS_VERSION=$(jq -r '.version' hacs.json)
+          if [ "$HACS_VERSION" != "$NEW_VERSION" ]; then
+            echo "hacs_synced=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Version dans hacs.json ($HACS_VERSION) != manifest.json ($NEW_VERSION)"
+          else
+            echo "hacs_synced=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check CHANGELOG has unreleased content
+        id: changelog-check
+        run: |
+          UNRELEASED=$(awk '/^## \[Unreleased\]$/{flag=1; next} /^## \[[0-9]/{flag=0} flag' CHANGELOG.md | grep -v '^[[:space:]]*$' | wc -l)
+
+          if [ "$UNRELEASED" -eq "0" ]; then
+            echo "has_content=false" >> $GITHUB_OUTPUT
+            echo "❌ Aucune entrée dans [Unreleased] du CHANGELOG"
+          else
+            echo "has_content=true" >> $GITHUB_OUTPUT
+            echo "✅ CHANGELOG contient des changements"
+          fi
+
+      - name: Check pre-release exists
+        id: prerelease-check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MAIN_VERSION=$(git show origin/main:custom_components/intelligent_heating_pilot/manifest.json | jq -r '.version')
+
+          # Find the latest RC for any version newer than the current main release
+          LATEST_RC=$(gh release list --limit 100 --json tagName,isPrerelease \
+            | jq -r '.[] | select(.isPrerelease and (.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-rc[0-9]+$"))) | .tagName' \
+            | sort -V | tail -1)
+          RC_VERSION=$(echo "$LATEST_RC" | sed 's/^v//; s/-rc[0-9]*$//')
+
+          NEWER=$(printf '%s\n%s\n' "$RC_VERSION" "$MAIN_VERSION" | sort -V | tail -1)
+          if [ -n "$LATEST_RC" ] && [ "$NEWER" = "$RC_VERSION" ] && [ "$RC_VERSION" != "$MAIN_VERSION" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "rc_tag=$LATEST_RC" >> $GITHUB_OUTPUT
+            echo "✅ Release candidate $LATEST_RC existe (v${MAIN_VERSION} → v${RC_VERSION})"
+          else
+            echo "❌ Aucune release candidate trouvée pour une version supérieure à v${MAIN_VERSION}."
+            echo "Un RC validé (vX.Y.Z-rcN avec X.Y.Z > ${MAIN_VERSION}) doit exister avant de merger integration dans main."
+            echo "Utilisez le workflow 'Prepare Release Candidate' ou 'Increment RC Version'."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.2
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache dependencies
+        uses: actions/cache@v6
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-
+
+      - name: Run full test suite
+        run: |
+          poetry install --no-interaction
+          poetry run pytest tests/ -v
+
+      - name: Summary comment
+        if: always() && github.head_ref == 'integration'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION_OK="${{ steps.version-check.outputs.incremented }}"
+          HACS_OK="${{ steps.version-check.outputs.hacs_synced }}"
+          CHANGELOG_OK="${{ steps.changelog-check.outputs.has_content }}"
+          PRERELEASE_OK="${{ steps.prerelease-check.outputs.exists }}"
+
+          MESSAGE="## 📋 Checklist de Release
+
+          "
+
+          if [ "$VERSION_OK" == "true" ]; then
+            MESSAGE+="✅ Version incrémentée (${{ steps.version-check.outputs.old }} → ${{ steps.version-check.outputs.new }})\n"
+          else
+            MESSAGE+="❌ Version NON incrémentée - veuillez mettre à jour \`manifest.json\` et \`hacs.json\`\n"
+          fi
+
+          if [ "$HACS_OK" == "true" ]; then
+            MESSAGE+="✅ Versions synchronisées (manifest.json = hacs.json)\n"
+          else
+            MESSAGE+="❌ Versions NON synchronisées - veuillez mettre à jour \`hacs.json\`\n"
+          fi
+
+          if [ "$CHANGELOG_OK" == "true" ]; then
+            MESSAGE+="✅ CHANGELOG contient des changements\n"
+          else
+            MESSAGE+="❌ CHANGELOG vide - veuillez documenter les changements\n"
+          fi
+
+          if [ "$PRERELEASE_OK" == "true" ]; then
+            MESSAGE+="✅ Release candidate \`${{ steps.prerelease-check.outputs.rc_tag }}\` existe\n"
+          else
+            MESSAGE+="⚠️ Aucune release candidate trouvée - créer un RC via le workflow 'Prepare Release Candidate'\n"
+          fi
+
+          MESSAGE+="\n**Actions avant merge :**\n"
+          MESSAGE+="1. Vérifier que tous les tests sont passés\n"
+          MESSAGE+="2. Confirmer que la pre-release a été testée sur une instance Home Assistant réelle\n"
+          MESSAGE+="3. Vérifier que la documentation utilisateur est à jour\n"
+          MESSAGE+="\n**Après le merge :**\n"
+          MESSAGE+="- La release sera automatiquement créée sur GitHub\n"
+          MESSAGE+="- Le CHANGELOG sera mis à jour avec la date de release\n"
+          MESSAGE+="- La pre-release sera supprimée\n"
+          MESSAGE+="- HACS détectera la nouvelle version\n"
+
+          echo -e "$MESSAGE" | gh pr comment ${{ github.event.pull_request.number }} --body-file -

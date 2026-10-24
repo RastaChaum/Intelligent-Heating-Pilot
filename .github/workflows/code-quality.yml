@@ -1,0 +1,142 @@
+name: Code Quality
+
+on:
+  pull_request:
+    branches:
+      - integration
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  quality-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.2
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Cache dependencies
+        uses: actions/cache@v6
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            venv-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Type checking with mypy
+        id: mypy
+        run: |
+          set +e
+          poetry run mypy custom_components/intelligent_heating_pilot/ --ignore-missing-imports --no-error-summary > mypy-output.txt 2>&1
+          MYPY_EXIT=$?
+          set -e
+          echo "exitcode=$MYPY_EXIT" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Linting with pylint
+        id: pylint
+        run: |
+          set +e
+          poetry run pylint custom_components/intelligent_heating_pilot/ --fail-under=7.0 > pylint-output.txt 2>&1
+          PYLINT_EXIT=$?
+          set -e
+          SCORE=$(grep -oP 'rated at \K[0-9.]+' pylint-output.txt || echo "0.0")
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "exitcode=$PYLINT_EXIT" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Check test coverage
+        id: coverage
+        run: |
+          set +e
+          poetry run pytest tests/unit --cov=custom_components/intelligent_heating_pilot --cov-report=term --cov-report=xml > coverage-output.txt 2>&1
+          COVERAGE_EXIT=$?
+          set -e
+          if grep -q "^TOTAL" coverage-output.txt; then
+            COVERAGE=$(grep "^TOTAL" coverage-output.txt | awk '{print $NF}' | sed 's/%//')
+          else
+            COVERAGE=""
+          fi
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "exitcode=$COVERAGE_EXIT" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Comment results on PR
+        # Dependabot runs and fork PRs get a read-only token and cannot comment
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MYPY_EXIT="${{ steps.mypy.outputs.exitcode }}"
+          PYLINT_EXIT="${{ steps.pylint.outputs.exitcode }}"
+          PYLINT_SCORE="${{ steps.pylint.outputs.score }}"
+          COVERAGE_EXIT="${{ steps.coverage.outputs.exitcode }}"
+          COVERAGE="${{ steps.coverage.outputs.coverage }}"
+
+          MESSAGE="## 📊 Code Quality Report\n\n"
+
+          # MyPy
+          MESSAGE+="### Type Checking (mypy)\n"
+          if [ "$MYPY_EXIT" == "0" ]; then
+            MESSAGE+="✅ **Passed** - No type errors detected\n\n"
+          else
+            MESSAGE+="⚠️ **Issues found** - Review type hints\n"
+            MESSAGE+="\`\`\`\n$(cat mypy-output.txt | head -20)\n\`\`\`\n\n"
+          fi
+
+          # Pylint
+          MESSAGE+="### Linting (pylint)\n"
+          if [ "$PYLINT_EXIT" == "0" ]; then
+            MESSAGE+="✅ **Passed** - Score: $PYLINT_SCORE/10\n\n"
+          else
+            MESSAGE+="⚠️ **Score below threshold** - Score: $PYLINT_SCORE/10 (minimum: 7.0)\n"
+            MESSAGE+="\`\`\`\n$(cat pylint-output.txt | tail -30)\n\`\`\`\n\n"
+          fi
+
+          # Coverage
+          MESSAGE+="### Test Coverage\n"
+          if [ "$COVERAGE_EXIT" == "0" ]; then
+            if [ "${COVERAGE%.*}" -ge "70" ]; then
+              MESSAGE+="✅ **Good coverage** - $COVERAGE%\n\n"
+            else
+              MESSAGE+="⚠️ **Coverage below recommended** - $COVERAGE% (recommended: >70%)\n\n"
+            fi
+          else
+            MESSAGE+="❌ **Tests failed** - Coverage: ${COVERAGE:-n/a}%\n"
+            MESSAGE+="\`\`\`\n$(grep -E '^(FAILED|ERROR)' coverage-output.txt | head -20)\n\`\`\`\n\n"
+          fi
+
+          MESSAGE+="---\n"
+          MESSAGE+="*Type checking and linting are informational; failing tests block the PR.*\n"
+          MESSAGE+="*Ensure code quality improvements are made before merging to integration.*\n"
+
+          echo -e "$MESSAGE" | gh pr comment ${{ github.event.pull_request.number }} --body-file -
+
+      - name: Summary
+        run: |
+          echo "### Code Quality Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- MyPy: ${{ steps.mypy.outputs.exitcode == '0' && '✅ Passed' || '⚠️ Issues' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Pylint: ${{ steps.pylint.outputs.score }}/10" >> $GITHUB_STEP_SUMMARY
+          echo "- Coverage: ${{ steps.coverage.outputs.coverage }}%" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail on test failures
+        if: steps.coverage.outputs.exitcode != '0'
+        run: |
+          echo "❌ pytest exited with code ${{ steps.coverage.outputs.exitcode }}"
+          exit 1

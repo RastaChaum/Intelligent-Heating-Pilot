@@ -1,0 +1,11 @@
+# Default owner for everything
+* @RastaChaum
+
+# Domain layer requires careful review
+/custom_components/intelligent_heating_pilot/domain/ @RastaChaum
+
+# Infrastructure changes
+/custom_components/intelligent_heating_pilot/infrastructure/ @RastaChaum
+
+# GitHub workflows and CI/CD
+/.github/workflows/ @RastaChaum

@@ -1,0 +1,10 @@
+{
+  "name": "Intelligent Heating Pilot",
+  "version": "0.6.4",
+  "render_readme": true,
+  "domains": [
+    "intelligent_heating_pilot"
+  ],
+  "iot_class": "Calculated",
+  "homeassistant": "2023.1.0"
+}
