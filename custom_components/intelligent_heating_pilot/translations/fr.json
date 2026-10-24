@@ -1,0 +1,73 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurer Intelligent Heating Pilot",
+        "description": "Configurez votre intégration Intelligent Heating Pilot (IHP) pour des calculs de préchauffage intelligents basés sur l'apprentissage des pentes thermiques de votre VTherm.",
+        "data": {
+          "name": "Nom de l'intégration",
+          "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
+          "scheduler_entities": "Entités Scheduler (switches)",
+          "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
+          "humidity_out_entity_id": "Capteur d'humidité extérieure (optionnel)",
+          "cloud_cover_entity_id": "Capteur de couverture nuageuse (optionnel)",
+          "lhs_retention_days": "Rétention des données de pente (jours)",
+          "anticipation_recalc_tolerance_minutes": "Delta temporel de réversion du préchauffage (minutes)"
+        },
+        "data_description": {
+          "vtherm_entity_id": "Le thermostat Versatile Thermostat à contrôler (source du slope d'apprentissage)",
+          "scheduler_entities": "Les switchs du HACS Scheduler Component qui pilotent ce VTherm",
+          "humidity_in_entity_id": "Capteur d'humidité de la pièce pour affiner les calculs",
+          "humidity_out_entity_id": "Capteur d'humidité extérieure pour affiner les calculs",
+          "cloud_cover_entity_id": "Capteur de couverture nuageuse pour prendre en compte l'impact solaire",
+          "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage (par défaut : 30 jours)",
+          "temp_delta_threshold": "Seuil de différence de température pour détecter le début/fin d'un cycle de chauffe (par défaut : 0.2°C). Valeurs plus faibles = détection plus sensible.",
+          "cycle_split_duration_minutes": "Découpe les longs cycles de chauffe en sous-cycles de cette durée pour l'augmentation de données ML (0 = désactivé).",
+          "min_cycle_duration_minutes": "Durée minimale pour considérer un cycle de chauffe valide. Filtre les micro-cycles courts (bruit).",
+          "max_cycle_duration_minutes": "Durée maximale pour un seul cycle de chauffe. Filtre les cycles anormalement longs (dysfonctionnements).",
+          "anticipation_recalc_tolerance_minutes": "Seuil absolu de variation de l'heure anticipée pour annuler et replanifier un préchauffage actif lors d'un recalcul. Par défaut : 15 minutes."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Échec de la connexion",
+      "invalid_auth": "Authentification invalide",
+      "unknown": "Erreur inattendue"
+    },
+    "abort": {
+      "already_configured": "Cette intégration est déjà configurée"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modifier les options Intelligent Heating Pilot",
+        "description": "Modifiez les entités utilisées par Intelligent Heating Pilot",
+        "data": {
+          "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
+          "scheduler_entities": "Entités Scheduler (switches)",
+          "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
+          "humidity_out_entity_id": "Capteur d'humidité extérieure (optionnel)",
+          "cloud_cover_entity_id": "Capteur de couverture nuageuse (optionnel)",
+          "lhs_retention_days": "Rétention des données de pente (jours)",
+          "temp_delta_threshold": "Seuil de détection de température (°C)",
+          "cycle_split_duration_minutes": "Durée de découpage des cycles (minutes)",
+          "min_cycle_duration_minutes": "Durée minimale de cycle (minutes)",
+          "max_cycle_duration_minutes": "Durée maximale de cycle (minutes)",
+          "task_range_days": "Période d'extraction Recorder (jours)",
+          "anticipation_recalc_tolerance_minutes": "Delta temporel de réversion du préchauffage (minutes)",
+          "safety_shutoff_grace_minutes": "Tolérance arrêt sécurité (minutes)"
+        },
+        "data_description": {
+          "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage",
+          "temp_delta_threshold": "Seuil de différence de température pour détecter le début/fin d'un cycle de chauffe (par défaut : 0.2°C).",
+          "cycle_split_duration_minutes": "Découpe les longs cycles en sous-cycles pour l'apprentissage ML (laisser vide pour désactiver).",
+          "min_cycle_duration_minutes": "Durée minimale pour considérer un cycle de chauffe valide.",
+          "max_cycle_duration_minutes": "Durée maximale pour un seul cycle de chauffe.",
+          "anticipation_recalc_tolerance_minutes": "Seuil absolu de variation de l'heure anticipée pour annuler et replanifier un préchauffage actif lors d'un recalcul. Par défaut : 15 minutes.",
+          "safety_shutoff_grace_minutes": "Tolérance en minutes pour les interruptions brèves de chauffe (mode sécurité/hors-gel). Les interruptions plus courtes que ce seuil ne terminent pas le cycle en cours. 0 = désactivé."
+        }
+      }
+    }
+  }
+}
