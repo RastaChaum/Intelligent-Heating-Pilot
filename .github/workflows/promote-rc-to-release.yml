@@ -1,0 +1,226 @@
+name: Promote RC to Final Release
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [closed]
+
+permissions:
+  issues: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'integration'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Extract version from manifest.json
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if tag already exists
+        id: tag-check
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Le tag v${{ steps.version.outputs.version }} existe déjà"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify RC exists
+        id: rc-check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          RC_COUNT=$(gh release list --limit 100 --json tagName,isPrerelease \
+            | jq -r --arg v "$VERSION" \
+                '[.[] | select(.isPrerelease and (.tagName | test("^v" + $v + "-rc[0-9]+$")))] | length')
+          if [ "$RC_COUNT" -eq 0 ]; then
+            echo "❌ No release candidate found for v${VERSION}."
+            echo "A validated RC (vX.Y.Z-rcN) must exist before promoting to a final release."
+            echo "Use the 'Prepare Release Candidate' or 'Increment RC Version' workflows first."
+            exit 1
+          fi
+          echo "✅ Found ${RC_COUNT} RC(s) for v${VERSION} — proceeding with promotion"
+
+      - name: Prepare release notes
+        id: release-notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next} flag && /^## \[/{flag=0} flag{print}' CHANGELOG.md)
+          if [ -z "$CHANGELOG_CONTENT" ]; then
+            echo "❌ Aucune entrée Unreleased dans CHANGELOG.md"
+            exit 1
+          fi
+
+          # Count RC iterations for traceability (GitHub Releases API = ground truth)
+            RC_TAGS=$(gh release list --json tagName,isPrerelease \
+              | jq -r --arg v "$VERSION" '
+                  [
+                    .[]
+                    | select(
+                        .isPrerelease == true
+                        and (.tagName | test("^v" + $v + "-rc[0-9]+$"))
+                      )
+                  ]
+                  | sort_by(.tagName | capture("-rc(?<number>[0-9]+)$").number | tonumber)
+                  | .[].tagName
+                ')
+          RC_COUNT=$(echo "$RC_TAGS" | grep -c . || true)
+          LATEST_RC=$(echo "$RC_TAGS" | tail -1)
+
+          {
+            echo "$CHANGELOG_CONTENT"
+            if [ "$RC_COUNT" -gt 0 ]; then
+              echo ""
+              echo "---"
+              echo ""
+              echo "> ✅ Validé via ${RC_COUNT} release candidate(s). Dernière RC : \`${LATEST_RC}\`"
+            fi
+          } > /tmp/release-notes.md
+
+      - name: Update CHANGELOG with version (via PR)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          VERSION="${{ steps.version.outputs.version }}"
+          BRANCH="chore/changelog-v${VERSION}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create or reuse a dedicated branch from main for the CHANGELOG update
+          if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+            echo "Branch $BRANCH already exists on origin, reusing it"
+            git fetch origin "$BRANCH":"$BRANCH"
+            git checkout "$BRANCH"
+          else
+            echo "Branch $BRANCH does not exist yet, creating it from main"
+            git checkout -b "$BRANCH"
+          fi
+
+          # Guard against duplicate entries: only update CHANGELOG if this version is not already stamped
+          if grep -qF "## [$VERSION]" CHANGELOG.md; then
+            echo "ℹ️ CHANGELOG already contains ## [$VERSION] — skipping sed substitution"
+          else
+            sed -i "s/^## \[Unreleased\]$/## [Unreleased]\n\n## [$VERSION] - $TODAY/" CHANGELOG.md
+          fi
+
+          git add CHANGELOG.md
+          # Only commit if there are actual changes to avoid empty-commit errors on re-runs
+          if git diff --cached --quiet; then
+            echo "ℹ️ No CHANGELOG changes to commit"
+          else
+            git commit -m "chore: update CHANGELOG for v$VERSION"
+          fi
+
+          # Short-circuit if there are no CHANGELOG changes between this branch and origin/main
+          if git rev-parse --verify origin/main >/dev/null 2>&1; then
+            if git diff --quiet origin/main...HEAD -- CHANGELOG.md; then
+              echo "ℹ️ No CHANGELOG changes between branch $BRANCH and origin/main — skipping push and PR creation"
+              exit 0
+            fi
+          fi
+
+          git push origin "$BRANCH"
+
+          # Open a PR targeting main, or retrieve the existing one on re-runs
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --base main --json url --jq '.[0].url // empty' 2>/dev/null || true)
+          if [ -n "$EXISTING_PR" ]; then
+            PR_URL="$EXISTING_PR"
+            echo "ℹ️ Reusing existing PR: $PR_URL"
+          else
+            PR_BODY=$(printf '%s\n\n%s' \
+              "🤖 Automatic CHANGELOG update triggered by the release of v${VERSION}." \
+              "This PR was created automatically by the **Promote RC to Release** workflow after the \`integration\` → \`main\` merge. It replaces the \`[Unreleased]\` section header with the actual version number and today's date.")
+            PR_URL=$(gh pr create \
+              --title "chore: update CHANGELOG for v$VERSION" \
+              --body "$PR_BODY" \
+              --base main \
+              --head "$BRANCH")
+            echo "✅ PR created: $PR_URL"
+          fi
+
+          # Enable auto-merge (squash) so the PR merges as soon as branch-protection checks pass.
+          # If auto-merge is disabled at the repo level, fall back to a manual-merge message.
+          # For all other errors (auth, API, non-mergeable PR, etc.), fail the job.
+          set +e
+          MERGE_OUTPUT=$(gh pr merge "$PR_URL" --auto --squash 2>&1)
+          MERGE_EXIT_CODE=$?
+          set -e
+          if [ "$MERGE_EXIT_CODE" -ne 0 ]; then
+            echo "gh pr merge failed with exit code $MERGE_EXIT_CODE"
+            echo "$MERGE_OUTPUT"
+            if echo "$MERGE_OUTPUT" | grep -qi "auto-merge is disabled"; then
+              echo "ℹ️ Auto-merge could not be enabled (may require repo setting). Please merge $PR_URL manually."
+            else
+              echo "❌ Unexpected error while attempting to enable auto-merge for $PR_URL. Failing the job."
+              exit "$MERGE_EXIT_CODE"
+            fi
+          fi
+
+      - name: Delete RC and dev pre-releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Query GitHub Releases API for all pre-releases matching this version (ground truth)
+          RC_TAGS=$(gh release list --json tagName,isPrerelease \
+            | jq -r --arg v "$VERSION" '
+                .[]
+                | select(
+                    .isPrerelease == true
+                    and (.tagName | test("^v" + $v + "-(rc[0-9]+|dev)$"))
+                  )
+                | .tagName
+              ')
+          for tag in $RC_TAGS; do
+            echo "🗑️ Deleting GitHub release $tag..."
+            gh release delete "$tag" --yes 2>/dev/null || true
+            git push origin ":refs/tags/$tag" 2>/dev/null || true
+          done
+
+      - name: Create release
+        if: steps.tag-check.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+
+          gh release create "$TAG" \
+            --title "🚀 Release $VERSION" \
+            --notes-file /tmp/release-notes.md \
+            --latest \
+            --target main
+
+      - name: Comment on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "🚀 **Release v${{ steps.version.outputs.version }} publiée !**
+
+          La release est maintenant disponible pour tous les utilisateurs.
+
+          **Prochaines étapes :**
+          1. Créer une nouvelle branche à partir de \`integration\` pour la prochaine version
+          2. Incrémenter la version dans \`manifest.json\` et \`hacs.json\`
+          3. Vérifier que HACS détecte bien la nouvelle release
+          "
