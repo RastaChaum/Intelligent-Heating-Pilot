@@ -237,9 +237,10 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
                 end_time,
             )
         except asyncio.CancelledError:
-            # Shutdown in progress - abort gracefully
+            # Shutdown in progress: let the cancellation reach the extraction, which must
+            # stop without treating the interrupted period as read
             _LOGGER.debug("History fetch cancelled (shutdown in progress) for %s", entity_id)
-            raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
+            raise
         except TimeoutError:
             # Timeout waiting for database - likely DB is shutdown
             _LOGGER.error("Timeout fetching history for %s (DB may be shutdown)", entity_id)
@@ -344,7 +345,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
             historical_records = await self._fetch_history(entity_id, start_time, end_time)
         except asyncio.CancelledError:
             _LOGGER.debug("History fetch cancelled (shutdown in progress) for %s", entity_id)
-            raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
+            raise
         except TimeoutError:
             _LOGGER.error("Timeout fetching history for %s (DB may be shutdown)", entity_id)
             raise ValueError(f"Cannot fetch history for entity {entity_id}") from None

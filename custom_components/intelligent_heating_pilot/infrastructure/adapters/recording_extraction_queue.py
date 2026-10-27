@@ -22,7 +22,11 @@ except ImportError:
     dt_util = None  # type: ignore[assignment]  # optional import: tests run without HA
 
 from ...const import DEFAULT_TASK_RANGE_DAYS
-from ...domain.value_objects.historical_data import HistoricalDataSet
+from ...domain.value_objects.historical_data import (
+    HistoricalDataKey,
+    HistoricalDataSet,
+    HistoricalMeasurement,
+)
 from ...domain.value_objects.recording_extraction_task import (
     ExtractionTaskState,
     RecordingExtractionTask,
@@ -36,6 +40,16 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 QUEUE_YIELD_SECONDS = 10.0
+
+
+class HistoryFetchError(Exception):
+    """Raised when the history of a period could not be read from the Recorder.
+
+    Kept apart from errors raised while extracting cycles from a history that was
+    read: a failed read (Recorder timeout, database closed, entity not ready yet) may
+    succeed later, so its period must stay unexplored to be retried, whereas the same
+    history would make cycle extraction fail the same way again.
+    """
 
 
 class RecordingExtractionQueue:
@@ -260,6 +274,17 @@ class RecordingExtractionQueue:
                         if inspect.isawaitable(result):
                             await result
 
+                except HistoryFetchError as exc:
+                    self._failed_count += 1
+                    _LOGGER.warning(
+                        "History unavailable for period=%s to %s, left unexplored to "
+                        "retry later: %s",
+                        task.start_date,
+                        task.end_date,
+                        exc,
+                    )
+                    continue
+
                 except Exception as exc:
                     self._failed_count += 1
                     _LOGGER.warning(
@@ -269,9 +294,10 @@ class RecordingExtractionQueue:
                         exc,
                     )
 
-                    # Mark the period as explored even on failure (e.g. Recorder returned
-                    # empty because data was purged). Without this, failed periods would be
-                    # retried on every restart indefinitely, wasting Recorder queries.
+                    # The history was read, but cycle extraction rejected it - typically
+                    # an empty history because the Recorder purged the period. The same
+                    # data would fail the same way on every retry, so the period is
+                    # marked explored to stop the backfill from querying it forever.
                     if self._on_period_explored:
                         try:
                             result = self._on_period_explored(task.start_date, task.end_date)
@@ -333,7 +359,9 @@ class RecordingExtractionQueue:
             List of extracted HeatingCycle objects for the period
 
         Raises:
-            Exception: If extraction fails (will be caught by run_queue())
+            HistoryFetchError: If the history of the period could not be read
+            Exception: If cycle extraction fails on the history that was read
+                (both are handled by run_queue())
         """
         _LOGGER.debug(
             "Extracting data from Recorder for period=%s to %s, device=%s, entity=%s",
@@ -346,61 +374,68 @@ class RecordingExtractionQueue:
         if self._heating_cycle_service is None:
             raise RuntimeError("HeatingCycleService is required for extraction")
 
-        try:
-            # Create time window for this period using HA local timezone to avoid
-            # midnight boundary shifts on non-UTC installations.
-            local_tz = dt_util.get_default_time_zone() if dt_util is not None else UTC
-            start_time = datetime.combine(start_date, time.min).replace(tzinfo=local_tz)
-            end_time = datetime.combine(end_date, time.max).replace(tzinfo=local_tz)
+        # Create time window for this period using HA local timezone to avoid
+        # midnight boundary shifts on non-UTC installations.
+        local_tz = dt_util.get_default_time_zone() if dt_util is not None else UTC
+        start_time = datetime.combine(start_date, time.min).replace(tzinfo=local_tz)
+        end_time = datetime.combine(end_date, time.max).replace(tzinfo=local_tz)
 
-            combined_data: HistoricalDataSet = HistoricalDataSet(data={})
+        historical_data_set = await self._fetch_period_history(start_time, end_time)
 
-            for adapter in self._historical_adapters:
-                try:
-                    # Fetch all supported data keys in a single recorder query
-                    adapter_data = await adapter.fetch_all_historical_data(
-                        entity_id=self._entity_id,
-                        start_time=start_time,
-                        end_time=end_time,
-                    )
-                    if adapter_data is not None and adapter_data.data:
-                        for data_key, measurements in adapter_data.data.items():
-                            if measurements:
-                                if data_key not in combined_data.data:
-                                    combined_data.data[data_key] = []
-                                combined_data.data[data_key].extend(measurements)
-                except Exception as exc:
-                    _LOGGER.warning(
-                        "Failed to fetch historical data from adapter for %s to %s: %s",
-                        start_date,
-                        end_date,
-                        exc,
-                    )
-                    continue
+        cycles = await self._heating_cycle_service.extract_heating_cycles(
+            device_id=self._device_id,
+            history_data_set=historical_data_set,
+            start_time=start_time,
+            end_time=end_time,
+        )
 
-            historical_data_set = HistoricalDataSet(data=combined_data.data)
+        _LOGGER.debug(
+            "Extracted %d cycles from Recorder for %s to %s",
+            len(cycles),
+            start_date,
+            end_date,
+        )
 
-            cycles = await self._heating_cycle_service.extract_heating_cycles(
-                device_id=self._device_id,
-                history_data_set=historical_data_set,
-                start_time=start_time,
-                end_time=end_time,
-            )
+        return cycles
 
-            _LOGGER.debug(
-                "Extracted %d cycles from Recorder for %s to %s",
-                len(cycles),
-                start_date,
-                end_date,
-            )
+    async def _fetch_period_history(
+        self, start_time: datetime, end_time: datetime
+    ) -> HistoricalDataSet:
+        """Read and merge the history of every adapter for a period.
 
-            return cycles
+        A failure of any adapter fails the whole period: extracting cycles from a
+        partial history would mark the period explored and lose its missing data
+        for good. Optional sources (outdoor temperature) absorb their own failures.
 
-        except Exception as exc:
-            _LOGGER.warning(
-                "Failed to extract cycles for period %s to %s: %s",
-                start_date,
-                end_date,
-                exc,
-            )
-            raise
+        Args:
+            start_time: Start of the period
+            end_time: End of the period
+
+        Returns:
+            The merged history of all adapters
+
+        Raises:
+            HistoryFetchError: If any adapter fails to read the period
+        """
+        combined_data: dict[HistoricalDataKey, list[HistoricalMeasurement]] = {}
+
+        for adapter in self._historical_adapters:
+            try:
+                # Fetch all supported data keys in a single recorder query
+                adapter_data = await adapter.fetch_all_historical_data(
+                    entity_id=self._entity_id,
+                    start_time=start_time,
+                    end_time=end_time,
+                )
+            except Exception as exc:
+                raise HistoryFetchError(
+                    f"Cannot read history of {self._entity_id} "
+                    f"from {start_time.date()} to {end_time.date()}: {exc}"
+                ) from exc
+
+            if adapter_data is not None and adapter_data.data:
+                for data_key, measurements in adapter_data.data.items():
+                    if measurements:
+                        combined_data.setdefault(data_key, []).extend(measurements)
+
+        return HistoricalDataSet(data=combined_data)
