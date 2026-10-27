@@ -11,10 +11,14 @@ import pytest
 from custom_components.intelligent_heating_pilot.domain.value_objects.heating import (
     HeatingCycle,
 )
+from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
+    HistoricalDataSet,
+)
 from custom_components.intelligent_heating_pilot.domain.value_objects.recording_extraction_task import (
     ExtractionTaskState,
 )
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.recording_extraction_queue import (
+    HistoryFetchError,
     RecordingExtractionQueue,
 )
 
@@ -1177,3 +1181,144 @@ class TestRecordingExtractionQueueProgressAccuracy:
 
         # AND: the failure is counted
         assert queue._failed_count == 1
+
+
+# ============================================================================
+# History Read Failures (#187)
+# ============================================================================
+
+
+def _failing_adapter(error: BaseException) -> Mock:
+    """Build a historical adapter whose single-query read raises ``error``."""
+    adapter = Mock()
+    adapter.fetch_all_historical_data = AsyncMock(side_effect=error)
+    return adapter
+
+
+def _empty_adapter() -> Mock:
+    """Build a historical adapter whose read succeeds with no data (purged period)."""
+    adapter = Mock()
+    adapter.fetch_all_historical_data = AsyncMock(return_value=HistoricalDataSet(data={}))
+    return adapter
+
+
+def _queue_with(
+    adapters: list,
+    service: Mock,
+    explored: list[tuple[date, date]],
+    semaphore: asyncio.Semaphore | None = None,
+) -> RecordingExtractionQueue:
+    """Build a queue recording every period it marks explored."""
+
+    async def capture_explored(start: date, end: date) -> None:
+        explored.append((start, end))
+
+    return RecordingExtractionQueue(
+        device_id="climate.test",
+        entity_id="climate.vtherm",
+        historical_adapters=adapters,
+        heating_cycle_service=service,
+        on_period_explored=capture_explored,
+        task_range_days=7,
+        extraction_semaphore=semaphore,
+    )
+
+
+class TestRecordingExtractionQueueHistoryReadFailures:
+    """A failed history read must leave its period unexplored so it is retried."""
+
+    @pytest.mark.asyncio
+    async def test_extract_period_raises_history_fetch_error_on_adapter_failure(self) -> None:
+        """An adapter failure fails the whole period before any cycle extraction."""
+        service = Mock()
+        service.extract_heating_cycles = AsyncMock(return_value=[])
+        queue = _queue_with([_failing_adapter(ValueError("Recorder timeout"))], service, [])
+
+        with pytest.raises(HistoryFetchError):
+            await queue._extract_period(date(2024, 1, 1), date(2024, 1, 7))
+
+        service.extract_heating_cycles.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_failed_read_leaves_period_unexplored(self) -> None:
+        """The failed period is counted as failed and not marked explored."""
+        explored: list[tuple[date, date]] = []
+        service = Mock()
+        service.extract_heating_cycles = AsyncMock(return_value=[])
+        queue = _queue_with([_failing_adapter(ValueError("Recorder timeout"))], service, explored)
+        await queue.populate_queue(date(2024, 1, 1), date(2024, 1, 7))
+
+        await queue.run_queue()
+
+        assert explored == []
+        assert queue._failed_count == 1
+        assert queue._extracted_count == 0
+
+    @pytest.mark.asyncio
+    async def test_failed_read_does_not_stop_following_periods(self) -> None:
+        """Only the failed period is left unexplored; the next ones are still extracted."""
+        explored: list[tuple[date, date]] = []
+        adapter = Mock()
+        adapter.fetch_all_historical_data = AsyncMock(
+            side_effect=[ValueError("Recorder timeout"), HistoricalDataSet(data={})]
+        )
+        service = Mock()
+        service.extract_heating_cycles = AsyncMock(return_value=[])
+        queue = _queue_with([adapter], service, explored)
+        await queue.populate_queue(date(2024, 1, 1), date(2024, 1, 14))
+
+        await queue.run_queue()
+
+        assert explored == [(date(2024, 1, 8), date(2024, 1, 14))]
+        assert queue._failed_count == 1
+
+    @pytest.mark.asyncio
+    async def test_failure_of_any_adapter_fails_the_period(self) -> None:
+        """A successful VTherm read does not hide another adapter's failure."""
+        explored: list[tuple[date, date]] = []
+        service = Mock()
+        service.extract_heating_cycles = AsyncMock(return_value=[])
+        queue = _queue_with(
+            [_empty_adapter(), _failing_adapter(RuntimeError("DB closed"))], service, explored
+        )
+        await queue.populate_queue(date(2024, 1, 1), date(2024, 1, 7))
+
+        await queue.run_queue()
+
+        assert explored == []
+        service.extract_heating_cycles.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_extraction_failure_on_read_history_marks_period_explored(self) -> None:
+        """A purged period (read succeeds, extraction rejects it) still ends the backfill."""
+        explored: list[tuple[date, date]] = []
+        service = Mock()
+        service.extract_heating_cycles = AsyncMock(
+            side_effect=ValueError("Missing critical historical data keys")
+        )
+        queue = _queue_with([_empty_adapter()], service, explored)
+        await queue.populate_queue(date(2024, 1, 1), date(2024, 1, 7))
+
+        await queue.run_queue()
+
+        assert explored == [(date(2024, 1, 1), date(2024, 1, 7))]
+        assert queue._failed_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cancelled_read_propagates_and_leaves_period_unexplored(self) -> None:
+        """A shutdown during a read stops the queue without marking the period."""
+        explored: list[tuple[date, date]] = []
+        semaphore = asyncio.Semaphore(1)
+        service = Mock()
+        service.extract_heating_cycles = AsyncMock(return_value=[])
+        queue = _queue_with(
+            [_failing_adapter(asyncio.CancelledError())], service, explored, semaphore
+        )
+        await queue.populate_queue(date(2024, 1, 1), date(2024, 1, 14))
+
+        with pytest.raises(asyncio.CancelledError):
+            await queue.run_queue()
+
+        assert explored == []
+        assert queue._is_running is False
+        assert not semaphore.locked()
