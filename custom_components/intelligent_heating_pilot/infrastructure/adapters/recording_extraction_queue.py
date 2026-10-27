@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 try:
     from homeassistant.util import dt as dt_util
 except ImportError:
-    dt_util = None
+    dt_util = None  # type: ignore[assignment]  # optional import: tests run without HA
 
 from ...const import DEFAULT_TASK_RANGE_DAYS
 from ...domain.value_objects.historical_data import HistoricalDataSet

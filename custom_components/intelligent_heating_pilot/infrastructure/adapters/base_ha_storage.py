@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from homeassistant.helpers.storage import Store
 
@@ -65,7 +65,7 @@ class BaseHAStorageAdapter(ABC, Generic[TData]):
             storage_key = self.__class__.__name__.lower()
 
         # Initialize Store
-        self._store = Store(hass, STORAGE_VERSION, f"{storage_key}_{entry_id}")
+        self._store: Store[Any] = Store(hass, STORAGE_VERSION, f"{storage_key}_{entry_id}")
         self._data: TData = self._get_default_data()
 
     @abstractmethod

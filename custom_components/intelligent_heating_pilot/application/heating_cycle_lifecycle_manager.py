@@ -8,7 +8,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import replace
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from ..domain.interfaces.device_config_reader_interface import DeviceConfig
 from ..domain.interfaces.heating_cycle_service_interface import IHeatingCycleService
@@ -34,7 +34,7 @@ MAX_MEMORY_CACHE_ENTRIES = 50
 try:
     from homeassistant.util import dt as dt_util
 except ImportError:
-    dt_util = None  # For testing without HA
+    dt_util = None  # type: ignore[assignment]  # optional import: tests run without HA
 
 
 class HeatingCycleLifecycleManager:
@@ -1198,7 +1198,7 @@ class HeatingCycleLifecycleManager:
         """Return a now() timestamp aligned to the reference time's tz awareness."""
         if reference_time.tzinfo is not None and reference_time.tzinfo.utcoffset(reference_time):
             if dt_util is not None:
-                return cast(datetime, dt_util.now())
+                return dt_util.now()
             return datetime.now(tz=reference_time.tzinfo)
         return datetime.now()
 
@@ -1210,9 +1210,9 @@ class HeatingCycleLifecycleManager:
             and reference_time.tzinfo.utcoffset(reference_time)
         ):
             if dt_util is not None:
-                return cast(datetime, dt_util.now())
+                return dt_util.now()
             return datetime.now(tz=reference_time.tzinfo)
-        return cast(datetime, dt_util.now()) if dt_util is not None else datetime.now()
+        return dt_util.now() if dt_util is not None else datetime.now()
 
     async def _evict_old_memory_cache_entries(self) -> None:
         """Evict oldest entries from memory cache if limit exceeded.

@@ -21,7 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 try:
     from homeassistant.util import dt as dt_util
 except ImportError:
-    dt_util = None  # For testing without HA
+    dt_util = None  # type: ignore[assignment]  # optional import: tests run without HA
 
 
 class LhsLifecycleManager:

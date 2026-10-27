@@ -246,7 +246,7 @@ class HASchedulerReader(ISchedulerReader):
         if parsed and parsed.tzinfo is None:
             parsed = dt_util.as_local(parsed)
 
-        return cast(datetime, parsed) if parsed else None
+        return parsed if parsed else None
 
     def _extract_target_temp_standard(self, attrs: dict) -> float | None:
         """Extract target temperature from standard scheduler format.
@@ -486,7 +486,7 @@ class HASchedulerReader(ISchedulerReader):
         _LOGGER.debug(
             "Scheduler %s state: %s (enabled: %s)", scheduler_entity_id, state.state, is_enabled
         )
-        return cast(bool, is_enabled)
+        return is_enabled
 
     def _resolve_preset_temperature(self, preset: str) -> float | None:
         """Resolve a preset name to a numeric temperature using VTherm attributes.
