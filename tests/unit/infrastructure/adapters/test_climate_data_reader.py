@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -333,6 +334,29 @@ class TestFetchHistoricalData:
                 HistoricalDataKey.INDOOR_TEMP,
                 start_time,
                 end_time,
+            )
+
+    @pytest.mark.asyncio
+    async def test_propagates_cancellation(self, reader: HAClimateDataReader) -> None:
+        """A cancelled history read stays a cancellation, not a ValueError (#187)."""
+        reader._fetch_history = AsyncMock(side_effect=asyncio.CancelledError())
+
+        with pytest.raises(asyncio.CancelledError):
+            await reader.fetch_historical_data(
+                TEST_ENTITY_ID,
+                HistoricalDataKey.INDOOR_TEMP,
+                get_test_datetime(),
+                get_future_datetime(hours=1),
+            )
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_propagates_cancellation(self, reader: HAClimateDataReader) -> None:
+        """The single-query read used by extraction also propagates cancellation (#187)."""
+        reader._fetch_history = AsyncMock(side_effect=asyncio.CancelledError())
+
+        with pytest.raises(asyncio.CancelledError):
+            await reader.fetch_all_historical_data(
+                TEST_ENTITY_ID, get_test_datetime(), get_future_datetime(hours=1)
             )
 
     @pytest.mark.asyncio
