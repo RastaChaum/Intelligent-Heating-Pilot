@@ -81,7 +81,7 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 4. Higher values = slower response to heating commands
 
 **What is Dead Time?**
-- Time between when heating turns on and when temperature actually starts rising
+- Time between when heating turns on and when temperature actually starts rising, measured as the time until the room is 0.2°C above its starting temperature
 - IHP automatically learns this from your heating cycles
 - Improves prediction accuracy for your system
 - Until a dead time is learned (new device, after `reset_learning`, or with **Automatic Learning** disabled), the sensor shows the **Initial Dead Time** setting
