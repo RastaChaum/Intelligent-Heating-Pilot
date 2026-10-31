@@ -199,7 +199,7 @@ def refresh_cycle_cache(dead_time_context: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-@then("no learned dead time is stored")
+@then("nothing is saved as learned dead time")
 def nothing_stored(dead_time_context: dict[str, Any]) -> None:
     """THEN: the stored learned dead time is left as it was."""
     assert dead_time_context["store"].writes == []
