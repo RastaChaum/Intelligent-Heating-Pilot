@@ -7,40 +7,44 @@
         "data": {
           "name": "Integration Name",
           "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
-          "scheduler_entities": "Scheduler Entities (switches)",
+          "scheduler_entities": "Scheduler Entities",
           "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
           "humidity_out_entity_id": "Outdoor Humidity Sensor or Weather Entity (optional)",
           "temperature_out_entity_id": "Outdoor Temperature Sensor or Weather Entity (optional)",
           "cloud_cover_entity_id": "Cloud Coverage Sensor or Weather Entity (optional)",
           "lhs_retention_days": "Slope Data Retention (days)",
+          "dead_time_minutes": "Initial Dead Time (minutes)",
+          "auto_learning": "Automatic Learning",
           "temp_delta_threshold": "Temperature Detection Threshold (°C)",
           "cycle_split_duration_minutes": "Cycle Split Duration (minutes)",
           "min_cycle_duration_minutes": "Minimum Cycle Duration (minutes)",
           "max_cycle_duration_minutes": "Maximum Cycle Duration (minutes)",
           "task_range_days": "Recorder Extraction Period (days)",
+          "anticipation_recalc_tolerance_minutes": "Preheating Revert Time Delta (minutes)",
           "safety_shutoff_grace_minutes": "Safety Shutoff Grace Period (minutes)"
         },
         "data_description": {
-          "vtherm_entity_id": "The Versatile Thermostat to control (source of learned slope)",
-          "scheduler_entities": "The HACS Scheduler Component switches that control this VTherm",
-          "humidity_in_entity_id": "Room humidity sensor to refine calculations",
-          "humidity_out_entity_id": "Outdoor humidity sensor to refine calculations",
-          "temperature_out_entity_id": "Outdoor temperature sensor or weather entity, recorded with each heating cycle",
-          "cloud_cover_entity_id": "Cloud coverage sensor to account for solar impact",
-          "lhs_retention_days": "Number of days to keep historical slope data",
-          "temp_delta_threshold": "Temperature difference threshold to detect heating cycle start/end (default: 0.2°C). Lower values = more sensitive detection.",
-          "cycle_split_duration_minutes": "Split long heating cycles into sub-cycles of this duration for ML training augmentation (0 = disabled).",
-          "min_cycle_duration_minutes": "Minimum duration to consider a valid heating cycle. Filters out short micro-cycles (noise).",
-          "max_cycle_duration_minutes": "Maximum duration for a single heating cycle. Filters out abnormally long cycles (malfunctions).",
-          "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7.",
-          "safety_shutoff_grace_minutes": "Grace period in minutes for brief heating interruptions (safety/frost mode). Interruptions shorter than this threshold will not terminate an in-progress cycle. Set to 0 to disable. Default: 10 min."
+          "name": "A friendly name for this IHP device, e.g. the room it heats.",
+          "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
+          "scheduler_entities": "HACS Scheduler switches that control this VTherm. A native schedule helper only gets an anticipated start time: IHP does not start the heating for it.",
+          "humidity_in_entity_id": "Room humidity sensor to refine calculations.",
+          "humidity_out_entity_id": "Outdoor humidity sensor or weather entity. Monitored, not used in the prediction yet.",
+          "temperature_out_entity_id": "Outdoor temperature sensor or weather entity, recorded with each heating cycle.",
+          "cloud_cover_entity_id": "Cloud coverage sensor or weather entity to account for solar impact.",
+          "lhs_retention_days": "Number of days to retain slope data in storage. Default: 30 days.",
+          "dead_time_minutes": "Delay between the start of heating and the first temperature rise. Used until IHP has learned it from heating cycles, and always when automatic learning is off. Default: 0 min.",
+          "auto_learning": "Learn the dead time from heating cycles. When off, the initial dead time is always used. The heating slope is learned in both cases.",
+          "temp_delta_threshold": "Temperature difference used to detect the start and end of a heating cycle. Lower values make the detection more sensitive. Default: 0.2°C.",
+          "cycle_split_duration_minutes": "Split long heating cycles into sub-cycles of this duration for ML training augmentation. 0 = disabled (default).",
+          "min_cycle_duration_minutes": "Shortest heating cycle kept for learning. Filters out micro-cycles (noise). Default: 5 min.",
+          "max_cycle_duration_minutes": "Longest heating cycle kept for learning. Filters out abnormally long cycles (malfunctions). Default: 300 min.",
+          "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7 days.",
+          "anticipation_recalc_tolerance_minutes": "Minimum postponement of the anticipated start that cancels an active preheating and reschedules it. Default: 15 min.",
+          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min."
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect",
-      "invalid_auth": "Invalid authentication",
-      "unknown": "Unexpected error",
       "required": "This field is required"
     },
     "abort": {
@@ -51,34 +55,77 @@
     "step": {
       "init": {
         "title": "Modify Intelligent Heating Pilot Options",
-        "description": "Modify the entities used by Intelligent Heating Pilot",
+        "description": "Modify the entities and settings used by Intelligent Heating Pilot",
         "data": {
           "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
-          "scheduler_entities": "Scheduler Entities (switches)",
+          "scheduler_entities": "Scheduler Entities",
           "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
           "humidity_out_entity_id": "Outdoor Humidity Sensor or Weather Entity (optional)",
           "temperature_out_entity_id": "Outdoor Temperature Sensor or Weather Entity (optional)",
           "cloud_cover_entity_id": "Cloud Coverage Sensor or Weather Entity (optional)",
           "lhs_retention_days": "Slope Data Retention (days)",
+          "dead_time_minutes": "Initial Dead Time (minutes)",
+          "auto_learning": "Automatic Learning",
           "temp_delta_threshold": "Temperature Detection Threshold (°C)",
           "cycle_split_duration_minutes": "Cycle Split Duration (minutes)",
           "min_cycle_duration_minutes": "Minimum Cycle Duration (minutes)",
           "max_cycle_duration_minutes": "Maximum Cycle Duration (minutes)",
           "task_range_days": "Recorder Extraction Period (days)",
+          "anticipation_recalc_tolerance_minutes": "Preheating Revert Time Delta (minutes)",
           "safety_shutoff_grace_minutes": "Safety Shutoff Grace Period (minutes)"
         },
         "data_description": {
-          "temp_delta_threshold": "Temperature difference threshold to detect heating cycle start/end (default: 0.2°C).",
-          "cycle_split_duration_minutes": "Split long cycles into sub-cycles for ML training (leave empty to disable).",
-          "min_cycle_duration_minutes": "Minimum duration to consider a valid heating cycle.",
-          "max_cycle_duration_minutes": "Maximum duration for a single heating cycle.",
-          "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7.",
-          "safety_shutoff_grace_minutes": "Grace period in minutes for brief heating interruptions (safety/frost mode). Set to 0 to disable. Default: 10 min."
+          "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
+          "scheduler_entities": "HACS Scheduler switches that control this VTherm. A native schedule helper only gets an anticipated start time: IHP does not start the heating for it.",
+          "humidity_in_entity_id": "Room humidity sensor to refine calculations.",
+          "humidity_out_entity_id": "Outdoor humidity sensor or weather entity. Monitored, not used in the prediction yet.",
+          "temperature_out_entity_id": "Outdoor temperature sensor or weather entity, recorded with each heating cycle.",
+          "cloud_cover_entity_id": "Cloud coverage sensor or weather entity to account for solar impact.",
+          "lhs_retention_days": "Number of days to retain slope data in storage. Default: 30 days.",
+          "dead_time_minutes": "Delay between the start of heating and the first temperature rise. Used until IHP has learned it from heating cycles, and always when automatic learning is off. Default: 0 min.",
+          "auto_learning": "Learn the dead time from heating cycles. When off, the initial dead time is always used. The heating slope is learned in both cases.",
+          "temp_delta_threshold": "Temperature difference used to detect the start and end of a heating cycle. Lower values make the detection more sensitive. Default: 0.2°C.",
+          "cycle_split_duration_minutes": "Split long heating cycles into sub-cycles of this duration for ML training augmentation. 0 = disabled (default).",
+          "min_cycle_duration_minutes": "Shortest heating cycle kept for learning. Filters out micro-cycles (noise). Default: 5 min.",
+          "max_cycle_duration_minutes": "Longest heating cycle kept for learning. Filters out abnormally long cycles (malfunctions). Default: 300 min.",
+          "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7 days.",
+          "anticipation_recalc_tolerance_minutes": "Minimum postponement of the anticipated start that cancels an active preheating and reschedules it. Default: 15 min.",
+          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min."
         }
       }
     },
     "error": {
       "required": "This field is required"
+    }
+  },
+  "services": {
+    "calculate_anticipated_start_time": {
+      "name": "Calculate Anticipated Start Time from IHP Device",
+      "description": "Calculate the optimal start time for a configured IHP device to reach target temperature at the specified time. Uses the device's learned heating slope and current environmental data.",
+      "fields": {
+        "entity_id": {
+          "name": "IHP Entity ID",
+          "description": "The entity ID of the IHP device (e.g., sensor.intelligent_heating_pilot_anticipated_start_time)"
+        },
+        "target_time": {
+          "name": "Target Time",
+          "description": "Time when the target temperature should be reached"
+        },
+        "target_temp": {
+          "name": "Target Temperature",
+          "description": "Desired target temperature in Celsius (optional, uses VTherm target if not specified)"
+        }
+      }
+    },
+    "reset_learning": {
+      "name": "Reset Learning History",
+      "description": "Clear the learned heating slopes and dead time of an IHP device, then relearn them from the Recorder history",
+      "fields": {
+        "entity_id": {
+          "name": "IHP Entity ID",
+          "description": "The entity ID of the IHP device whose learning data should be reset (e.g., sensor.intelligent_heating_pilot_anticipated_start_time)"
+        }
+      }
     }
   }
 }
