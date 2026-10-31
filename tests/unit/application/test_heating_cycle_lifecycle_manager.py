@@ -475,7 +475,7 @@ class TestHeatingCycleLifecycleManager:
 
         result = await manager.get_cycles_for_window(device_id, start_time, end_time)
 
-        # THEN Aspect B: Cache miss returns empty list — NEVER calls _extract_cycles()
+        # THEN Aspect B: Cache miss returns empty list — NEVER extracts cycles
         # Bug fix: get_cycles_for_window must return [] on cache miss, not query Recorder
         mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
         assert result == []
@@ -585,96 +585,6 @@ class TestHeatingCycleLifecycleManager:
         assert result_cached_second == cached_cycles
         # Storage NOT called because memory cache hit
         mock_heating_cycle_storage.get_cache_data.assert_not_called()
-
-    # ===== Test: update_cycles_for_window() - ONE test for ALL scenarios =====
-
-    @pytest.mark.asyncio
-    async def test_update_cycles_for_window(
-        self,
-        manager: HeatingCycleLifecycleManager,
-        mock_heating_cycle_service: Mock,
-        mock_heating_cycle_storage: Mock,
-        base_datetime: datetime,
-    ) -> None:
-        """Test update_cycles_for_window method.
-
-        Method documentation summary:
-        - Extracts cycles for specified time window
-        - Updates cache with extracted cycles
-        - Persists cycles to model storage
-        - Returns extracted cycles
-
-        Verified aspects:
-        - Aspect A: Extracts and returns cycles
-        - Aspect B: Updates cache when present
-        - Aspect C: Persists to storage when present
-        - Aspect D: Handles extraction errors
-        - Aspect E: Handles large windows
-        """
-        # GIVEN: Setup for ALL aspects
-        device_id = "climate.test_vtherm"
-        start_time = base_datetime - timedelta(days=7)
-        end_time = base_datetime
-
-        # - Expected cycles for extraction (Aspects A, B, C)
-        expected_cycles = [
-            self._create_heating_cycle(base_datetime - timedelta(days=5)),
-            self._create_heating_cycle(base_datetime - timedelta(days=2)),
-        ]
-        mock_heating_cycle_service.extract_heating_cycles.return_value = expected_cycles
-
-        # WHEN: update_cycles_for_window is called (SINGLE CALL without cache/storage)
-        result = await manager.update_cycles_for_window(device_id, start_time, end_time)
-
-        # THEN Aspect A: Extracts and returns cycles
-        mock_heating_cycle_service.extract_heating_cycles.assert_called_once()
-        assert result == expected_cycles
-
-        # WHEN: update_cycles_for_window is called with cache (separate call)
-        new_cycles = [self._create_heating_cycle(base_datetime - timedelta(days=3))]
-        mock_heating_cycle_service.extract_heating_cycles.return_value = new_cycles
-
-        await manager.update_cycles_for_window(device_id, start_time, end_time)
-
-        # THEN Aspect B: Updates cache when present
-        assert mock_heating_cycle_storage.append_cycles.called
-
-        # WHEN: update_cycles_for_window is called with storage (separate call)
-        storage_cycles = [self._create_heating_cycle(base_datetime)]
-        mock_heating_cycle_service.extract_heating_cycles.return_value = storage_cycles
-
-        await manager.update_cycles_for_window(device_id, start_time, end_time)
-
-        # THEN Aspect E: Writes updated cycles to persistent cache
-        mock_heating_cycle_storage.append_cycles.assert_called()  # Persists to disk
-
-        # THEN Aspect D: Handles extraction errors
-        # (Setup for error scenario)
-        mock_heating_cycle_service.extract_heating_cycles.side_effect = ValueError(
-            "Extraction error"
-        )
-
-        # Error is handled (may raise or return [])
-        with pytest.raises(ValueError):
-            await manager.update_cycles_for_window(device_id, start_time, end_time)
-
-        # Reset for next aspect
-        mock_heating_cycle_service.extract_heating_cycles.side_effect = None
-
-        # THEN Aspect E: Handles large windows (365 days)
-        # (Setup for large window)
-        large_start = base_datetime - timedelta(days=365)
-        large_end = base_datetime
-
-        many_cycles = [
-            self._create_heating_cycle(base_datetime - timedelta(days=i)) for i in range(0, 365, 30)
-        ]
-        mock_heating_cycle_service.extract_heating_cycles.return_value = many_cycles
-
-        result_large = await manager.update_cycles_for_window(device_id, large_start, large_end)
-
-        # All cycles are returned
-        assert len(result_large) == len(many_cycles)
 
     # ===== Test: cancel() - ONE test for ALL scenarios =====
 
@@ -1163,7 +1073,7 @@ class TestHeatingCycleLifecycleManager:
         # THEN: Returns empty list
         assert result == []
 
-        # THEN: _extract_cycles was NEVER called (no Recorder query)
+        # THEN: no cycle was extracted (no Recorder query)
         mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1177,7 +1087,7 @@ class TestHeatingCycleLifecycleManager:
         """get_cycles_for_window must return [] when cache returns None (cache miss).
 
         Bug fix validation: When _heating_cycle_storage.get_cache_data() returns None,
-        the method must return an empty list — NOT fall through to _extract_cycles().
+        the method must return an empty list — NOT fall through to an extraction.
         This prevents OOM issues from querying the Recorder at startup.
         """
         # GIVEN: Storage exists but get_cache_data returns None (cache miss)
@@ -1196,7 +1106,7 @@ class TestHeatingCycleLifecycleManager:
         # THEN: Returns empty list (NOT the extracted cycles)
         assert result == []
 
-        # THEN: _extract_cycles was NEVER called
+        # THEN: no cycle was extracted
         mock_heating_cycle_service.extract_heating_cycles.assert_not_called()
 
     @pytest.mark.asyncio
