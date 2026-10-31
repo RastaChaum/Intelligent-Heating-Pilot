@@ -180,16 +180,7 @@ class HeatingCycleLifecycleManager:
             if pruned:
                 _LOGGER.debug("Cycles pruned — recalculating LHS and dead time")
                 self.invalidate_memory_cache()
-                try:
-                    cache_data = await self._heating_cycle_storage.get_cache_data(
-                        self._device_config.device_id
-                    )
-                    remaining_cycles: list[HeatingCycle] = (
-                        list(cache_data.cycles) if cache_data is not None else []
-                    )
-                except Exception as exc:
-                    _LOGGER.warning("Error loading remaining cycles for LHS recalculation: %s", exc)
-                    remaining_cycles = []
+                remaining_cycles = await self._load_cached_cycles()
 
                 if remaining_cycles:
                     await self._trigger_lhs_cascade(remaining_cycles)
@@ -204,6 +195,9 @@ class HeatingCycleLifecycleManager:
                 _LOGGER.debug(
                     "No cycles pruned — skipping LHS recalculation (model_storage already up to date)"
                 )
+                # The dead time is still learned: cycles extracted while auto-learning was
+                # off were never learned from (#224). An unchanged value is not saved again.
+                await self._persist_learned_dead_time(await self._load_cached_cycles())
 
         # Step 4: Find missing date ranges vs current (pruned) cache
         missing_ranges = await self._find_missing_date_ranges(start_date, end_date)
@@ -1165,6 +1159,10 @@ class HeatingCycleLifecycleManager:
         2. Persists to storage (model_storage)
         3. Fires callback to notify sensors
 
+        This is the only place the learned dead time is stored. A value equal to
+        the stored one is neither saved again nor announced, so a restart that
+        learns nothing new does not report an update.
+
         Args:
             cycles: Heating cycles used to calculate dead time
 
@@ -1191,7 +1189,14 @@ class HeatingCycleLifecycleManager:
                     f"{learned_dead_time:.1f}" if learned_dead_time is not None else "None",
                 )
 
-                if learned_dead_time is not None:
+                if learned_dead_time is not None and learned_dead_time == (
+                    await self._lhs_storage.get_learned_dead_time()
+                ):
+                    _LOGGER.debug(
+                        "Learned dead time unchanged (%.1f minutes); not saved again",
+                        learned_dead_time,
+                    )
+                elif learned_dead_time is not None:
                     await self._lhs_storage.set_learned_dead_time(learned_dead_time)
                     _LOGGER.info(
                         "Updated learned dead time from %d cycles: %.1f minutes",
@@ -1212,6 +1217,27 @@ class HeatingCycleLifecycleManager:
             )
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager._persist_learned_dead_time")
+
+    async def _load_cached_cycles(self) -> list[HeatingCycle]:
+        """Return every cycle of the persistent cache, or none if it cannot be read.
+
+        Learning is a replacement operation, so it must see the whole cache, not
+        only the cycles just extracted. A read error is logged and yields no cycle,
+        which leaves the learned values as they are.
+
+        Returns:
+            Cached heating cycles, empty without storage or on a read error.
+        """
+        if self._heating_cycle_storage is None:
+            return []
+        try:
+            cache_data = await self._heating_cycle_storage.get_cache_data(
+                self._device_config.device_id
+            )
+        except Exception as exc:
+            _LOGGER.warning("Error loading cached cycles: %s", exc)
+            return []
+        return list(cache_data.cycles) if cache_data is not None else []
 
     async def _trigger_lhs_cascade(self, cycles: list[HeatingCycle]) -> None:
         """Trigger cascade update to LHS lifecycle manager with error isolation.

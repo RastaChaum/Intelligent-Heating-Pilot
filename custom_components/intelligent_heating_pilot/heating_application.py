@@ -107,10 +107,9 @@ class HeatingApplication:
 
         # IHP enabled state
         self._ihp_enabled = device_config.ihp_enabled
-        self._last_known_dead_time: float | None = None
         # Serializes async_update and async_reset_learning: an update that
-        # computed its anticipation before a reset must not write the old
-        # dead time back after it.
+        # read the learned data before a reset must not put the old LHS back
+        # into the sensor caches after it.
         self._learning_lock = asyncio.Lock()
 
         # Infrastructure adapters
@@ -534,13 +533,8 @@ class HeatingApplication:
         # Cache for sensors
         self._last_anticipation_data = anticipation_data
 
-        # Persist and notify dead_time when freshly calculated and different from last known value
-        new_dead_time = anticipation_data.get("dead_time") if anticipation_data else None
-        if new_dead_time is not None and new_dead_time != self._last_known_dead_time:
-            self._last_known_dead_time = new_dead_time
-            if self._lhs_storage:
-                await self._lhs_storage.set_learned_dead_time(new_dead_time)
-            self._fire_dead_time_updated_event(new_dead_time)
+        # The anticipation's dead time is not stored as learned: until cycles are
+        # learned it is the configured one (#224). Only the cycle extraction stores it.
 
         # Refresh LHS caches
         if self._lhs_manager:
@@ -640,7 +634,6 @@ class HeatingApplication:
         """Reload sensor-facing caches from the managers and force a sensor refresh."""
         self._lhs_cache = DEFAULT_LEARNED_SLOPE
         self._contextual_lhs_cache = {}
-        self._last_known_dead_time = None
         await self.refresh_caches()
 
         try:
