@@ -162,7 +162,7 @@ ci: ...       # CI/CD (GitHub Actions workflows and their configuration)
 ## Documentation Rules
 
 - **No unsolicited markdown reports** — summaries go in PR descriptions or conversation
-- **No French in code or documentation** — all code artifacts in English
+- **No French in code or documentation** — all code artifacts in English. Sole exception: `README.fr.md`, the French translation of `README.md` shown by the [Versatile Thermostat plugin registry](https://www.versatile-thermostat.org/en/plugins/). It stays at the repository root, and any change to `README.md` updates it in the same PR
 - `docs/contributors/DEVELOPMENT_STANDARDS.md` is the single source of truth for dev standards
 - Docstrings explain the "why", not just the "what"
 - User and contributor documentation belongs in `docs/`

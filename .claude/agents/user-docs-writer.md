@@ -82,7 +82,7 @@ Follow [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions:
 
 ## Writing Style & Quality Standards
 
-**Language**: All documentation is written in **English**. No French in any documentation artifact.
+**Language**: All documentation is written in **English**. No French in any documentation artifact, except `README.fr.md`: the French translation of `README.md`, shown by the Versatile Thermostat plugin registry. Whenever you change `README.md`, apply the same change to `README.fr.md`.
 
 **Tone**: Friendly, direct, confident. Write as if explaining to a technically curious homeowner, not a software engineer.
 
@@ -114,7 +114,8 @@ Follow [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions:
 2. **Determine which files need updating**: README Quick Start? New guide? Existing guide update? CHANGELOG entry?
 3. **Draft content**: Write following the structure and style rules above.
 4. **Self-review checklist** before finalizing:
-   - [ ] No French text anywhere
+   - [ ] No French text anywhere, except `README.fr.md`
+   - [ ] `README.fr.md` reflects every change made to `README.md`
    - [ ] No contributor/developer content in user docs
    - [ ] README stays concise — details are in docs/guides/
    - [ ] All code examples are syntactically valid YAML/JSON
@@ -130,7 +131,8 @@ Follow [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) conventions:
 - ❌ Adding HA class names, module paths, or internal architecture details to user docs
 - ❌ Duplicating configuration reference in both README and guides
 - ❌ Writing walls of text with no visual structure
-- ❌ Using French in any documentation artifact
+- ❌ Using French in any documentation artifact other than `README.fr.md`
+- ❌ Changing `README.md` without updating `README.fr.md`
 - ❌ Touching contributor documentation files
 - ❌ Creating documentation that requires developer knowledge to understand
 - ❌ Unsolicited markdown summary reports in conversation — doc content goes in files only
