@@ -417,6 +417,54 @@ class TestPersistLearnedDeadTimeSkipsUnchangedValue:
         dead_time_callback.assert_called_once_with(pytest.approx(CYCLES_AVERAGE_DEAD_TIME))
 
 
+class TestPersistLearnedDeadTimeGuards:
+    """Nothing is stored as learned without a measured dead time or with auto-learning off.
+
+    Every live trigger (extraction, pruning, cache refresh) stores the dead time through
+    _persist_learned_dead_time, so its guards are tested there (#218).
+    """
+
+    @pytest.mark.asyncio
+    async def test_nothing_stored_when_no_cycle_has_a_dead_time(
+        self,
+        device_config_for_dead_time: DeviceConfig,
+        mock_lhs_storage_dead_time: Mock,
+        dead_time_callback: Mock,
+    ) -> None:
+        """Cycles without a dead time, or with a zero one, teach nothing."""
+        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=UTC)
+        cycles = [
+            create_heating_cycle_with_dead_time(base_time, None),
+            create_heating_cycle_with_dead_time(base_time + timedelta(hours=2), 0.0),
+        ]
+        manager = _manager_with_cache(
+            device_config_for_dead_time, None, mock_lhs_storage_dead_time, dead_time_callback
+        )
+
+        await manager._persist_learned_dead_time(cycles)
+
+        mock_lhs_storage_dead_time.set_learned_dead_time.assert_not_awaited()
+        dead_time_callback.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_nothing_stored_when_auto_learning_disabled(
+        self,
+        device_config_dead_time_disabled: DeviceConfig,
+        mock_lhs_storage_dead_time: Mock,
+        dead_time_callback: Mock,
+        cycles_averaging_nine_minutes: list[HeatingCycle],
+    ) -> None:
+        """The configured dead time stays in use, even with measured dead times."""
+        manager = _manager_with_cache(
+            device_config_dead_time_disabled, None, mock_lhs_storage_dead_time, dead_time_callback
+        )
+
+        await manager._persist_learned_dead_time(cycles_averaging_nine_minutes)
+
+        mock_lhs_storage_dead_time.set_learned_dead_time.assert_not_awaited()
+        dead_time_callback.assert_not_called()
+
+
 class TestRefreshLearnsDeadTimeWithoutPruning:
     """The cache refresh learns the dead time from cached cycles even when none is pruned.
 
