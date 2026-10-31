@@ -105,6 +105,8 @@ class TestHeatingCycleLifecycleManager:
         storage = Mock()
         storage.save_heating_cycle = AsyncMock()
         storage.get_heating_cycles = AsyncMock(return_value=[])
+        storage.get_learned_dead_time = AsyncMock(return_value=None)
+        storage.set_learned_dead_time = AsyncMock()
         return storage
 
     @pytest.fixture
