@@ -4,6 +4,8 @@
 [![Release](https://img.shields.io/github/v/release/RastaChaum/Intelligent-Heating-Pilot?label=version&color=blue)](https://github.com/RastaChaum/Intelligent-Heating-Pilot/releases/latest)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 
+🇫🇷 [Version française](README.fr.md)
+
 > **The Adaptive Brain for Versatile Thermostat**
 
 A Home Assistant integration that learns your heating system and automatically starts heating at exactly the right time—no manual tuning required.
@@ -77,7 +79,7 @@ Settings → Devices & Services → + Add Integration
 
 ### Future Vision
 
-- 🔮 Setback optimization
+- 🔮 Setback optimization (lowering the temperature before a comfort slot ends, using the room's inertia)
 - 🔮 Occupancy-aware scheduling
 - 🔮 Multi-zone coordination
 - 🔮 Energy cost optimization

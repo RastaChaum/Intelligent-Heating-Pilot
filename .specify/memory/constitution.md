@@ -1,28 +1,20 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.0 -> 1.1.0
+- Version change: 1.1.0 -> 1.2.0
 - Modified principles:
-	- I. Home Assistant Development Guide Compliance -> I. Home Assistant Platform Compliance
-	- II. Hexagonal Domain-Driven Architecture -> II. Hexagonal Domain-Driven Boundaries
-	- III. Strongly Typed Object-Oriented Python -> III. Typed, Object-Oriented, Mostly Stateless Python
-	- IV. SOLID Microservices with Event-Driven Decoupling -> IV. Cohesive Services and Explicit Integration Boundaries
-	- V. Test-First Quality with TDD and BDD -> V. Test-First Quality with BDD and Technical Validation
-- Added principles:
-	- VI. Agent-Driven Workflow with Critical Peer Review
+	- None
+- Modified sections:
+	- Operational Standards and Documentation: the English-only rule now has one
+	  exception, README.fr.md, which MUST be updated together with README.md
 - Added sections:
-	- Operational Standards and Documentation
+	- None
 - Removed sections:
 	- None
 - Templates requiring updates:
-	- ✅ updated: .specify/templates/plan-template.md
-	- ✅ updated: .specify/templates/spec-template.md
-	- ✅ updated: .specify/templates/tasks-template.md
-	- ✅ updated: .github/agents/speckit.specify.agent.md
-	- ✅ updated: .github/agents/speckit.plan.agent.md
-	- ✅ updated: .github/agents/speckit.tasks.agent.md
-	- ✅ updated: .github/agents/speckit.implement.agent.md
-	- ✅ updated: .github/agents/speckit.analyze.agent.md
-	- ⚠ pending check: .specify/templates/commands/*.md (directory missing in repository)
+	- ✅ updated: .specify/templates/spec-template.md (DR-003)
+	- ✅ updated: .github/agents/speckit.docs.agent.md
+	- ✅ updated: .claude/agents/user-docs-writer.md
+	- ✅ updated: CLAUDE.md
 - Deferred TODOs:
 	- None
 -->
@@ -105,7 +97,10 @@ Documentation MUST be concise, consistent, easy to navigate, and split by audien
 - user documentation explains installation, configuration, usage, and troubleshooting;
 - contributor documentation explains architecture, code conventions, and project rules.
 Unsolicited markdown reports and duplicated guidance are prohibited. All
-documentation and code artifacts MUST be in English.
+documentation and code artifacts MUST be in English, except `README.fr.md`, the
+French translation of `README.md` displayed by the Versatile Thermostat plugin
+registry. Any change to `README.md` MUST update `README.fr.md` in the same pull
+request.
 
 ## Delivery Workflow and Quality Gates
 
@@ -141,4 +136,4 @@ Compliance review expectations:
 - every review MUST block merge if a MUST rule is violated;
 - every stage review MUST be performed by an agent different from the producing agent.
 
-**Version**: 1.1.0 | **Ratified**: 2026-04-03 | **Last Amended**: 2026-04-03
+**Version**: 1.2.0 | **Ratified**: 2026-04-03 | **Last Amended**: 2026-10-31

@@ -138,7 +138,8 @@ Constitution-driven test requirements:
   behavior visible to users changes.
 - **DR-002**: Contributor-facing documentation updates MUST be identified in scope
   when architecture, rules, or development workflow change.
-- **DR-003**: All new or updated documentation and code artifacts MUST be in English.
+- **DR-003**: All new or updated documentation and code artifacts MUST be in English,
+  except `README.fr.md`, which MUST be updated whenever `README.md` changes.
 - **DR-004**: Documentation changes MUST avoid duplicated guidance and ad-hoc
   markdown reports unless explicitly requested.
 
