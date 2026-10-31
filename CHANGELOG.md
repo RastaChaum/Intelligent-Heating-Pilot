@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Schedulers** (#188, #189) – Native `schedule.*` entities now get an anticipated start based on the VTherm comfort preset (IHP does not start the heating for them: use HACS Scheduler or an automation on the sensor), and one misconfigured HACS scheduler no longer blocks preheating for the others.
 - **Sensors stay up to date** (#191, #226) – Attributes and prediction confidence refresh correctly, the contextual slope sensor shows *unknown* for hours not learned yet, and the device is no longer renamed.
 - **Settings and services** (#186) – Changing the retention period no longer resets the device configuration, and services called during startup return a clear error.
+- **Setup and options forms fully labelled** (#193) – Several settings showed a raw key (e.g. `auto_learning`) instead of a label, and submitting without a thermostat showed `required` instead of a message. Every setting now has a label and a help text in English and French, the services are translated, and the safety shutoff grace period shows its unit.
 
 ### Added
 - **Outdoor temperature** (#180, #190) – A sensor or a `weather.*` entity can be configured and is recorded with each heating cycle, for a future weather-aware adjustment. The fixed outdoor correction, which counted the cold twice, is removed.

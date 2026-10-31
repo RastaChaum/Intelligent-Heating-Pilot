@@ -184,9 +184,9 @@ When to use: If you know your heating system has a significant startup lag (e.g.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Automatic Learning** | Enabled | When enabled, IHP updates learned heating slope and dead time after each cycle |
+| **Automatic Learning** | Enabled | When enabled, IHP learns the dead time from heating cycles. When disabled, the **Initial Dead Time** is always used. The heating slope is learned in both cases |
 
-When to disable: During testing or when you want to freeze parameters for a period while evaluating IHP's behavior with fixed values.
+When to disable: During testing or when you want to freeze the dead time for a period while evaluating IHP's behavior with a fixed value.
 
 ---
 
