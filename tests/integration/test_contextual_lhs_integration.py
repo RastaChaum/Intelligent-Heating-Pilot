@@ -95,10 +95,10 @@ class TestContextualLHSIntegration:
             next_schedule_time: 2025-02-09 06:00:00 (hour 6)
             cycles:
             - start: 2025-02-08 06:15:00, lhs=15.0°C/h
-            - start: 2025-02-07 06:30:00, lhs=14.5°C/h
+            - start: 2025-02-07 06:10:00, lhs=13.5°C/h (ends 06:22, nearest to 06:00)
 
         Expected:
-            contextual_lhs[6] = ContextualLHSData(lhs=14.75, cycle_count=2)
+            contextual_lhs[6] = ContextualLHSData(lhs=14.25, cycle_count=2)
 
         RED: Domain logic should correctly group and average cycles for the hour.
         """
@@ -114,8 +114,8 @@ class TestContextualLHSIntegration:
 
         cycle2_custom = HeatingCycle(
             device_id="climate.test",
-            start_time=base_datetime.replace(day=7, hour=6, minute=30),
-            end_time=base_datetime.replace(day=7, hour=6, minute=30) + timedelta(hours=0.2),
+            start_time=base_datetime.replace(day=7, hour=6, minute=10),
+            end_time=base_datetime.replace(day=7, hour=6, minute=10) + timedelta(hours=0.2),
             target_temp=21.0,
             end_temp=20.7,
             start_temp=18.0,  # 2.9°C / 0.2h = 13.5°C/h

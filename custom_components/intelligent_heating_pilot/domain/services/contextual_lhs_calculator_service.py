@@ -1,7 +1,8 @@
 """Service for calculating contextual Learning Heating Slope (LHS).
 
-Pure domain logic for grouping cycles by the hour their target was reached
-and calculating average heating slopes per hour. No Home Assistant dependencies.
+Pure domain logic for grouping cycles by the hour nearest to when their target
+was reached and calculating average heating slopes per hour. No Home Assistant
+dependencies.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from datetime import UTC, tzinfo
 
 from ..constants import MINIMUM_REALISTIC_LHS
 from ..value_objects import ContextualLHSByHour, HeatingCycle
+from .contextual_hour import contextual_hour
 from .learning_cycle_filter import filter_realistic_cycles
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,13 +22,14 @@ class ContextualLHSCalculatorService:
     """Calculate contextual LHS grouped by the hour the target was reached.
 
     The contextual hour is the key shared by the write side (cycles learned
-    here) and the read side (anticipation looks up ``target_time.hour``).
+    here) and the read side (anticipation looks up the slot's contextual hour).
     A preheat cycle for a 07:00 slot starts at 05:00 or 06:00 but ends when the
-    target is reached, around 07:00. Keying cycles by their end hour therefore
-    lets each scheduled slot read the slope learned while preheating for it.
+    target is reached, around 07:00. Keying cycles by the hour nearest to their
+    end therefore lets each scheduled slot read the slope learned while
+    preheating for it, whether the cycle ended a little before or after it.
 
     Responsibilities:
-    - Extract the contextual hour from a cycle (its end_time hour)
+    - Extract the contextual hour from a cycle (the hour nearest to its end_time)
     - Group cycles by contextual hour
     - Calculate average LHS per hour
     - Handle empty groups gracefully
@@ -50,9 +53,11 @@ class ContextualLHSCalculatorService:
         """Extract the contextual hour (0-23) of a cycle.
 
         Uses the end time, i.e. when the target temperature was reached, so the
-        key matches the scheduled target hour used for lookups. Using the start
-        time would file a preheat cycle under an earlier hour than the slot it
-        served, and the slot would never read its own learned slope.
+        key matches the contextual hour of the slot used for lookups. Using the
+        start time would file a preheat cycle under an earlier hour than the slot
+        it served, and the slot would never read its own learned slope. The end
+        time is rounded to the nearest hour, with the same rule as the slots,
+        because a cycle usually ends a little before its slot (#214).
 
         Args:
             cycle: The heating cycle
@@ -64,7 +69,7 @@ class ContextualLHSCalculatorService:
         end_time = cycle.end_time
         if self._local_tz is not None:
             end_time = end_time.replace(tzinfo=end_time.tzinfo or UTC).astimezone(self._local_tz)
-        hour = end_time.hour
+        hour = contextual_hour(end_time)
         _LOGGER.debug("Extracted hour: %d", hour)
         return hour
 
@@ -117,7 +122,7 @@ class ContextualLHSCalculatorService:
             "Calculating contextual LHS for hour %d from %d cycles", target_hour, len(cycles)
         )
 
-        # Filter cycles that reached their target during target hour
+        # Filter cycles that reached their target around the target hour
         matching_cycles = [c for c in cycles if self.extract_hour_from_cycle(c) == target_hour]
 
         avg_lhs = self._average_heating_slope(matching_cycles, target_hour)

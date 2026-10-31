@@ -111,11 +111,11 @@ class TestContextualLHSCalculatorServiceAdvanced:
     ) -> None:
         """Test that all cycles for the same hour are included.
 
-        RED: Should group 5 cycles all at hour 6 correctly.
+        The 5 cycles end from 05:40 to 06:20, all nearest to 06:00 (#214).
         """
         cycles = [
             self._create_cycle(
-                start_time=base_datetime.replace(hour=5, minute=i * 10),
+                start_time=base_datetime.replace(hour=4, minute=40) + timedelta(minutes=i * 10),
                 start_temp=18.0,
                 end_temp=20.0,
             )
