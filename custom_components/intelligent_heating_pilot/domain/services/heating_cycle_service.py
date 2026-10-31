@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import bisect
 import logging
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any, cast
 
+from ..constants import DEAD_TIME_TEMP_RISE_C, TEMP_FLOAT_TOLERANCE_C
 from ..interfaces.heating_cycle_service_interface import IHeatingCycleService
 from ..value_objects.heating import HeatingCycle, TariffPeriodDetail
 from ..value_objects.historical_data import (
@@ -17,6 +19,19 @@ from ..value_objects.historical_data import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class DeadTimeEnd:
+    """The reading that ended a cycle's dead time.
+
+    Attributes:
+        minutes: Dead time, from the cycle start to that reading.
+        temperature: Indoor temperature of that reading, where the heating phase starts.
+    """
+
+    minutes: float
+    temperature: float
 
 
 class HeatingCycleService(IHeatingCycleService):
@@ -490,8 +505,7 @@ class HeatingCycleService(IHeatingCycleService):
             tariff_history, energy_history, runtime_history, start_time, end_time, total_energy_kwh
         )
 
-        # Calculate dead_time_cycle for this cycle
-        dead_time_cycle_minutes = self._calculate_dead_time_cycle(
+        dead_time_end = self._calculate_dead_time_cycle(
             start_time=start_time,
             end_time=end_time,
             start_temp=start_indoor_temp,
@@ -507,9 +521,10 @@ class HeatingCycleService(IHeatingCycleService):
             end_temp=end_indoor_temp,
             start_temp=start_indoor_temp,
             tariff_details=tariff_details,
-            dead_time_cycle_minutes=dead_time_cycle_minutes,
+            dead_time_cycle_minutes=dead_time_end.minutes if dead_time_end else None,
             min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
             avg_outdoor_temp=self._compute_average_outdoor_temp(data, start_time, end_time),
+            dead_time_end_temp=dead_time_end.temperature if dead_time_end else None,
         )
         _LOGGER.debug(
             "Created single heating cycle: %s (energy=%.3fkWh duration=%.1fmin cost=%.3f€)",
@@ -520,124 +535,85 @@ class HeatingCycleService(IHeatingCycleService):
         )
 
         # If splitting is enabled, return sub-cycles (used for ML augmentation).
-        if (
-            split_duration_minutes is not None
-            and split_duration_minutes > 0
-            and duration_minutes > split_duration_minutes
-        ):
-            return self._split_into_cycles(
-                device_id,
-                start_time,
-                end_time,
-                start_indoor_temp,
-                end_indoor_temp,
-                target_temp,
-                history_data_set,
-                split_duration_minutes,
-                dead_time_cycle_minutes,
-            )
+        if split_duration_minutes is not None and split_duration_minutes > 0:
+            return self._split_into_cycles(cycle, history_data_set, split_duration_minutes)
 
         return [cycle]
 
     def _split_into_cycles(
         self,
-        device_id: str,
-        start_time: datetime,
-        end_time: datetime,
-        start_indoor_temp: float,
-        end_indoor_temp: float,
-        target_temp: float,
+        parent: HeatingCycle,
         history_data_set: HistoricalDataSet,
-        split_duration_minutes: int = 0,
-        parent_dead_time_minutes: float | None = None,
+        split_duration_minutes: int,
     ) -> list[HeatingCycle]:
-        """Splits a long heating cycle into smaller sub-cycles and returns them.
+        """Split a long cycle's heating phase into sub-cycles of the split duration.
 
-        The parent cycle's dead time is given to the first sub-cycle only. It was
-        searched up to the parent end: the first rise may come after the first
-        sub-cycle ends but still belongs to this heating cycle.
+        Temperatures are interpolated linearly over the heating phase, from the end of the
+        dead time to the cycle end, so every sub-cycle gets the slope of that phase.
+        Interpolating from the cycle start spread the dead time over every sub-cycle, and
+        the first one removed it a second time (#218, #245). The first sub-cycle starts with
+        the cycle and also covers the dead time: it keeps the dead time and the temperature
+        at its end, so the dead time is still learned. A cycle whose heating phase is not
+        longer than the split duration is returned unsplit.
         """
-        if split_duration_minutes <= 0:  # No splitting
-            return []
+        phase_start = parent.heating_phase_start_time
+        phase_start_temp = parent.heating_phase_start_temp
+        phase_minutes = (parent.end_time - phase_start).total_seconds() / 60.0
+        if phase_minutes <= split_duration_minutes:
+            return [parent]
 
-        # Ensure temperatures are available before attempting numeric operations
-        if start_indoor_temp is None or end_indoor_temp is None:
-            _LOGGER.debug("Missing start or end indoor temp for splitting; skipping split")
-            return []
-
-        duration_minutes = (end_time - start_time).total_seconds() / 60.0
-        num_sub_cycles = int(duration_minutes / split_duration_minutes)
-        remaining_minutes = duration_minutes - (num_sub_cycles * split_duration_minutes)
-
-        if duration_minutes == 0:
-            return []
-
-        temp_per_minute = (end_indoor_temp - start_indoor_temp) / duration_minutes
-
-        current_sub_cycle_start_time = start_time
-        current_sub_cycle_start_temp = start_indoor_temp
-
-        created: list[HeatingCycle] = []
-
+        temp_per_minute = (parent.end_temp - phase_start_temp) / phase_minutes
         _LOGGER.debug(
-            "Splitting cycle from %s to %s (%.1f min) into %d sub-cycles",
-            start_time,
-            end_time,
-            duration_minutes,
-            num_sub_cycles + (1 if remaining_minutes > 0 else 0),
+            "Splitting cycle from %s to %s (heating phase from %s, %.1f min) every %d min",
+            parent.start_time,
+            parent.end_time,
+            phase_start,
+            phase_minutes,
+            split_duration_minutes,
         )
 
-        for i in range(num_sub_cycles):
-            sub_cycle_end_time = current_sub_cycle_start_time + timedelta(
-                minutes=split_duration_minutes
+        created: list[HeatingCycle] = []
+        sub_start, sub_start_temp = parent.start_time, parent.start_temp
+        for sub_end in self._split_boundaries(phase_start, parent.end_time, split_duration_minutes):
+            sub_end_temp = (
+                parent.end_temp
+                if sub_end == parent.end_time
+                else phase_start_temp
+                + temp_per_minute * (sub_end - phase_start).total_seconds() / 60.0
             )
-            sub_cycle_end_temp = current_sub_cycle_start_temp + (
-                temp_per_minute * split_duration_minutes
-            )
-
-            dead_time_cycle_minutes = parent_dead_time_minutes if i == 0 else None
-
-            sub_cycle = HeatingCycle(
-                device_id=device_id,
-                start_time=current_sub_cycle_start_time,
-                end_time=sub_cycle_end_time,
-                target_temp=target_temp,  # Target remains constant for sub-cycles
-                end_temp=sub_cycle_end_temp,
-                start_temp=current_sub_cycle_start_temp,
+            is_first = not created
+            sub_cycle = replace(
+                parent,
+                start_time=sub_start,
+                end_time=sub_end,
+                start_temp=sub_start_temp,
+                end_temp=sub_end_temp,
                 tariff_details=[],  # TODO: calculate for sub-cycle
-                dead_time_cycle_minutes=dead_time_cycle_minutes,
-                min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
+                dead_time_cycle_minutes=parent.dead_time_cycle_minutes if is_first else None,
+                dead_time_end_temp=parent.dead_time_end_temp if is_first else None,
                 avg_outdoor_temp=self._compute_average_outdoor_temp(
-                    history_data_set.data, current_sub_cycle_start_time, sub_cycle_end_time
+                    history_data_set.data, sub_start, sub_end
                 ),
             )
             created.append(sub_cycle)
-            _LOGGER.debug("  Created sub-cycle %d: %s", i + 1, sub_cycle)
-
-            current_sub_cycle_start_time = sub_cycle_end_time
-            current_sub_cycle_start_temp = sub_cycle_end_temp
-
-        # Record remaining part if significant
-        if remaining_minutes > 0:
-            remaining_end_time = current_sub_cycle_start_time + timedelta(minutes=remaining_minutes)
-            remaining_cycle = HeatingCycle(
-                device_id=device_id,
-                start_time=current_sub_cycle_start_time,
-                end_time=remaining_end_time,
-                target_temp=target_temp,
-                end_temp=end_indoor_temp,
-                start_temp=current_sub_cycle_start_temp,
-                tariff_details=[],  # TODO: calculate for remaining sub-cycle
-                dead_time_cycle_minutes=None,  # Not for remaining cycles
-                min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
-                avg_outdoor_temp=self._compute_average_outdoor_temp(
-                    history_data_set.data, current_sub_cycle_start_time, remaining_end_time
-                ),
-            )
-            created.append(remaining_cycle)
-            _LOGGER.debug("  Created remaining sub-cycle: %s", remaining_cycle)
+            _LOGGER.debug("  Created sub-cycle %d: %s", len(created), sub_cycle)
+            sub_start, sub_start_temp = sub_end, sub_end_temp
 
         return created
+
+    @staticmethod
+    def _split_boundaries(
+        phase_start: datetime, end_time: datetime, split_duration_minutes: int
+    ) -> list[datetime]:
+        """End times of the sub-cycles: every split duration after phase_start, then end_time."""
+        step = timedelta(minutes=split_duration_minutes)
+        boundaries: list[datetime] = []
+        boundary = phase_start + step
+        while boundary < end_time:
+            boundaries.append(boundary)
+            boundary += step
+        boundaries.append(end_time)
+        return boundaries
 
     @staticmethod
     def _compute_average_outdoor_temp(
@@ -843,13 +819,14 @@ class HeatingCycleService(IHeatingCycleService):
         end_time: datetime,
         start_temp: float,
         history_data_set: HistoricalDataSet,
-        temp_change_threshold: float = 0.2,
+        temp_change_threshold: float = DEAD_TIME_TEMP_RISE_C,
         max_dead_time_minutes: float = 180.0,
-    ) -> float | None:
+    ) -> DeadTimeEnd | None:
         """Calculate the dead time for a specific cycle.
 
         Dead time is the period from cycle start to the first measurable temperature rise.
         Only positive temperature changes (heating) are considered; decreases return None.
+        A fall after heating starts, and the climb back, are part of the dead time.
         The search stops at ``end_time``: a rise after the cycle ended comes from a later
         heating episode and must not be attributed to this one (issue #185).
 
@@ -858,16 +835,17 @@ class HeatingCycleService(IHeatingCycleService):
             end_time: When the heating cycle ended; measurements after it are ignored
             start_temp: Initial temperature at cycle start
             history_data_set: Historical temperature data
-            temp_change_threshold: Minimum temperature rise to detect (default: 0.2°C, must be
-                positive). Chosen to be above typical sensor noise while remaining sensitive
-                enough to detect early heat propagation.
+            temp_change_threshold: Minimum temperature rise to detect (default:
+                DEAD_TIME_TEMP_RISE_C, must be positive). A rise of exactly the threshold
+                counts, despite floating-point error.
             max_dead_time_minutes: Maximum acceptable dead time (default: 180 minutes).
                 Floor heating systems can require 60–120 min to transfer heat to the room.
                 Values above this threshold are considered data artifacts.
 
         Returns:
-            Dead time in minutes, or None if temperature never rises by threshold
-            within the cycle, no data available, or dead time exceeds maximum threshold
+            The dead time in minutes and the temperature that ended it, or None if
+            temperature never rises by threshold within the cycle, no data available,
+            or dead time exceeds maximum threshold
         """
         indoor_temp_history = history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, [])
 
@@ -887,9 +865,10 @@ class HeatingCycleService(IHeatingCycleService):
             try:
                 current_temp = float(measurement.value)
                 # Check if temperature has risen by at least the threshold
-                # (only positive changes indicate heating; threshold only applies to increases)
+                # (only positive changes indicate heating; threshold only applies to increases).
+                # The tolerance absorbs float error only: 18.2 - 18.0 must count as 0.2 °C.
                 temp_change = current_temp - start_temp
-                if temp_change >= temp_change_threshold:
+                if temp_change >= temp_change_threshold - TEMP_FLOAT_TOLERANCE_C:
                     dead_time_minutes = (measurement.timestamp - start_time).total_seconds() / 60.0
 
                     # Filter out abnormally high dead times (data artifacts)
@@ -907,7 +886,7 @@ class HeatingCycleService(IHeatingCycleService):
                         start_temp,
                         current_temp,
                     )
-                    return dead_time_minutes
+                    return DeadTimeEnd(minutes=dead_time_minutes, temperature=current_temp)
             except (ValueError, TypeError):
                 continue
 

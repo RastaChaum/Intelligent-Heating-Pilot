@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 
+from ..constants import DEAD_TIME_TEMP_RISE_C
+
 
 class HeatingAction(Enum):
     """Types of heating actions that can be taken."""
@@ -67,8 +69,8 @@ class HeatingCycle:
         tariff_details: A list of TariffDetail objects, breaking down energy, duration,
                         and cost by specific TariffPeriodDetail periods within the cycle.
         dead_time_cycle_minutes: Dead time for this specific cycle in minutes. Time from
-                                 cycle start to first measurable temperature change.
-                                 None if cannot be determined.
+                                 cycle start until the indoor temperature has risen by
+                                 DEAD_TIME_TEMP_RISE_C. None if cannot be determined.
         min_effective_duration_minutes: Minimum effective heating duration (in minutes) required
                                         to compute a valid slope. Effective duration is
                                         total_duration − dead_time. Cycles whose effective window
@@ -79,6 +81,9 @@ class HeatingCycle:
                           None when no outdoor source is configured or has no history.
                           Recorded so the slope can later be related to the weather it was
                           learned in, instead of assuming a fixed reference.
+        dead_time_end_temp: Indoor temperature (°C) of the reading that ended the dead time.
+                            The heating slope is measured from it. None without a dead time,
+                            and for cycles cached before it was recorded.
     """
 
     device_id: str
@@ -91,25 +96,48 @@ class HeatingCycle:
     dead_time_cycle_minutes: float | None = None
     min_effective_duration_minutes: float = 5.0
     avg_outdoor_temp: float | None = None
+    dead_time_end_temp: float | None = None
+
+    @property
+    def has_dead_time(self) -> bool:
+        """Whether a positive dead time was measured for this cycle."""
+        return self.dead_time_cycle_minutes is not None and self.dead_time_cycle_minutes > 0
+
+    @property
+    def heating_phase_start_time(self) -> datetime:
+        """When the room starts heating: the end of the dead time, else the cycle start."""
+        if self.has_dead_time:
+            return self.start_time + timedelta(minutes=self.dead_time_cycle_minutes or 0.0)
+        return self.start_time
+
+    @property
+    def heating_phase_start_temp(self) -> float:
+        """Indoor temperature when the room starts heating.
+
+        Cycles cached before the temperature at the end of the dead time was recorded
+        fall back to the definition of the dead time: it ends once the room has gained
+        DEAD_TIME_TEMP_RISE_C over its start temperature.
+        """
+        if not self.has_dead_time:
+            return self.start_temp
+        if self.dead_time_end_temp is not None:
+            return self.dead_time_end_temp
+        return self.start_temp + DEAD_TIME_TEMP_RISE_C
 
     @property
     def avg_heating_slope(self) -> float:
         """Calculates the average heating slope in °C/hour for the heating cycle.
 
-        Excludes the dead_time_cycle period to get the true heating slope once
-        the system is actively heating (without initial inertia).
+        Measured over the heating phase only, from the end of the dead time: the rise
+        (or fall) during the dead time belongs to the dead time. Counting it in a window
+        that excludes the dead time overestimated the slope (#245).
 
         Returns 0.0 when the effective heating duration (after subtracting dead_time) is shorter
         than ``min_effective_duration_minutes``. This guards against aberrant slope values that
         arise when dead_time ≈ total_duration, leaving an effective duration of only a few
         microseconds and producing slopes in the range of 100 000–200 000 °C/h.
         """
-        # Calculate effective start time (after dead_time_cycle)
-        if self.dead_time_cycle_minutes and self.dead_time_cycle_minutes > 0:
-            effective_start_time = self.start_time + timedelta(minutes=self.dead_time_cycle_minutes)
-            duration_hours = (self.end_time - effective_start_time).total_seconds() / 3600
-        else:
-            duration_hours = (self.end_time - self.start_time).total_seconds() / 3600
+        duration_hours = (self.end_time - self.heating_phase_start_time).total_seconds() / 3600
 
         if duration_hours <= 0:
             return 0.0
@@ -120,7 +148,7 @@ class HeatingCycle:
         if effective_duration_minutes < self.min_effective_duration_minutes:
             return 0.0
 
-        temp_increase = self.end_temp - self.start_temp
+        temp_increase = self.end_temp - self.heating_phase_start_temp
         return temp_increase / duration_hours
 
     @property
