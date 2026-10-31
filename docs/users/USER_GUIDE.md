@@ -76,7 +76,7 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 
 **Steps:**
 1. Find your IHP device
-2. Look for "Dead Time" sensor (shows value in seconds)
+2. Look for "Dead Time" sensor (shows value in minutes)
 3. This represents system lag before temperature starts changing
 4. Higher values = slower response to heating commands
 
@@ -84,7 +84,7 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 - Time between when heating turns on and when temperature actually starts rising
 - IHP automatically learns this from your heating cycles
 - Improves prediction accuracy for your system
-- Value typically ranges from 30-300 seconds depending on system type
+- Until a dead time is learned (new device, after `reset_learning`, or with **Automatic Learning** disabled), the sensor shows the **Initial Dead Time** setting
 
 ### Task: See next heating plan
 
