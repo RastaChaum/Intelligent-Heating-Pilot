@@ -8,7 +8,8 @@ had been learned for that hour.
 
 from __future__ import annotations
 
-from unittest.mock import Mock
+from datetime import datetime
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -25,6 +26,8 @@ LEARNED_CONTEXTUAL_LHS = 2.4
 LEARNED_HOUR = 6
 UNLEARNED_HOUR = 23
 OUT_OF_RANGE_HOURS = (-1, 24)
+SLOT_AFTER_HALF_HOUR = datetime(2026, 1, 15, 6, 45)
+NEAREST_HOUR_OF_SLOT = 7
 
 
 @pytest.fixture
@@ -69,3 +72,29 @@ class TestGetContextualLearnedHeatingSlope:
         result = app_with_learned_global_lhs.get_contextual_learned_heating_slope(hour)
 
         assert result is None
+
+
+class TestContextualCacheAfterUpdate:
+    """The update caches the slope of the hour the sensor will read (#214)."""
+
+    @pytest.mark.asyncio
+    async def test_slot_after_half_hour_caches_the_next_hour(
+        self, app_with_learned_global_lhs: HeatingApplication
+    ) -> None:
+        """A 06:45 slot reads hour 7: that is the hour reloaded for the sensor."""
+        app = app_with_learned_global_lhs
+        app._orchestrator = Mock()
+        app._orchestrator.calculate_and_schedule_anticipation = AsyncMock(
+            return_value={"next_schedule_time": SLOT_AFTER_HALF_HOUR}
+        )
+        app._lhs_manager = Mock()
+        app._lhs_manager.get_global_lhs = AsyncMock(return_value=LEARNED_GLOBAL_LHS)
+        app._lhs_manager.get_learned_contextual_lhs = AsyncMock(
+            side_effect=lambda hour: LEARNED_CONTEXTUAL_LHS if hour == NEAREST_HOUR_OF_SLOT else None
+        )
+
+        await app._async_update_locked()
+
+        assert (
+            app.get_contextual_learned_heating_slope(NEAREST_HOUR_OF_SLOT) == LEARNED_CONTEXTUAL_LHS
+        )
