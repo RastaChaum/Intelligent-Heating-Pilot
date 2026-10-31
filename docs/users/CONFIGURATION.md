@@ -333,6 +333,8 @@ When you first configure IHP or increase the **Slope Data Retention** setting, I
 - 60 minutes: For very long heating cycles
 - Disabled (0): For simple mode users
 
+**How cycles are split:** the heating phase, after the dead time, is cut into periods of this duration. The first sub-cycle also covers the dead time, so the dead time is still learned, and every sub-cycle gets the heating slope of the whole heating phase. A cycle whose heating phase is not longer than this duration is not split.
+
 ---
 
 ### How to Modify Advanced Settings

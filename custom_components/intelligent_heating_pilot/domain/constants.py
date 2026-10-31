@@ -16,6 +16,12 @@ DEFAULT_LEARNED_SLOPE = 2.0  # Default slope when no learning data exists
 
 # Dead time (in minutes)
 DEFAULT_DEAD_TIME_MINUTES = 0.0  # Default dead time when no learning data exists
+# Indoor temperature rise (°C) that ends a cycle's dead time: above typical sensor noise,
+# yet sensitive enough to catch early heat propagation.
+DEAD_TIME_TEMP_RISE_C = 0.2
+# Absorbs floating-point error when comparing a temperature difference with a threshold
+# (18.2 - 18.0 is 0.19999999999999929); far below any sensor resolution.
+TEMP_FLOAT_TOLERANCE_C = 1e-6
 
 # Environmental correction factors
 HUMIDITY_REFERENCE = 50.0  # Reference humidity percentage

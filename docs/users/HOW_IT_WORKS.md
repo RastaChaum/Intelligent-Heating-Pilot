@@ -32,10 +32,10 @@ The **Learned Heating Slope (LHS)** is how fast your room heats up, measured in 
 IHP computes the Learned Heating Slope from detected heating cycles:
 
 1. **Detect a heating cycle** using the start/stop rules described below.
-2. **Capture temps**: record indoor temperature at cycle start and at cycle end.
-3. **Calculate cycle slope**:
-   - Temperature gain = end temp − start temp
-   - Duration = end time − start time (minus dead time, see below)
+2. **Capture temps**: record indoor temperature at cycle start, at the end of the dead time and at cycle end.
+3. **Calculate cycle slope** over the heating phase, after the dead time (see below):
+   - Temperature gain = end temp − temp at the end of the dead time
+   - Duration = end time − end of the dead time
    - Cycle slope = (temperature gain ÷ effective duration hours)
 4. **Apply filters**: reject cycles that heated too slowly (below 0.2 °C/h) and very short effective heating windows
 5. **Average the slopes** across filtered cycles to produce the current LHS.
@@ -56,18 +56,19 @@ IHP uses two complementary approaches:
 
 ### Important: Dead Time in Slope Calculations
 
-When calculating a cycle's slope, IHP excludes the **dead time** (system startup lag) from the duration. Here's why:
+When calculating a cycle's slope, IHP excludes the **dead time** (system startup lag): both its duration and the temperature gained during it. Here's why:
 
 ```
-Total cycle: 60 minutes
-Dead time: 5 minutes (system ramps up, no temperature change)
-Effective heating duration: 55 minutes
+Total cycle: 60 minutes, from 18.0°C to 19.0°C
+Dead time: 20 minutes (until the room reached 18.2°C)
+Heating phase: 40 minutes, from 18.2°C to 19.0°C
 
-Cycle slope = temperature_gain / (55 minutes / 60)
-NOT: temperature_gain / 60 minutes
+Cycle slope = (19.0 − 18.2) / (40 / 60) = 1.2°C/h
+NOT: (19.0 − 18.0) / (60 / 60) = 1.0°C/h  (dead time counted as heating time)
+NOT: (19.0 − 18.0) / (40 / 60) = 1.5°C/h  (dead time gain counted in the heating phase)
 ```
 
-This makes the slope more accurate by only counting the time when the room was actually heating.
+This makes the slope more accurate by only counting how the room heated once it was actually heating.
 
 For the system structure and DDD boundaries behind these calculations, see [Architecture Overview](../architecture/OVERVIEW.md).
 
@@ -75,7 +76,7 @@ For the system structure and DDD boundaries behind these calculations, see [Arch
 
 Before a cycle contributes to LHS:
 
-1. **Minimum realistic slope filter**: Cycles that heated slower than 0.2 °C/h are discarded from both the global and the per-hour LHS
+1. **Minimum realistic slope filter**: Cycles that heated slower than 0.2 °C/h are discarded from both the global and the per-hour LHS, and from the learned dead time
    - Why? A cycle where the temperature didn't rise, or barely rose (e.g. thermostat in safety mode or load shedding), says nothing about how fast the room can actually heat, and would make preheating start far too early
    - If every cycle of an hour is below the threshold, that hour has no learned value and falls back to the global LHS
 2. **Minimum effective duration filter**: Cycles whose effective heating window (after subtracting dead time) is too short are rejected
@@ -210,16 +211,18 @@ Anticipation Time = 1.5 + (3 / 2.0) × 60 = 1.5 + 90 = 91.5 minutes
 
 So IHP will trigger heating **91.5 minutes before the scheduled time** (accounting for the 1.5-minute delay).
 
+The dead time ends once the room has gained 0.2°C, and the formula then counts the whole temperature difference at the learned slope: those first 0.2°C are counted twice. This is deliberate. It starts preheating a few minutes early (6 minutes at 2°C/hour), which covers the room cooling further between the calculation and the start of preheating.
+
 ### What is Dead Time?
 
-**Dead Time** is the delay between when your heating system turns on and when indoor temperature actually starts rising. It accounts for:
+**Dead Time** is the delay between when your heating system turns on and when indoor temperature actually starts rising. On each heating cycle, IHP measures it as the time until the indoor temperature is 0.2°C above its starting value, a margin that rules out sensor noise. If the room keeps cooling at first and then climbs back, that time is part of the dead time. It accounts for:
 
 - **Heat distribution delay**: Time for warm air to reach the temperature sensor
 - **Thermal inertia**: Building elements warming up before affecting room temperature
 - **System latency**: Time for boiler/heat pump to ramp up
 - **Sensor response**: Temperature sensor accuracy and measurement lag
 
-IHP automatically learns dead time from your heating cycles and refines it over time, similar to how it learns the heating slope.
+IHP automatically learns dead time from your heating cycles and refines it over time, similar to how it learns the heating slope. It uses the same cycles: a cycle ignored for the heating slope (one that barely heated) is ignored for the dead time too.
 
 ### Environmental Adjustments
 
