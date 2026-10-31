@@ -8,9 +8,9 @@ before their slot rather than after it.
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from zoneinfo import ZoneInfo
 
 import pytest
+from zoneinfo import ZoneInfo
 
 from custom_components.intelligent_heating_pilot.domain.services.contextual_hour import (
     contextual_hour,

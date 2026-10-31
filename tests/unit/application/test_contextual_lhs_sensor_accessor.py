@@ -90,7 +90,7 @@ class TestContextualCacheAfterUpdate:
         app._lhs_manager = Mock()
         app._lhs_manager.get_global_lhs = AsyncMock(return_value=LEARNED_GLOBAL_LHS)
         app._lhs_manager.get_learned_contextual_lhs = AsyncMock(
-            side_effect=lambda hour: LEARNED_CONTEXTUAL_LHS if hour == NEAREST_HOUR_OF_SLOT else None
+            side_effect={NEAREST_HOUR_OF_SLOT: LEARNED_CONTEXTUAL_LHS}.get
         )
 
         await app._async_update_locked()
