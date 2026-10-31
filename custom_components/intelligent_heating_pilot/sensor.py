@@ -26,6 +26,7 @@ from .const import (
     DOMAIN,
     EVENT_DEAD_TIME_UPDATED,
 )
+from .domain.services.contextual_hour import contextual_hour
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -327,15 +328,25 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
         self._last_contextual_lhs_displayed: float | None = None
 
     @property
-    def native_value(self) -> float | None:
-        """Return the contextual LHS for next scheduled event hour."""
-        # If no next schedule time, cannot provide contextual LHS
+    def _scheduled_hour(self) -> int | None:
+        """Return the contextual hour of the next slot, or None without a valid slot.
+
+        It is the hour nearest to the slot, whose learned slope the anticipation
+        uses (#214).
+        """
         if not self._next_schedule_time:
             return None
-
         try:
-            schedule_hour = self._next_schedule_time.hour
+            return contextual_hour(self._next_schedule_time)
         except AttributeError:
+            return None
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the contextual LHS for next scheduled event hour."""
+        # Without a next schedule time, there is no contextual LHS to show
+        schedule_hour = self._scheduled_hour
+        if schedule_hour is None:
             return None
 
         # Try to get contextual LHS from coordinator cache for scheduled hour
@@ -362,9 +373,8 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
                 "scheduled_hour": "–",
             }
 
-        try:
-            scheduled_hour = self._next_schedule_time.hour
-        except AttributeError:
+        scheduled_hour = self._scheduled_hour
+        if scheduled_hour is None:
             return {
                 "description": "Average heating slope for scheduled event hour (parse error)",
                 "scheduled_hour": "–",
@@ -383,7 +393,7 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
         state when the LHS context changes, regardless of the value delta.
         Availability transitions (None ↔ value) always trigger a state write.
         """
-        old_schedule_hour = self._next_schedule_time.hour if self._next_schedule_time else None
+        old_schedule_hour = self._scheduled_hour
 
         # Update next_schedule_time from event
         next_schedule = data.get(ATTR_NEXT_SCHEDULE_TIME)
@@ -402,7 +412,7 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
             else:
                 self._next_schedule_time = next_schedule
 
-        new_schedule_hour = self._next_schedule_time.hour if self._next_schedule_time else None
+        new_schedule_hour = self._scheduled_hour
         schedule_context_changed = old_schedule_hour != new_schedule_hour
 
         new_value = self.native_value

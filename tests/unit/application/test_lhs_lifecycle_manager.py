@@ -1186,6 +1186,24 @@ class TestLhsLifecycleManagerLazyLoading:
         mock_model_storage.delete_cached_contextual_lhs.assert_awaited_once_with(20)
 
     @pytest.mark.asyncio
+    async def test_get_contextual_lhs_reads_the_nearest_hour_of_the_slot(
+        self,
+        manager: LhsLifecycleManager,
+        base_datetime: datetime,
+    ) -> None:
+        """A 06:45 slot reads hour 7, where a cycle reaching the target at 06:45 is filed (#214)."""
+        # GIVEN: Hour 7 is learned
+        manager._cached_contextual_lhs[7] = 1.8
+
+        # WHEN: The slope of a 06:45 slot is requested
+        result = await manager.get_contextual_lhs(
+            target_time=base_datetime.replace(hour=6, minute=45), cycles=[]
+        )
+
+        # THEN: The slope of hour 7 is used
+        assert result == 1.8
+
+    @pytest.mark.asyncio
     async def test_get_learned_contextual_lhs_does_not_fall_back_to_global(
         self,
         manager: LhsLifecycleManager,

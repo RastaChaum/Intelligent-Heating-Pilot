@@ -33,6 +33,7 @@ from .domain.services import (
     HeatingCycleService,
     PredictionService,
 )
+from .domain.services.contextual_hour import contextual_hour
 from .infrastructure.adapters import (
     HAClimateCommander,
     HAClimateDataReader,
@@ -540,11 +541,12 @@ class HeatingApplication:
         if self._lhs_manager:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
 
-            # Reload contextual LHS cache for the scheduled hour only (optimization)
+            # Reload contextual LHS cache for the scheduled hour only (optimization).
+            # It is the slot's contextual hour, the one the anticipation and sensor read.
             if anticipation_data and anticipation_data.get("next_schedule_time") is not None:
                 next_schedule_time = anticipation_data.get("next_schedule_time")
                 if next_schedule_time:
-                    scheduled_hour = next_schedule_time.hour
+                    scheduled_hour = contextual_hour(next_schedule_time)
                     try:
                         contextual_lhs = await self._lhs_manager.get_learned_contextual_lhs(
                             scheduled_hour

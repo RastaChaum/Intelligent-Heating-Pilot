@@ -6,7 +6,8 @@ reached (end hour) and calculating contextual heating slopes.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from homeassistant.util import dt as dt_util
@@ -550,3 +551,65 @@ class TestContextualHourTimezone:
         )
 
         assert service.extract_hour_from_cycle(cycle) == 7
+
+    def test_nearest_hour_is_taken_on_the_local_clock(self) -> None:
+        """A cycle ending 04:58 UTC reached the target at 06:58 in UTC+2: hour 7 (#214)."""
+        service = ContextualLHSCalculatorService(local_tz=timezone(timedelta(hours=2)))
+        cycle = HeatingCycle(
+            device_id="test_device",
+            start_time=datetime(2025, 2, 9, 3, 30),
+            end_time=datetime(2025, 2, 9, 4, 58),
+            target_temp=20.0,
+            end_temp=20.0,
+            start_temp=17.0,
+        )
+
+        assert service.extract_hour_from_cycle(cycle) == 7
+
+
+class TestContextualHourOfCycleEnd:
+    """A cycle is filed under the hour nearest to its end (#214)."""
+
+    @pytest.fixture
+    def service(self) -> ContextualLHSCalculatorService:
+        """Create service instance."""
+        return ContextualLHSCalculatorService()
+
+    @staticmethod
+    def _cycle_ending_at(hour: int, minute: int) -> HeatingCycle:
+        end_time = datetime(2025, 2, 9, hour, minute, tzinfo=UTC)
+        return HeatingCycle(
+            device_id="test_device",
+            start_time=end_time - timedelta(hours=1),
+            end_time=end_time,
+            target_temp=20.0,
+            end_temp=20.0,
+            start_temp=17.0,
+        )
+
+    def test_cycle_ending_just_before_the_hour_is_filed_under_that_hour(
+        self, service: ContextualLHSCalculatorService
+    ) -> None:
+        """A preheat that reaches the target at 06:58 served the 07:00 slot."""
+        assert service.extract_hour_from_cycle(self._cycle_ending_at(6, 58)) == 7
+
+    def test_cycle_ending_on_the_half_hour_stays_in_the_earlier_hour(
+        self, service: ContextualLHSCalculatorService
+    ) -> None:
+        """A cycle ending exactly at 06:30 counts for a 06:30 slot, which reads hour 6."""
+        assert service.extract_hour_from_cycle(self._cycle_ending_at(6, 30)) == 6
+
+    def test_cycle_ending_just_before_midnight_is_filed_under_hour_0(
+        self, service: ContextualLHSCalculatorService
+    ) -> None:
+        """The hour after 23 wraps to 0 instead of leaving the 0-23 range."""
+        assert service.extract_hour_from_cycle(self._cycle_ending_at(23, 50)) == 0
+
+    def test_hour_slope_averages_cycles_landing_around_the_slot(
+        self, service: ContextualLHSCalculatorService
+    ) -> None:
+        """Cycles reaching the target at 06:58 and 07:20 both teach hour 7."""
+        early = self._cycle_ending_at(6, 58)  # 3.0 °C/h
+        late = replace(self._cycle_ending_at(7, 20), end_temp=21.0)  # 4.0 °C/h
+
+        assert service.calculate_contextual_lhs_for_hour([early, late], 7) == pytest.approx(3.5)
