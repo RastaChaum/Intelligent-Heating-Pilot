@@ -264,6 +264,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         min=0,
                         max=30,
                         step=1,
+                        unit_of_measurement="minutes",
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
@@ -589,6 +590,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 min=0,
                 max=30,
                 step=1,
+                unit_of_measurement="minutes",
                 mode=selector.NumberSelectorMode.BOX,
             )
         )

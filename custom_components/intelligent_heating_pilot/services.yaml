@@ -34,7 +34,7 @@ calculate_anticipated_start_time:
 
 reset_learning:
   name: Reset Learning History
-  description: Clear all learned heating slopes for a specific IHP device and reset to default values
+  description: Clear the learned heating slopes and dead time of an IHP device, then relearn them from the Recorder history
   fields:
     entity_id:
       name: IHP Entity ID
