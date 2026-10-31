@@ -1,7 +1,8 @@
 """pytest-bdd step definitions for contextual LHS slot lookup scenarios.
 
 Exercises the real write path (update_contextual_lhs_from_cycles) and read path
-(get_contextual_lhs) together, so both sides must agree on the hour key (#183).
+(get_contextual_lhs) together, so both sides must agree on the hour key (#183),
+including for cycles that reach the target around the slot (#214).
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from custom_components.intelligent_heating_pilot.domain.value_objects.lhs_cache_
 )
 
 scenarios("contextual_lhs_slot_lookup.feature")
+scenarios("contextual_lhs_nearest_hour.feature")
 
 CYCLE_DAY = datetime(2025, 2, 9, tzinfo=UTC)
 SLOT_DAY = datetime(2025, 2, 10, tzinfo=UTC)

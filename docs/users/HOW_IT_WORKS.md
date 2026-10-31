@@ -49,8 +49,10 @@ IHP uses two complementary approaches:
 - Represents your system's "typical" heating performance
 
 **Contextual LHS** — Per-hour-of-day averages (e.g., cycles that reach their target around 7am average separately from those around 9pm, so a 7am slot uses what IHP learned preheating for it)
+- Each cycle counts for the hour nearest to when it reached its target, and each slot reads the hour nearest to it. A preheat usually reaches the target a few minutes before its slot (at 6:58 for a 7:00 slot): it counts for 7:00, like a cycle reaching it at 7:20
+- A time exactly on the half hour counts for the earlier hour, because cycles reach the target before their slot rather than after it: a 6:30 slot uses the cycles that reached their target after 5:30 and up to 6:30, and a 6:45 slot uses those of 7:00
 - More accurate because heating behavior varies by time (thermal mass, occupancy patterns, outdoor conditions)
-- IHP uses contextual LHS when available for the current hour, falls back to global LHS if insufficient data
+- IHP uses contextual LHS when available for the slot's hour, falls back to global LHS if insufficient data
 
 **Result:** More precise predictions as you use IHP throughout different times of day
 

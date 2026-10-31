@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from ..domain.constants import DEFAULT_LEARNED_SLOPE, MINIMUM_REALISTIC_LHS
+from ..domain.services.contextual_hour import contextual_hour
 from ..domain.value_objects.contextual_lhs_by_hour import ContextualLHSByHour
 from ..domain.value_objects.heating import HeatingCycle
 
@@ -448,7 +449,8 @@ class LhsLifecycleManager:
         Memory cache per hour ensures fast lookups without repeated disk I/O.
 
         Args:
-            target_time: Target datetime used to select the contextual hour (0-23).
+            target_time: Target datetime; its nearest hour (0-23) is the contextual
+                hour, as for the cycles it reads.
             cycles: Heating cycles used to compute contextual LHS when not cached.
 
         Returns:
@@ -456,7 +458,7 @@ class LhsLifecycleManager:
         """
         _LOGGER.debug("Entering LhsLifecycleManager.get_contextual_lhs")
 
-        target_hour = target_time.hour
+        target_hour = contextual_hour(target_time)
         _LOGGER.debug("Getting contextual LHS for hour %d", target_hour)
 
         learned_lhs = await self.get_learned_contextual_lhs(target_hour)
