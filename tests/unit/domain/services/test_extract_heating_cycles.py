@@ -7,6 +7,7 @@ import pytest
 from custom_components.intelligent_heating_pilot.domain.services.heating_cycle_service import (
     HeatingCycleService,
 )
+from custom_components.intelligent_heating_pilot.domain.value_objects.heating import HeatingCycle
 from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
     HistoricalDataKey,
     HistoricalDataSet,
@@ -290,9 +291,10 @@ class TestExtractWithCycleSplitting:
             "my_device_id", dataset, t0, t3 + timedelta(minutes=5)
         )
 
-        # With 30-min split duration and ~90 min cycle: should get 3 sub-cycles + 1 remaining
-        # or 3 complete + 1 remainder (90 = 3*30 + 10)
-        assert len(cycles) == 4
+        # 100-min cycle (t1 → t4) with a 30-min dead time (first 0.2 °C rise at t2): its
+        # 70-min heating phase splits into 30 + 30 + 10 min, the first sub-cycle also
+        # covering the dead time (#245)
+        assert len(cycles) == 3
         # Verify sub-cycles are contiguous and cover the full time range
         total_duration = sum((c.end_time - c.start_time).total_seconds() / 60.0 for c in cycles)
         expected_duration = (t4 - t1).total_seconds() / 60.0
@@ -330,6 +332,91 @@ class TestExtractWithCycleSplitting:
 
         # Should not split (25 min < 30 min threshold)
         assert len(cycles) == 1
+
+
+class TestSplitFromDeadTimeEnd:
+    """Sub-cycles split the heating phase, from the end of the dead time (#218, #245).
+
+    Interpolating from the cycle start spread the dead time over every sub-cycle, and
+    the first one then removed it a second time: its slope was inflated, or 0 once the
+    dead time outlasted it, which also dropped the dead time from learning.
+    """
+
+    @staticmethod
+    def _parent(base_time, dead_time, dead_time_end_temp, duration=138.0, end_temp=19.8):
+        return HeatingCycle(
+            device_id="my_device_id",
+            start_time=base_time,
+            end_time=base_time + timedelta(minutes=duration),
+            target_temp=20.0,
+            end_temp=end_temp,
+            start_temp=18.0,
+            dead_time_cycle_minutes=dead_time,
+            dead_time_end_temp=dead_time_end_temp,
+        )
+
+    def test_first_sub_cycle_covers_dead_time_and_one_split(
+        self, service_with_splitting, base_time
+    ):
+        """The first sub-cycle starts with the cycle and ends one split after the dead time."""
+        parent = self._parent(base_time, dead_time=42.0, dead_time_end_temp=18.2)
+
+        first, *others = service_with_splitting._split_into_cycles(
+            parent, HistoricalDataSet(data={}), 30
+        )
+
+        assert first.start_time == base_time
+        assert first.start_temp == 18.0
+        assert first.end_time == base_time + timedelta(minutes=72)
+        assert first.dead_time_cycle_minutes == 42.0
+        assert first.dead_time_end_temp == 18.2
+        assert all(c.dead_time_cycle_minutes is None for c in others)
+        assert all(c.dead_time_end_temp is None for c in others)
+
+    def test_every_sub_cycle_has_the_heating_phase_slope(self, service_with_splitting, base_time):
+        """18.2 → 19.8 °C in the 96 min after the dead time is 1.0 °C/h for every sub-cycle."""
+        parent = self._parent(base_time, dead_time=42.0, dead_time_end_temp=18.2)
+
+        cycles = service_with_splitting._split_into_cycles(parent, HistoricalDataSet(data={}), 30)
+
+        assert len(cycles) == 4  # 30 + 30 + 30 + 6 min of heating phase
+        assert [c.avg_heating_slope for c in cycles] == pytest.approx([1.0] * 4)
+
+    def test_sub_cycles_are_contiguous_and_cover_the_cycle(self, service_with_splitting, base_time):
+        """No gap, no overlap: each sub-cycle starts where and at the temperature the previous ended."""
+        parent = self._parent(base_time, dead_time=42.0, dead_time_end_temp=18.2)
+
+        cycles = service_with_splitting._split_into_cycles(parent, HistoricalDataSet(data={}), 30)
+
+        for previous, current in zip(cycles, cycles[1:], strict=False):
+            assert current.start_time == previous.end_time
+            assert current.start_temp == pytest.approx(previous.end_temp)
+        assert cycles[-1].end_time == parent.end_time
+        assert cycles[-1].end_temp == parent.end_temp
+
+    def test_heating_phase_not_longer_than_split_is_not_split(
+        self, service_with_splitting, base_time
+    ):
+        """A 70-min cycle with a 42-min dead time heats 28 min: shorter than a split."""
+        parent = self._parent(
+            base_time, dead_time=42.0, dead_time_end_temp=18.2, duration=70.0, end_temp=18.7
+        )
+
+        cycles = service_with_splitting._split_into_cycles(parent, HistoricalDataSet(data={}), 30)
+
+        assert cycles == [parent]
+
+    def test_without_dead_time_split_from_cycle_start(self, service_with_splitting, base_time):
+        """Without a dead time the whole cycle is the heating phase, as before."""
+        parent = self._parent(base_time, dead_time=None, dead_time_end_temp=None, end_temp=19.38)
+
+        cycles = service_with_splitting._split_into_cycles(parent, HistoricalDataSet(data={}), 30)
+
+        assert [c.end_time - c.start_time for c in cycles] == [timedelta(minutes=30)] * 4 + [
+            timedelta(minutes=18)
+        ]
+        assert [c.avg_heating_slope for c in cycles] == pytest.approx([0.6] * 5)
+        assert all(c.dead_time_cycle_minutes is None for c in cycles)
 
 
 class TestExtractEdgeCases:
@@ -818,10 +905,11 @@ class TestExtractDeadTime:
     async def test_split_cycle_keeps_parent_dead_time_on_first_sub_cycle(
         self, service_with_splitting, base_time
     ):
-        """Given a rise after the first sub-cycle ends, the first sub-cycle still carries it.
+        """Given a rise after the first split duration, the first sub-cycle still carries it.
 
-        The rise at +40 min is outside the first 30-min sub-cycle but inside the 90-min
-        parent cycle, so it is the parent's dead time.
+        The rise at +40 min comes after the first 30 minutes but inside the 90-min parent
+        cycle, so it is the parent's dead time. The first sub-cycle covers it plus one
+        split duration of heating phase (#245).
         """
         t0 = base_time
         t_rise = t0 + timedelta(minutes=40)
@@ -843,6 +931,7 @@ class TestExtractDeadTime:
             "my_device_id", dataset, t0, t_end + timedelta(minutes=5)
         )
 
-        assert len(cycles) == 3
+        assert len(cycles) == 2  # 50-min heating phase: 30 + 20 min
+        assert cycles[0].end_time == t_rise + timedelta(minutes=30)
         assert cycles[0].dead_time_cycle_minutes == pytest.approx(40.0)
         assert all(c.dead_time_cycle_minutes is None for c in cycles[1:])

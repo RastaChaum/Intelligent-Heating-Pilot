@@ -105,3 +105,68 @@ def test_calculate_average_dead_time_multiple_valid_cycles(
     result = service.calculate_average_dead_time(cycles)
 
     assert result == pytest.approx(10.0)
+
+
+def _rejected_cycle(start_time: datetime, dead_time_cycle_minutes: float) -> HeatingCycle:
+    """A cycle whose dead time lasts until its end: no heating phase, slope 0.
+
+    The temperature fell after heating started and only climbed back to the
+    threshold at the last reading, so the LHS rejects it.
+    """
+    return HeatingCycle(
+        device_id="climate.test_vtherm",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=dead_time_cycle_minutes),
+        target_temp=20.0,
+        end_temp=19.7,
+        start_temp=19.5,
+        dead_time_cycle_minutes=dead_time_cycle_minutes,
+        dead_time_end_temp=19.7,
+    )
+
+
+def test_calculate_average_dead_time_ignores_cycles_rejected_from_lhs(
+    service: DeadTimeCalculationService,
+) -> None:
+    """A cycle rejected from the LHS does not add its duration to the dead time (#245)."""
+    base_time = datetime(2025, 1, 1, 8, 0, 0)
+    cycles = [
+        _cycle(base_time, 10.0),
+        _rejected_cycle(base_time + timedelta(hours=2), 48.0),
+    ]
+
+    result = service.calculate_average_dead_time(cycles)
+
+    assert result == pytest.approx(10.0)
+
+
+def test_calculate_average_dead_time_returns_none_when_all_cycles_rejected(
+    service: DeadTimeCalculationService,
+) -> None:
+    """Only rejected cycles leave nothing to learn (#245)."""
+    base_time = datetime(2025, 1, 1, 8, 0, 0)
+
+    result = service.calculate_average_dead_time([_rejected_cycle(base_time, 48.0)])
+
+    assert result is None
+
+
+def test_calculate_average_dead_time_ignores_slow_cycles(
+    service: DeadTimeCalculationService,
+) -> None:
+    """A cycle heating slower than the realistic LHS threshold is rejected for both (#245)."""
+    base_time = datetime(2025, 1, 1, 8, 0, 0)
+    slow_cycle = HeatingCycle(
+        device_id="climate.test_vtherm",
+        start_time=base_time + timedelta(hours=2),
+        end_time=base_time + timedelta(hours=5),
+        target_temp=21.0,
+        end_temp=18.4,
+        start_temp=18.0,
+        dead_time_cycle_minutes=60.0,
+        dead_time_end_temp=18.2,
+    )
+
+    result = service.calculate_average_dead_time([_cycle(base_time, 10.0), slow_cycle])
+
+    assert result == pytest.approx(10.0)
