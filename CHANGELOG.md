@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Each slot learns from the preheats aimed at it** (#214) – A heating cycle counted for the hour in which it reached its target. A preheat usually reaches it a few minutes before its slot, so a cycle reaching 20 °C at 6:58 for a 7:00 slot counted for 6:00 and the 7:00 slot never used it. Cycles and slots now use the nearest hour: a 7:00 slot learns from the cycles that reach their target from 6:30 to 7:30. A 6:30 slot still uses the 6:00 slope, now learned from the cycles that reached their target in the hour before 6:30. For a slot after the half hour (e.g. 6:45), preheating and the Contextual Learned Heating Slope sensor use the next hour.
 
 ### Added
+- **French README** (#242) – `README.fr.md` translates the README. The [Versatile Thermostat plugin registry](https://www.versatile-thermostat.org/en/plugins/) shows it to French-speaking visitors.
 - **Outdoor temperature** (#180, #190) – A sensor or a `weather.*` entity can be configured and is recorded with each heating cycle, for a future weather-aware adjustment. The fixed outdoor correction, which counted the cold twice, is removed.
 
 ### Maintenance
