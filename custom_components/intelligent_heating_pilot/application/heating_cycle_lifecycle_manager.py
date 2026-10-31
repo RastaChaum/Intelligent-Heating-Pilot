@@ -14,7 +14,6 @@ from ..domain.interfaces.device_config_reader_interface import DeviceConfig
 from ..domain.interfaces.heating_cycle_service_interface import IHeatingCycleService
 from ..domain.services.extraction_date_range_calculator import ExtractionDateRangeCalculator
 from ..domain.value_objects.heating import HeatingCycle
-from ..domain.value_objects.historical_data import HistoricalDataKey, HistoricalDataSet
 from ..infrastructure.adapters.recording_extraction_queue import RecordingExtractionQueue
 
 if TYPE_CHECKING:
@@ -274,8 +273,10 @@ class HeatingCycleLifecycleManager:
         Cache Strategy (read-only operation):
         - **Reads from memory**: Not used (no time-based caching for arbitrary windows)
         - **Reads from storage**: Tries cycle_cache.get_cache_data() first
-        - **Falls back to extraction**: If no cache, extracts from historical data
-        - **Does NOT write**: This is a read-only operation, use update_cycles_for_window() to persist
+        - **No fallback to extraction**: If no cache, returns an empty list (only the
+          background extraction queue reads the Recorder)
+        - **Does NOT write**: Cycles are stored by _on_cycles_extracted() as the
+          extraction queue delivers them
 
         Args:
             device_id: Device identifier used for history queries and cache keys.
@@ -381,105 +382,6 @@ class HeatingCycleLifecycleManager:
         await self._evict_old_memory_cache_entries()
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_target_time")
-        return cycles
-
-    async def update_cycles_for_window(
-        self,
-        device_id: str,
-        start_time: datetime,
-        end_time: datetime,
-    ) -> list[HeatingCycle]:
-        """Extract and persist cycles for a specific window.
-
-        Cache Strategy (write operation):
-        - **Reads from**: Historical data adapters via _extract_cycles()
-        - **Writes to storage cache**: Via cycle_cache.append_cycles() or set_cached_cycles()
-        - **Writes to model storage**: Via model_storage.save_heating_cycle() for each cycle
-        - **Does NOT write to memory**: Memory cache is populated on-demand by get_cycles_for_target_time()
-
-        Use Case:
-        This is the primary write operation for persisting newly extracted cycles.
-        Called by:
-        - startup(): Initial load
-        - on_retention_change(): Reload after retention change
-        - on_24h_timer(): Periodic refresh
-
-        Args:
-            device_id: Device identifier used for history queries and cache keys.
-            start_time: Start of the extraction window.
-            end_time: End of the extraction window.
-
-        Returns:
-            Newly extracted heating cycles for the window.
-        """
-        _LOGGER.debug("Entering HeatingCycleLifecycleManager.update_cycles_for_window")
-        effective_device_id = device_id
-        _LOGGER.debug(
-            "Updating cycles for device=%s from %s to %s",
-            effective_device_id,
-            start_time,
-            end_time,
-        )
-
-        # Extract cycles
-        cycles = await self._extract_cycles(effective_device_id, start_time, end_time)
-
-        # Update cache if available
-        if self._heating_cycle_storage is not None and cycles:
-            try:
-                await self._heating_cycle_storage.append_cycles(
-                    effective_device_id,
-                    cycles,
-                    end_time,
-                    self._device_config.lhs_retention_days,
-                )
-                _LOGGER.debug("Updated cache with %d cycles", len(cycles))
-            except Exception as exc:
-                _LOGGER.error("Error updating cycle cache: %s", exc)
-
-        # Calculate and persist learned dead time from cycles
-        _LOGGER.debug(
-            "Dead time persistence check: cycles=%d, lhs_storage=%s, auto_learning=%s",
-            len(cycles) if cycles else 0,
-            "Not None" if self._lhs_storage is not None else "None",
-            self._device_config.auto_learning,
-        )
-        if cycles and self._lhs_storage is not None and self._device_config.auto_learning:
-            try:
-                from ..domain.services import DeadTimeCalculationService
-
-                dead_time_calculator = DeadTimeCalculationService()
-                learned_dead_time = dead_time_calculator.calculate_average_dead_time(cycles)
-
-                _LOGGER.debug(
-                    "Calculated learned_dead_time: %s minutes",
-                    f"{learned_dead_time:.1f}" if learned_dead_time is not None else "None",
-                )
-
-                if learned_dead_time is not None:
-                    await self._lhs_storage.set_learned_dead_time(learned_dead_time)
-                    _LOGGER.info(
-                        "Updated learned dead time from %d cycles: %.1f minutes",
-                        len(cycles),
-                        learned_dead_time,
-                    )
-                    if self._dead_time_updated_callback is not None:
-                        try:
-                            self._dead_time_updated_callback(learned_dead_time)
-                        except Exception as exc:
-                            _LOGGER.warning("Dead time update callback failed: %s", exc)
-            except Exception as exc:
-                _LOGGER.warning("Failed to calculate/persist dead time: %s", exc, exc_info=True)
-        elif cycles and self._lhs_storage is not None and not self._device_config.auto_learning:
-            _LOGGER.debug(
-                "Auto-learning disabled; skipping dead time persistence for device=%s",
-                effective_device_id,
-            )
-
-        # Note: ILhsStorage interface does not include save_heating_cycle()
-        # Cycles are extracted from Home Assistant recorder, not persisted via this interface
-
-        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.update_cycles_for_window")
         return cycles
 
     async def cancel(self) -> None:
@@ -1365,91 +1267,6 @@ class HeatingCycleLifecycleManager:
             len(keys_to_remove),
             len(self._cached_cycles_for_target_time),
         )
-
-    async def _extract_cycles(
-        self,
-        device_id: str,
-        start_time: datetime,
-        end_time: datetime,
-    ) -> list[HeatingCycle]:
-        """Extract heating cycles from historical data.
-
-        Args:
-            device_id: Device identifier
-            start_time: Start of extraction window
-            end_time: End of extraction window
-
-        Returns:
-            List of extracted heating cycles
-        """
-        _LOGGER.debug("Entering HeatingCycleLifecycleManager._extract_cycles")
-
-        # Diagnostic logs for troubleshooting empty data issue
-        _LOGGER.debug(
-            "Extracting cycles for device_id=%s, time window: %s to %s",
-            device_id,
-            start_time.isoformat(),
-            end_time.isoformat(),
-        )
-        _LOGGER.debug("Number of historical adapters available: %d", len(self._historical_adapters))
-        if not self._historical_adapters:
-            _LOGGER.warning(
-                "No historical adapters configured for device_id=%s. "
-                "This will result in empty historical data. "
-                "Check factory initialization.",
-                device_id,
-            )
-
-        # Load historical data from all adapters
-        combined_data: HistoricalDataSet = HistoricalDataSet(data={})
-
-        for adapter in self._historical_adapters:
-            try:
-                # Call the interface method to fetch historical data for each data key
-                # Use the configured VTherm entity ID from device_config, not the device_id
-                vtherm_entity_id = self._device_config.vtherm_entity_id
-                _LOGGER.debug(
-                    "Fetching historical data from adapter for entity_id=%s",
-                    vtherm_entity_id,
-                )
-                for data_key in HistoricalDataKey:
-                    adapter_data = await adapter.fetch_historical_data(
-                        entity_id=vtherm_entity_id,
-                        data_key=data_key,
-                        start_time=start_time,
-                        end_time=end_time,
-                    )
-                    # Merge adapter data into combined_data
-                    if adapter_data is not None and adapter_data.data:
-                        # Only extend if this data_key exists in the adapter response
-                        if data_key in adapter_data.data:
-                            if data_key not in combined_data.data:
-                                combined_data.data[data_key] = []
-                            combined_data.data[data_key].extend(adapter_data.data[data_key])
-                        else:
-                            _LOGGER.debug(
-                                "Data key %s not found in adapter response for entity %s",
-                                data_key.value,
-                                device_id,
-                            )
-            except Exception as exc:
-                _LOGGER.error("Error loading data from adapter: %s", exc)
-                raise
-
-        # Create historical dataset
-        historical_data_set = HistoricalDataSet(data=combined_data.data)
-
-        # Extract cycles using domain service
-        cycles = await self._heating_cycle_service.extract_heating_cycles(
-            device_id=device_id,
-            history_data_set=historical_data_set,
-            start_time=start_time,
-            end_time=end_time,
-        )
-
-        _LOGGER.debug("Extracted %d cycles from historical data", len(cycles))
-        _LOGGER.debug("Exiting HeatingCycleLifecycleManager._extract_cycles")
-        return cycles
 
     # ------------------------------------------------------------------
     # Async Incremental Extraction Integration Methods

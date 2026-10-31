@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Maintenance
 - CI and release tooling hardening (#194, #199).
 - Type checking (#203) – Removed redundant `cast` calls, annotated the HA storage `Store`, and typed the optional `dt_util` import, so fewer mypy warnings are reported on every PR.
+- Dead code (#218) – Removed `HeatingCycleLifecycleManager.update_cycles_for_window`, which nothing called. It read the recorder outside the extraction queue and stored the learned dead time from the last extracted cycles only, so a future caller would have brought back the bugs fixed in #185 and #224. Heating cycles and the learned dead time are now stored by a single code path. No behavior change.
 
 ## [0.6.4] - 2026-10-24
 
