@@ -108,7 +108,7 @@ When heating cycles change (startup, retention change, 24h refresh), updates cas
 │  update_contextual_lhs_from_cycles(cycles):                             │
 │    1. Compute contextual LHS by hour from cycles                        │
 │    2. Persist each learned hour to ILhsStorage (Tier 4)                 │
-│    3. Delete hours rejected below MINIMUM_REALISTIC_LHS from storage    │
+│    3. Delete hours without a learnable cycle from storage               │
 │    4. Update _cached_contextual_lhs (Tier 3)                            │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -141,7 +141,7 @@ Contextual LHS is populated on-demand per hour to minimize memory usage:
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  Check: ILhsStorage has hour X? (Tier 4 storage)                        │
 │    YES → Load value, cache in memory (Tier 3), return                   │
-│          (a value below MINIMUM_REALISTIC_LHS is deleted instead and    │
+│          (a value that is not positive is deleted instead and           │
 │           the hour falls back to global)                                │
 │    NO  → Continue to computation                                        │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -309,7 +309,7 @@ nothing is pruned, only step 7 runs.
 |------------------------|---------------------------------------------------------------------------|
 | **Heating Cycle**      | A complete heating event: start time, end time, temperature rise          |
 | **LHS**                | Learned Heating Slope (rate of temperature increase in °C/hour)           |
-| **Global LHS**         | Average LHS across realistic heating cycles (>= MINIMUM_REALISTIC_LHS, time-agnostic) |
+| **Global LHS**         | Average LHS across learnable heating cycles (see `learning_cycle_filter`, time-agnostic) |
 | **Contextual LHS**     | Hour-specific LHS (e.g., 8am vs 2pm may have different rates)             |
 | **Retention Window**   | Number of historical days used for LHS calculation (e.g., 30 days)        |
 | **Cascade Update**     | Automatic propagation of cycle changes to dependent LHS caches            |

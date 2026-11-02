@@ -37,14 +37,14 @@ IHP computes the Learned Heating Slope from detected heating cycles:
    - Temperature gain = end temp − temp at the end of the dead time
    - Duration = end time − end of the dead time
    - Cycle slope = (temperature gain ÷ effective duration hours)
-4. **Apply filters**: reject cycles that heated too slowly (below 0.2 °C/h) and very short effective heating windows
+4. **Apply filters**: reject cycles disturbed by load shedding or safety mode, cycles that never warmed the room, and very short effective heating windows (see below)
 5. **Average the slopes** across filtered cycles to produce the current LHS.
 
 ### Two Types of LHS
 
 IHP uses two complementary approaches:
 
-**Global LHS** — Simple average of all realistic cycles (slope of at least 0.2 °C/h) regardless of time of day; if no cycle qualifies, the 2.0 °C/h default is used
+**Global LHS** — Simple average of all the cycles kept by the filters, however slow, regardless of time of day; if no cycle qualifies, the 2.0 °C/h default is used
 - Used as a fallback when no contextual data is available
 - Represents your system's "typical" heating performance
 
@@ -78,13 +78,21 @@ For the system structure and DDD boundaries behind these calculations, see [Arch
 
 Before a cycle contributes to LHS:
 
-1. **Minimum realistic slope filter**: Cycles that heated slower than 0.2 °C/h are discarded from both the global and the per-hour LHS, and from the learned dead time
-   - Why? A cycle where the temperature didn't rise, or barely rose (e.g. thermostat in safety mode or load shedding), says nothing about how fast the room can actually heat, and would make preheating start far too early
-   - If every cycle of an hour is below the threshold, that hour has no learned value and falls back to the global LHS
-2. **Minimum effective duration filter**: Cycles whose effective heating window (after subtracting dead time) is too short are rejected
+These filters decide which cycles are learned, for the global LHS, the per-hour LHS and the learned dead time alike:
+
+1. **Disturbance filter**: Cycles during which Versatile Thermostat reported load shedding (`power` preset) or safety mode (`safety` preset) are discarded, however fast or slow they heated
+   - Why? Such a cycle says nothing about how fast the room can heat, and would make preheating start far too early. The preset is the only trace of these events that the Home Assistant recorder keeps
+   - A slow cycle is **not** discarded for being slow: underfloor heating at partial power can take four hours before the room warms up, then heat at 0.15 °C/h. A speed threshold could not tell such a room from a disturbed cycle, and kept only its fastest mornings
+   - A disturbance that leaves no trace in the thermostat history (heater shed by an external device, window open without a window sensor) cannot be detected, and the cycle is learned
+2. **Heating phase filter**: A cycle whose temperature never rose 0.2 °C above its start is discarded: its dead time is unknown and it has no heating phase. A cycle whose slope after the dead time is zero or negative is discarded too
+3. **Minimum effective duration filter**: Cycles whose effective heating window (after subtracting dead time) is too short are rejected
    - Why? When dead time ≈ total duration, the slope formula amplifies noise by orders of magnitude (e.g., 100,000°C/h)
    - Default threshold: 5 minutes of effective heating required
    - Example: A 6-minute cycle with 5-minute dead time has only 1 minute effective duration → rejected
+
+If every cycle of an hour is discarded, that hour has no learned value and falls back to the global LHS. A learned slope is used however slow it is: only a slope that is zero or negative is replaced by the 2.0 °C/h default.
+
+**Cycles learned by versions up to 0.6.4** were stored without their disturbance status. They keep the former rule (kept only if they heated at 0.2 °C/h or more) until `reset_learning` reads them again from the recorder history, or until they leave the retention window.
 
 ### Cycle Cache: Performance Optimization
 
@@ -224,7 +232,7 @@ The dead time ends once the room has gained 0.2°C, and the formula then counts 
 - **System latency**: Time for boiler/heat pump to ramp up
 - **Sensor response**: Temperature sensor accuracy and measurement lag
 
-IHP automatically learns dead time from your heating cycles and refines it over time, similar to how it learns the heating slope. It uses the same cycles: a cycle ignored for the heating slope (one that barely heated) is ignored for the dead time too.
+IHP automatically learns dead time from your heating cycles and refines it over time, similar to how it learns the heating slope. It uses the same cycles: a cycle ignored for the heating slope (disturbed, or one that never warmed the room) is ignored for the dead time too. No dead time is too long to be learned: a slow underfloor preheat is learned with its full dead time. A cycle longer than the **Maximum Cycle Duration** setting (5 hours by default) is not learned at all, so raise that setting if your preheats take longer.
 
 ### Environmental Adjustments
 
