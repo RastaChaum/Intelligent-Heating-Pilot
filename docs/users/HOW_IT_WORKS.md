@@ -92,7 +92,7 @@ These filters decide which cycles are learned, for the global LHS, the per-hour 
 
 If every cycle of an hour is discarded, that hour has no learned value and falls back to the global LHS. A learned slope is used however slow it is: only a slope that is zero or negative is replaced by the 2.0 °C/h default.
 
-**Cycles learned by versions up to 0.6.4** were stored without their disturbance status. They keep the former rule (kept only if they heated at 0.2 °C/h or more) until `reset_learning` reads them again from the recorder history, or until they leave the retention window.
+**Cycles learned by earlier versions** were stored without their disturbance status. They keep the former rule (kept only if they heated at 0.2 °C/h or more) until `reset_learning` reads them again from the recorder history, or until they leave the retention window.
 
 ### Cycle Cache: Performance Optimization
 
