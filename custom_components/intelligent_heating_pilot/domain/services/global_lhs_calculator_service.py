@@ -10,7 +10,7 @@ import logging
 
 from ..constants import DEFAULT_LEARNED_SLOPE
 from ..value_objects import HeatingCycle
-from .learning_cycle_filter import filter_realistic_cycles
+from .learning_cycle_filter import filter_learnable_cycles
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,8 +19,8 @@ class GlobalLHSCalculatorService:
     """Calculate global LHS from all heating cycles.
 
     Responsibilities:
-    - Calculate average heating slope from all realistic cycles
-    - Return default slope when no realistic cycle is available
+    - Calculate average heating slope from all learnable cycles
+    - Return default slope when no learnable cycle is available
     - Handle edge cases gracefully
 
     Pure domain logic with no Home Assistant dependencies.
@@ -51,7 +51,7 @@ class GlobalLHSCalculatorService:
             return DEFAULT_LEARNED_SLOPE
 
         # Same rule as the contextual LHS and the dead time (#223, #255)
-        lhs_values = [cycle.avg_heating_slope for cycle in filter_realistic_cycles(cycles)]
+        lhs_values = [cycle.avg_heating_slope for cycle in filter_learnable_cycles(cycles)]
 
         if not lhs_values:
             _LOGGER.info(

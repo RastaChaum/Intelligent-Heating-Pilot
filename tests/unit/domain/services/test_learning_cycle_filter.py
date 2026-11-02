@@ -17,8 +17,8 @@ from custom_components.intelligent_heating_pilot.domain.constants import (
     LEGACY_MINIMUM_REALISTIC_LHS,
 )
 from custom_components.intelligent_heating_pilot.domain.services.learning_cycle_filter import (
-    filter_realistic_cycles,
-    is_realistic_learning_cycle,
+    filter_learnable_cycles,
+    is_learnable_cycle,
     is_usable_lhs,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects.heating import HeatingCycle
@@ -46,20 +46,20 @@ class TestCyclesWithKnownStatus:
 
     def test_slow_undisturbed_cycle_is_learned(self) -> None:
         """A genuinely slow room (0.05 °C/h) is learned from."""
-        assert is_realistic_learning_cycle(_cycle(0.05))
+        assert is_learnable_cycle(_cycle(0.05))
 
     def test_disturbed_cycle_is_not_learned_however_fast(self) -> None:
         """Safety mode or load shedding excludes the cycle, whatever its slope."""
-        assert not is_realistic_learning_cycle(_cycle(3.0, disturbed=True))
+        assert not is_learnable_cycle(_cycle(3.0, disturbed=True))
 
     def test_cycle_that_never_warmed_the_room_is_not_learned(self) -> None:
         """Without a heating phase, the slope measured from the start is not learned."""
-        assert not is_realistic_learning_cycle(_cycle(0.6, heating_phase_observed=False))
+        assert not is_learnable_cycle(_cycle(0.6, heating_phase_observed=False))
 
     @pytest.mark.parametrize("slope", [0.0, -0.3])
     def test_non_positive_slope_is_not_learned(self, slope: float) -> None:
         """A cycle that did not heat after its dead time carries no learning data."""
-        assert not is_realistic_learning_cycle(_cycle(slope))
+        assert not is_learnable_cycle(_cycle(slope))
 
 
 class TestCyclesCachedBeforeTheStatus:
@@ -78,26 +78,26 @@ class TestCyclesCachedBeforeTheStatus:
             start_temp=0.0,
         )
 
-        assert is_realistic_learning_cycle(cycle)
+        assert is_learnable_cycle(cycle)
 
     def test_cycle_below_legacy_minimum_is_rejected(self) -> None:
         """Its disturbance is unknown, so a slow cycle may be a #223 safety-mode cycle."""
-        assert not is_realistic_learning_cycle(_legacy_cycle(LEGACY_MINIMUM_REALISTIC_LHS - 0.05))
+        assert not is_learnable_cycle(_legacy_cycle(LEGACY_MINIMUM_REALISTIC_LHS - 0.05))
 
     def test_cycle_without_dead_time_is_kept_as_before(self) -> None:
         """The heating phase is unknown too, so the former rule applies unchanged."""
-        assert is_realistic_learning_cycle(_legacy_cycle(0.3))
+        assert is_learnable_cycle(_legacy_cycle(0.3))
 
     @pytest.mark.parametrize("slope", [0.0, -1.0])
     def test_non_positive_cycles_are_rejected(self, slope: float) -> None:
         """Cycles where temperature did not rise carry no learning data."""
-        assert not is_realistic_learning_cycle(_legacy_cycle(slope))
+        assert not is_learnable_cycle(_legacy_cycle(slope))
 
     def test_partially_known_status_uses_the_former_rule(self) -> None:
         """A status with one side missing is not trusted."""
         cycle = replace(_legacy_cycle(0.1), disturbed=False)
 
-        assert not is_realistic_learning_cycle(cycle)
+        assert not is_learnable_cycle(cycle)
 
 
 def test_filter_keeps_only_learnable_cycles_in_order() -> None:
@@ -108,7 +108,7 @@ def test_filter_keeps_only_learnable_cycles_in_order() -> None:
     disturbed = _cycle(1.0, disturbed=True)
     medium = _legacy_cycle(1.0)
 
-    assert filter_realistic_cycles([fast, slow_legacy, slow, disturbed, medium]) == [
+    assert filter_learnable_cycles([fast, slow_legacy, slow, disturbed, medium]) == [
         fast,
         slow,
         medium,
@@ -117,7 +117,7 @@ def test_filter_keeps_only_learnable_cycles_in_order() -> None:
 
 def test_filter_empty_list_returns_empty_list() -> None:
     """No cycles in, no cycles out."""
-    assert filter_realistic_cycles([]) == []
+    assert filter_learnable_cycles([]) == []
 
 
 class TestUsableLearnedSlope:

@@ -162,7 +162,7 @@ class LhsLifecycleManager:
         - **Reads from storage**: model_storage.get_cached_global_lhs()
         - **Reads from storage**: model_storage.get_cached_contextual_lhs() for CURRENT HOUR ONLY
         - **Writes to memory**: Populates _cached_global_lhs and _cached_contextual_lhs[current_hour]
-        - **Writes to storage**: Only to remove an unrealistic stored contextual value
+        - **Writes to storage**: Only to remove a non-positive stored contextual value
         - **Does NOT compute**: Uses cached values or returns defaults via get_* methods
 
         Note:
@@ -259,7 +259,7 @@ class LhsLifecycleManager:
         - **Computes**: contextual_lhs_calculator.calculate_contextual_lhs(cycles)
         - **Writes to storage**: model_storage.set_cached_global_lhs()
         - **Writes to storage**: set_cached_contextual_lhs() for learned hours,
-          delete_cached_contextual_lhs() for hours rejected as unrealistic
+          delete_cached_contextual_lhs() for hours without a learnable cycle
 
         Args:
             cycles: Heating cycles extracted for the new retention window.
@@ -297,7 +297,7 @@ class LhsLifecycleManager:
         2. HeatingCycleLifecycleManager calls this method with the fresh cycles
         3. Recalculate global LHS from provided cycles
         4. Recalculate contextual LHS (by hour) from provided cycles
-        5. Persist new LHS values to storage, removing hours rejected as unrealistic
+        5. Persist new LHS values to storage, removing hours without a learnable cycle
         6. Refresh in-memory caches with the new values
 
         Cache Strategy:
@@ -306,7 +306,7 @@ class LhsLifecycleManager:
         - **Computes**: contextual_lhs_calculator.calculate_contextual_lhs(cycles)
         - **Writes to storage**: model_storage.set_cached_global_lhs()
         - **Writes to storage**: set_cached_contextual_lhs() for learned hours,
-          delete_cached_contextual_lhs() for hours rejected as unrealistic
+          delete_cached_contextual_lhs() for hours without a learnable cycle
         - **Memory**: Drops _cached_global_lhs, replaces _cached_contextual_lhs with the new values
 
         Args:
@@ -424,10 +424,10 @@ class LhsLifecycleManager:
         - **On memory cache hit**: Returns immediately (fast path)
         - **On memory cache miss**: Loads from model_storage.get_cached_contextual_lhs(hour)
         - **If no storage cache**: Computes from provided cycles, unless the hour is a
-          known fallback hour (rejected as unrealistic)
+          known fallback hour (no learnable cycle)
         - **Writes to memory**: Caches loaded/computed value in _cached_contextual_lhs[hour]
         - **Falls back to global LHS**: If no contextual data exists for the hour
-        - **Writes to storage**: Only to remove an unrealistic stored value
+        - **Writes to storage**: Only to remove a non-positive stored value
 
         Use Case:
         Called during anticipation calculations to get hour-specific heating rates.
@@ -479,7 +479,7 @@ class LhsLifecycleManager:
         Unlike get_contextual_lhs(), this never substitutes the global LHS, so
         callers can tell a learned contextual slope from a fallback.
 
-        Cache Strategy (read-only except for removing unrealistic stored values):
+        Cache Strategy (read-only except for removing non-positive stored values):
         - **Known fallback hour**: Returns None without reading storage
         - **Reads from memory first**: Checks _cached_contextual_lhs[hour]
         - **On memory cache miss**: Loads from storage into memory
@@ -562,7 +562,7 @@ class LhsLifecycleManager:
         - **Receives cycles from**: HeatingCycleLifecycleManager
         - **Computes**: contextual_lhs_calculator.calculate_contextual_lhs(cycles)
         - **Writes to storage**: set_cached_contextual_lhs() for each learned hour,
-          delete_cached_contextual_lhs() for each hour rejected as unrealistic
+          delete_cached_contextual_lhs() for each hour without a learnable cycle
         - **Memory**: Replaces _cached_contextual_lhs with the learned hours
         - **Hours without cycles**: Keep their stored value, reloaded on demand
 
@@ -588,7 +588,7 @@ class LhsLifecycleManager:
         """Persist learned hours and forget rejected ones, in storage and memory.
 
         Writes only ever added or updated hours, so a slope stored before an
-        hour turned unrealistic stayed in use instead of the global LHS (#184).
+        hour lost its learnable cycles stayed in use instead of the global LHS (#184).
         Hours without cycles keep what they learned before.
 
         Args:
@@ -604,7 +604,7 @@ class LhsLifecycleManager:
         self._global_fallback_hours = set(contextual_lhs.rejected_hours)
 
         _LOGGER.info(
-            "Updated contextual LHS for %d hours, removed %d unrealistic hours",
+            "Updated contextual LHS for %d hours, removed %d hours without a learnable cycle",
             len(contextual_lhs.learned),
             len(contextual_lhs.rejected_hours),
         )

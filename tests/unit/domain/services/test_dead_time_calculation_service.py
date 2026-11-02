@@ -151,10 +151,10 @@ def test_calculate_average_dead_time_returns_none_when_all_cycles_rejected(
     assert result is None
 
 
-def test_calculate_average_dead_time_ignores_slow_cycles(
+def test_calculate_average_dead_time_ignores_slow_legacy_cycles(
     service: DeadTimeCalculationService,
 ) -> None:
-    """A cycle heating slower than the realistic LHS threshold is rejected for both (#245)."""
+    """A cached cycle without learning status, below the former floor, is rejected for both."""
     base_time = datetime(2025, 1, 1, 8, 0, 0)
     slow_cycle = HeatingCycle(
         device_id="climate.test_vtherm",

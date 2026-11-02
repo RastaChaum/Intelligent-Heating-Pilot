@@ -16,7 +16,7 @@ from ..constants import LEGACY_MINIMUM_REALISTIC_LHS
 from ..value_objects import HeatingCycle
 
 
-def is_realistic_learning_cycle(cycle: HeatingCycle) -> bool:
+def is_learnable_cycle(cycle: HeatingCycle) -> bool:
     """Tell whether a cycle can be learned from.
 
     A cycle cached before its disturbance was recorded keeps the former speed floor:
@@ -40,7 +40,7 @@ def is_realistic_learning_cycle(cycle: HeatingCycle) -> bool:
     )
 
 
-def filter_realistic_cycles(cycles: list[HeatingCycle]) -> list[HeatingCycle]:
+def filter_learnable_cycles(cycles: list[HeatingCycle]) -> list[HeatingCycle]:
     """Keep only the cycles that can be learned from.
 
     Args:
@@ -49,7 +49,7 @@ def filter_realistic_cycles(cycles: list[HeatingCycle]) -> list[HeatingCycle]:
     Returns:
         The learnable cycles, in their original order.
     """
-    return [cycle for cycle in cycles if is_realistic_learning_cycle(cycle)]
+    return [cycle for cycle in cycles if is_learnable_cycle(cycle)]
 
 
 def is_usable_lhs(lhs: float | None) -> bool:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from ..value_objects import HeatingCycle
-from .learning_cycle_filter import filter_realistic_cycles
+from .learning_cycle_filter import filter_learnable_cycles
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,11 +46,11 @@ class DeadTimeCalculationService:
             len(heating_cycles),
         )
 
-        realistic_cycles = filter_realistic_cycles(heating_cycles)
-        cycles_with_dead_time = [cycle for cycle in realistic_cycles if cycle.has_dead_time]
+        learnable_cycles = filter_learnable_cycles(heating_cycles)
+        cycles_with_dead_time = [cycle for cycle in learnable_cycles if cycle.has_dead_time]
         _LOGGER.debug(
-            "Dead time candidates: %d realistic cycles of %d, %d with a dead time",
-            len(realistic_cycles),
+            "Dead time candidates: %d learnable cycles of %d, %d with a dead time",
+            len(learnable_cycles),
             len(heating_cycles),
             len(cycles_with_dead_time),
         )

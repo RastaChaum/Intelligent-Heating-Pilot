@@ -12,7 +12,7 @@ from datetime import UTC, tzinfo
 
 from ..value_objects import ContextualLHSByHour, HeatingCycle
 from .contextual_hour import contextual_hour
-from .learning_cycle_filter import filter_realistic_cycles
+from .learning_cycle_filter import filter_learnable_cycles
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -184,7 +184,7 @@ class ContextualLHSCalculatorService:
         Returns:
             Average slope in °C/hour, or None if no cycle of the hour is learnable.
         """
-        lhs_values = [c.avg_heating_slope for c in filter_realistic_cycles(cycles)]
+        lhs_values = [c.avg_heating_slope for c in filter_learnable_cycles(cycles)]
         if not lhs_values:
             _LOGGER.debug(
                 "No learnable cycle for hour %d among %d cycles",
@@ -203,6 +203,6 @@ class ContextualLHSCalculatorService:
 
         Returns:
             Mapping {hour: avg_lhs_value_or_none}. Hours without cycles and
-            hours rejected as unrealistic are both None.
+            hours without a learnable cycle are both None.
         """
         return self.calculate_contextual_lhs_by_hour(cycles).as_hour_map()
