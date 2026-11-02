@@ -697,3 +697,40 @@ async def test_cycle_stored_before_dead_time_end_recording_reads_as_unknown(
     del stored["dead_time_end_temp"]
 
     assert cache._deserialize_heating_cycle(stored).dead_time_end_temp is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("disturbed", "heating_phase_observed"), [(True, True), (False, False)])
+async def test_learning_status_survives_serialization(
+    cache: HAHeatingCycleStorage,
+    device_id: str,
+    base_time: datetime,
+    disturbed: bool,
+    heating_phase_observed: bool,
+) -> None:
+    """Whether a cycle was disturbed and warmed the room is stored and read back (#255)."""
+    cycle = replace(
+        create_test_heating_cycle(device_id, base_time),
+        disturbed=disturbed,
+        heating_phase_observed=heating_phase_observed,
+    )
+
+    restored = cache._deserialize_heating_cycle(cache._serialize_heating_cycle(cycle))
+
+    assert restored.disturbed is disturbed
+    assert restored.heating_phase_observed is heating_phase_observed
+
+
+@pytest.mark.asyncio
+async def test_cycle_stored_before_learning_status_reads_as_unknown(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """Cycles persisted by older versions load with an unknown learning status (#255)."""
+    stored = cache._serialize_heating_cycle(create_test_heating_cycle(device_id, base_time))
+    stored.pop("disturbed", None)
+    stored.pop("heating_phase_observed", None)
+
+    restored = cache._deserialize_heating_cycle(stored)
+
+    assert restored.disturbed is None
+    assert restored.heating_phase_observed is None

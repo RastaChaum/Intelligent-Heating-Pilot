@@ -21,6 +21,7 @@ def m(
     hvac_action: str | None = None,
     hvac_mode: str | None = None,
     device_id: str = "test.device",
+    preset_mode: str | None = None,
 ) -> HistoricalMeasurement:
     """Helper to create HistoricalMeasurement with optional climate attributes."""
     attrs = {}
@@ -28,6 +29,8 @@ def m(
         attrs["hvac_action"] = hvac_action
     if hvac_mode:
         attrs["hvac_mode"] = hvac_mode
+    if preset_mode:
+        attrs["preset_mode"] = preset_mode
     return HistoricalMeasurement(timestamp, value, attrs, device_id)
 
 
@@ -935,3 +938,181 @@ class TestExtractDeadTime:
         assert cycles[0].end_time == t_rise + timedelta(minutes=30)
         assert cycles[0].dead_time_cycle_minutes == pytest.approx(40.0)
         assert all(c.dead_time_cycle_minutes is None for c in cycles[1:])
+
+
+def _heating(timestamp: datetime, preset_mode: str = "comfort") -> HistoricalMeasurement:
+    """VTherm record while heating, with its recorded preset."""
+    return m(timestamp, True, hvac_action="heating", hvac_mode="heat", preset_mode=preset_mode)
+
+
+def _idle(timestamp: datetime, preset_mode: str = "comfort") -> HistoricalMeasurement:
+    """VTherm record while not heating, with its recorded preset."""
+    return m(timestamp, True, hvac_action="idle", hvac_mode="heat", preset_mode=preset_mode)
+
+
+class TestExtractLearningStatus:
+    """Each extracted cycle records whether it was disturbed and warmed the room (#255)."""
+
+    @staticmethod
+    def _dataset(
+        base_time: datetime,
+        states: list[HistoricalMeasurement],
+        targets: list[HistoricalMeasurement] | None = None,
+    ) -> HistoricalDataSet:
+        """Room heating from 18.0 °C, gaining 0.3 °C after 20 min and 19.6 °C at 90 min."""
+        return HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(base_time, 18.0),
+                    m(base_time + timedelta(minutes=20), 18.3),
+                    m(base_time + timedelta(minutes=60), 19.0),
+                    m(base_time + timedelta(minutes=90), 19.6),
+                ],
+                HistoricalDataKey.TARGET_TEMP: targets or [m(base_time, 20.0)],
+                HistoricalDataKey.HEATING_STATE: states,
+            }
+        )
+
+    @staticmethod
+    async def _extract(service, dataset, base_time) -> list[HeatingCycle]:
+        return await service.extract_heating_cycles(
+            "my_device_id", dataset, base_time - timedelta(hours=1), base_time + timedelta(hours=3)
+        )
+
+    @pytest.mark.asyncio
+    async def test_undisturbed_cycle_that_warmed_the_room(self, service, base_time):
+        """Without a disturbance preset, the status is known: not disturbed, heating phase seen."""
+        dataset = self._dataset(
+            base_time, [_heating(base_time), _heating(base_time + timedelta(minutes=90))]
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.disturbed is False
+        assert cycle.heating_phase_observed is True
+
+    @pytest.mark.asyncio
+    async def test_safety_preset_during_the_cycle_marks_it_disturbed(self, service, base_time):
+        """VTherm keeps the target in safety mode, so the cycle goes on while disturbed."""
+        dataset = self._dataset(
+            base_time,
+            [
+                _heating(base_time),
+                _heating(base_time + timedelta(minutes=30), preset_mode="safety"),
+                _heating(base_time + timedelta(minutes=45)),
+                _heating(base_time + timedelta(minutes=90)),
+            ],
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.end_time == base_time + timedelta(minutes=90)
+        assert cycle.disturbed is True
+
+    @pytest.mark.asyncio
+    async def test_load_shedding_that_ends_the_cycle_marks_it_disturbed(self, service, base_time):
+        """The power preset drops the target, ending the cycle on the disturbed record."""
+        shedding = base_time + timedelta(minutes=60)
+        dataset = self._dataset(
+            base_time,
+            [_heating(base_time), _idle(shedding, preset_mode="power")],
+            targets=[m(base_time, 20.0), m(shedding, 16.0)],
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.end_time == shedding
+        assert cycle.disturbed is True
+
+    @pytest.mark.asyncio
+    async def test_disturbance_outside_the_cycle_is_ignored(self, service, base_time):
+        """A safety preset recorded before the start or after the end does not count."""
+        dataset = self._dataset(
+            base_time,
+            [
+                _idle(base_time - timedelta(minutes=30), preset_mode="safety"),
+                _heating(base_time),
+                _heating(base_time + timedelta(minutes=90)),
+                _idle(base_time + timedelta(minutes=100), preset_mode="safety"),
+            ],
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.disturbed is False
+
+    @pytest.mark.asyncio
+    async def test_disturbance_preset_ignores_case(self, service, base_time):
+        """Preset values are compared like hvac_action and hvac_mode: case-insensitively."""
+        dataset = self._dataset(
+            base_time,
+            [
+                _heating(base_time, preset_mode="Safety"),
+                _heating(base_time + timedelta(minutes=90)),
+            ],
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.disturbed is True
+
+    @pytest.mark.asyncio
+    async def test_records_without_preset_are_not_disturbed(self, service, base_time):
+        """A non-VTherm climate records no preset: its cycles are never marked disturbed."""
+        dataset = self._dataset(
+            base_time,
+            [
+                m(base_time, True, hvac_action="heating", hvac_mode="heat"),
+                m(base_time + timedelta(minutes=90), True, hvac_action="heating", hvac_mode="heat"),
+            ],
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.disturbed is False
+
+    @pytest.mark.asyncio
+    async def test_cycle_that_never_gained_the_threshold_has_no_heating_phase(
+        self, service, base_time
+    ):
+        """A room gaining only 0.1 °C before heating stops has no observed heating phase."""
+        t_off = base_time + timedelta(minutes=40)
+        dataset = HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(base_time, 18.0),
+                    m(base_time + timedelta(minutes=30), 18.1),
+                ],
+                HistoricalDataKey.TARGET_TEMP: [m(base_time, 20.0)],
+                HistoricalDataKey.HEATING_STATE: [
+                    _heating(base_time),
+                    m(t_off, False, hvac_action="off", hvac_mode="off"),
+                ],
+            }
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.dead_time_cycle_minutes is None
+        assert cycle.heating_phase_observed is False
+        assert cycle.disturbed is False
+
+    @pytest.mark.asyncio
+    async def test_sub_cycles_inherit_the_status_of_their_cycle(
+        self, service_with_splitting, base_time
+    ):
+        """A disturbed cycle stays disturbed in every sub-cycle, wherever the disturbance was."""
+        dataset = self._dataset(
+            base_time,
+            [
+                _heating(base_time),
+                _heating(base_time + timedelta(minutes=80), preset_mode="safety"),
+                _heating(base_time + timedelta(minutes=90)),
+            ],
+        )
+
+        cycles = await self._extract(service_with_splitting, dataset, base_time)
+
+        assert len(cycles) > 1, "The cycle should have been split"
+        assert all(c.disturbed is True for c in cycles)
+        assert all(c.heating_phase_observed is True for c in cycles)

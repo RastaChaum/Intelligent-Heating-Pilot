@@ -12,7 +12,7 @@ import pytest
 
 from custom_components.intelligent_heating_pilot.domain.constants import (
     DEFAULT_LEARNED_SLOPE,
-    MINIMUM_REALISTIC_LHS,
+    LEGACY_MINIMUM_REALISTIC_LHS,
 )
 from custom_components.intelligent_heating_pilot.domain.services.global_lhs_calculator_service import (
     GlobalLHSCalculatorService,
@@ -316,19 +316,19 @@ class TestGlobalLHSCalculatorService:
     def test_calculate_global_lhs_keeps_cycle_at_realistic_minimum(
         self, service: GlobalLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """A slow cycle exactly at MINIMUM_REALISTIC_LHS is still learned from."""
+        """A slow cycle exactly at LEGACY_MINIMUM_REALISTIC_LHS is still learned from."""
         cycles = [
             self._create_cycle(
                 start_time=base_datetime,
                 # Start from 0 so the slope is exactly the threshold (no float rounding)
                 start_temp=0.0,
-                end_temp=MINIMUM_REALISTIC_LHS,
+                end_temp=LEGACY_MINIMUM_REALISTIC_LHS,
             ),
         ]
 
         result = service.calculate_global_lhs(cycles)
 
-        assert result == pytest.approx(MINIMUM_REALISTIC_LHS, abs=0.001)
+        assert result == pytest.approx(LEGACY_MINIMUM_REALISTIC_LHS, abs=0.001)
 
     def test_calculate_global_lhs_returns_default_when_all_cycles_unrealistic(
         self, service: GlobalLHSCalculatorService, base_datetime: datetime
@@ -509,3 +509,39 @@ class TestGlobalLHSCalculatorService:
         # Should have INFO logs about the calculation
         info_logs = [r for r in caplog.records if r.levelname == "INFO"]
         assert len(info_logs) > 0, "No INFO logs found"
+
+
+class TestGlobalLHSFromCyclesWithKnownStatus:
+    """Cycles extracted since #255: any positive slope of an undisturbed cycle counts."""
+
+    @staticmethod
+    def _cycle(day: int, slope: float, disturbed: bool = False) -> HeatingCycle:
+        start = datetime(2025, 2, 9, 6, 0, 0) + timedelta(days=day)
+        return HeatingCycle(
+            device_id="climate.test_vtherm",
+            start_time=start,
+            end_time=start + timedelta(hours=1),
+            target_temp=21.0,
+            end_temp=20.0 + slope,
+            start_temp=20.0,
+            disturbed=disturbed,
+            heating_phase_observed=True,
+        )
+
+    def test_slow_room_learns_its_own_slope(self) -> None:
+        """Slopes below 0.2 °C/h are averaged instead of falling back to the default."""
+        cycles = [self._cycle(0, 0.1), self._cycle(1, 0.14)]
+
+        assert GlobalLHSCalculatorService().calculate_global_lhs(cycles) == pytest.approx(0.12)
+
+    def test_disturbed_cycle_is_left_out(self) -> None:
+        """A cycle in safety mode or load shedding does not drag the slope down."""
+        cycles = [self._cycle(0, 1.0), self._cycle(1, 0.05, disturbed=True)]
+
+        assert GlobalLHSCalculatorService().calculate_global_lhs(cycles) == pytest.approx(1.0)
+
+    def test_only_disturbed_cycles_fall_back_to_default(self) -> None:
+        """Nothing learnable leaves the default slope."""
+        cycles = [self._cycle(0, 1.0, disturbed=True)]
+
+        assert GlobalLHSCalculatorService().calculate_global_lhs(cycles) == DEFAULT_LEARNED_SLOPE

@@ -170,3 +170,45 @@ def test_calculate_average_dead_time_ignores_slow_cycles(
     result = service.calculate_average_dead_time([_cycle(base_time, 10.0), slow_cycle])
 
     assert result == pytest.approx(10.0)
+
+
+def _slow_cycle(start_time: datetime, disturbed: bool) -> HeatingCycle:
+    """A cycle extracted with a known status: 60-min dead time, then 0.1 °C/h."""
+    return HeatingCycle(
+        device_id="climate.test_vtherm",
+        start_time=start_time,
+        end_time=start_time + timedelta(hours=4),
+        target_temp=21.0,
+        end_temp=18.5,
+        start_temp=18.0,
+        dead_time_cycle_minutes=60.0,
+        dead_time_end_temp=18.2,
+        disturbed=disturbed,
+        heating_phase_observed=True,
+    )
+
+
+def test_calculate_average_dead_time_learns_slow_undisturbed_cycles(
+    service: DeadTimeCalculationService,
+) -> None:
+    """A slow room's dead time is learned once its cycle is known undisturbed (#255)."""
+    base_time = datetime(2025, 1, 1, 8, 0, 0)
+
+    result = service.calculate_average_dead_time(
+        [_cycle(base_time, 10.0), _slow_cycle(base_time + timedelta(hours=2), disturbed=False)]
+    )
+
+    assert result == pytest.approx(35.0)
+
+
+def test_calculate_average_dead_time_ignores_disturbed_cycles(
+    service: DeadTimeCalculationService,
+) -> None:
+    """A cycle in safety mode or load shedding does not teach the dead time (#255)."""
+    base_time = datetime(2025, 1, 1, 8, 0, 0)
+
+    result = service.calculate_average_dead_time(
+        [_cycle(base_time, 10.0), _slow_cycle(base_time + timedelta(hours=2), disturbed=True)]
+    )
+
+    assert result == pytest.approx(10.0)
