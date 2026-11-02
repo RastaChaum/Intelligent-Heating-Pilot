@@ -41,6 +41,21 @@ DATA_KEY_TO_CONCEPT: dict[HistoricalDataKey, AttributeConcept] = {
     HistoricalDataKey.CLOUD_COVERAGE: AttributeConcept.CLOUD_COVERAGE,
 }
 
+# Attributes the heating cycle extraction reads on each historical record, kept when
+# the Recorder states are trimmed to save memory. The preset is the only recorded trace
+# of VTherm load shedding and safety mode (#255).
+CYCLE_ATTRIBUTE_KEYS: tuple[str, ...] = ("hvac_action", "hvac_mode", "preset_mode")
+
+# Attributes kept from each Recorder state: the cycle attributes, plus the values the
+# attribute mappers extract.
+_RECORDED_ATTRIBUTE_KEYS: tuple[str, ...] = (
+    *CYCLE_ATTRIBUTE_KEYS,
+    "current_temperature",
+    "temperature",
+    "target_temperature",
+    "humidity",
+)
+
 
 class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
     """Unified adapter for VTherm climate data (real-time + historical).
@@ -360,10 +375,6 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         supported_concepts = mapper.get_supported_concepts()
         data: dict[HistoricalDataKey, list[HistoricalMeasurement]] = {}
 
-        # Keys needed by domain services (heating_cycle_service uses these). The preset
-        # is the only recorded trace of VTherm load shedding and safety mode (#255).
-        _ESSENTIAL_ATTR_KEYS = {"hvac_action", "hvac_mode", "preset_mode"}
-
         # Extract all supported data keys from the single set of records
         for data_key, concept in DATA_KEY_TO_CONCEPT.items():
             if concept not in supported_concepts:
@@ -392,7 +403,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
                     # Only keep essential attributes to avoid holding the full
                     # HA State attribute blob in memory (OOM prevention).
                     slim_attributes = {
-                        k: full_attributes[k] for k in _ESSENTIAL_ATTR_KEYS if k in full_attributes
+                        k: full_attributes[k] for k in CYCLE_ATTRIBUTE_KEYS if k in full_attributes
                     }
 
                     measurements.append(
@@ -520,8 +531,8 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         del history_dict
 
         # Convert State objects to lightweight dicts, keeping only the
-        # attributes that downstream code actually needs (hvac_action,
-        # hvac_mode, and the mapper-extracted values).  This avoids
+        # attributes that downstream code actually needs (the cycle
+        # attributes and the mapper-extracted values).  This avoids
         # holding the full HA attribute blob (20-30 keys per VTherm state
         # change) in memory across 8 devices × 7 days of data.
         result = []
@@ -532,14 +543,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
                 # Extract only essential attributes from the State object
                 raw_attrs = state.attributes
                 slim_attrs = {}
-                for key in (
-                    "hvac_action",
-                    "hvac_mode",
-                    "current_temperature",
-                    "temperature",
-                    "target_temperature",
-                    "humidity",
-                ):
+                for key in _RECORDED_ATTRIBUTE_KEYS:
                     val = raw_attrs.get(key)
                     if val is not None:
                         slim_attrs[key] = val
