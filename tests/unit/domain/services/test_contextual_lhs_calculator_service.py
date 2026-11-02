@@ -12,7 +12,9 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 from homeassistant.util import dt as dt_util
 
-from custom_components.intelligent_heating_pilot.domain.constants import LEGACY_MINIMUM_REALISTIC_LHS
+from custom_components.intelligent_heating_pilot.domain.constants import (
+    LEGACY_MINIMUM_REALISTIC_LHS,
+)
 from custom_components.intelligent_heating_pilot.domain.services.contextual_lhs_calculator_service import (
     ContextualLHSCalculatorService,
 )

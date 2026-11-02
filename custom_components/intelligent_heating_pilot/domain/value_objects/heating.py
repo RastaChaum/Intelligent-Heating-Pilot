@@ -84,6 +84,14 @@ class HeatingCycle:
         dead_time_end_temp: Indoor temperature (°C) of the reading that ended the dead time.
                             The heating slope is measured from it. None without a dead time,
                             and for cycles cached before it was recorded.
+        disturbed: Whether the thermostat reported load shedding or safety mode during the
+                   cycle. Such a cycle says nothing about how the room heats. None for
+                   cycles cached before it was recorded.
+        heating_phase_observed: Whether the room gained DEAD_TIME_TEMP_RISE_C within the
+                                cycle. Without it, the dead time is unknown and there is no
+                                heating phase to measure a slope on. Sub-cycles carry the
+                                value of their cycle. None for cycles cached before it was
+                                recorded.
     """
 
     device_id: str
@@ -97,6 +105,13 @@ class HeatingCycle:
     min_effective_duration_minutes: float = 5.0
     avg_outdoor_temp: float | None = None
     dead_time_end_temp: float | None = None
+    disturbed: bool | None = None
+    heating_phase_observed: bool | None = None
+
+    @property
+    def has_learning_status(self) -> bool:
+        """Whether the cycle was extracted with its disturbance and heating phase recorded."""
+        return self.disturbed is not None and self.heating_phase_observed is not None
 
     @property
     def has_dead_time(self) -> bool:

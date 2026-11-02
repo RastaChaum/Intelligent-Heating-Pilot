@@ -360,8 +360,9 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         supported_concepts = mapper.get_supported_concepts()
         data: dict[HistoricalDataKey, list[HistoricalMeasurement]] = {}
 
-        # Keys needed by domain services (heating_cycle_service uses these)
-        _ESSENTIAL_ATTR_KEYS = {"hvac_action", "hvac_mode"}
+        # Keys needed by domain services (heating_cycle_service uses these). The preset
+        # is the only recorded trace of VTherm load shedding and safety mode (#255).
+        _ESSENTIAL_ATTR_KEYS = {"hvac_action", "hvac_mode", "preset_mode"}
 
         # Extract all supported data keys from the single set of records
         for data_key, concept in DATA_KEY_TO_CONCEPT.items():

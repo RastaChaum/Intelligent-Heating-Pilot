@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from ..constants import DEFAULT_LEARNED_SLOPE, MINIMUM_REALISTIC_LHS
+from ..constants import DEFAULT_LEARNED_SLOPE
 from ..value_objects import HeatingCycle
 from .learning_cycle_filter import filter_realistic_cycles
 
@@ -34,11 +34,12 @@ class GlobalLHSCalculatorService:
 
         Returns:
             float: Average heating slope in °C/hour, or DEFAULT_LEARNED_SLOPE if no
-            realistic cycle remains
+            learnable cycle remains
 
         Calculation:
-            Cycles below MINIMUM_REALISTIC_LHS are left out (same rule as the
-            contextual LHS), then the remaining slopes are averaged.
+            Cycles the shared learning rule rejects (disturbed, never warmed the room,
+            no heating) are left out, as for the contextual LHS, then the remaining
+            slopes are averaged, however slow.
         """
         _LOGGER.debug("Calculating global LHS from %d cycles", len(cycles))
 
@@ -49,14 +50,12 @@ class GlobalLHSCalculatorService:
             )
             return DEFAULT_LEARNED_SLOPE
 
-        # Same rule as the contextual LHS: cycles that barely heated carry no
-        # useful learning data about heating speed (#223)
+        # Same rule as the contextual LHS and the dead time (#223, #255)
         lhs_values = [cycle.avg_heating_slope for cycle in filter_realistic_cycles(cycles)]
 
         if not lhs_values:
             _LOGGER.info(
-                "No realistic cycle (>= %.2f°C/h), returning default: %.2f°C/h",
-                MINIMUM_REALISTIC_LHS,
+                "No learnable cycle, returning default: %.2f°C/h",
                 DEFAULT_LEARNED_SLOPE,
             )
             return DEFAULT_LEARNED_SLOPE
@@ -64,7 +63,7 @@ class GlobalLHSCalculatorService:
         global_lhs = sum(lhs_values) / len(lhs_values)
 
         _LOGGER.info(
-            "Calculated global LHS: %.2f°C/h from %d realistic cycles out of %d",
+            "Calculated global LHS: %.2f°C/h from %d learnable cycles out of %d",
             global_lhs,
             len(lhs_values),
             len(cycles),

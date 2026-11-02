@@ -872,9 +872,7 @@ class TestCalculateDeadTimeCycle:
         start_temp = 19.4
         rise_time = start_time + timedelta(minutes=dead_time_minutes)
 
-        data = {
-            HistoricalDataKey.INDOOR_TEMP: [m(start_time, start_temp), m(rise_time, 19.6)]
-        }
+        data = {HistoricalDataKey.INDOOR_TEMP: [m(start_time, start_temp), m(rise_time, 19.6)]}
         dataset = HistoricalDataSet(data)
 
         result = service._calculate_dead_time_cycle(

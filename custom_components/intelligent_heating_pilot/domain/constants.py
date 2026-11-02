@@ -11,8 +11,17 @@ DEFAULT_ANTICIPATION_BUFFER = 5  # Safety buffer to ensure target is reached on 
 
 # Heating slope thresholds (in °C/hour)
 MIN_VALID_SLOPE = 0.1  # Minimum valid heating slope (technical threshold)
-MINIMUM_REALISTIC_LHS = 0.2  # Minimum realistic LHS for effective heating (business threshold)
+# Former speed floor of the learning rule. A cycle is now excluded for an explicit
+# disturbance signal, not for its speed (#255). Cycles cached before their disturbance
+# was recorded keep this floor: some of them are safety-mode cycles (#223).
+LEGACY_MINIMUM_REALISTIC_LHS = 0.2
 DEFAULT_LEARNED_SLOPE = 2.0  # Default slope when no learning data exists
+
+# Presets VTherm applies by itself when it cannot heat normally: "power" while shedding
+# load (overpowering), "safety" when its temperature sensors stop reporting. They are
+# the only disturbance signals the Recorder keeps: VTherm does not record its safety,
+# power and window manager states. A cycle during which one is recorded is not learned.
+DISTURBANCE_PRESETS = frozenset({"power", "safety"})
 
 # Dead time (in minutes)
 DEFAULT_DEAD_TIME_MINUTES = 0.0  # Default dead time when no learning data exists

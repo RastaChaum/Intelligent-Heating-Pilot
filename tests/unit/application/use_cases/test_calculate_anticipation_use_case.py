@@ -256,7 +256,6 @@ class TestCalculateAnticipationUseCase:
         mock_prediction_service.predict_heating_time.assert_called_once()
         assert result["anticipated_start_time"] is not None
 
-
     @pytest.mark.asyncio
     async def test_slow_learned_slope_drives_the_anticipation(
         self,
@@ -291,6 +290,7 @@ class TestCalculateAnticipationUseCase:
 
         call = mock_prediction_service.predict_heating_time.call_args
         assert call.kwargs["learned_slope"] == DEFAULT_LEARNED_SLOPE
+
 
 class TestCalculateAnticipationUseCaseDeadTimeHydration:
     """Regression tests for dead time startup hydration.

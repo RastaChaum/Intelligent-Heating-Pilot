@@ -7,8 +7,9 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from ..domain.constants import DEFAULT_LEARNED_SLOPE, MINIMUM_REALISTIC_LHS
+from ..domain.constants import DEFAULT_LEARNED_SLOPE
 from ..domain.services.contextual_hour import contextual_hour
+from ..domain.services.learning_cycle_filter import is_usable_lhs
 from ..domain.value_objects.contextual_lhs_by_hour import ContextualLHSByHour
 from ..domain.value_objects.heating import HeatingCycle
 
@@ -276,15 +277,7 @@ class LhsLifecycleManager:
         # Step 2: Recalculate global LHS from provided cycles
         global_lhs = self._global_lhs_calculator.calculate_global_lhs(cycles)
 
-        # Validate: LHS must be realistically positive (>= 0.5°C/h)
-        if global_lhs < MINIMUM_REALISTIC_LHS:
-            _LOGGER.warning(
-                "Calculated global LHS is invalid (%.4f°C/h < %.2f°C/h), using default (%.2f°C/h)",
-                global_lhs,
-                MINIMUM_REALISTIC_LHS,
-                DEFAULT_LEARNED_SLOPE,
-            )
-            global_lhs = DEFAULT_LEARNED_SLOPE
+        global_lhs = self._usable_global_lhs(global_lhs)
 
         updated_at = dt_util.now() if dt_util is not None else datetime.now()
         await self._model_storage.set_cached_global_lhs(global_lhs, updated_at)
@@ -328,15 +321,7 @@ class LhsLifecycleManager:
         # Recalculate global LHS from provided cycles
         global_lhs = self._global_lhs_calculator.calculate_global_lhs(cycles)
 
-        # Validate: LHS must be realistically positive (>= 0.5°C/h)
-        if global_lhs < MINIMUM_REALISTIC_LHS:
-            _LOGGER.warning(
-                "Calculated global LHS is invalid (%.4f°C/h < %.2f°C/h), using default (%.2f°C/h)",
-                global_lhs,
-                MINIMUM_REALISTIC_LHS,
-                DEFAULT_LEARNED_SLOPE,
-            )
-            global_lhs = DEFAULT_LEARNED_SLOPE
+        global_lhs = self._usable_global_lhs(global_lhs)
 
         updated_at = dt_util.now() if dt_util is not None else datetime.now()
         await self._model_storage.set_cached_global_lhs(global_lhs, updated_at)
@@ -544,15 +529,7 @@ class LhsLifecycleManager:
         try:
             global_lhs = self._global_lhs_calculator.calculate_global_lhs(cycles)
 
-            # Validate: LHS must be realistically positive (>= 0.5°C/h)
-            if global_lhs < MINIMUM_REALISTIC_LHS:
-                _LOGGER.warning(
-                    "Calculated global LHS is invalid (%.4f°C/h < %.2f°C/h), using default (%.2f°C/h)",
-                    global_lhs,
-                    MINIMUM_REALISTIC_LHS,
-                    DEFAULT_LEARNED_SLOPE,
-                )
-                global_lhs = DEFAULT_LEARNED_SLOPE
+            global_lhs = self._usable_global_lhs(global_lhs)
 
             updated_at = dt_util.now() if dt_util is not None else datetime.now()
             await self._model_storage.set_cached_global_lhs(global_lhs, updated_at)
@@ -642,29 +619,50 @@ class LhsLifecycleManager:
         self._global_fallback_hours.add(hour)
         await self._model_storage.delete_cached_contextual_lhs(hour)
 
-    async def _load_stored_contextual_lhs(self, hour: int) -> float | None:
-        """Load a stored contextual LHS into the memory cache if it is realistic.
+    @staticmethod
+    def _usable_global_lhs(global_lhs: float) -> float:
+        """Return the global LHS, or the default if it cannot drive an anticipation.
 
-        Earlier versions stored values below MINIMUM_REALISTIC_LHS (#184). Such a
-        value is removed from storage the first time it is read, so the hour
-        falls back to the global LHS from then on.
+        A slow but positive slope is kept: replacing it with the default would make
+        a slow room's anticipation far too short (#255).
+
+        Args:
+            global_lhs: Global LHS calculated from the cycles, in °C/hour.
+
+        Returns:
+            The global LHS if strictly positive, else DEFAULT_LEARNED_SLOPE.
+        """
+        if is_usable_lhs(global_lhs):
+            return global_lhs
+        _LOGGER.warning(
+            "Calculated global LHS is invalid (%.4f°C/h, not positive), using default (%.2f°C/h)",
+            global_lhs,
+            DEFAULT_LEARNED_SLOPE,
+        )
+        return DEFAULT_LEARNED_SLOPE
+
+    async def _load_stored_contextual_lhs(self, hour: int) -> float | None:
+        """Load a stored contextual LHS into the memory cache if it is usable.
+
+        A stored value that is not positive cannot drive an anticipation. It is
+        removed from storage the first time it is read, so the hour falls back to
+        the global LHS from then on (#184). A slow but positive value is kept (#255).
 
         Args:
             hour: Hour (0-23) to load.
 
         Returns:
-            The stored LHS in C/hour, or None if absent or unrealistic.
+            The stored LHS in C/hour, or None if absent or not positive.
         """
         cached_entry = await self._model_storage.get_cached_contextual_lhs(hour)
         if cached_entry is None:
             return None
-        if cached_entry.value < MINIMUM_REALISTIC_LHS:
+        if not is_usable_lhs(cached_entry.value):
             _LOGGER.info(
-                "Removing stored contextual LHS for hour %d (%.2f°C/h < %.2f°C/h), "
+                "Removing stored contextual LHS for hour %d (%.2f°C/h, not positive), "
                 "using global LHS instead",
                 hour,
                 cached_entry.value,
-                MINIMUM_REALISTIC_LHS,
             )
             await self._forget_contextual_lhs(hour)
             return None

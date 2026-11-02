@@ -187,9 +187,7 @@ def extract_and_learn(cycle_context: dict[str, Any]) -> None:
     service = HeatingCycleService(temp_delta_threshold=TARGET_MARGIN)
     history = _history(cycle_context["profile"], cycle_context)
     cycles = asyncio.run(
-        service.extract_heating_cycles(
-            DEVICE_ID, history, BASE_TIME, BASE_TIME + EXTRACTION_WINDOW
-        )
+        service.extract_heating_cycles(DEVICE_ID, history, BASE_TIME, BASE_TIME + EXTRACTION_WINDOW)
     )
     cycle_context["cycles"] = cycles
     cycle_context["learned_dead_time"] = DeadTimeCalculationService().calculate_average_dead_time(
