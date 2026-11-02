@@ -123,13 +123,9 @@ def global_slope(slot_context: dict, slope: float) -> None:
     asyncio.run(slot_context["storage"].set_cached_global_lhs(slope, CYCLE_DAY))
 
 
-@given(
-    parsers.parse(
-        "a slope of {slope:f} degrees per hour is stored for {slot} by an earlier version"
-    )
-)
+@given(parsers.parse("a slope of {slope:f} degrees per hour is stored for {slot}"))
 def stored_slope(slot_context: dict, slope: float, slot: str) -> None:
-    """GIVEN: Storage still holds a contextual slope written before the fix (#184)."""
+    """GIVEN: Storage holds a contextual slope, possibly written by an earlier version."""
     hour = _at(SLOT_DAY, slot).hour
     asyncio.run(slot_context["storage"].set_cached_contextual_lhs(hour, slope, CYCLE_DAY))
 

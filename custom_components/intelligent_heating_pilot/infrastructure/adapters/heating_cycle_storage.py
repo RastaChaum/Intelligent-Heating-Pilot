@@ -431,6 +431,8 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             "dead_time_cycle_minutes": cycle.dead_time_cycle_minutes,
             "avg_outdoor_temp": cycle.avg_outdoor_temp,
             "dead_time_end_temp": cycle.dead_time_end_temp,
+            "disturbed": cycle.disturbed,
+            "heating_phase_observed": cycle.heating_phase_observed,
         }
 
         # Serialize tariff details if present
@@ -505,4 +507,8 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             avg_outdoor_temp=cycle_dict.get("avg_outdoor_temp"),
             # Absent from cycles stored before it was recorded (#245)
             dead_time_end_temp=cycle_dict.get("dead_time_end_temp"),
+            # Absent from cycles stored before they were recorded (#255): such cycles
+            # keep the former learning rule
+            disturbed=cycle_dict.get("disturbed"),
+            heating_phase_observed=cycle_dict.get("heating_phase_observed"),
         )

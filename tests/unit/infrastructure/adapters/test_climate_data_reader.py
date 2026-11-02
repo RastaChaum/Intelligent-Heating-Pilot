@@ -7,6 +7,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from homeassistant.core import State
 
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     HistoricalDataKey,
@@ -358,6 +359,43 @@ class TestFetchHistoricalData:
             await reader.fetch_all_historical_data(
                 TEST_ENTITY_ID, get_test_datetime(), get_future_datetime(hours=1)
             )
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_keeps_preset_mode_on_heating_state(
+        self, reader: HAClimateDataReader
+    ) -> None:
+        """The extraction read keeps the preset: it flags load shedding and safety mode (#255).
+
+        The Recorder returns State objects, trimmed twice before the domain sees them: the
+        test goes through both trimming points.
+        """
+        state = State(
+            TEST_ENTITY_ID,
+            "heat",
+            {
+                "current_temperature": 19.5,
+                "temperature": 21.0,
+                "hvac_action": "heating",
+                "hvac_mode": "heat",
+                "preset_mode": "safety",
+                "friendly_name": "Living room",
+            },
+            last_changed=get_test_datetime(),
+        )
+        recorder = Mock()
+        recorder.async_add_executor_job = AsyncMock(return_value={TEST_ENTITY_ID: [state]})
+
+        with patch("homeassistant.components.recorder.get_instance", return_value=recorder):
+            result = await reader.fetch_all_historical_data(
+                TEST_ENTITY_ID, get_test_datetime(), get_future_datetime(hours=1)
+            )
+
+        attributes = result.data[HistoricalDataKey.HEATING_STATE][0].attributes
+        assert attributes == {
+            "hvac_action": "heating",
+            "hvac_mode": "heat",
+            "preset_mode": "safety",
+        }
 
     @pytest.mark.asyncio
     async def test_raises_value_error_on_mapper_failure(self, reader: HAClimateDataReader) -> None:

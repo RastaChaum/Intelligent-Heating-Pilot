@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any, cast
 
-from ..constants import DEAD_TIME_TEMP_RISE_C, TEMP_FLOAT_TOLERANCE_C
+from ..constants import DEAD_TIME_TEMP_RISE_C, DISTURBANCE_PRESETS, TEMP_FLOAT_TOLERANCE_C
 from ..interfaces.heating_cycle_service_interface import IHeatingCycleService
 from ..value_objects.heating import HeatingCycle, TariffPeriodDetail
 from ..value_objects.historical_data import (
@@ -32,6 +32,12 @@ class DeadTimeEnd:
 
     minutes: float
     temperature: float
+
+
+def _has_disturbance_preset(measurement: HistoricalMeasurement) -> bool:
+    """Whether a heating state record carries a preset VTherm sets when disturbed."""
+    preset = (measurement.attributes or {}).get("preset_mode")
+    return isinstance(preset, str) and preset.lower() in DISTURBANCE_PRESETS
 
 
 class HeatingCycleService(IHeatingCycleService):
@@ -511,6 +517,14 @@ class HeatingCycleService(IHeatingCycleService):
             start_temp=start_indoor_temp,
             history_data_set=history_data_set,
         )
+        disturbed = self._is_disturbed(data, start_time, end_time)
+        if disturbed:
+            _LOGGER.debug(
+                "Cycle from %s to %s ran during load shedding or safety mode: "
+                "it will not be learned from",
+                start_time,
+                end_time,
+            )
 
         # Build HeatingCycle with computed tariff details (may be empty)
         cycle = HeatingCycle(
@@ -525,6 +539,8 @@ class HeatingCycleService(IHeatingCycleService):
             min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
             avg_outdoor_temp=self._compute_average_outdoor_temp(data, start_time, end_time),
             dead_time_end_temp=dead_time_end.temperature if dead_time_end else None,
+            disturbed=disturbed,
+            heating_phase_observed=dead_time_end is not None,
         )
         _LOGGER.debug(
             "Created single heating cycle: %s (energy=%.3fkWh duration=%.1fmin cost=%.3f€)",
@@ -554,7 +570,8 @@ class HeatingCycleService(IHeatingCycleService):
         the first one removed it a second time (#218, #245). The first sub-cycle starts with
         the cycle and also covers the dead time: it keeps the dead time and the temperature
         at its end, so the dead time is still learned. A cycle whose heating phase is not
-        longer than the split duration is returned unsplit.
+        longer than the split duration is returned unsplit. Every sub-cycle keeps the
+        disturbance and heating phase status of its cycle (#255).
         """
         phase_start = parent.heating_phase_start_time
         phase_start_temp = parent.heating_phase_start_temp
@@ -614,6 +631,30 @@ class HeatingCycleService(IHeatingCycleService):
             boundary += step
         boundaries.append(end_time)
         return boundaries
+
+    @staticmethod
+    def _is_disturbed(
+        data: dict[HistoricalDataKey, list[HistoricalMeasurement]],
+        start_time: datetime,
+        end_time: datetime,
+    ) -> bool:
+        """Tell whether the thermostat reported a disturbance during a cycle.
+
+        Both bounds are included: load shedding drops the target, so the record that
+        ends the cycle is the disturbed one.
+
+        Args:
+            data: Historical measurements by key; uses HEATING_STATE only.
+            start_time: Start of the cycle.
+            end_time: End of the cycle.
+
+        Returns:
+            True if a record of the cycle carries one of DISTURBANCE_PRESETS.
+        """
+        return any(
+            start_time <= measurement.timestamp <= end_time and _has_disturbance_preset(measurement)
+            for measurement in data.get(HistoricalDataKey.HEATING_STATE, [])
+        )
 
     @staticmethod
     def _compute_average_outdoor_temp(
@@ -820,7 +861,6 @@ class HeatingCycleService(IHeatingCycleService):
         start_temp: float,
         history_data_set: HistoricalDataSet,
         temp_change_threshold: float = DEAD_TIME_TEMP_RISE_C,
-        max_dead_time_minutes: float = 180.0,
     ) -> DeadTimeEnd | None:
         """Calculate the dead time for a specific cycle.
 
@@ -828,7 +868,9 @@ class HeatingCycleService(IHeatingCycleService):
         Only positive temperature changes (heating) are considered; decreases return None.
         A fall after heating starts, and the climb back, are part of the dead time.
         The search stops at ``end_time``: a rise after the cycle ended comes from a later
-        heating episode and must not be attributed to this one (issue #185).
+        heating episode and must not be attributed to this one (issue #185). Within the
+        cycle, no dead time is too long: underfloor heating can take four hours to warm
+        the room, and dropping those dead times kept only the fast mornings (#255).
 
         Args:
             start_time: When the heating cycle started
@@ -838,14 +880,10 @@ class HeatingCycleService(IHeatingCycleService):
             temp_change_threshold: Minimum temperature rise to detect (default:
                 DEAD_TIME_TEMP_RISE_C, must be positive). A rise of exactly the threshold
                 counts, despite floating-point error.
-            max_dead_time_minutes: Maximum acceptable dead time (default: 180 minutes).
-                Floor heating systems can require 60–120 min to transfer heat to the room.
-                Values above this threshold are considered data artifacts.
 
         Returns:
             The dead time in minutes and the temperature that ended it, or None if
-            temperature never rises by threshold within the cycle, no data available,
-            or dead time exceeds maximum threshold
+            temperature never rises by threshold within the cycle or no data is available
         """
         indoor_temp_history = history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, [])
 
@@ -870,16 +908,6 @@ class HeatingCycleService(IHeatingCycleService):
                 temp_change = current_temp - start_temp
                 if temp_change >= temp_change_threshold - TEMP_FLOAT_TOLERANCE_C:
                     dead_time_minutes = (measurement.timestamp - start_time).total_seconds() / 60.0
-
-                    # Filter out abnormally high dead times (data artifacts)
-                    if dead_time_minutes > max_dead_time_minutes:
-                        _LOGGER.debug(
-                            "Dead time %.1f minutes exceeds maximum threshold %.1f minutes - ignoring as data artifact",
-                            dead_time_minutes,
-                            max_dead_time_minutes,
-                        )
-                        return None
-
                     _LOGGER.debug(
                         "Dead time calculated: %.1f minutes (temp change from %.1f to %.1f°C)",
                         dead_time_minutes,

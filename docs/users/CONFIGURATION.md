@@ -313,8 +313,8 @@ When you first configure IHP or increase the **Slope Data Retention** setting, I
 
 **Maximum Duration:**
 - 🔻 **Lower (120-180 min)**: For well-insulated homes or powerful heating systems
-- 🔺 **Higher (240-360 min)**: For poorly insulated spaces or weak heating systems
-- ⚠️ **Too low**: May exclude long but valid heating cycles
+- 🔺 **Higher (240-360 min)**: For poorly insulated spaces, weak heating systems, or underfloor heating whose preheats last more than 5 hours
+- ⚠️ **Too low**: May exclude long but valid heating cycles: a cycle longer than this setting is not learned at all, and the slowest preheats are the ones that teach IHP to start earlier
 - ⚠️ **Too high**: May include abnormal cycles from sensor malfunctions
 
 #### Cycle Split Duration (Advanced)

@@ -20,6 +20,7 @@ from custom_components.intelligent_heating_pilot.application.lhs_lifecycle_manag
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     CalculateAnticipationUseCase,
 )
+from custom_components.intelligent_heating_pilot.domain.constants import DEFAULT_LEARNED_SLOPE
 from custom_components.intelligent_heating_pilot.domain.services import (
     DeadTimeCalculationService,
     PredictionService,
@@ -254,6 +255,41 @@ class TestCalculateAnticipationUseCase:
         mock_scheduler_reader.get_next_timeslot.assert_not_called()
         mock_prediction_service.predict_heating_time.assert_called_once()
         assert result["anticipated_start_time"] is not None
+
+    @pytest.mark.asyncio
+    async def test_slow_learned_slope_drives_the_anticipation(
+        self,
+        use_case: CalculateAnticipationUseCase,
+        mock_lhs_lifecycle_manager: Mock,
+        mock_prediction_service: Mock,
+    ) -> None:
+        """A slow room's 0.15 °C/h is used, not replaced by the 2.0 °C/h default (#255)."""
+        mock_lhs_lifecycle_manager.get_global_lhs.return_value = 0.15
+        mock_lhs_lifecycle_manager.get_contextual_lhs.return_value = 0.15
+
+        await use_case.calculate_anticipation_datas(
+            target_time=datetime(2025, 2, 10, 10, 0, 0, tzinfo=UTC), target_temp=21.0
+        )
+
+        call = mock_prediction_service.predict_heating_time.call_args
+        assert call.kwargs["learned_slope"] == 0.15
+
+    @pytest.mark.asyncio
+    async def test_non_positive_slope_falls_back_to_default(
+        self,
+        use_case: CalculateAnticipationUseCase,
+        mock_lhs_lifecycle_manager: Mock,
+        mock_prediction_service: Mock,
+    ) -> None:
+        """A slope that is not positive cannot drive an anticipation: the default is used."""
+        mock_lhs_lifecycle_manager.get_contextual_lhs.return_value = 0.0
+
+        await use_case.calculate_anticipation_datas(
+            target_time=datetime(2025, 2, 10, 10, 0, 0, tzinfo=UTC), target_temp=21.0
+        )
+
+        call = mock_prediction_service.predict_heating_time.call_args
+        assert call.kwargs["learned_slope"] == DEFAULT_LEARNED_SLOPE
 
 
 class TestCalculateAnticipationUseCaseDeadTimeHydration:

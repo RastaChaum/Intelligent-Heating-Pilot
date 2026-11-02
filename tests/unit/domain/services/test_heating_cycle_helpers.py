@@ -13,7 +13,7 @@ from custom_components.intelligent_heating_pilot.domain.value_objects.historical
     HistoricalMeasurement,
 )
 
-# Cycle length that leaves the 180-min dead-time cap as the only limit on the search.
+# Cycle long enough not to limit the dead-time search.
 LONG_CYCLE = timedelta(hours=4)
 
 
@@ -830,17 +830,12 @@ class TestCalculateDeadTimeCycle:
         assert result is not None
         assert result.minutes == pytest.approx(3.0, abs=0.1)
 
-    def test_calculate_dead_time_cycle_accepts_long_dead_time_within_180_minutes(
-        self, service, base_time
-    ):
-        """Test that dead times up to 180 minutes are accepted (floor heating cold start).
+    def test_calculate_dead_time_cycle_accepts_floor_heating_cold_start(self, service, base_time):
+        """A 90-minute dead time (floor heating cold start) is kept.
 
-        GIVEN: Temp rises 0.25°C after 90 minutes (realistic for floor heating)
-        WHEN: _calculate_dead_time_cycle() called with default max_dead_time_minutes=180
-        THEN: Should return ~90 minutes (NOT rejected as artifact)
-
-        This test validates the fix for issue where 60-min cap caused all real floor
-        heating cold-start dead times to be silently discarded.
+        GIVEN: Temp rises 0.25°C after 90 minutes
+        WHEN: _calculate_dead_time_cycle() called
+        THEN: Should return ~90 minutes (a former 60-min cap silently discarded it)
         """
         start_time = base_time
         start_temp = 18.0
@@ -860,28 +855,24 @@ class TestCalculateDeadTimeCycle:
             history_data_set=dataset,
         )
 
-        # 90 minutes is within the 180-min cap — must be accepted
-        assert result is not None, "Dead time of 90 min should be accepted (within 180-min cap)"
+        assert result is not None
         assert result.minutes == pytest.approx(90.0, abs=0.1)
 
-    def test_calculate_dead_time_cycle_rejects_dead_time_exceeding_180_minutes(
-        self, service, base_time
+    @pytest.mark.parametrize("dead_time_minutes", [190, 235])
+    def test_calculate_dead_time_cycle_keeps_dead_time_beyond_180_minutes(
+        self, service, base_time, dead_time_minutes
     ):
-        """Test that dead times exceeding 180 minutes are still rejected as artifacts.
+        """A dead time longer than 180 minutes is a slow room, not a data artifact (#255).
 
-        GIVEN: Temp rises 0.25°C only after 190 minutes
-        WHEN: _calculate_dead_time_cycle() called with default max_dead_time_minutes=180
-        THEN: Should return None (190 min exceeds the 180-min cap)
+        GIVEN: Temp rises 0.2°C only after 190 or 235 minutes, within the cycle
+        WHEN: _calculate_dead_time_cycle() called
+        THEN: The dead time is kept: only the cycle end bounds the search (#185)
         """
         start_time = base_time
-        start_temp = 18.0
+        start_temp = 19.4
+        rise_time = start_time + timedelta(minutes=dead_time_minutes)
 
-        data = {
-            HistoricalDataKey.INDOOR_TEMP: [
-                m(start_time, start_temp),
-                m(start_time + timedelta(minutes=190), 18.25),  # 0.25°C rise after 190 min
-            ]
-        }
+        data = {HistoricalDataKey.INDOOR_TEMP: [m(start_time, start_temp), m(rise_time, 19.6)]}
         dataset = HistoricalDataSet(data)
 
         result = service._calculate_dead_time_cycle(
@@ -891,8 +882,9 @@ class TestCalculateDeadTimeCycle:
             history_data_set=dataset,
         )
 
-        # 190 minutes exceeds the 180-min cap — must be rejected
-        assert result is None, "Dead time of 190 min should be rejected (exceeds 180-min cap)"
+        assert result is not None, f"Dead time of {dead_time_minutes} min should be kept"
+        assert result.minutes == pytest.approx(dead_time_minutes)
+        assert result.temperature == pytest.approx(19.6)
 
     def test_calculate_dead_time_cycle_ignores_rise_after_cycle_end(self, service, base_time):
         """A rise from a later heating episode must not count as this cycle's dead time.

@@ -12,7 +12,9 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 from homeassistant.util import dt as dt_util
 
-from custom_components.intelligent_heating_pilot.domain.constants import MINIMUM_REALISTIC_LHS
+from custom_components.intelligent_heating_pilot.domain.constants import (
+    LEGACY_MINIMUM_REALISTIC_LHS,
+)
 from custom_components.intelligent_heating_pilot.domain.services.contextual_lhs_calculator_service import (
     ContextualLHSCalculatorService,
 )
@@ -396,7 +398,7 @@ class TestContextualLHSCalculatorService:
     def test_contextual_lhs_returns_none_when_average_below_realistic_minimum(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """An average below MINIMUM_REALISTIC_LHS is not learned, so callers use global (#184)."""
+        """An average below LEGACY_MINIMUM_REALISTIC_LHS is not learned, so callers use global (#184)."""
         cycles = [
             self._create_cycle(
                 start_time=base_datetime.replace(hour=6),
@@ -413,8 +415,8 @@ class TestContextualLHSCalculatorService:
     def test_contextual_lhs_keeps_slow_but_realistic_average(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """A slow average just above MINIMUM_REALISTIC_LHS is still a learned value."""
-        slow_slope = MINIMUM_REALISTIC_LHS + 0.05
+        """A slow average just above LEGACY_MINIMUM_REALISTIC_LHS is still a learned value."""
+        slow_slope = LEGACY_MINIMUM_REALISTIC_LHS + 0.05
         cycles = [
             self._create_cycle(
                 start_time=base_datetime.replace(hour=6),
@@ -613,3 +615,40 @@ class TestContextualHourOfCycleEnd:
         late = replace(self._cycle_ending_at(7, 20), end_temp=21.0)  # 4.0 °C/h
 
         assert service.calculate_contextual_lhs_for_hour([early, late], 7) == pytest.approx(3.5)
+
+
+class TestContextualLHSFromCyclesWithKnownStatus:
+    """Cycles extracted since #255: an hour learns its slow cycles, not its disturbed ones."""
+
+    @staticmethod
+    def _cycle(day: int, slope: float, disturbed: bool = False) -> HeatingCycle:
+        """A cycle reaching its target at 07:00 local time."""
+        end = datetime(2025, 2, 9, 7, 0, 0) + timedelta(days=day)
+        return HeatingCycle(
+            device_id="climate.test_vtherm",
+            start_time=end - timedelta(hours=1),
+            end_time=end,
+            target_temp=21.0,
+            end_temp=20.0 + slope,
+            start_temp=20.0,
+            disturbed=disturbed,
+            heating_phase_observed=True,
+        )
+
+    def test_slow_hour_is_learned(self) -> None:
+        """An hour whose undisturbed cycles heat at 0.15 °C/h learns 0.15 °C/h."""
+        result = ContextualLHSCalculatorService().calculate_contextual_lhs_by_hour(
+            [self._cycle(0, 0.15)]
+        )
+
+        assert result.learned[7] == pytest.approx(0.15)
+        assert 7 not in result.rejected_hours
+
+    def test_hour_with_only_disturbed_cycles_is_rejected(self) -> None:
+        """Its earlier stored slope is dropped, so the slot falls back to the global LHS."""
+        result = ContextualLHSCalculatorService().calculate_contextual_lhs_by_hour(
+            [self._cycle(0, 1.0, disturbed=True)]
+        )
+
+        assert 7 not in result.learned
+        assert result.rejected_hours == frozenset({7})

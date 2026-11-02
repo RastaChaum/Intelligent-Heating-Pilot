@@ -18,8 +18,9 @@ class ContextualLHSByHour:
     cycles keeps what it learned before.
 
     Attributes:
-        learned: Realistic average LHS in °C/hour, keyed by hour (0-23).
-        rejected_hours: Hours whose cycles averaged below MINIMUM_REALISTIC_LHS.
+        learned: Average LHS of the learnable cycles in °C/hour, keyed by hour (0-23).
+        rejected_hours: Hours that heated but have no learnable cycle (disturbed, never
+            warmed the room, or cached before #255 and slower than the former floor).
     """
 
     learned: Mapping[int, float] = field(default_factory=dict)
