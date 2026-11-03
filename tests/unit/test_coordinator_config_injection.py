@@ -391,9 +391,9 @@ class TestCoordinatorDoesNotCallGetConfigValue:
         # THEN: Coordinator should be created successfully
         assert coordinator is not None
         # AND: _get_config_value method should NOT exist (removed entirely)
-        assert not hasattr(
-            coordinator, "_get_config_value"
-        ), "_get_config_value method should be removed from Coordinator"
+        assert not hasattr(coordinator, "_get_config_value"), (
+            "_get_config_value method should be removed from Coordinator"
+        )
 
 
 class TestCoordinatorAsyncLoadUsesDeviceConfig:

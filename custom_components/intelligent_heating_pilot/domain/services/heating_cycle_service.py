@@ -5,11 +5,17 @@ from __future__ import annotations
 import asyncio
 import bisect
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Any, cast
 
-from ..constants import DEAD_TIME_TEMP_RISE_C, DISTURBANCE_PRESETS, TEMP_FLOAT_TOLERANCE_C
+from ..constants import (
+    DEAD_TIME_TEMP_RISE_C,
+    DISTURBANCE_PRESETS,
+    LOAD_SHEDDING_PRESET,
+    TEMP_FLOAT_TOLERANCE_C,
+)
 from ..interfaces.heating_cycle_service_interface import IHeatingCycleService
 from ..value_objects.heating import HeatingCycle, TariffPeriodDetail
 from ..value_objects.historical_data import (
@@ -35,10 +41,29 @@ class DeadTimeEnd:
     temperature: float
 
 
+# A bridged interruption of a cycle: from its first record to the record it ended on
+Interruption = tuple[datetime, datetime]
+
+
+def _preset_of(measurement: HistoricalMeasurement) -> str | None:
+    """Recorded preset of a heating state record, lower-cased, if it has one."""
+    preset = (measurement.attributes or {}).get("preset_mode")
+    return preset.lower() if isinstance(preset, str) else None
+
+
 def _has_disturbance_preset(measurement: HistoricalMeasurement) -> bool:
     """Whether a heating state record carries a preset VTherm sets when disturbed."""
-    preset = (measurement.attributes or {}).get("preset_mode")
-    return isinstance(preset, str) and preset.lower() in DISTURBANCE_PRESETS
+    return _preset_of(measurement) in DISTURBANCE_PRESETS
+
+
+def _is_load_shedding(measurement: HistoricalMeasurement) -> bool:
+    """Whether VTherm was shedding its load: it records the power preset meanwhile."""
+    return _preset_of(measurement) == LOAD_SHEDDING_PRESET
+
+
+def _within(timestamp: datetime, interruptions: Sequence[Interruption]) -> bool:
+    """Whether a record belongs to one of the bridged interruptions."""
+    return any(start <= timestamp < end for start, end in interruptions)
 
 
 class HeatingCycleService(IHeatingCycleService):
@@ -71,9 +96,11 @@ class HeatingCycleService(IHeatingCycleService):
                 cycles into smaller sub-cycles for granular analysis. If 0, cycles are not split.
             min_cycle_duration_minutes: Minimum duration for a valid heating cycle.
             max_cycle_duration_minutes: Maximum duration for a single heating cycle (before splitting).
-            safety_shutoff_grace_minutes: Grace period in minutes for brief heating interruptions
-                caused by safety or frost-protection mode. Interruptions shorter than this threshold
-                will not terminate an in-progress cycle. Set to 0 to disable the grace period.
+            safety_shutoff_grace_minutes: Grace period in minutes for brief heating interruptions:
+                ``hvac_mode`` off (safety or frost-protection cutoff), VTherm load shedding
+                (``power`` preset) and target drops such as an open window (#260).
+                Interruptions shorter than this threshold will not terminate an in-progress
+                cycle. Set to 0 to disable the grace period.
         """
         _LOGGER.debug("Entering HeatingCycleService.__init__")
         _LOGGER.debug(
@@ -154,11 +181,13 @@ class HeatingCycleService(IHeatingCycleService):
         cycle_start_indoor_temp: float | None = None
         cycle_start_target_temp: float | None = None
 
-        # Grace period: absorbs brief safety/frost-protection interruptions.
-        # When mode goes OFF for less than `_safety_shutoff_grace_minutes` and then resumes,
-        # the interruption is ignored so the cycle is not split into micro-cycles with
-        # aberrant slopes (e.g. 140 000 °C/h).
+        # Grace period: absorbs brief interruptions, i.e. hvac_mode OFF (safety/frost-protection
+        # cutoff), a VTherm load shedding or a target drop (open window). When one lasts less than
+        # `_safety_shutoff_grace_minutes`, it is ignored so the cycle is not split into
+        # micro-cycles with aberrant slopes (e.g. 140 000 °C/h), nor its dead time measured from
+        # the last fragment (#260).
         grace_period_start: datetime | None = None
+        bridged: list[Interruption] = []
 
         cycles: list[HeatingCycle] = []
 
@@ -218,6 +247,7 @@ class HeatingCycleService(IHeatingCycleService):
                     heating_start = timestamp
                     cycle_start_indoor_temp = current_indoor_temp
                     cycle_start_target_temp = current_target_temp
+                    bridged = []
                     _LOGGER.debug(
                         "Heating cycle started at %s (Indoor: %.1f, Target: %.1f)",
                         timestamp,
@@ -231,26 +261,33 @@ class HeatingCycleService(IHeatingCycleService):
                     elapsed_off_minutes = (timestamp - grace_period_start).total_seconds() / 60.0
 
                     if elapsed_off_minutes < self._safety_shutoff_grace_minutes:
-                        if mode_on:
-                            # Mode resumed within grace window → absorb the interruption
+                        if not self._is_interrupted(
+                            mode_on,
+                            measurement,
+                            current_indoor_temp,
+                            current_target_temp,
+                            cycle_start_target_temp,
+                        ):
+                            # Heating resumed within grace window → absorb the interruption
                             _LOGGER.debug(
-                                "Grace period absorbed: mode resumed at %s "
+                                "Grace period absorbed: heating resumed at %s "
                                 "(%.1f min < grace %d min)",
                                 timestamp,
                                 elapsed_off_minutes,
                                 self._safety_shutoff_grace_minutes,
                             )
+                            bridged.append((grace_period_start, timestamp))
                             grace_period_start = None
                             # Fall through to normal _should_end_cycle check below
                         else:
-                            # Still OFF and within grace → ignore this measurement
+                            # Still interrupted and within grace → ignore this measurement
                             continue
                     else:
                         # Grace period expired → close cycle at grace_period_start
                         end_ts = grace_period_start
                         grace_period_start = None
                         _LOGGER.debug(
-                            "Grace period expired (%.1f min >= %d min); " "ending cycle at %s",
+                            "Grace period expired (%.1f min >= %d min); ending cycle at %s",
                             elapsed_off_minutes,
                             self._safety_shutoff_grace_minutes,
                             end_ts,
@@ -272,6 +309,7 @@ class HeatingCycleService(IHeatingCycleService):
                             else current_target_temp,
                             history_data_set=history_data_set,
                             split_duration_minutes=split_duration,
+                            bridged_interruptions=bridged,
                         )
                         if created:
                             cycles.extend(created)
@@ -286,6 +324,7 @@ class HeatingCycleService(IHeatingCycleService):
                             heating_start = timestamp
                             cycle_start_indoor_temp = current_indoor_temp
                             cycle_start_target_temp = current_target_temp
+                            bridged = []
                             _LOGGER.debug(
                                 "New cycle started after grace expiry at %s "
                                 "(Indoor: %.1f, Target: %.1f)",
@@ -295,8 +334,14 @@ class HeatingCycleService(IHeatingCycleService):
                             )
                         continue
 
-                elif not mode_on and self._safety_shutoff_grace_minutes > 0:
-                    # First OFF event while a cycle is active → begin grace window
+                elif self._safety_shutoff_grace_minutes > 0 and self._is_interrupted(
+                    mode_on,
+                    measurement,
+                    current_indoor_temp,
+                    current_target_temp,
+                    cycle_start_target_temp,
+                ):
+                    # First OFF, load shedding or target drop record of the cycle → begin grace
                     grace_period_start = timestamp
                     _LOGGER.debug(
                         "Grace period started at %s (grace=%d min)",
@@ -326,6 +371,7 @@ class HeatingCycleService(IHeatingCycleService):
                         else current_target_temp,
                         history_data_set=history_data_set,
                         split_duration_minutes=split_duration,
+                        bridged_interruptions=bridged,
                     )
                     if created:
                         cycles.extend(created)
@@ -361,6 +407,7 @@ class HeatingCycleService(IHeatingCycleService):
                 target_temp=cycle_start_target_temp or 20.0,
                 history_data_set=history_data_set,
                 split_duration_minutes=split_duration,
+                bridged_interruptions=bridged,
             )
             if created:
                 cycles.extend(created)
@@ -398,6 +445,54 @@ class HeatingCycleService(IHeatingCycleService):
             state = measurement.value.lower()
             return state in ("on", "heat", "heating", "true", "1")
         return bool(measurement.value)
+
+    def _is_interrupted(
+        self,
+        mode_on: bool,
+        measurement: HistoricalMeasurement,
+        indoor_temp: float,
+        target_temp: float,
+        cycle_target_temp: float | None,
+    ) -> bool:
+        """Whether a record interrupts the cycle in progress, until the grace period expires.
+
+        ``hvac_mode`` off covers safety and frost-protection cutoffs. During a load shedding
+        or while a window or a door is open, VTherm drops the target to its power or window
+        action temperature for a few minutes, which would otherwise end the cycle as if the
+        room had reached its target (#260). A target lowered for good (the schedule moved to
+        eco) is an interruption too: once the grace period expires, the cycle ends when the
+        target dropped, as it did before.
+
+        Args:
+            mode_on: Whether the record has a heating ``hvac_mode``.
+            measurement: The heating state record.
+            indoor_temp: Indoor temperature at the record.
+            target_temp: Target temperature at the record.
+            cycle_target_temp: Target the cycle started with.
+
+        Returns:
+            True if the cycle would end on this record for any other reason than reaching
+            its own target.
+        """
+        return (
+            not mode_on
+            or _is_load_shedding(measurement)
+            or self._is_target_dropped(indoor_temp, target_temp, cycle_target_temp)
+        )
+
+    def _is_target_dropped(
+        self, indoor_temp: float, target_temp: float, cycle_target_temp: float | None
+    ) -> bool:
+        """Whether the target fell below the cycle target, low enough to end the cycle.
+
+        A target lowered by less than that leaves the cycle going on, as before.
+        """
+        if cycle_target_temp is None:
+            return False
+        return (
+            target_temp < cycle_target_temp - TEMP_FLOAT_TOLERANCE_C
+            and indoor_temp >= target_temp - self._temp_delta_threshold
+        )
 
     def _is_mode_on(self, measurement: HistoricalMeasurement) -> bool:
         """Determines if the heating system is enabled (mode indicates heating allowed).
@@ -478,11 +573,14 @@ class HeatingCycleService(IHeatingCycleService):
         target_temp: float,
         history_data_set: HistoricalDataSet,
         split_duration_minutes: int | None = None,
+        bridged_interruptions: Sequence[Interruption] = (),
     ) -> list[HeatingCycle]:
         """Build and return one or more HeatingCycle objects for the provided time range.
 
         This function no longer mutates an external list; it returns the created cycle(s)
         so the caller can decide what to do with them (append, persist, filter...).
+        ``bridged_interruptions`` are the interruptions the grace period absorbed within
+        the cycle: a load shedding among them does not make the cycle disturbed.
         """
         duration_minutes = (end_time - start_time).total_seconds() / 60.0
 
@@ -518,7 +616,7 @@ class HeatingCycleService(IHeatingCycleService):
             start_temp=start_indoor_temp,
             history_data_set=history_data_set,
         )
-        disturbed = self._is_disturbed(data, start_time, end_time)
+        disturbed = self._is_disturbed(data, start_time, end_time, bridged_interruptions)
         if disturbed:
             _LOGGER.debug(
                 "Cycle from %s to %s ran during load shedding or safety mode: "
@@ -651,22 +749,33 @@ class HeatingCycleService(IHeatingCycleService):
         data: dict[HistoricalDataKey, list[HistoricalMeasurement]],
         start_time: datetime,
         end_time: datetime,
+        bridged_interruptions: Sequence[Interruption] = (),
     ) -> bool:
         """Tell whether the thermostat reported a disturbance during a cycle.
 
-        Both bounds are included: load shedding drops the target, so the record that
-        ends the cycle is the disturbed one.
+        Both bounds are included: a load shedding longer than the grace period ends the
+        cycle when it started, so the record that ends the cycle is the disturbed one.
+        A load shedding bridged within the cycle lasted less than the grace period: the
+        cycle still describes how the room heats, so it does not count (#260). Safety
+        mode always does.
 
         Args:
             data: Historical measurements by key; uses HEATING_STATE only.
             start_time: Start of the cycle.
             end_time: End of the cycle.
+            bridged_interruptions: Interruptions absorbed by the grace period in the cycle.
 
         Returns:
-            True if a record of the cycle carries one of DISTURBANCE_PRESETS.
+            True if a record of the cycle carries one of DISTURBANCE_PRESETS, other than
+            a load shedding within a bridged interruption.
         """
         return any(
-            start_time <= measurement.timestamp <= end_time and _has_disturbance_preset(measurement)
+            start_time <= measurement.timestamp <= end_time
+            and _has_disturbance_preset(measurement)
+            and not (
+                _is_load_shedding(measurement)
+                and _within(measurement.timestamp, bridged_interruptions)
+            )
             for measurement in data.get(HistoricalDataKey.HEATING_STATE, [])
         )
 

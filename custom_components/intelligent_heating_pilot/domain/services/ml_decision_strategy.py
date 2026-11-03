@@ -98,7 +98,7 @@ class MLDecisionStrategy(IDecisionStrategy):
         # )
 
         _LOGGER.warning(
-            "ML model integration not implemented yet. " "Returning NO_ACTION as placeholder."
+            "ML model integration not implemented yet. Returning NO_ACTION as placeholder."
         )
 
         return HeatingDecision(
@@ -151,7 +151,7 @@ class MLDecisionStrategy(IDecisionStrategy):
         #     )
 
         _LOGGER.warning(
-            "ML overshoot detection not implemented yet. " "Returning NO_ACTION as placeholder."
+            "ML overshoot detection not implemented yet. Returning NO_ACTION as placeholder."
         )
 
         return HeatingDecision(

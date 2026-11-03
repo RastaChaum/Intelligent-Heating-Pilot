@@ -766,7 +766,7 @@ class TestRecordingExtractionQueueSequentialityValidation:
             ("end", date(2024, 1, 24)),
         ]
         assert execution_timeline == expected_timeline, (
-            f"Tasks must be sequential (start→end→start→end→...). " f"Got: {execution_timeline}"
+            f"Tasks must be sequential (start→end→start→end→...). Got: {execution_timeline}"
         )
 
     @pytest.mark.asyncio
@@ -803,7 +803,7 @@ class TestRecordingExtractionQueueSequentialityValidation:
 
         # THEN: Never more than 1 task active at a time
         assert max_concurrent == 1, (
-            f"Tasks must NOT overlap. Maximum concurrent tasks was {max_concurrent}, " f"expected 1"
+            f"Tasks must NOT overlap. Maximum concurrent tasks was {max_concurrent}, expected 1"
         )
 
     @pytest.mark.asyncio
@@ -912,21 +912,21 @@ class TestRecordingExtractionQueueCallbackValidation:
         await extraction_queue.run_queue()
 
         # THEN: Callback received correct cycles in order
-        assert (
-            len(callbacks_received) == 2
-        ), f"Expected 2 callback invocations, got {len(callbacks_received)}"
+        assert len(callbacks_received) == 2, (
+            f"Expected 2 callback invocations, got {len(callbacks_received)}"
+        )
 
         # First callback: Jan 10 cycles
-        assert (
-            len(callbacks_received[0]) == 2
-        ), f"First callback should have 2 cycles, got {len(callbacks_received[0])}"
+        assert len(callbacks_received[0]) == 2, (
+            f"First callback should have 2 cycles, got {len(callbacks_received[0])}"
+        )
         assert callbacks_received[0][0] == cycle_jan10_a
         assert callbacks_received[0][1] == cycle_jan10_b
 
         # Second callback: Jan 11 cycles
-        assert (
-            len(callbacks_received[1]) == 1
-        ), f"Second callback should have 1 cycle, got {len(callbacks_received[1])}"
+        assert len(callbacks_received[1]) == 1, (
+            f"Second callback should have 1 cycle, got {len(callbacks_received[1])}"
+        )
         assert callbacks_received[1][0] == cycle_jan11
 
     @pytest.mark.asyncio
@@ -1014,7 +1014,7 @@ class TestRecordingExtractionQueueCancellationValidation:
 
         # THEN: Should have processed exactly 3 tasks before stopping
         assert len(task_executions) == 3, (
-            f"Expected 3 tasks executed before cancellation, " f"got {len(task_executions)}"
+            f"Expected 3 tasks executed before cancellation, got {len(task_executions)}"
         )
         assert task_executions == [date(2024, 1, 1), date(2024, 1, 8), date(2024, 1, 15)]
 
@@ -1123,10 +1123,10 @@ class TestRecordingExtractionQueueProgressAccuracy:
 
         # THEN
         assert extraction_queue._extracted_count == 4, (
-            f"Expected 4 successful extractions, " f"got {extraction_queue._extracted_count}"
+            f"Expected 4 successful extractions, got {extraction_queue._extracted_count}"
         )
         assert extraction_queue._failed_count == 2, (
-            f"Expected 2 failed extractions, " f"got {extraction_queue._failed_count}"
+            f"Expected 2 failed extractions, got {extraction_queue._failed_count}"
         )
 
         # Progress should reflect this

@@ -304,9 +304,9 @@ def fresh_result_persisted(lhs_context):
     mock_storage = lhs_context.get("mock_storage")
     if mock_storage:
         # Verify set_cached_contextual_lhs was called with new value
-        assert (
-            mock_storage.set_cached_contextual_lhs.called
-        ), "Fresh result should be persisted to storage"
+        assert mock_storage.set_cached_contextual_lhs.called, (
+            "Fresh result should be persisted to storage"
+        )
 
 
 @then("memory cache should be updated with fresh value")

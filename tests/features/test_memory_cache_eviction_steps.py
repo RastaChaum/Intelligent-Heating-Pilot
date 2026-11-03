@@ -214,9 +214,9 @@ def oldest_cycle_evicted(eviction_context, device_id):
     oldest_date = eviction_context["oldest_date"]
 
     oldest_key = (device_id, oldest_date)
-    assert (
-        oldest_key not in manager._cached_cycles_for_target_time
-    ), f"Oldest cycle from {oldest_date} was not evicted"
+    assert oldest_key not in manager._cached_cycles_for_target_time, (
+        f"Oldest cycle from {oldest_date} was not evicted"
+    )
 
 
 @then(parsers.parse("cache size should remain at {limit:d}"))
@@ -262,9 +262,9 @@ def cycle_from_date_evicted_first(eviction_context, device_id, date):
     evicted_date = datetime.strptime(date, "%Y-%m-%d").date()
 
     cache_key = (device_id, evicted_date)
-    assert (
-        cache_key not in manager._cached_cycles_for_target_time
-    ), f"Cycle from {date} was not evicted"
+    assert cache_key not in manager._cached_cycles_for_target_time, (
+        f"Cycle from {date} was not evicted"
+    )
 
 
 @then(parsers.parse('cycle from "{date}" should remain in cache'))
@@ -274,17 +274,17 @@ def cycle_from_date_remains(eviction_context, device_id, date):
     remain_date = datetime.strptime(date, "%Y-%m-%d").date()
 
     cache_key = (device_id, remain_date)
-    assert (
-        cache_key in manager._cached_cycles_for_target_time
-    ), f"Cycle from {date} was incorrectly evicted"
+    assert cache_key in manager._cached_cycles_for_target_time, (
+        f"Cycle from {date} was incorrectly evicted"
+    )
 
 
 @then("it should be loaded from IHeatingCycleStorage")
 def loaded_from_storage(eviction_context):
     """THEN: Verify cycle was loaded from storage."""
-    assert eviction_context.get(
-        "load_from_storage_attempted", False
-    ), "Storage load was not attempted"
+    assert eviction_context.get("load_from_storage_attempted", False), (
+        "Storage load was not attempted"
+    )
 
     # Verify storage mock was configured to return data
     manager = eviction_context["manager"]
@@ -428,9 +428,9 @@ def oldest_cycle_removed(eviction_context, device_id):
     if oldest_date:
         oldest_key = (device_id, oldest_date)
         # Oldest entry should NOT be in cache after eviction
-        assert (
-            oldest_key not in manager._cached_cycles_for_target_time
-        ), f"Oldest cycle {oldest_date} should have been evicted"
+        assert oldest_key not in manager._cached_cycles_for_target_time, (
+            f"Oldest cycle {oldest_date} should have been evicted"
+        )
 
 
 @then("all newer cycles should be preserved in the cache")
@@ -458,9 +458,9 @@ def cache_maintains_fifo(eviction_context):
     cache_size = len(manager._cached_cycles_for_target_time)
 
     # After eviction, cache should be at or under limit
-    assert (
-        cache_size <= MAX_MEMORY_CACHE_ENTRIES
-    ), f"Cache size {cache_size} violates FIFO eviction (limit: {MAX_MEMORY_CACHE_ENTRIES})"
+    assert cache_size <= MAX_MEMORY_CACHE_ENTRIES, (
+        f"Cache size {cache_size} violates FIFO eviction (limit: {MAX_MEMORY_CACHE_ENTRIES})"
+    )
 
 
 @then("cache size should return to MAX_MEMORY_CACHE_ENTRIES")
@@ -469,9 +469,9 @@ def cache_size_returns_to_limit(eviction_context):
     manager = eviction_context["manager"]
     final_size = len(manager._cached_cycles_for_target_time)
 
-    assert (
-        final_size == MAX_MEMORY_CACHE_ENTRIES
-    ), f"Cache size {final_size} should be at limit {MAX_MEMORY_CACHE_ENTRIES}"
+    assert final_size == MAX_MEMORY_CACHE_ENTRIES, (
+        f"Cache size {final_size} should be at limit {MAX_MEMORY_CACHE_ENTRIES}"
+    )
 
 
 @then("eviction is triggered")
@@ -480,6 +480,6 @@ def eviction_is_triggered(eviction_context):
     manager = eviction_context["manager"]
     # After adding 51st cycle and evicting, size should be back to 50
     final_size = len(manager._cached_cycles_for_target_time)
-    assert (
-        final_size <= MAX_MEMORY_CACHE_ENTRIES
-    ), f"Eviction should have brought cache to {MAX_MEMORY_CACHE_ENTRIES}, got {final_size}"
+    assert final_size <= MAX_MEMORY_CACHE_ENTRIES, (
+        f"Eviction should have brought cache to {MAX_MEMORY_CACHE_ENTRIES}, got {final_size}"
+    )

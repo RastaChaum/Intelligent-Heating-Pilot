@@ -50,6 +50,7 @@ def recorder_queue():
 # Background steps
 # ------------------------------------------------------------------
 
+
 @given("a Home Assistant instance is running")
 def ha_instance_running(sensor_context, mock_hass):
     """GIVEN: A Home Assistant instance is running."""
@@ -71,6 +72,7 @@ def sensor_entity_exists(sensor_context, entity_id):
 # ------------------------------------------------------------------
 # Scenario: HASensorDataReader requires RecorderQueue
 # ------------------------------------------------------------------
+
 
 @when("I create a HASensorDataReader with RecorderQueue")
 def create_sensor_reader(sensor_context):
@@ -97,6 +99,7 @@ def implements_historical(sensor_context):
 # ------------------------------------------------------------------
 # Scenario: Historical data fetch uses RecorderQueue
 # ------------------------------------------------------------------
+
 
 @given("I have a HASensorDataReader with RecorderQueue")
 def have_sensor_reader(sensor_context, mock_hass, recorder_queue):
@@ -164,6 +167,7 @@ def historical_data_returned(sensor_context):
 # Scenario: RecorderQueue is mandatory
 # ------------------------------------------------------------------
 
+
 @when("I try to create a HASensorDataReader without RecorderQueue")
 def create_sensor_without_queue(sensor_context, mock_hass):
     """WHEN: Try to create without RecorderQueue."""
@@ -190,6 +194,7 @@ def error_indicates_missing_param(sensor_context):
 # ------------------------------------------------------------------
 # Scenario: Multiple readers share the same RecorderQueue
 # ------------------------------------------------------------------
+
 
 @given("I have a RecorderQueue instance")
 def have_queue_instance(sensor_context, recorder_queue):

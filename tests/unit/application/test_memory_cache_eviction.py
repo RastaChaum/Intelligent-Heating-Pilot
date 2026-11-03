@@ -168,9 +168,9 @@ class TestMemoryCacheEviction:
 
         # ASSERT: FIFO - newest entries should be PRESERVED
         # The newly added entry (latest date) must still be in cache
-        assert (
-            newest_key in heating_cycle_manager_minimal._cached_cycles_for_target_time
-        ), "Newest entry must be preserved after eviction"
+        assert newest_key in heating_cycle_manager_minimal._cached_cycles_for_target_time, (
+            "Newest entry must be preserved after eviction"
+        )
 
         # Also check that the most recent entries from original batch are kept
         # dates_added[0] to dates_added[48] should still be present (49 entries)
@@ -178,9 +178,9 @@ class TestMemoryCacheEviction:
         for i in range(MAX_MEMORY_CACHE_ENTRIES - 1):  # 0 to 48
             date_check = dates_added[i]
             key_check = (device_id, date_check)
-            assert (
-                key_check in heating_cycle_manager_minimal._cached_cycles_for_target_time
-            ), f"Entry from {date_check} should be preserved (not old enough to evict)"
+            assert key_check in heating_cycle_manager_minimal._cached_cycles_for_target_time, (
+                f"Entry from {date_check} should be preserved (not old enough to evict)"
+            )
 
         # ASSERT: Evicted data can be reloaded from persistent storage
         # (Verified by separate scenario "Evicted data can be reloaded from persistent storage")

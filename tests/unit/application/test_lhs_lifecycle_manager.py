@@ -508,9 +508,9 @@ class TestLhsLifecycleManager:
         # THEN: Storage access optimization
         # First call read from storage, second call used memory cache
         assert storage_calls_first >= 1, "First call should read from storage"
-        assert (
-            storage_calls_second == storage_calls_first
-        ), "Second call should NOT hit storage (memory cache used)"
+        assert storage_calls_second == storage_calls_first, (
+            "Second call should NOT hit storage (memory cache used)"
+        )
 
     # ===== Test: update_global_lhs_from_cycles() - ONE test for ALL scenarios =====
 
@@ -560,9 +560,9 @@ class TestLhsLifecycleManager:
         result = await manager.get_global_lhs()
         assert result == 2.8
         # Storage should NOT be called again (memory cache used)
-        assert (
-            mock_model_storage.get_cached_global_lhs.call_count == 0
-        ), "Should NOT hit storage on get_global_lhs after update"
+        assert mock_model_storage.get_cached_global_lhs.call_count == 0, (
+            "Should NOT hit storage on get_global_lhs after update"
+        )
 
         # THEN Aspect C: Handles empty cycles list gracefully
         # (Tested separately with new call to avoid cache interference)
@@ -668,9 +668,9 @@ class TestLhsLifecycleManager:
         assert lhs_value == 2.5
 
         # Storage should NOT be called (memory cache used)
-        assert (
-            mock_model_storage.get_cached_contextual_lhs.call_count == 0
-        ), "Should NOT hit storage on get_contextual_lhs after update"
+        assert mock_model_storage.get_cached_contextual_lhs.call_count == 0, (
+            "Should NOT hit storage on get_contextual_lhs after update"
+        )
 
         # THEN Aspect D: Handles empty cycles gracefully
         # (Tested with separate call to avoid interference)
@@ -922,18 +922,18 @@ class TestLhsLifecycleManagerLazyLoading:
         await manager.startup()
 
         # THEN: EXACTLY ONE hour is requested (lazy loading - only current hour)
-        assert (
-            len(requested_hours) == 1
-        ), f"Expected only 1 hour loaded, but got {len(requested_hours)} hours: {requested_hours}"
+        assert len(requested_hours) == 1, (
+            f"Expected only 1 hour loaded, but got {len(requested_hours)} hours: {requested_hours}"
+        )
 
         # THEN: That hour is in the valid range (0-23)
         loaded_hour = requested_hours[0]
         assert 0 <= loaded_hour <= 23, f"Loaded hour {loaded_hour} is outside valid range 0-23"
 
         # THEN: Memory cache contains only the loaded hour (lazy loading)
-        assert (
-            len(manager._cached_contextual_lhs) == 1
-        ), f"Memory cache should have exactly 1 hour, but has {len(manager._cached_contextual_lhs)}"
+        assert len(manager._cached_contextual_lhs) == 1, (
+            f"Memory cache should have exactly 1 hour, but has {len(manager._cached_contextual_lhs)}"
+        )
         assert loaded_hour in manager._cached_contextual_lhs
 
     @pytest.mark.asyncio
@@ -963,9 +963,9 @@ class TestLhsLifecycleManagerLazyLoading:
         await manager.startup()
 
         # THEN: Exactly ONE hour is loaded (lazy loading)
-        assert (
-            len(called_hours) == 1
-        ), f"Expected 1 call (current hour only), got {len(called_hours)} calls"
+        assert len(called_hours) == 1, (
+            f"Expected 1 call (current hour only), got {len(called_hours)} calls"
+        )
 
         # THEN: All 24 hours are NOT loaded (NOT a loop over range(24))
         all_hours = set(range(24))
@@ -1000,17 +1000,17 @@ class TestLhsLifecycleManagerLazyLoading:
 
         # THEN: That hour is cached in memory
         loaded_hours = list(manager._cached_contextual_lhs.keys())
-        assert (
-            len(loaded_hours) >= 1
-        ), "At least one hour should be cached after startup (lazy loading)"
+        assert len(loaded_hours) >= 1, (
+            "At least one hour should be cached after startup (lazy loading)"
+        )
 
         # THEN: The cached value matches what was returned from storage
         for hour in loaded_hours:
             cached_value = manager._cached_contextual_lhs[hour]
             expected_value = cached_values.get(hour)
-            assert (
-                cached_value == expected_value
-            ), f"Cached value for hour {hour} should match storage value"
+            assert cached_value == expected_value, (
+                f"Cached value for hour {hour} should match storage value"
+            )
 
     # ===== Lazy Loading on Demand Tests =====
 
@@ -1425,9 +1425,9 @@ class TestLhsLifecycleManagerLazyLoading:
         await manager.startup()
 
         # THEN: Exactly ONE hour is loaded (lazy loading)
-        assert (
-            len(requested_hours) == 1
-        ), f"Expected 1 hour loaded in startup, got {len(requested_hours)}"
+        assert len(requested_hours) == 1, (
+            f"Expected 1 hour loaded in startup, got {len(requested_hours)}"
+        )
 
         # THEN: That hour is in valid range (0-23), including boundary hour 0
         loaded_hour = requested_hours[0]
@@ -1471,9 +1471,9 @@ class TestLhsLifecycleManagerLazyLoading:
         await manager.startup()
 
         # THEN: Exactly ONE hour is loaded (lazy loading)
-        assert (
-            len(requested_hours) == 1
-        ), f"Expected 1 hour loaded in startup, got {len(requested_hours)}"
+        assert len(requested_hours) == 1, (
+            f"Expected 1 hour loaded in startup, got {len(requested_hours)}"
+        )
 
         # THEN: That hour is in valid range (0-23), including boundary hour 23
         loaded_hour = requested_hours[0]
