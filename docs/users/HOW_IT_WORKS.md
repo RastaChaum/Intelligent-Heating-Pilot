@@ -161,9 +161,9 @@ However, **brief heating interruptions** (< 10 minutes by default) do NOT immedi
 
 The same grace period covers **load shedding**: while Versatile Thermostat sheds its load, it records the `power` preset and drops the target to its power temperature for a minute or two, so the room looks as if it had reached its target. If the preset comes back within the grace period, the cycle continues and is learned. Each load shedding is timed on its own, so a preheat shed several times in a row stays one cycle as long as each shedding is shorter than the grace period.
 
-**Why?** Brief safety interruptions cause extreme slopes (100,000+ °C/h) if treated as separate micro-cycles. A preheat cut by load sheddings would also learn its dead time from the last fragment only: on underfloor heating, 73 minutes instead of 142. The grace period prevents these spurious learning events. The minutes spent interrupted stay in the cycle: the dead time runs from when heating really started.
+It also covers **a window or a door opened for a few minutes**: Versatile Thermostat drops the target to its window action temperature, and the cycle continues if the target comes back within the grace period. Any target drop low enough to end the cycle is handled the same way. If the target stays low (the schedule moved to eco), the cycle ends when the target dropped, once the grace period has expired. A target lowered by less than that does not interrupt the cycle.
 
-A window opening is not bridged: Versatile Thermostat drops the target to its window action temperature without the `power` preset, and the cycle ends at once, because the room really cools down.
+**Why?** Brief safety interruptions cause extreme slopes (100,000+ °C/h) if treated as separate micro-cycles. A preheat cut by load sheddings or a window opened for two minutes would also learn its dead time from the last fragment only: on underfloor heating, 73 minutes instead of 142. The grace period prevents these spurious learning events. The minutes spent interrupted stay in the cycle: the dead time runs from when heating really started.
 
 **Example Scenarios:**
 
@@ -175,7 +175,9 @@ A window opening is not bridged: Versatile Thermostat drops the target to its wi
 | Safety shutoff (extended, >10 min) | Mode stops → Grace period expires after 10 min → Cycle closes at the moment grace started |
 | Load shedding (brief, <10 min) | `power` preset, target dropped → Grace period starts; if the preset comes back within 10 min → cycle continues and is learned |
 | Load shedding (extended, >10 min) | Grace period expires → Cycle closes when the shedding started and is not learned |
-| Window opening | Target dropped to the window temperature → Cycle ends at once |
+| Window or door opened (brief, <10 min) | Target dropped to the window temperature → Grace period starts; if the target comes back within 10 min → cycle continues and is learned |
+| Window left open (extended, >10 min) | Grace period expires → Cycle closes when the target dropped |
+| Schedule moves to eco before the target is reached | Grace period expires → Cycle closes when the target dropped |
 | Early comfort | Target lowered while heating | Mode may stay on; end triggers when room is within 0.2°C of the new target |
 
 ### Why These Rules?
