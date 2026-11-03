@@ -1,8 +1,9 @@
-"""pytest-bdd step definitions for bridging a brief load shedding within a cycle (#260).
+"""pytest-bdd step definitions for bridging a brief interruption within a cycle (#260).
 
 Builds the VTherm history of a preheat modelled on the living room of 2026-11-02: a
 heating state record every few minutes, the ``power`` preset and the power temperature
-while the load is shed, and a few indoor readings. Runs the real HeatingCycleService
+while the load is shed, the window action temperature while a window is open, and a few
+indoor readings. Runs the real HeatingCycleService
 extraction on it, then learns from the cycles with the real DeadTimeCalculationService
 and GlobalLHSCalculatorService.
 """
@@ -32,7 +33,7 @@ from custom_components.intelligent_heating_pilot.domain.value_objects.historical
     HistoricalMeasurement,
 )
 
-scenarios("load_shedding_bridge.feature")
+scenarios("brief_interruption_bridge.feature")
 
 DEVICE_ID = "entry_living_room"
 DAY = datetime(2026, 11, 2)

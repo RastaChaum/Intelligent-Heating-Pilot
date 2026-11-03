@@ -1,6 +1,6 @@
-Feature: A brief load shedding does not restart the heating cycle
-  As a household whose thermostats shed their load for a minute or two at a time
-  I want IHP to learn a preheat interrupted by load shedding as one heating cycle
+Feature: A brief interruption does not restart the heating cycle
+  As a household whose thermostats shed their load, or whose windows open, for a few minutes
+  I want IHP to learn a preheat briefly interrupted as one heating cycle
   So that the learned dead time is measured from when heating really started
 
   Background:
@@ -37,8 +37,16 @@ Feature: A brief load shedding does not restart the heating cycle
     When IHP extracts the heating cycles and learns from them
     Then the first cycle ends at 04:29 and is disturbed
 
-  Scenario: A window opening is not bridged
+  Scenario: A window opened for 2 minutes is bridged too
     Given a grace period of 10 minutes
     And a window drops the target to 7.0 °C for 2 minutes at 04:29
     When IHP extracts the heating cycles and learns from them
+    Then a single cycle is extracted, from 04:12 to 08:22
+    And the learned dead time is 142 minutes
+
+  Scenario: A window left open longer than the grace period still ends the cycle
+    Given a grace period of 10 minutes
+    And a window drops the target to 7.0 °C for 15 minutes at 04:29
+    When IHP extracts the heating cycles and learns from them
     Then the first cycle ends at 04:29
+    And the learned dead time is 110 minutes
