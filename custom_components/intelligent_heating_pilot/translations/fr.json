@@ -40,7 +40,7 @@
           "max_cycle_duration_minutes": "Durée du plus long cycle de chauffe retenu pour l'apprentissage. Filtre les cycles anormalement longs (dysfonctionnements). Par défaut : 300 min.",
           "task_range_days": "Nombre de jours par tâche d'extraction du Recorder. Augmentez-le sur une machine puissante pour réduire le nombre de tâches, diminuez-le sur une machine lente pour alléger chaque requête. Par défaut : 7 jours.",
           "anticipation_recalc_tolerance_minutes": "Report minimal de l'heure de démarrage anticipée qui annule un préchauffage actif et le replanifie. Par défaut : 15 min.",
-          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min."
+          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel, délestage de Versatile Thermostat) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min."
         }
       }
     },
@@ -90,7 +90,7 @@
           "max_cycle_duration_minutes": "Durée du plus long cycle de chauffe retenu pour l'apprentissage. Filtre les cycles anormalement longs (dysfonctionnements). Par défaut : 300 min.",
           "task_range_days": "Nombre de jours par tâche d'extraction du Recorder. Augmentez-le sur une machine puissante pour réduire le nombre de tâches, diminuez-le sur une machine lente pour alléger chaque requête. Par défaut : 7 jours.",
           "anticipation_recalc_tolerance_minutes": "Report minimal de l'heure de démarrage anticipée qui annule un préchauffage actif et le replanifie. Par défaut : 15 min.",
-          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min."
+          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel, délestage de Versatile Thermostat) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min."
         }
       }
     },
