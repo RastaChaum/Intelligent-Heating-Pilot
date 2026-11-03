@@ -103,4 +103,18 @@ def get_vtherm_room_temperature(state: State | None) -> float | None:
         ``ema_temp`` when it is a number, otherwise ``current_temperature``
         when it is a number, otherwise None.
     """
-    raise NotImplementedError
+    for attribute_name in (VTHERM_ATTR_SMOOTHED_TEMPERATURE, CLIMATE_ATTR_CURRENT_TEMPERATURE):
+        temperature = _as_float(get_vtherm_attribute(state, attribute_name))
+        if temperature is not None:
+            return temperature
+    return None
+
+
+def _as_float(value: Any) -> float | None:
+    """Return *value* as a float, or None when it is not a number."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

@@ -21,7 +21,7 @@ from .adapters.utils import (
     WEATHER_NUMERIC_ATTRIBUTES,
     read_numeric_state,
 )
-from .vtherm_compat import get_vtherm_attribute
+from .vtherm_compat import get_vtherm_room_temperature
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -421,9 +421,10 @@ class HAEventBridge:
             _LOGGER.debug("Ignoring self-induced VTherm change")
             return
 
-        # Extract temperature changes (v8.0.0+ compatible)
-        old_temp = get_vtherm_attribute(old_state, "current_temperature")
-        new_temp = get_vtherm_attribute(new_state, "current_temperature")
+        # Same room temperature as the anticipation reads: a raw reading toggling
+        # while the smoothed one stays put must not move the pending preheat (#258).
+        old_temp = get_vtherm_room_temperature(old_state)
+        new_temp = get_vtherm_room_temperature(new_state)
 
         if old_temp == new_temp:
             _LOGGER.debug("VTherm change but temperature unchanged, skipping")
