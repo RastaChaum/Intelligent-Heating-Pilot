@@ -174,6 +174,18 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         except (ValueError, TypeError):
             return None
 
+    async def wait_for_state_change(self, timeout_seconds: float) -> bool:
+        """Wait for the next state change of the VTherm entity.
+
+        Args:
+            timeout_seconds: Longest time to wait, in seconds.
+
+        Returns:
+            ``True`` when the VTherm state changed before the timeout,
+            ``False`` when the timeout elapsed first.
+        """
+        raise NotImplementedError
+
     # ------------------------------------------------------------------
     # IHistoricalDataAdapter implementation (historical data)
     # ------------------------------------------------------------------
