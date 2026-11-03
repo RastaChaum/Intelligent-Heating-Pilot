@@ -17,6 +17,7 @@ from ..value_objects.historical_data import (
     HistoricalDataSet,
     HistoricalMeasurement,
 )
+from .scheduled_slot import scheduled_slot_of_cycle
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -525,6 +526,17 @@ class HeatingCycleService(IHeatingCycleService):
                 start_time,
                 end_time,
             )
+        scheduled_slot_time = scheduled_slot_of_cycle(
+            data.get(HistoricalDataKey.SCHEDULED_SLOT, []), start_time, end_time, target_temp
+        )
+        if scheduled_slot_time is not None:
+            _LOGGER.debug(
+                "Cycle from %s to %s was still heating when its slot came due at %s: "
+                "it is learned for that slot",
+                start_time,
+                end_time,
+                scheduled_slot_time,
+            )
 
         # Build HeatingCycle with computed tariff details (may be empty)
         cycle = HeatingCycle(
@@ -541,6 +553,7 @@ class HeatingCycleService(IHeatingCycleService):
             dead_time_end_temp=dead_time_end.temperature if dead_time_end else None,
             disturbed=disturbed,
             heating_phase_observed=dead_time_end is not None,
+            scheduled_slot_time=scheduled_slot_time,
         )
         _LOGGER.debug(
             "Created single heating cycle: %s (energy=%.3fkWh duration=%.1fmin cost=%.3f€)",
@@ -571,7 +584,8 @@ class HeatingCycleService(IHeatingCycleService):
         the cycle and also covers the dead time: it keeps the dead time and the temperature
         at its end, so the dead time is still learned. A cycle whose heating phase is not
         longer than the split duration is returned unsplit. Every sub-cycle keeps the
-        disturbance and heating phase status of its cycle (#255).
+        disturbance and heating phase status of its cycle (#255), and the slot it was
+        heating for (#254).
         """
         phase_start = parent.heating_phase_start_time
         phase_start_temp = parent.heating_phase_start_temp

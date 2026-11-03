@@ -433,6 +433,11 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             "dead_time_end_temp": cycle.dead_time_end_temp,
             "disturbed": cycle.disturbed,
             "heating_phase_observed": cycle.heating_phase_observed,
+            "scheduled_slot_time": (
+                self._serialize_datetime(cycle.scheduled_slot_time)
+                if cycle.scheduled_slot_time is not None
+                else None
+            ),
         }
 
         # Serialize tariff details if present
@@ -511,4 +516,13 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             # keep the former learning rule
             disturbed=cycle_dict.get("disturbed"),
             heating_phase_observed=cycle_dict.get("heating_phase_observed"),
+            # Absent from cycles stored before it was recorded (#254): such cycles keep
+            # the hour nearest to their end
+            scheduled_slot_time=self._parse_optional_datetime(
+                cycle_dict.get("scheduled_slot_time")
+            ),
         )
+
+    def _parse_optional_datetime(self, dt_string: str | None) -> datetime | None:
+        """Parse an optional ISO datetime string; None stays None."""
+        return self._parse_datetime(dt_string) if dt_string else None
