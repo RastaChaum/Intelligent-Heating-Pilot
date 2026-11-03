@@ -652,3 +652,46 @@ class TestContextualLHSFromCyclesWithKnownStatus:
 
         assert 7 not in result.learned
         assert result.rejected_hours == frozenset({7})
+
+
+class TestContextualHourOfCycleTiedToSlot:
+    """A cycle during which its slot came due is filed under the slot's hour (#254)."""
+
+    @staticmethod
+    def _late_preheat(slot: datetime | None) -> HeatingCycle:
+        """A preheat from 06:20 to 09:56 UTC, possibly tied to a slot."""
+        return HeatingCycle(
+            device_id="test_device",
+            start_time=datetime(2026, 11, 1, 6, 20, tzinfo=UTC),
+            end_time=datetime(2026, 11, 1, 9, 56, tzinfo=UTC),
+            target_temp=20.0,
+            end_temp=19.8,
+            start_temp=18.9,
+            scheduled_slot_time=slot,
+        )
+
+    def test_late_preheat_is_filed_under_its_slot_hour(self) -> None:
+        """The 08:45 slot reads hour 9; a preheat ending at 09:56 for it must be there too."""
+        cycle = self._late_preheat(datetime(2026, 11, 1, 8, 45, tzinfo=UTC))
+
+        assert ContextualLHSCalculatorService().extract_hour_from_cycle(cycle) == 9
+
+    def test_cycle_without_slot_keeps_the_hour_nearest_to_its_end(self) -> None:
+        """Cycles not tied to a slot, and cycles cached before #254, keep the #214 rule."""
+        assert (
+            ContextualLHSCalculatorService().extract_hour_from_cycle(self._late_preheat(None)) == 10
+        )
+
+    def test_slot_hour_is_read_on_the_local_clock(self) -> None:
+        """A slot that came due at 07:45 UTC is the 08:45 slot in UTC+1: hour 9."""
+        service = ContextualLHSCalculatorService(local_tz=timezone(timedelta(hours=1)))
+        cycle = self._late_preheat(datetime(2026, 11, 1, 7, 45, tzinfo=UTC))
+
+        assert service.extract_hour_from_cycle(cycle) == 9
+
+    def test_naive_slot_time_is_read_as_utc(self) -> None:
+        """Slot times follow the convention of the other cycle times."""
+        service = ContextualLHSCalculatorService(local_tz=timezone(timedelta(hours=1)))
+        cycle = self._late_preheat(datetime(2026, 11, 1, 7, 45))
+
+        assert service.extract_hour_from_cycle(cycle) == 9

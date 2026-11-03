@@ -734,3 +734,27 @@ async def test_cycle_stored_before_learning_status_reads_as_unknown(
 
     assert restored.disturbed is None
     assert restored.heating_phase_observed is None
+
+
+@pytest.mark.asyncio
+async def test_scheduled_slot_survives_serialization(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """The slot a cycle heated for is stored and read back (#254)."""
+    slot = datetime(2025, 1, 15, 8, 45, tzinfo=UTC)
+    cycle = replace(create_test_heating_cycle(device_id, base_time), scheduled_slot_time=slot)
+
+    restored = cache._deserialize_heating_cycle(cache._serialize_heating_cycle(cycle))
+
+    assert restored.scheduled_slot_time == slot
+
+
+@pytest.mark.asyncio
+async def test_cycle_stored_before_slot_recording_has_no_slot(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """Cycles persisted by older versions keep the nearest-hour rule (#254)."""
+    stored = cache._serialize_heating_cycle(create_test_heating_cycle(device_id, base_time))
+    stored.pop("scheduled_slot_time", None)
+
+    assert cache._deserialize_heating_cycle(stored).scheduled_slot_time is None

@@ -19,6 +19,9 @@ from custom_components.intelligent_heating_pilot.application.heating_cycle_lifec
 from custom_components.intelligent_heating_pilot.domain.interfaces.device_config_reader_interface import (
     DeviceConfig,
 )
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.scheduled_slot_history_reader import (
+    HAScheduledSlotHistoryReader,
+)
 
 
 class TestHeatingCycleLifecycleManagerFactory:
@@ -297,3 +300,34 @@ class TestHeatingCycleLifecycleManagerFactory:
         assert device_config_1.device_id in HeatingCycleLifecycleManagerFactory._instances
         registry_entry = HeatingCycleLifecycleManagerFactory._instances[device_config_1.device_id]
         assert registry_entry is manager
+
+
+def test_factory_reads_the_slot_history_of_the_device(device_config: DeviceConfig) -> None:
+    """Extraction reads which slots came due, to file late preheats under them (#254)."""
+    HeatingCycleLifecycleManagerFactory.reset_instances()
+    hass = Mock()
+    hass.data = {}
+
+    manager = HeatingCycleLifecycleManagerFactory.create(
+        hass=hass, device_config=device_config, heating_cycle_service=Mock()
+    )
+
+    slot_readers = [
+        adapter
+        for adapter in manager._historical_adapters
+        if isinstance(adapter, HAScheduledSlotHistoryReader)
+    ]
+    assert len(slot_readers) == 1
+    assert slot_readers[0]._entry_id == device_config.device_id
+    HeatingCycleLifecycleManagerFactory.reset_instances()
+
+
+@pytest.fixture
+def device_config() -> DeviceConfig:
+    """A device configuration keyed by its config entry id."""
+    return DeviceConfig(
+        device_id="entry123",
+        vtherm_entity_id="climate.vtherm_1",
+        scheduler_entities=["schedule.heating_1"],
+        lhs_retention_days=30,
+    )
