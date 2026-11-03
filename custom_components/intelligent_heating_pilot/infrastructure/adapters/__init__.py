@@ -15,6 +15,7 @@ from .lhs_storage import HALhsStorage
 from .scheduler_commander import HASchedulerCommander
 from .scheduler_reader import HASchedulerReader
 from .sensor_data_reader import HASensorDataReader
+from .sun_reader import HASunReader
 from .timer_scheduler import HATimerScheduler
 from .weather_data_reader import HAWeatherDataReader
 
@@ -29,5 +30,6 @@ __all__ = [
     "HAHeatingCycleStorage",
     "HATimerScheduler",
     "HASensorDataReader",
+    "HASunReader",
     "HAWeatherDataReader",
 ]

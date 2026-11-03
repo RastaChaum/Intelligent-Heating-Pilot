@@ -253,7 +253,15 @@ IHP automatically learns dead time from your heating cycles and refines it over 
 
 ### Environmental Adjustments
 
-The basic calculation is then **adjusted** based on real-world conditions:
+The basic calculation is then **adjusted** based on real-world conditions. The adjustments apply to the heating phase only, never to the dead time: the dead time is how long your heating system takes to warm the room at all, and neither the sun nor humidity makes it respond faster.
+
+```
+Anticipation Time = Dead Time + Heating Phase × Humidity Factor × Solar Factor + 5 minutes
+
+Where:
+- Heating Phase = (Temperature Difference / Learned Slope) × 60
+- 5 minutes = safety margin, so the target is reached on time
+```
 
 #### 1. **Outdoor Temperature**
 
@@ -276,16 +284,23 @@ Examples:
 
 #### 3. **Solar Gain (Cloud Coverage)**
 
-Clear sky = **Solar heat gain** = **Might heat faster**
+Clear sky **in daylight** = **Solar heat gain** = **Might heat faster**
 
 ```
 Adjustment Factor = 1.0 - (100 - cloud_coverage%) × 0.001
 
-Examples:
+Examples, for a heating phase entirely in daylight:
 - Cloud coverage 100%: factor = 1.0 (no solar gain)
 - Cloud coverage 0% (clear sky): factor = 0.9 (heat 10% faster)
 - Cloud coverage 50%: factor = 0.95 (heat 5% faster)
 ```
+
+A clear sky only warms the room while the sun is up. IHP takes sunrise and sunset from your Home Assistant location (no setting needed) and applies the solar gain to the share of the heating phase spent in daylight:
+
+- A winter morning preheat ending before sunrise: no solar gain, whatever the sky.
+- A 60-minute heating phase ending 30 minutes after sunrise: half the solar gain (factor 0.95 under a clear sky).
+
+The cloud coverage is the current one: IHP does not read a forecast.
 
 ### Safety Bounds
 
@@ -435,10 +450,11 @@ Scheduler State = "off"
 ### Scenario 5: Very Sunny Day
 
 **Expected:**
-- Predictions **might decrease slightly** (start heating later)
+- Predictions **might decrease slightly** (start heating later), for preheats while the sun is up
 - Solar gain helps heating
+- Preheats ending before sunrise are not shortened
 
-**Why:** Environmental adjustment for solar gain
+**Why:** Environmental adjustment for solar gain, applied only to the part of the heating phase in daylight
 
 ### Scenario 6: Vacation Mode / Scheduler Disabled
 

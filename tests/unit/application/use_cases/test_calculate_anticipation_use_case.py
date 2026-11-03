@@ -6,7 +6,7 @@ using domain dependencies (scheduler_reader, environment_reader, etc.).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -20,12 +20,17 @@ from custom_components.intelligent_heating_pilot.application.lhs_lifecycle_manag
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     CalculateAnticipationUseCase,
 )
-from custom_components.intelligent_heating_pilot.domain.constants import DEFAULT_LEARNED_SLOPE
+from custom_components.intelligent_heating_pilot.domain.constants import (
+    DEFAULT_LEARNED_SLOPE,
+    MAX_ANTICIPATION_TIME,
+)
+from custom_components.intelligent_heating_pilot.domain.interfaces import ISunReader
 from custom_components.intelligent_heating_pilot.domain.services import (
     DeadTimeCalculationService,
     PredictionService,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
+    DaylightPeriod,
     EnvironmentState,
     PredictionResult,
     ScheduledTimeslot,
@@ -290,6 +295,95 @@ class TestCalculateAnticipationUseCase:
 
         call = mock_prediction_service.predict_heating_time.call_args
         assert call.kwargs["learned_slope"] == DEFAULT_LEARNED_SLOPE
+
+
+class TestCalculateAnticipationUseCaseDaylight:
+    """The use case hands the daylight periods to the prediction (#257)."""
+
+    TARGET_TIME = datetime(2025, 2, 10, 10, 0, 0, tzinfo=UTC)
+    PERIOD = DaylightPeriod(
+        sunrise=datetime(2025, 2, 10, 7, 40, tzinfo=UTC),
+        sunset=datetime(2025, 2, 10, 17, 50, tzinfo=UTC),
+    )
+
+    @staticmethod
+    def _environment(cloud_coverage: float | None) -> Mock:
+        reader = Mock()
+        reader.get_current_environment = AsyncMock(
+            return_value=EnvironmentState(
+                indoor_temperature=19.0,
+                indoor_humidity=50.0,
+                cloud_coverage=cloud_coverage,
+                timestamp=datetime(2025, 2, 10, 6, 0, 0, tzinfo=UTC),
+            )
+        )
+        return reader
+
+    @staticmethod
+    def _sun_reader(periods: list[DaylightPeriod]) -> Mock:
+        reader = Mock(spec=ISunReader)
+        reader.get_daylight_periods = AsyncMock(return_value=periods)
+        return reader
+
+    def _use_case(self, environment_reader: Mock, sun_reader: Mock | None) -> tuple:
+        cycle_manager = AsyncMock(spec=HeatingCycleLifecycleManager)
+        cycle_manager.get_cycles_for_target_time = AsyncMock(return_value=[])
+        lhs_manager = AsyncMock(spec=LhsLifecycleManager)
+        lhs_manager.get_contextual_lhs = AsyncMock(return_value=2.0)
+        lhs_manager.get_global_lhs = AsyncMock(return_value=2.0)
+        prediction = Mock(wraps=PredictionService())
+        dead_time = Mock(spec=DeadTimeCalculationService)
+        use_case = CalculateAnticipationUseCase(
+            scheduler_reader=None,
+            environment_reader=environment_reader,
+            climate_data_reader=Mock(),
+            heating_cycle_manager=cycle_manager,
+            lhs_lifecycle_manager=lhs_manager,
+            prediction_service=prediction,
+            dead_time_calculator=dead_time,
+            auto_learning=False,
+            sun_reader=sun_reader,
+        )
+        return use_case, prediction
+
+    async def _run(self, use_case: CalculateAnticipationUseCase) -> None:
+        await use_case.calculate_anticipation_datas(target_time=self.TARGET_TIME, target_temp=21.0)
+
+    @pytest.mark.asyncio
+    async def test_daylight_is_read_over_the_longest_anticipation(self) -> None:
+        """The sun is read from the earliest possible start up to the target time."""
+        sun_reader = self._sun_reader([self.PERIOD])
+        use_case, prediction = self._use_case(self._environment(0.0), sun_reader)
+
+        await self._run(use_case)
+
+        sun_reader.get_daylight_periods.assert_awaited_once_with(
+            self.TARGET_TIME - timedelta(minutes=MAX_ANTICIPATION_TIME), self.TARGET_TIME
+        )
+        call = prediction.predict_heating_time.call_args
+        assert list(call.kwargs["daylight_periods"]) == [self.PERIOD]
+
+    @pytest.mark.asyncio
+    async def test_daylight_is_not_read_without_cloud_coverage(self) -> None:
+        """Without a cloud coverage there is no solar factor, so no sun to read."""
+        sun_reader = self._sun_reader([self.PERIOD])
+        use_case, prediction = self._use_case(self._environment(None), sun_reader)
+
+        await self._run(use_case)
+
+        sun_reader.get_daylight_periods.assert_not_awaited()
+        call = prediction.predict_heating_time.call_args
+        assert list(call.kwargs["daylight_periods"]) == []
+
+    @pytest.mark.asyncio
+    async def test_no_sun_reader_means_no_daylight(self) -> None:
+        """Without a sun reader the prediction gets no daylight period."""
+        use_case, prediction = self._use_case(self._environment(0.0), None)
+
+        await self._run(use_case)
+
+        call = prediction.predict_heating_time.call_args
+        assert list(call.kwargs["daylight_periods"]) == []
 
 
 class TestCalculateAnticipationUseCaseDeadTimeHydration:
