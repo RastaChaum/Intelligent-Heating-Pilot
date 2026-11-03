@@ -948,3 +948,44 @@ class TestMonitoredDrift:
     def test_temperature_sensor_uses_temperature_threshold(self):
         bridge = _make_bridge()
         assert self._feed(bridge, [10.0, 10.0 - _MONITORED_TEMPERATURE_CHANGE_THRESHOLD]) == [True]
+
+
+class TestVthermRoomTemperatureTrigger:
+    """A thermostat change triggers a recalculation when its room temperature moves (#258)."""
+
+    @staticmethod
+    def _triggers(old_attributes: dict, new_attributes: dict) -> bool:
+        bridge = _make_bridge()
+        bridge._request_recalculate = Mock()  # type: ignore[method-assign]
+        event = _make_event(
+            "climate.vtherm",
+            _make_state("heat", old_attributes),
+            _make_state("heat", new_attributes),
+        )
+        bridge._handle_vtherm_change(event)
+        return bridge._request_recalculate.called
+
+    def test_raw_change_with_same_smoothed_does_not_trigger(self):
+        old = {"current_temperature": 19.12, "ema_temp": 19.2}
+        new = {"current_temperature": 19.33, "ema_temp": 19.2}
+        assert self._triggers(old, new) is False
+
+    def test_smoothed_change_with_same_raw_triggers(self):
+        old = {"current_temperature": 19.33, "ema_temp": 19.2}
+        new = {"current_temperature": 19.33, "ema_temp": 19.25}
+        assert self._triggers(old, new) is True
+
+    def test_raw_change_without_smoothed_triggers(self):
+        """A thermostat without ema_temp keeps today's behavior."""
+        assert self._triggers({"current_temperature": 19.1}, {"current_temperature": 19.3})
+
+    def test_smoothed_appearing_with_another_value_triggers(self):
+        """The room temperature each state yields is compared, whatever its source."""
+        old = {"current_temperature": 19.1}
+        new = {"current_temperature": 19.1, "ema_temp": 19.0}
+        assert self._triggers(old, new) is True
+
+    def test_smoothed_appearing_with_same_value_does_not_trigger(self):
+        old = {"current_temperature": 19.1}
+        new = {"current_temperature": 19.1, "ema_temp": 19.1}
+        assert self._triggers(old, new) is False

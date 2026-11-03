@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import Mock
+
+import pytest
 
 from custom_components.intelligent_heating_pilot.infrastructure.vtherm_compat import (
     get_vtherm_attribute,
+    get_vtherm_room_temperature,
 )
 
 
@@ -129,3 +133,51 @@ def test_get_vtherm_attribute_specific_states_not_dict() -> None:
 
     # THEN: Should fallback to root level
     assert slope == 0.05
+
+
+def _state(attributes: dict[str, Any]) -> Mock:
+    state = Mock()
+    state.entity_id = "climate.test_vtherm"
+    state.attributes = attributes
+    return state
+
+
+@pytest.mark.parametrize(
+    ("attributes", "expected"),
+    [
+        pytest.param(
+            {"current_temperature": 18.9, "specific_states": {"ema_temp": 19.0}},
+            19.0,
+            id="ema_temp_in_specific_states",
+        ),
+        pytest.param(
+            {"current_temperature": 18.9, "ema_temp": 19.0},
+            19.0,
+            id="ema_temp_at_root",
+        ),
+        pytest.param({"current_temperature": 18.9, "ema_temp": "19.05"}, 19.05, id="ema_temp_text"),
+        pytest.param({"current_temperature": 18.9}, 18.9, id="no_ema_temp"),
+        pytest.param(
+            {"current_temperature": 18.9, "ema_temp": "unknown"},
+            18.9,
+            id="ema_temp_not_a_number",
+        ),
+        pytest.param({"current_temperature": "18.9"}, 18.9, id="current_temperature_text"),
+        pytest.param({}, None, id="no_temperature"),
+        pytest.param(
+            {"current_temperature": "unknown", "ema_temp": None},
+            None,
+            id="no_number",
+        ),
+    ],
+)
+def test_get_vtherm_room_temperature(attributes: dict[str, Any], expected: float | None) -> None:
+    """The smoothed ema_temp wins; current_temperature is the fallback (#258)."""
+    assert get_vtherm_room_temperature(_state(attributes)) == (
+        pytest.approx(expected) if expected is not None else None
+    )
+
+
+def test_get_vtherm_room_temperature_without_state() -> None:
+    """A missing state has no room temperature."""
+    assert get_vtherm_room_temperature(None) is None

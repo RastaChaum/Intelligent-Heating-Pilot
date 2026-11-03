@@ -190,6 +190,12 @@ The current logic favors **quick detection** for natural completions and manual 
 
 Once IHP has learned the heating slope and dead time, it predicts when heating should start.
 
+### Room Temperature Used
+
+IHP predicts from the room temperature smoothed by Versatile Thermostat (its `ema_temp` attribute), the one VTherm regulates on, and recalculates when that temperature changes. A sensor toggling between two adjacent values (for example 18.9 and 19.1 °C) would otherwise move the anticipated start back and forth by several minutes, and a higher reading just before the start would delay the preheat. A thermostat without `ema_temp` is read from its `current_temperature`. The current temperature shown on the IHP sensors is this same temperature.
+
+Heating cycles are still learned from the measured temperature recorded in the history.
+
 ### Active Preheating Recalculation Rule
 
 When preheating is already active, IHP does not cancel it on every recalculation.

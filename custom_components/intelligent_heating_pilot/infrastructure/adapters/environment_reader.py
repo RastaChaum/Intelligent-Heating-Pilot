@@ -14,7 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from ...domain.interfaces import IEnvironmentReader
 from ...domain.value_objects import EnvironmentState
-from ..vtherm_compat import get_vtherm_attribute
+from ..vtherm_compat import get_vtherm_room_temperature
 from .utils import (
     WEATHER_ATTR_CLOUD_COVERAGE,
     WEATHER_ATTR_HUMIDITY,
@@ -75,16 +75,11 @@ class HAEnvironmentReader(IEnvironmentReader):
             _LOGGER.warning("[%s] VTherm entity not found", self._device_name)
             return None
 
-        # Use v8.0.0+ compatible attribute access
-        current_temp_raw = get_vtherm_attribute(vtherm_state, "current_temperature")
-        if current_temp_raw is None:
-            _LOGGER.warning("[%s] No current_temperature available", self._device_name)
-            return None
-
-        try:
-            current_temp = float(current_temp_raw)
-        except (ValueError, TypeError):
-            _LOGGER.warning("Invalid current_temperature: %s", current_temp_raw)
+        # The smoothed room temperature: a raw reading toggling between two
+        # adjacent values moved the anticipated start back and forth (#258).
+        current_temp = get_vtherm_room_temperature(vtherm_state)
+        if current_temp is None:
+            _LOGGER.warning("[%s] No room temperature available", self._device_name)
             return None
 
         # Outdoor temperature is optional: a missing value stays None so the domain
