@@ -7,12 +7,19 @@ and tracks preheating state.
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     ControlPreheatingUseCase,
+)
+from custom_components.intelligent_heating_pilot.domain.constants import (
+    ACTION_EFFECT_TIMEOUT_SECONDS,
+)
+
+_USE_CASE_MODULE = (
+    "custom_components.intelligent_heating_pilot.application.use_cases.control_preheating_use_case"
 )
 
 
@@ -171,6 +178,7 @@ class TestStartPreheatingVerification:
     def mock_climate_data_reader(self) -> Mock:
         reader = Mock()
         reader.get_target_temperature = Mock(return_value=20.0)
+        reader.wait_for_state_change = AsyncMock(return_value=False)  # timeout: no change
         return reader
 
     @pytest.mark.asyncio
@@ -270,3 +278,156 @@ class TestStartPreheatingVerification:
 
         assert result is True
         assert use_case.is_preheating_active() is True
+
+
+class TestStartPreheatingWaitsForThermostat:
+    """scheduler-component returns from run_action before the VTherm has changed (#256).
+
+    A mismatch is only confirmed once the VTherm had the chance to apply the
+    action: IHP waits for its state changes, up to the action effect timeout.
+    """
+
+    @pytest.fixture
+    def mock_scheduler_commander(self) -> Mock:
+        commander = Mock()
+        commander.run_action = AsyncMock(return_value=True)
+        commander.cancel_action = AsyncMock()
+        return commander
+
+    @pytest.fixture
+    def mock_climate_data_reader(self) -> Mock:
+        reader = Mock()
+        reader.get_target_temperature = Mock(return_value=18.0)  # eco, before the action
+        reader.wait_for_state_change = AsyncMock(return_value=False)
+        return reader
+
+    @staticmethod
+    def _apply_on_state_change(reader: Mock, *targets: float) -> None:
+        """Make each awaited state change expose the next target temperature."""
+        pending = list(targets)
+
+        async def _wait(timeout_seconds: float) -> bool:
+            if not pending:
+                return False
+            reader.get_target_temperature.return_value = pending.pop(0)
+            return True
+
+        reader.wait_for_state_change.side_effect = _wait
+
+    @pytest.mark.asyncio
+    async def test_action_applied_after_run_action_is_confirmed(
+        self, mock_scheduler_commander: Mock, mock_climate_data_reader: Mock
+    ) -> None:
+        """The setpoint applied a moment after run_action confirms the preheat."""
+        self._apply_on_state_change(mock_climate_data_reader, 20.0)
+        use_case = ControlPreheatingUseCase(
+            mock_scheduler_commander, climate_data_reader=mock_climate_data_reader
+        )
+
+        result = await use_case.start_preheating(
+            datetime(2026, 11, 1, 9, 0, 0), 20.0, "switch.weekend"
+        )
+
+        assert result is True
+        assert use_case.is_preheating_active() is True
+        assert use_case.get_active_scheduler_entity() == "switch.weekend"
+        mock_climate_data_reader.wait_for_state_change.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_immediate_match_does_not_wait(
+        self, mock_scheduler_commander: Mock, mock_climate_data_reader: Mock
+    ) -> None:
+        """A target already applied when run_action returns is confirmed at once."""
+        mock_climate_data_reader.get_target_temperature.return_value = 20.0
+        use_case = ControlPreheatingUseCase(
+            mock_scheduler_commander, climate_data_reader=mock_climate_data_reader
+        )
+
+        result = await use_case.start_preheating(
+            datetime(2026, 11, 1, 9, 0, 0), 20.0, "switch.weekend"
+        )
+
+        assert result is True
+        mock_climate_data_reader.wait_for_state_change.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_first_wait_lasts_the_action_effect_timeout(
+        self, mock_scheduler_commander: Mock, mock_climate_data_reader: Mock
+    ) -> None:
+        """With no state change, IHP waits the whole timeout, then reports blocked."""
+        use_case = ControlPreheatingUseCase(
+            mock_scheduler_commander, climate_data_reader=mock_climate_data_reader
+        )
+
+        with patch(f"{_USE_CASE_MODULE}.monotonic", return_value=100.0):
+            result = await use_case.start_preheating(
+                datetime(2026, 11, 1, 9, 0, 0), 20.0, "switch.weekend"
+            )
+
+        assert result is False
+        assert use_case.is_preheating_active() is False
+        mock_climate_data_reader.wait_for_state_change.assert_awaited_once_with(
+            ACTION_EFFECT_TIMEOUT_SECONDS
+        )
+
+    @pytest.mark.asyncio
+    async def test_preset_then_temperature_updates_are_followed(
+        self, mock_scheduler_commander: Mock, mock_climate_data_reader: Mock
+    ) -> None:
+        """A state change that does not match yet (preset first) keeps IHP waiting."""
+        self._apply_on_state_change(mock_climate_data_reader, 18.0, 20.0)
+        use_case = ControlPreheatingUseCase(
+            mock_scheduler_commander, climate_data_reader=mock_climate_data_reader
+        )
+
+        result = await use_case.start_preheating(
+            datetime(2026, 11, 1, 9, 0, 0), 20.0, "switch.weekend"
+        )
+
+        assert result is True
+        assert mock_climate_data_reader.wait_for_state_change.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_unrelated_changes_until_the_deadline_report_blocked(
+        self, mock_scheduler_commander: Mock, mock_climate_data_reader: Mock
+    ) -> None:
+        """State changes that never bring the target report blocked at the deadline,
+        and each wait only lasts the time left before it."""
+        mock_climate_data_reader.wait_for_state_change = AsyncMock(return_value=True)
+        use_case = ControlPreheatingUseCase(
+            mock_scheduler_commander,
+            climate_data_reader=mock_climate_data_reader,
+            action_effect_timeout_seconds=10.0,
+        )
+
+        with patch(f"{_USE_CASE_MODULE}.monotonic", side_effect=[0.0, 0.0, 4.0, 10.0]):
+            result = await use_case.start_preheating(
+                datetime(2026, 11, 1, 9, 0, 0), 20.0, "switch.weekend"
+            )
+
+        assert result is False
+        waits = [
+            call.args[0] for call in mock_climate_data_reader.wait_for_state_change.await_args_list
+        ]
+        assert waits == [10.0, 6.0]
+
+    @pytest.mark.asyncio
+    async def test_unreadable_after_a_state_change_is_success(
+        self, mock_scheduler_commander: Mock, mock_climate_data_reader: Mock
+    ) -> None:
+        """A VTherm becoming unavailable during the wait cannot prove the block (#64)."""
+
+        async def _becomes_unavailable(timeout_seconds: float) -> bool:
+            mock_climate_data_reader.get_target_temperature.return_value = None
+            return True
+
+        mock_climate_data_reader.wait_for_state_change.side_effect = _becomes_unavailable
+        use_case = ControlPreheatingUseCase(
+            mock_scheduler_commander, climate_data_reader=mock_climate_data_reader
+        )
+
+        result = await use_case.start_preheating(
+            datetime(2026, 11, 1, 9, 0, 0), 20.0, "switch.weekend"
+        )
+
+        assert result is True
