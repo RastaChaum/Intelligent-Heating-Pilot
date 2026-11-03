@@ -43,6 +43,7 @@ from .infrastructure.adapters import (
     HALhsStorage,
     HASchedulerCommander,
     HASchedulerReader,
+    HASunReader,
     HATimerScheduler,
 )
 from .infrastructure.event_bridge import HAEventBridge
@@ -242,6 +243,7 @@ class HeatingApplication:
             auto_learning=self._auto_learning,
             default_dead_time_minutes=self._dead_time_minutes,
             lhs_storage=self._lhs_storage,
+            sun_reader=HASunReader(self.hass),
         )
 
         control_preheating = ControlPreheatingUseCase(

@@ -10,7 +10,10 @@ For scheduling, use SchedulePreheatingUseCase.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import TYPE_CHECKING
+
+from ...domain.constants import MAX_ANTICIPATION_TIME
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -20,8 +23,10 @@ if TYPE_CHECKING:
         IEnvironmentReader,
         ILhsStorage,
         ISchedulerReader,
+        ISunReader,
     )
     from ...domain.services import DeadTimeCalculationService, PredictionService
+    from ...domain.value_objects import DaylightPeriod
     from ..heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
     from ..lhs_lifecycle_manager import LhsLifecycleManager
 
@@ -52,6 +57,7 @@ class CalculateAnticipationUseCase:
         auto_learning: bool = True,
         default_dead_time_minutes: float = 0.0,
         lhs_storage: ILhsStorage | None = None,
+        sun_reader: ISunReader | None = None,
     ) -> None:
         """Initialize the use case.
 
@@ -69,6 +75,8 @@ class CalculateAnticipationUseCase:
                 and auto_learning is True, the stored learned dead time is used as a
                 fallback before the configured default, so that the persisted value
                 is restored immediately after a Home Assistant restart.
+            sun_reader: Reads the daylight periods, so that the solar gain applies only
+                while the sun is up (#257). Without it, no solar gain applies.
         """
         _LOGGER.debug("Initializing CalculateAnticipationUseCase")
         self._scheduler_reader = scheduler_reader
@@ -81,6 +89,7 @@ class CalculateAnticipationUseCase:
         self._auto_learning = auto_learning
         self._default_dead_time_minutes = default_dead_time_minutes
         self._lhs_storage = lhs_storage
+        self._sun_reader = sun_reader
 
     async def calculate_anticipation_datas(
         self,
@@ -213,6 +222,8 @@ class CalculateAnticipationUseCase:
         else:
             dead_time = self._default_dead_time_minutes
 
+        daylight_periods = await self._get_daylight_periods(target_time, cloud_coverage)
+
         # Calculate prediction - let prediction_service handle None values
         prediction = self._prediction_service.predict_heating_time(
             current_temp=current_temp,  # Pass None if unavailable
@@ -222,6 +233,7 @@ class CalculateAnticipationUseCase:
             target_time=target_time,
             cloud_coverage=cloud_coverage,
             dead_time_minutes=dead_time,
+            daylight_periods=daylight_periods,
         )
 
         _LOGGER.info(
@@ -284,6 +296,27 @@ class CalculateAnticipationUseCase:
             "humidity": humidity,
             "cloud_coverage": cloud_coverage,
         }
+
+    async def _get_daylight_periods(
+        self, target_time: datetime, cloud_coverage: float | None
+    ) -> list[DaylightPeriod]:
+        """Read the daylight periods the heating phase may overlap.
+
+        The heating phase is not known yet: the window covers the longest possible
+        anticipation before the target time. Read only when a cloud coverage is
+        known, the only factor that depends on the sun.
+
+        Args:
+            target_time: When the target temperature must be reached
+            cloud_coverage: Current cloud coverage, None when not configured
+
+        Returns:
+            Daylight periods, empty without cloud coverage or sun reader
+        """
+        if cloud_coverage is None or self._sun_reader is None:
+            return []
+        earliest_start = target_time - timedelta(minutes=MAX_ANTICIPATION_TIME)
+        return await self._sun_reader.get_daylight_periods(earliest_start, target_time)
 
     async def _get_persisted_dead_time_or_default(self) -> float:
         """Return the persisted learned dead time or the configured default.
