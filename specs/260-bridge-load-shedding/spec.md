@@ -8,7 +8,7 @@ implementation_reviewer_agent: speckit.review
 review_status: pending
 ---
 
-# Feature Specification: A Brief Load Shedding Does Not Restart the Heating Cycle
+# Feature Specification: A Brief Load Shedding or Window Opening Does Not Restart the Heating Cycle
 
 **Feature Branch**: `fix/issue-260-bridge-load-shedding`
 **Created**: 2026-11-03
@@ -53,10 +53,17 @@ Every load shedding lasts less than the grace period. Bridged, they give a singl
 
 ### Session 2026-11-03
 
-- Q: Which interruptions are bridged? → A: Load shedding only, i.e. the VTherm preset `power`.
-  A window opening (target dropped to the window action temperature) still ends the cycle at once:
-  the room really cools down and the cycle is not representative. `hvac_mode` off keeps its current
-  grace period behaviour.
+- Q: Which interruptions are bridged? → A: Every interruption shorter than the grace period:
+  `hvac_mode` off (as today), the VTherm preset `power` (load shedding) and a target drop that
+  would end the cycle (window or door opened for a couple of minutes, target dropped to the window
+  action temperature). *Revised on 2026-11-03 after the first review: the first answer kept window
+  openings out, but a window or a door opened for two minutes must not cut the preheat either. The
+  10-minute bound keeps long openings out.*
+- Q: Which target drop is an interruption? → A: A target below the target the cycle started with,
+  low enough for the room to be within the cycle-end delta of it, i.e. a drop that would otherwise
+  end the cycle. A smaller drop leaves the cycle going on, as today. A target lowered for good (the
+  schedule moved to eco) is an interruption too: once the grace period expires, the cycle ends when
+  the target dropped, at the same time as today.
 - Q: Which threshold bounds a bridged load shedding? → A: The existing grace period
   (`safety_shutoff_grace_minutes`). No new option. A load shedding shorter than it is bridged; a
   longer one ends the cycle at the moment the shedding started, like an `hvac_mode` off that
@@ -113,22 +120,39 @@ room heats.
 3. **Given** a history that ends during a load shedding, **When** it is extracted, **Then** the
    cycle ends when the shedding started.
 
-### User Story 3 — Other interruptions are unchanged (Priority: P2)
+### User Story 3 — A window opened for a couple of minutes does not restart the cycle (Priority: P1)
+
+A window or a door opened for two minutes during a preheat does not split it.
 
 **Acceptance Scenarios**:
 
-1. **Given** a target dropped to the frost temperature by a window for 2 minutes, without the
-   `power` preset, **When** the cycle is extracted, **Then** the cycle ends at the drop.
-2. **Given** a cycle with a bridged load shedding and the `safety` preset elsewhere in it, **When**
+1. **Given** a target dropped to the window action temperature for 2 minutes, without the `power`
+   preset, **When** the cycle is extracted with a grace period of 10 minutes, **Then** it is a
+   single cycle, learned.
+2. **Given** a window left open for 15 minutes, **When** the cycle is extracted, **Then** the cycle
+   ends when the target dropped and is not disturbed (no preset was recorded).
+3. **Given** a target lowered for good below the room temperature (schedule moved to eco), **When**
+   the grace period expires, **Then** the cycle ends when the target dropped, as today.
+4. **Given** a target lowered by less than the gap to the room, **When** the cycle is extracted,
+   **Then** the cycle goes on and ends at the new target, as today.
+
+### User Story 4 — Safety mode still excludes a bridged cycle (Priority: P2)
+
+**Acceptance Scenarios**:
+
+1. **Given** a cycle with a bridged load shedding and the `safety` preset elsewhere in it, **When**
    it is extracted, **Then** it is disturbed.
 
 ### Edge Cases
 
 - **Several load sheddings in a row**: each one is bounded by the grace period on its own; the time
   between them does not matter.
-- **The preset comes back to another target** (the schedule changed during the shedding): the
-  cycle-end rule applies to the first record after the shedding, as it does after a bridged
-  `hvac_mode` off.
+- **The preset comes back to a lower target** (the schedule moved to eco during the shedding): the
+  interruption goes on with the target drop; once the grace period expires, the cycle ends when the
+  shedding started, and is disturbed.
+- **The target goes up again to another slot's target within the grace period** after a target was
+  lowered for good: the interruption is bridged and the two heating periods form one cycle. This is
+  bounded by the grace period.
 - **`hvac_mode` off during a load shedding**: one interruption, bounded by the grace period from
   its first record.
 - **Non-VTherm climate**: no `power` preset is recorded; nothing changes.
@@ -141,24 +165,25 @@ room heats.
 
 ### Functional Requirements
 
-- **FR-001**: During a cycle, a heating state record whose preset is `power` MUST start an
-  interruption, like an `hvac_mode` off, when the grace period is positive.
-- **FR-002**: An interruption whose first record without `power` (and with `hvac_mode` on) comes
-  less than the grace period after its start MUST be bridged: the cycle continues, and the
-  cycle-end rule applies from that record on.
+- **FR-001**: During a cycle, when the grace period is positive, a heating state record MUST start
+  an interruption if its `hvac_mode` is off, its preset is `power`, or its target is below the
+  cycle's start target and the room is within the cycle-end delta of it.
+- **FR-002**: An interruption whose first record that is not interrupted comes less than the grace
+  period after its start MUST be bridged: the cycle continues, and the cycle-end rule applies from
+  that record on.
 - **FR-003**: An interruption that lasts at least the grace period, or that is still running when
   the history ends, MUST end the cycle at the interruption start.
 - **FR-004**: A `power` record within a bridged interruption MUST NOT make the cycle disturbed.
   Every other `power` or `safety` record of the cycle, both bounds included, still does (#255).
-- **FR-005**: A target drop without the `power` preset MUST keep ending the cycle at once.
+- **FR-005**: A target lowered by less than the gap to the room MUST NOT interrupt the cycle.
 - **FR-006**: The dead time and the heating phase MUST be measured from the cycle start, bridged
   interruptions included.
 
 ### Key Entities
 
 - **Heating cycle**: unchanged. It can now span brief load sheddings; no new persisted field.
-- **Interruption**: a run of heating state records with `hvac_mode` off or the `power` preset,
-  within a cycle, bounded by the grace period.
+- **Interruption**: a run of heating state records with `hvac_mode` off, the `power` preset or a
+  target drop that would end the cycle, within a cycle, bounded by the grace period.
 
 ## Success Criteria *(mandatory)*
 
@@ -168,8 +193,8 @@ room heats.
   starting at 04:12, with a dead time of ≈ 142 minutes (today: 73 minutes from the 05:21 fragment),
   and it is learned.
 - **SC-002**: 0 cycles ended by a load shedding take part in learning (unchanged from #255).
-- **SC-003**: With a grace period of 0, or on a non-VTherm climate, the extracted cycles are
-  identical to those before the fix.
+- **SC-003**: With a grace period of 0, the extracted cycles are identical to those before the fix.
+- **SC-004**: A window opened for 2 minutes during a preheat leaves a single learned cycle.
 
 ## Assumptions
 
@@ -179,14 +204,13 @@ room heats.
 
 ## Known Limitations
 
-- A load shedding longer than the grace period still fragments the preheat.
-- Window openings and other target drops still fragment the preheat (2026-10-28: window then
-  `hvac_mode` off for 28 minutes).
+- An interruption longer than the grace period still fragments the preheat (2026-10-28: window
+  then `hvac_mode` off for 28 minutes).
+- A window opening is learned when bridged, although the room cooled for up to the grace period.
 - Cycles already cached keep their fragments until `reset_learning` or the end of the retention
   window.
 
 ## Out of Scope
 
-- Bridging window openings or other target drops.
 - Subtracting the interrupted minutes from the dead time or the heating phase.
 - A separate threshold for load shedding.
