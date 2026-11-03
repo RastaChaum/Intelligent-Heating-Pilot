@@ -68,3 +68,22 @@ class IClimateDataReader(ABC):
             Current target temperature in Celsius, or ``None`` when the VTherm
             entity is unavailable or its target temperature cannot be read.
         """
+
+    @abstractmethod
+    async def wait_for_state_change(self, timeout_seconds: float) -> bool:
+        """Wait for the next state change of the VTherm entity.
+
+        A triggered scheduler action reaches the VTherm a moment after the
+        ``run_action`` service call returns (#256). Callers wait here, then
+        read the live state again, instead of sleeping for a fixed time.
+
+        Any state change counts (attributes included); the caller decides
+        whether the new state is the one it expects.
+
+        Args:
+            timeout_seconds: Longest time to wait, in seconds.
+
+        Returns:
+            ``True`` when the VTherm state changed before the timeout,
+            ``False`` when the timeout elapsed first.
+        """

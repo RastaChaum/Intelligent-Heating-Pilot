@@ -12,6 +12,9 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.core import Event, EventStateChangedData, callback
+from homeassistant.helpers.event import async_track_state_change_event
+
 from ...domain.interfaces.climate_data_reader_interface import IClimateDataReader
 from ...domain.interfaces.historical_data_adapter_interface import IHistoricalDataAdapter
 from ...domain.value_objects import (
@@ -173,6 +176,37 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
             return float(target_temp)
         except (ValueError, TypeError):
             return None
+
+    async def wait_for_state_change(self, timeout_seconds: float) -> bool:
+        """Wait for the next state change of the VTherm entity.
+
+        Listens to the VTherm's state change events; the listener is removed
+        however the wait ends (change, timeout or cancellation).
+
+        Args:
+            timeout_seconds: Longest time to wait, in seconds.
+
+        Returns:
+            ``True`` when the VTherm state changed before the timeout,
+            ``False`` when the timeout elapsed first.
+        """
+        changed = asyncio.Event()
+
+        @callback
+        def _on_state_change(_event: Event[EventStateChangedData]) -> None:
+            changed.set()
+
+        unsubscribe = async_track_state_change_event(
+            self._hass, [self._vtherm_entity_id], _on_state_change
+        )
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                await changed.wait()
+        except TimeoutError:
+            return False
+        finally:
+            unsubscribe()
+        return True
 
     # ------------------------------------------------------------------
     # IHistoricalDataAdapter implementation (historical data)
