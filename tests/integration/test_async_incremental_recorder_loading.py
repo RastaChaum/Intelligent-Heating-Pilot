@@ -318,7 +318,7 @@ async def test_extracted_cycles_feed_cache_via_callback():
     # VERIFY #3: Progress shows extraction completed
     extracted, total, is_running = await queue.get_progress()
     assert extracted == 1, (
-        "WeakPoint: Progress shows 0 extracted. " "_extract_period() may be stubbed (returning [])."
+        "WeakPoint: Progress shows 0 extracted. _extract_period() may be stubbed (returning [])."
     )
 
 
@@ -490,9 +490,9 @@ async def test_extraction_continues_after_single_day_failure():
     # VERIFY #2: Progress shows correct extracted/failed counts
     extracted, total, is_running = await queue.get_progress()
     assert extracted == 4, f"WeakPoint: Progress shows {extracted} extracted, expected 4."
-    assert (
-        queue._failed_count == 1
-    ), f"WeakPoint: Progress shows {queue._failed_count} failed, expected 1."
+    assert queue._failed_count == 1, (
+        f"WeakPoint: Progress shows {queue._failed_count} failed, expected 1."
+    )
 
 
 # ============================================================================
@@ -559,9 +559,9 @@ async def test_shutdown_cancels_running_extraction():
     assert is_running is False, "WeakPoint: Queue still running after cancel_queue()."
 
     # VERIFY #2: Cancel flag must be set
-    assert (
-        queue._cancel_requested is True
-    ), "WeakPoint: _cancel_requested not set after cancel_queue()."
+    assert queue._cancel_requested is True, (
+        "WeakPoint: _cancel_requested not set after cancel_queue()."
+    )
 
     # VERIFY #3: Should have extracted fewer than total tasks
     extracted_after, _, _ = await queue.get_progress()
@@ -637,32 +637,32 @@ async def test_retention_change_invalidates_caches_and_reextracts():
         )
     ]
 
-    assert (
-        len(lifecycle._cached_cycles_for_target_time) > 0
-    ), "Test setup: cache should have entries before retention change"
+    assert len(lifecycle._cached_cycles_for_target_time) > 0, (
+        "Test setup: cache should have entries before retention change"
+    )
 
     # ACT: Change retention
     await lifecycle.on_retention_change(180)
 
     # VERIFY #1: In-memory cache must be cleared
-    assert (
-        len(lifecycle._cached_cycles_for_target_time) == 0
-    ), "WeakPoint: In-memory cache not cleared after retention change."
+    assert len(lifecycle._cached_cycles_for_target_time) == 0, (
+        "WeakPoint: In-memory cache not cleared after retention change."
+    )
 
     # VERIFY #2: Storage prune_old_cycles() must be called (NOT full wipe — only stale cycles)
-    assert (
-        mock_storage.prune_old_cycles.called
-    ), "WeakPoint: storage.prune_old_cycles() not called during retention change."
+    assert mock_storage.prune_old_cycles.called, (
+        "WeakPoint: storage.prune_old_cycles() not called during retention change."
+    )
 
     # VERIFY #3: New async extraction must be launched
-    assert (
-        lifecycle._extraction_queue is not None
-    ), "WeakPoint: No extraction queue created after retention change."
+    assert lifecycle._extraction_queue is not None, (
+        "WeakPoint: No extraction queue created after retention change."
+    )
 
     # VERIFY #4: Retention must be updated to the new value
-    assert (
-        lifecycle._device_config.lhs_retention_days == 180
-    ), f"WeakPoint: Retention not updated, got {lifecycle._device_config.lhs_retention_days}."
+    assert lifecycle._device_config.lhs_retention_days == 180, (
+        f"WeakPoint: Retention not updated, got {lifecycle._device_config.lhs_retention_days}."
+    )
 
 
 # ============================================================================
@@ -720,7 +720,7 @@ async def test_queue_progress_reporting_works():
 
     assert total_during == 10, "Total should remain 10"
     assert is_running_during is True, (
-        "WeakPoint: Queue not running. " "is_running should be True while run_queue() executes."
+        "WeakPoint: Queue not running. is_running should be True while run_queue() executes."
     )
 
     # Wait for completion

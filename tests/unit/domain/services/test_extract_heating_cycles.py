@@ -721,9 +721,9 @@ class TestExtractHeatingCyclesGracePeriod:
         )
 
         # Grace period: the brief interruption must be absorbed — single cycle expected
-        assert (
-            len(cycles) == 1
-        ), f"Expected 1 cycle (grace absorbs 5-min interruption), got {len(cycles)}"
+        assert len(cycles) == 1, (
+            f"Expected 1 cycle (grace absorbs 5-min interruption), got {len(cycles)}"
+        )
         assert cycles[0].start_time == t0
         assert cycles[0].end_time == t3
 
@@ -814,9 +814,9 @@ class TestExtractHeatingCyclesGracePeriod:
         )
 
         # grace=0: OFF at t1 must terminate cycle 1 immediately → 2 cycles
-        assert (
-            len(cycles) == 2
-        ), f"Expected 2 cycles with grace=0 (OFF terminates immediately), got {len(cycles)}"
+        assert len(cycles) == 2, (
+            f"Expected 2 cycles with grace=0 (OFF terminates immediately), got {len(cycles)}"
+        )
 
     @pytest.mark.asyncio
     async def test_interruption_returns_on_before_grace_expires_cycle_continues(
@@ -858,9 +858,9 @@ class TestExtractHeatingCyclesGracePeriod:
             "my_device", dataset, t0, t3 + timedelta(minutes=5)
         )
 
-        assert (
-            len(cycles) == 1
-        ), f"Expected 1 cycle (3-min blip absorbed by 10-min grace), got {len(cycles)}"
+        assert len(cycles) == 1, (
+            f"Expected 1 cycle (3-min blip absorbed by 10-min grace), got {len(cycles)}"
+        )
         # The single cycle must span from the original start to the final end
         assert cycles[0].start_time == t0
         assert cycles[0].end_time == t3

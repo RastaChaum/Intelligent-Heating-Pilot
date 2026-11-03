@@ -287,7 +287,7 @@ class HeatingCycleService(IHeatingCycleService):
                         end_ts = grace_period_start
                         grace_period_start = None
                         _LOGGER.debug(
-                            "Grace period expired (%.1f min >= %d min); " "ending cycle at %s",
+                            "Grace period expired (%.1f min >= %d min); ending cycle at %s",
                             elapsed_off_minutes,
                             self._safety_shutoff_grace_minutes,
                             end_ts,

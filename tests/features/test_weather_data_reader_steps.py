@@ -50,6 +50,7 @@ def recorder_queue():
 # Background steps
 # ------------------------------------------------------------------
 
+
 @given("a Home Assistant instance is running")
 def ha_instance_running(weather_context, mock_hass):
     """GIVEN: A Home Assistant instance is running."""
@@ -71,6 +72,7 @@ def weather_entity_exists(weather_context, entity_id):
 # ------------------------------------------------------------------
 # Scenario: HAWeatherDataReader requires RecorderQueue
 # ------------------------------------------------------------------
+
 
 @when("I create a HAWeatherDataReader with RecorderQueue")
 def create_weather_reader(weather_context):
@@ -97,6 +99,7 @@ def implements_historical(weather_context):
 # ------------------------------------------------------------------
 # Scenario: Historical data fetch uses RecorderQueue
 # ------------------------------------------------------------------
+
 
 @given("I have a HAWeatherDataReader with RecorderQueue")
 def have_weather_reader(weather_context, mock_hass, recorder_queue):
@@ -164,6 +167,7 @@ def historical_data_returned(weather_context):
 # Scenario: RecorderQueue is mandatory
 # ------------------------------------------------------------------
 
+
 @when("I try to create a HAWeatherDataReader without RecorderQueue")
 def create_weather_without_queue(weather_context, mock_hass):
     """WHEN: Try to create without RecorderQueue."""
@@ -191,6 +195,7 @@ def error_indicates_missing_param(weather_context):
 # Scenario: RecorderQueue serializes access across all weather readers
 # ------------------------------------------------------------------
 
+
 @given("I have a RecorderQueue instance")
 def have_queue_instance(weather_context, recorder_queue):
     """GIVEN: A RecorderQueue instance."""
@@ -210,10 +215,7 @@ def create_multiple_readers(weather_context, mock_hass):
 @then("all readers should use the same RecorderQueue instance")
 def readers_share_queue(weather_context):
     """THEN: All readers share the same RecorderQueue."""
-    assert (
-        weather_context["reader1"]._recorder_queue
-        is weather_context["reader2"]._recorder_queue
-    )
+    assert weather_context["reader1"]._recorder_queue is weather_context["reader2"]._recorder_queue
 
 
 @then("concurrent fetch operations should be serialized in FIFO order")

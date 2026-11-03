@@ -664,8 +664,7 @@ class TestHeatingCycleLifecycleManager:
 
         # THEN: end_date must not be today
         assert end_date < today, (
-            f"end_date {end_date} must be before today {today} "
-            "to avoid partial cycle extractions"
+            f"end_date {end_date} must be before today {today} to avoid partial cycle extractions"
         )
 
         # THEN: end_date must be yesterday at most
@@ -1177,12 +1176,11 @@ class TestHeatingCycleLifecycleManager:
         call_args = mock_timer_scheduler.schedule_timer.call_args
         scheduled_callback = call_args[0][1]  # Second positional arg is the callback
         assert scheduled_callback == manager.trigger_24h_refresh, (
-            f"Timer callback should be trigger_24h_refresh, "
-            f"but got {scheduled_callback.__name__}"
+            f"Timer callback should be trigger_24h_refresh, but got {scheduled_callback.__name__}"
         )
-        assert (
-            scheduled_callback != manager.refresh_heating_cycle_cache
-        ), "Timer callback must NOT be refresh_heating_cycle_cache"
+        assert scheduled_callback != manager.refresh_heating_cycle_cache, (
+            "Timer callback must NOT be refresh_heating_cycle_cache"
+        )
 
         # Cleanup
         if manager._extraction_task is not None:
@@ -1356,9 +1354,9 @@ class TestHeatingCycleLifecycleManager:
         mock_lhs_lifecycle_manager.update_global_lhs_from_cycles.assert_called_once()
         lhs_call_args = mock_lhs_lifecycle_manager.update_global_lhs_from_cycles.call_args
         cycles_passed_to_lhs = lhs_call_args[0][0]
-        assert (
-            len(cycles_passed_to_lhs) == 43
-        ), f"Expected 43 cycles (all cached) passed to LHS cascade, got {len(cycles_passed_to_lhs)}"
+        assert len(cycles_passed_to_lhs) == 43, (
+            f"Expected 43 cycles (all cached) passed to LHS cascade, got {len(cycles_passed_to_lhs)}"
+        )
 
     @pytest.mark.asyncio
     async def test_on_cycles_extracted_uses_all_cached_cycles_for_contextual_lhs(
@@ -1399,9 +1397,9 @@ class TestHeatingCycleLifecycleManager:
         mock_lhs_lifecycle_manager.update_contextual_lhs_from_cycles.assert_called_once()
         ctx_call_args = mock_lhs_lifecycle_manager.update_contextual_lhs_from_cycles.call_args
         cycles_passed = ctx_call_args[0][0]
-        assert (
-            len(cycles_passed) == 30
-        ), f"Expected 30 cycles passed to contextual LHS, got {len(cycles_passed)}"
+        assert len(cycles_passed) == 30, (
+            f"Expected 30 cycles passed to contextual LHS, got {len(cycles_passed)}"
+        )
 
     @pytest.mark.asyncio
     async def test_on_cycles_extracted_persists_dead_time_from_all_cached_cycles(

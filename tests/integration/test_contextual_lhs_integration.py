@@ -433,9 +433,9 @@ class TestContextualLHSIntegration:
         assert contextual_result[12] is not None
 
         # Contextual per-hour should differ from global average
-        assert (
-            contextual_result[6] != global_result
-        ), "Contextual LHS[6] should NOT equal Global LHS when cycles are distributed by hour"
+        assert contextual_result[6] != global_result, (
+            "Contextual LHS[6] should NOT equal Global LHS when cycles are distributed by hour"
+        )
 
     def test_regression_contextual_lhs_respects_hour_boundaries(
         self,

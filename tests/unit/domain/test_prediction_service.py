@@ -236,12 +236,12 @@ class TestPredictionService(unittest.TestCase):
         expected_base_duration = dead_time_minutes + calculated_heating_time
 
         # Allow for buffer and correction factors (5-10 minute tolerance)
-        assert (
-            result.estimated_duration_minutes >= expected_base_duration - 5
-        ), f"Duration {result.estimated_duration_minutes} below expected {expected_base_duration} - 5"
-        assert (
-            result.estimated_duration_minutes <= expected_base_duration + 15
-        ), f"Duration {result.estimated_duration_minutes} exceeds expected {expected_base_duration} + 15"
+        assert result.estimated_duration_minutes >= expected_base_duration - 5, (
+            f"Duration {result.estimated_duration_minutes} below expected {expected_base_duration} - 5"
+        )
+        assert result.estimated_duration_minutes <= expected_base_duration + 15, (
+            f"Duration {result.estimated_duration_minutes} exceeds expected {expected_base_duration} + 15"
+        )
 
         # Verify dead time actually increased the duration compared to zero dead time
         result_no_deadtime = self.service.predict_heating_time(
@@ -256,9 +256,9 @@ class TestPredictionService(unittest.TestCase):
         duration_diff = (
             result.estimated_duration_minutes - result_no_deadtime.estimated_duration_minutes
         )
-        assert (
-            duration_diff >= dead_time_minutes - 1.0
-        ), f"Dead time effect ({duration_diff}) should be ~{dead_time_minutes}"
+        assert duration_diff >= dead_time_minutes - 1.0, (
+            f"Dead time effect ({duration_diff}) should be ~{dead_time_minutes}"
+        )
 
 
 if __name__ == "__main__":

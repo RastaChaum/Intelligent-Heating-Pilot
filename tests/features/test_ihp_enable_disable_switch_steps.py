@@ -782,9 +782,9 @@ def events_occur_at_scheduled_times(ihp_switch_context, mock_adapters_ihp_switch
     event_results = ihp_switch_context.get("event_results", [])
     for event_result in event_results:
         # Calculations should have run
-        assert (
-            event_result["calculation_performed"] is True
-        ), f"Event at {event_result['event_time']} should be processed"
+        assert event_result["calculation_performed"] is True, (
+            f"Event at {event_result['event_time']} should be processed"
+        )
 
 
 @then("room temperature should only change at scheduled times")
@@ -805,6 +805,6 @@ def temperature_changes_only_at_scheduled(ihp_switch_context, mock_adapters_ihp_
     event_results = ihp_switch_context.get("event_results", [])
     for event_result in event_results:
         # System should still process and calculate
-        assert (
-            event_result["calculation_performed"] is True
-        ), f"Event at {event_result['event_time']} should be processed"
+        assert event_result["calculation_performed"] is True, (
+            f"Event at {event_result['event_time']} should be processed"
+        )

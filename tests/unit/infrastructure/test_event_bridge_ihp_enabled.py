@@ -244,9 +244,9 @@ class TestEventBridgeIHPStateTransitions:
 
             # Verify the correct ihp_enabled was passed
             call_kwargs = mock_app_service.calculate_and_schedule_anticipation.call_args[1]
-            assert (
-                call_kwargs["ihp_enabled"] == expected_ihp_enabled
-            ), f"Transition {i}: Expected ihp_enabled={expected_ihp_enabled}, got {call_kwargs['ihp_enabled']}"
+            assert call_kwargs["ihp_enabled"] == expected_ihp_enabled, (
+                f"Transition {i}: Expected ihp_enabled={expected_ihp_enabled}, got {call_kwargs['ihp_enabled']}"
+            )
 
 
 class TestEventBridgeMonitoredEntitiesRespectIHPEnabled:
