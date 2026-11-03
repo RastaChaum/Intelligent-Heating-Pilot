@@ -40,7 +40,7 @@
           "max_cycle_duration_minutes": "Longest heating cycle kept for learning. Filters out abnormally long cycles (malfunctions). Default: 300 min.",
           "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7 days.",
           "anticipation_recalc_tolerance_minutes": "Minimum postponement of the anticipated start that cancels an active preheating and reschedules it. Default: 15 min.",
-          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode, Versatile Thermostat load shedding). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min."
+          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode, Versatile Thermostat load shedding, window opened). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min."
         }
       }
     },
@@ -90,7 +90,7 @@
           "max_cycle_duration_minutes": "Longest heating cycle kept for learning. Filters out abnormally long cycles (malfunctions). Default: 300 min.",
           "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7 days.",
           "anticipation_recalc_tolerance_minutes": "Minimum postponement of the anticipated start that cancels an active preheating and reschedules it. Default: 15 min.",
-          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode, Versatile Thermostat load shedding). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min."
+          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode, Versatile Thermostat load shedding, window opened). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min."
         }
       }
     },

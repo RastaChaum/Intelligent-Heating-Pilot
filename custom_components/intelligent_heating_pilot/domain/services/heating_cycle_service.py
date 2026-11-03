@@ -97,9 +97,10 @@ class HeatingCycleService(IHeatingCycleService):
             min_cycle_duration_minutes: Minimum duration for a valid heating cycle.
             max_cycle_duration_minutes: Maximum duration for a single heating cycle (before splitting).
             safety_shutoff_grace_minutes: Grace period in minutes for brief heating interruptions:
-                ``hvac_mode`` off (safety or frost-protection cutoff) and VTherm load shedding
-                (``power`` preset, #260). Interruptions shorter than this threshold will not
-                terminate an in-progress cycle. Set to 0 to disable the grace period.
+                ``hvac_mode`` off (safety or frost-protection cutoff), VTherm load shedding
+                (``power`` preset) and target drops such as an open window (#260).
+                Interruptions shorter than this threshold will not terminate an in-progress
+                cycle. Set to 0 to disable the grace period.
         """
         _LOGGER.debug("Entering HeatingCycleService.__init__")
         _LOGGER.debug(
@@ -181,7 +182,7 @@ class HeatingCycleService(IHeatingCycleService):
         cycle_start_target_temp: float | None = None
 
         # Grace period: absorbs brief interruptions, i.e. hvac_mode OFF (safety/frost-protection
-        # cutoff) or a VTherm load shedding. When one lasts less than
+        # cutoff), a VTherm load shedding or a target drop (open window). When one lasts less than
         # `_safety_shutoff_grace_minutes`, it is ignored so the cycle is not split into
         # micro-cycles with aberrant slopes (e.g. 140 000 °C/h), nor its dead time measured from
         # the last fragment (#260).
@@ -260,7 +261,13 @@ class HeatingCycleService(IHeatingCycleService):
                     elapsed_off_minutes = (timestamp - grace_period_start).total_seconds() / 60.0
 
                     if elapsed_off_minutes < self._safety_shutoff_grace_minutes:
-                        if not self._is_interrupted(mode_on, measurement):
+                        if not self._is_interrupted(
+                            mode_on,
+                            measurement,
+                            current_indoor_temp,
+                            current_target_temp,
+                            cycle_start_target_temp,
+                        ):
                             # Heating resumed within grace window → absorb the interruption
                             _LOGGER.debug(
                                 "Grace period absorbed: heating resumed at %s "
@@ -327,11 +334,14 @@ class HeatingCycleService(IHeatingCycleService):
                             )
                         continue
 
-                elif (
-                    self._is_interrupted(mode_on, measurement)
-                    and self._safety_shutoff_grace_minutes > 0
+                elif self._safety_shutoff_grace_minutes > 0 and self._is_interrupted(
+                    mode_on,
+                    measurement,
+                    current_indoor_temp,
+                    current_target_temp,
+                    cycle_start_target_temp,
                 ):
-                    # First OFF or load shedding record while a cycle is active → begin grace window
+                    # First OFF, load shedding or target drop record of the cycle → begin grace
                     grace_period_start = timestamp
                     _LOGGER.debug(
                         "Grace period started at %s (grace=%d min)",
@@ -436,17 +446,53 @@ class HeatingCycleService(IHeatingCycleService):
             return state in ("on", "heat", "heating", "true", "1")
         return bool(measurement.value)
 
-    @staticmethod
-    def _is_interrupted(mode_on: bool, measurement: HistoricalMeasurement) -> bool:
+    def _is_interrupted(
+        self,
+        mode_on: bool,
+        measurement: HistoricalMeasurement,
+        indoor_temp: float,
+        target_temp: float,
+        cycle_target_temp: float | None,
+    ) -> bool:
         """Whether a record interrupts the cycle in progress, until the grace period expires.
 
-        ``hvac_mode`` off covers safety and frost-protection cutoffs. During a load shedding,
-        VTherm drops the target to its power temperature for a minute or two, which would
-        otherwise end the cycle as if the room had reached its target (#260). A target drop
-        without the power preset, such as a window action, is not an interruption: the room
-        really cools down, so the cycle ends.
+        ``hvac_mode`` off covers safety and frost-protection cutoffs. During a load shedding
+        or while a window or a door is open, VTherm drops the target to its power or window
+        action temperature for a few minutes, which would otherwise end the cycle as if the
+        room had reached its target (#260). A target lowered for good (the schedule moved to
+        eco) is an interruption too: once the grace period expires, the cycle ends when the
+        target dropped, as it did before.
+
+        Args:
+            mode_on: Whether the record has a heating ``hvac_mode``.
+            measurement: The heating state record.
+            indoor_temp: Indoor temperature at the record.
+            target_temp: Target temperature at the record.
+            cycle_target_temp: Target the cycle started with.
+
+        Returns:
+            True if the cycle would end on this record for any other reason than reaching
+            its own target.
         """
-        return not mode_on or _is_load_shedding(measurement)
+        return (
+            not mode_on
+            or _is_load_shedding(measurement)
+            or self._is_target_dropped(indoor_temp, target_temp, cycle_target_temp)
+        )
+
+    def _is_target_dropped(
+        self, indoor_temp: float, target_temp: float, cycle_target_temp: float | None
+    ) -> bool:
+        """Whether the target fell below the cycle target, low enough to end the cycle.
+
+        A target lowered by less than that leaves the cycle going on, as before.
+        """
+        if cycle_target_temp is None:
+            return False
+        return (
+            target_temp < cycle_target_temp - TEMP_FLOAT_TOLERANCE_C
+            and indoor_temp >= target_temp - self._temp_delta_threshold
+        )
 
     def _is_mode_on(self, measurement: HistoricalMeasurement) -> bool:
         """Determines if the heating system is enabled (mode indicates heating allowed).

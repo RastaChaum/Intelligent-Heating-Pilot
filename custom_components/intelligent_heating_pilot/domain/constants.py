@@ -22,7 +22,7 @@ DEFAULT_LEARNED_SLOPE = 2.0  # Default slope when no learning data exists
 # the only disturbance signals the Recorder keeps: VTherm does not record its safety,
 # power and window manager states. A cycle during which one is recorded is not learned,
 # except for a load shedding shorter than the grace period: it is bridged within the
-# cycle (#260).
+# cycle, like a brief window opening (#260).
 LOAD_SHEDDING_PRESET = "power"
 SAFETY_PRESET = "safety"
 DISTURBANCE_PRESETS = frozenset({LOAD_SHEDDING_PRESET, SAFETY_PRESET})
