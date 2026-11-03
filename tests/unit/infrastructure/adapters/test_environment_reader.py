@@ -282,3 +282,23 @@ async def test_unknown_temperature_unit_yields_none(mock_hass: Mock) -> None:
     outdoor.domain = "sensor"
 
     assert await _read_outdoor_temp(mock_hass, outdoor) is None
+
+
+@pytest.mark.asyncio
+async def test_get_current_environment_reads_smoothed_room_temperature(
+    mock_hass: Mock,
+) -> None:
+    """The VTherm ema_temp is the room temperature, not the raw reading (#258)."""
+    mock_hass.states.get.return_value = _make_state(
+        attributes={"current_temperature": 18.9, "specific_states": {"ema_temp": 19.0}}
+    )
+
+    with patch(
+        "custom_components.intelligent_heating_pilot.infrastructure.adapters.environment_reader.get_entity_name",
+        return_value="Living Room",
+    ):
+        reader = HAEnvironmentReader(mock_hass, "climate.vtherm")
+        result = await reader.get_current_environment()
+
+    assert result is not None
+    assert result.indoor_temperature == pytest.approx(19.0)
