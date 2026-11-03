@@ -82,6 +82,7 @@ Before a cycle contributes to LHS:
 These filters decide which cycles are learned, for the global LHS, the per-hour LHS and the learned dead time alike:
 
 1. **Disturbance filter**: Cycles during which Versatile Thermostat reported load shedding (`power` preset) or safety mode (`safety` preset) are discarded, however fast or slow they heated
+   - A load shedding shorter than the grace period is the exception: it does not end the cycle (see [What Stops a Heating Cycle?](#what-stops-a-heating-cycle)) and does not discard it
    - Why? Such a cycle says nothing about how fast the room can heat, and would make preheating start far too early. The preset is the only trace of these events that the Home Assistant recorder keeps
    - A slow cycle is **not** discarded for being slow: underfloor heating at partial power can take four hours before the room warms up, then heat at 0.15 °C/h. A speed threshold could not tell such a room from a disturbed cycle, and kept only its fastest mornings
    - A disturbance that leaves no trace in the thermostat history (heater shed by an external device, window open without a window sensor) cannot be detected, and the cycle is learned
@@ -158,7 +159,11 @@ However, **brief heating interruptions** (< 10 minutes by default) do NOT immedi
 
 **Safety Shutoff Grace Period**: When heating stops unexpectedly (e.g., safety shutoff, frost protection mode), IHP waits up to **10 minutes** (configurable, default 10 min) before closing the cycle. If heating resumes within this window, the interruption is absorbed and the cycle continues.
 
-**Why?** Brief safety interruptions cause extreme slopes (100,000+ °C/h) if treated as separate micro-cycles. The grace period prevents these spurious learning events.
+The same grace period covers **load shedding**: while Versatile Thermostat sheds its load, it records the `power` preset and drops the target to its power temperature for a minute or two, so the room looks as if it had reached its target. If the preset comes back within the grace period, the cycle continues and is learned. Each load shedding is timed on its own, so a preheat shed several times in a row stays one cycle as long as each shedding is shorter than the grace period.
+
+**Why?** Brief safety interruptions cause extreme slopes (100,000+ °C/h) if treated as separate micro-cycles. A preheat cut by load sheddings would also learn its dead time from the last fragment only: on underfloor heating, 73 minutes instead of 142. The grace period prevents these spurious learning events. The minutes spent interrupted stay in the cycle: the dead time runs from when heating really started.
+
+A window opening is not bridged: Versatile Thermostat drops the target to its window action temperature without the `power` preset, and the cycle ends at once, because the room really cools down.
 
 **Example Scenarios:**
 
@@ -168,6 +173,9 @@ However, **brief heating interruptions** (< 10 minutes by default) do NOT immedi
 | Scheduler or manual stop | Mode switches off → End detected immediately |
 | Safety shutoff (brief, <10 min) | Mode stops → Grace period starts; if mode resumes within 10 min → interruption absorbed, cycle continues |
 | Safety shutoff (extended, >10 min) | Mode stops → Grace period expires after 10 min → Cycle closes at the moment grace started |
+| Load shedding (brief, <10 min) | `power` preset, target dropped → Grace period starts; if the preset comes back within 10 min → cycle continues and is learned |
+| Load shedding (extended, >10 min) | Grace period expires → Cycle closes when the shedding started and is not learned |
+| Window opening | Target dropped to the window temperature → Cycle ends at once |
 | Early comfort | Target lowered while heating | Mode may stay on; end triggers when room is within 0.2°C of the new target |
 
 ### Why These Rules?

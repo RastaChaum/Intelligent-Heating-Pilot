@@ -213,8 +213,11 @@ This controls how the initial recorder extraction is chunked. Smaller values = l
 
 When heating stops unexpectedly (e.g., safety protection, frost mode), IHP waits this long. If heating resumes, the interruption is ignored and the cycle continues. If not, the cycle closes.
 
+The same delay applies to Versatile Thermostat **load shedding** (`power` preset): a shedding shorter than this delay does not split the preheat, which is learned as one cycle. A longer one ends the cycle, which is then not learned.
+
 **When to adjust:**
-- **Set lower (0–2 min)**: For systems that stop cleanly with no safety interruptions
+- **Set lower (0–2 min)**: For systems that stop cleanly with no safety interruptions. With 0, every load shedding ends the cycle
+- **Keep it above your load sheddings**: Versatile Thermostat usually sheds the load for 1–3 minutes; the default 10 minutes covers them
 - **Set higher (15–20 min)**: For boilers with long safety cycle lockouts or heat pumps with regular defrost cycles
 
 ---
