@@ -20,7 +20,6 @@ from tests.unit.domain.fixtures import (
     get_future_datetime,
 )
 
-
 HEATING_MINUTES = (TEST_TARGET_TEMP - TEST_CURRENT_TEMP) / TEST_LEARNED_SLOPE * 60.0
 CLEAR_SKY = 0.0
 OVERCAST_SKY = 100.0
@@ -277,7 +276,6 @@ class TestPredictionService(unittest.TestCase):
         )
 
 
-
 class TestEnvironmentalCorrectionScope(unittest.TestCase):
     """The correction applies to the heating phase only, the sun only in daylight (#257)."""
 
@@ -336,7 +334,9 @@ class TestEnvironmentalCorrectionScope(unittest.TestCase):
         """A heating phase across sunset and the next sunrise sums both overlaps."""
         heating_start = self.target_time - timedelta(minutes=HEATING_MINUTES)
         periods = [
-            DaylightPeriod(heating_start - timedelta(hours=8), heating_start + timedelta(minutes=9)),
+            DaylightPeriod(
+                heating_start - timedelta(hours=8), heating_start + timedelta(minutes=9)
+            ),
             DaylightPeriod(
                 self.target_time - timedelta(minutes=18), self.target_time + timedelta(hours=8)
             ),

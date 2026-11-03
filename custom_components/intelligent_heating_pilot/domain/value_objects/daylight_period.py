@@ -24,9 +24,7 @@ class DaylightPeriod:
     def __post_init__(self) -> None:
         """Reject a period that ends before it starts."""
         if self.sunset <= self.sunrise:
-            raise ValueError(
-                f"Sunset must come after sunrise, got {self.sunrise} -> {self.sunset}"
-            )
+            raise ValueError(f"Sunset must come after sunrise, got {self.sunrise} -> {self.sunset}")
 
     def overlap_minutes(self, start: datetime, end: datetime) -> float:
         """Return how many minutes of ``[start, end]`` fall within this period.

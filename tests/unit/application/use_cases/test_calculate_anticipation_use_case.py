@@ -347,9 +347,7 @@ class TestCalculateAnticipationUseCaseDaylight:
         return use_case, prediction
 
     async def _run(self, use_case: CalculateAnticipationUseCase) -> None:
-        await use_case.calculate_anticipation_datas(
-            target_time=self.TARGET_TIME, target_temp=21.0
-        )
+        await use_case.calculate_anticipation_datas(target_time=self.TARGET_TIME, target_temp=21.0)
 
     @pytest.mark.asyncio
     async def test_daylight_is_read_over_the_longest_anticipation(self) -> None:
