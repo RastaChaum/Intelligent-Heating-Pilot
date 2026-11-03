@@ -484,7 +484,9 @@ Scheduler State = "off"
 - IHP calculates anticipation time normally
 - At trigger time, IHP calls `run_action`
 - Scheduler evaluates its conditions
-- If conditions fail, heating is skipped
+- IHP waits up to 10 seconds for the thermostat to take the slot's temperature
+- If it does not, the scheduler's conditions failed: heating is skipped for this scheduler, and IHP tries the next configured scheduler, if any, right away
+- When every scheduler is blocked, the anticipation sensor lists them in its `blocked_schedulers` attribute
 - IHP continues monitoring for next timeslot
 
 **Why:** IHP uses `skip_conditions: false` to respect scheduler logic

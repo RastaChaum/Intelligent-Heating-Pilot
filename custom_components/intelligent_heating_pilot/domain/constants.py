@@ -53,3 +53,7 @@ CONFIDENCE_BOOST_PER_SENSOR = 0.05  # Confidence increase per environmental sens
 # Absorbs floating-point representation noise only (VTherm's own step is 0.1-0.5°C);
 # not a user-facing tuning knob.
 TARGET_TEMP_MATCH_TOLERANCE_C = 0.05
+# Longest wait for the VTherm to apply a triggered scheduler action. scheduler-component
+# returns from run_action before the climate entity has changed (8 ms later in the #256
+# logs); past this delay with no matching target, the scheduler is reported blocked.
+ACTION_EFFECT_TIMEOUT_SECONDS = 10.0

@@ -7,6 +7,10 @@ elapse. These steps wire the real orchestrator, use cases, and HA scheduler
 adapters against a mock ``hass`` whose service-call side effect simulates the
 HACS Scheduler integration: it only applies the climate change for schedulers
 that are not marked "blocked by its own conditions" in the scenario.
+
+Since #256 the thermostat can also apply the action a moment after
+``run_action`` has returned, as scheduler-component does: IHP must wait for the
+thermostat's state change before reporting the scheduler blocked.
 """
 
 from __future__ import annotations
@@ -38,6 +42,12 @@ from custom_components.intelligent_heating_pilot.infrastructure.recorder_queue i
 
 scenarios("scheduler_condition_fallback.feature")
 
+_CLIMATE_READER_MODULE = (
+    "custom_components.intelligent_heating_pilot.infrastructure.adapters.climate_data_reader"
+)
+# Keeps the blocked scenarios fast; the production wait is ACTION_EFFECT_TIMEOUT_SECONDS.
+_ACTION_EFFECT_TIMEOUT_SECONDS = 0.05
+
 _TODAY = "2024-01-15"
 _TZ = "+01:00"
 
@@ -51,6 +61,8 @@ def fallback_context() -> dict:
         "slot_by_scheduler": {},
         "blocked_by_conditions": set(),
         "service_calls": [],
+        "delayed_apply": False,
+        "state_listeners": [],
     }
 
 
@@ -87,6 +99,12 @@ def hacs_scheduler(fallback_context: dict, entity_id: str, time: str, temp: floa
     )
 
 
+@given("the thermostat applies a triggered action a moment after run_action returns")
+def thermostat_applies_with_delay(fallback_context: dict) -> None:
+    """GIVEN: scheduler-component returns before the climate entity has changed (#256)."""
+    fallback_context["delayed_apply"] = True
+
+
 @given(parsers.parse('"{entity_id}" is blocked by its own conditions when triggered'))
 def scheduler_blocked_by_conditions(fallback_context: dict, entity_id: str) -> None:
     """GIVEN: This scheduler's own conditions will not hold when run_action fires."""
@@ -106,12 +124,33 @@ def _make_hass(fallback_context: dict) -> Mock:
         if entity_id in fallback_context["blocked_by_conditions"]:
             return  # Simulate scheduler-component withholding the action (conditions unmet)
         _, target_temp = fallback_context["slot_by_scheduler"][entity_id]
-        fallback_context["states"][fallback_context["vtherm_id"]].attributes["temperature"] = (
-            target_temp
-        )
+        if fallback_context["delayed_apply"]:
+            asyncio.get_running_loop().call_soon(_apply_target, fallback_context, target_temp)
+        else:
+            _apply_target(fallback_context, target_temp)
 
     hass.services.async_call = AsyncMock(side_effect=_async_call)
     return hass
+
+
+def _apply_target(fallback_context: dict, target_temp: float) -> None:
+    """Set the thermostat's target and notify its state change listeners."""
+    fallback_context["states"][fallback_context["vtherm_id"]].attributes["temperature"] = (
+        target_temp
+    )
+    for listener in list(fallback_context["state_listeners"]):
+        listener(Mock())
+
+
+def _make_state_change_tracker(fallback_context: dict):
+    """Stand-in for HA's async_track_state_change_event, fed by _apply_target."""
+
+    def _track(_hass: Mock, entity_ids: list[str], action):
+        assert entity_ids == [fallback_context["vtherm_id"]]
+        fallback_context["state_listeners"].append(action)
+        return lambda: fallback_context["state_listeners"].remove(action)
+
+    return _track
 
 
 class _FakeCalculateAnticipation:
@@ -160,7 +199,9 @@ def _build_orchestrator(fallback_context: dict) -> HeatingOrchestrator:
         hass, RecorderAccessQueue(), fallback_context["vtherm_id"]
     )
     control_preheating = ControlPreheatingUseCase(
-        scheduler_commander, climate_data_reader=climate_data_reader
+        scheduler_commander,
+        climate_data_reader=climate_data_reader,
+        action_effect_timeout_seconds=_ACTION_EFFECT_TIMEOUT_SECONDS,
     )
     scheduler_reader = HASchedulerReader(hass, fallback_context["scheduler_ids"])
     timer_scheduler = Mock()
@@ -197,7 +238,13 @@ def recalculate_and_schedule(fallback_context: dict, entity_id: str) -> None:
     now = datetime.fromisoformat(f"{_TODAY}T06:59:00{_TZ}")
 
     async def _run() -> dict:
-        with patch.object(dt_util, "now", return_value=now.astimezone(UTC)):
+        with (
+            patch.object(dt_util, "now", return_value=now.astimezone(UTC)),
+            patch(
+                f"{_CLIMATE_READER_MODULE}.async_track_state_change_event",
+                side_effect=_make_state_change_tracker(fallback_context),
+            ),
+        ):
             return await orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
 
     fallback_context["result"] = asyncio.run(_run())
@@ -215,6 +262,27 @@ def retries_and_succeeds(fallback_context: dict, entity_id: str) -> None:
     assert fallback_context["result"]["scheduler_entity"] == entity_id
     assert fallback_context["control_preheating"].is_preheating_active() is True
     assert fallback_context["control_preheating"].get_active_scheduler_entity() == entity_id
+
+
+@then(parsers.parse('IHP is preheating for "{entity_id}"'))
+def preheating_for(fallback_context: dict, entity_id: str) -> None:
+    """THEN: The preheat is confirmed and tracked for this scheduler."""
+    assert fallback_context["result"]["scheduler_entity"] == entity_id
+    assert fallback_context["control_preheating"].is_preheating_active() is True
+    assert fallback_context["control_preheating"].get_active_scheduler_entity() == entity_id
+
+
+@then(parsers.parse('"{entity_id}" is never triggered'))
+def never_triggered(fallback_context: dict, entity_id: str) -> None:
+    """THEN: IHP sent no scheduler action for this entity."""
+    triggered = [call["entity_id"] for call in fallback_context["service_calls"]]
+    assert entity_id not in triggered
+
+
+@then("no scheduler is reported blocked this cycle")
+def no_scheduler_blocked(fallback_context: dict) -> None:
+    """THEN: blocked_schedulers is empty."""
+    assert fallback_context["result"]["blocked_schedulers"] == []
 
 
 @then(parsers.parse("the room's target temperature becomes {temp:f}°C"))

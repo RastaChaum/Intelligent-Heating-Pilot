@@ -47,3 +47,29 @@ Feature: Anticipation falls back to the next scheduler when one is blocked
     Then the room's target temperature stays at 17.0°C
     And the anticipation data reports every scheduler blocked overall
     And the blocked schedulers for this cycle are "switch.non_vacation"
+
+  # Issue #256: scheduler-component returns from run_action before the thermostat
+  # has applied the action. IHP must wait for the thermostat before reporting the
+  # scheduler blocked.
+
+  Scenario: The thermostat applies the action a moment after run_action returns
+    Given the thermostat applies a triggered action a moment after run_action returns
+    And a HACS scheduler "switch.weekend" with its next timeslot at 07:00 for 20.0°C
+    And a HACS scheduler "switch.weekday" with its next timeslot at 07:03 for 19.0°C
+    When IHP recalculates and schedules anticipation for "switch.weekend"
+    Then the room's target temperature becomes 20.0°C
+    And IHP is preheating for "switch.weekend"
+    And "switch.weekday" is never triggered
+    And the anticipation data reports no scheduler blocked overall
+    And no scheduler is reported blocked this cycle
+
+  Scenario: A blocked scheduler still falls back when the thermostat applies actions with a delay
+    Given the thermostat applies a triggered action a moment after run_action returns
+    And a HACS scheduler "switch.non_vacation" with its next timeslot at 07:00 for 20.0°C
+    And a HACS scheduler "switch.vacation" with its next timeslot at 07:03 for 20.0°C
+    And "switch.non_vacation" is blocked by its own conditions when triggered
+    When IHP recalculates and schedules anticipation for "switch.non_vacation"
+    Then the attempt on "switch.non_vacation" is confirmed blocked
+    And IHP retries and succeeds with "switch.vacation" within the same cycle
+    And the room's target temperature becomes 20.0°C
+    And the blocked schedulers for this cycle are "switch.non_vacation"

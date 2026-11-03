@@ -194,6 +194,66 @@ def test_is_heating_active_false_when_at_or_above_target(
     assert reader.is_heating_active() is False
 
 
+_TRACK_STATE_CHANGE = (
+    "custom_components.intelligent_heating_pilot.infrastructure.adapters."
+    "climate_data_reader.async_track_state_change_event"
+)
+
+
+class TestWaitForStateChange:
+    """wait_for_state_change translates the VTherm state change events (#256)."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_the_vtherm_changes(
+        self, mock_hass: Mock, recorder_queue: RecorderAccessQueue
+    ) -> None:
+        """A state change of the VTherm before the timeout ends the wait."""
+        unsubscribe = Mock()
+        reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+        def _track(_hass: Mock, entity_ids: list[str], action) -> Mock:
+            asyncio.get_running_loop().call_soon(action, Mock())
+            return unsubscribe
+
+        with patch(_TRACK_STATE_CHANGE, side_effect=_track) as track:
+            changed = await reader.wait_for_state_change(timeout_seconds=5.0)
+
+        assert changed is True
+        assert track.call_args.args[:2] == (mock_hass, ["climate.vtherm"])
+        unsubscribe.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_timeout(
+        self, mock_hass: Mock, recorder_queue: RecorderAccessQueue
+    ) -> None:
+        """No state change before the timeout: False, and the listener is removed."""
+        unsubscribe = Mock()
+        reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+        with patch(_TRACK_STATE_CHANGE, return_value=unsubscribe):
+            changed = await reader.wait_for_state_change(timeout_seconds=0.01)
+
+        assert changed is False
+        unsubscribe.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_removes_the_listener_when_cancelled(
+        self, mock_hass: Mock, recorder_queue: RecorderAccessQueue
+    ) -> None:
+        """A cancelled wait (IHP unloading) does not leave a listener behind."""
+        unsubscribe = Mock()
+        reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+        with patch(_TRACK_STATE_CHANGE, return_value=unsubscribe):
+            task = asyncio.create_task(reader.wait_for_state_change(timeout_seconds=5.0))
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        unsubscribe.assert_called_once()
+
+
 # ===========================================================================
 # Historical data tests (IHistoricalDataAdapter) — fetch_historical_data
 # ===========================================================================
