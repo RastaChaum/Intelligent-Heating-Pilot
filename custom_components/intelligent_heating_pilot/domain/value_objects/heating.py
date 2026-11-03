@@ -92,6 +92,11 @@ class HeatingCycle:
                                 heating phase to measure a slope on. Sub-cycles carry the
                                 value of their cycle. None for cycles cached before it was
                                 recorded.
+        scheduled_slot_time: When the slot this cycle was heating for came due, if it came
+                             due during the cycle: the cycle is then a late preheat of that
+                             slot. Sub-cycles carry the slot of their cycle. None for cycles
+                             no slot came due during, and for cycles cached before it was
+                             recorded.
     """
 
     device_id: str
@@ -107,6 +112,7 @@ class HeatingCycle:
     dead_time_end_temp: float | None = None
     disturbed: bool | None = None
     heating_phase_observed: bool | None = None
+    scheduled_slot_time: datetime | None = None
 
     @property
     def has_learning_status(self) -> bool:
