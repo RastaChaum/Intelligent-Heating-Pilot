@@ -6,9 +6,10 @@ This use case controls the preheating state (start/cancel).
 from __future__ import annotations
 
 import logging
+from time import monotonic
 from typing import TYPE_CHECKING
 
-from ...domain.constants import TARGET_TEMP_MATCH_TOLERANCE_C
+from ...domain.constants import ACTION_EFFECT_TIMEOUT_SECONDS, TARGET_TEMP_MATCH_TOLERANCE_C
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -31,6 +32,7 @@ class ControlPreheatingUseCase:
         self,
         scheduler_commander: ISchedulerCommander,
         climate_data_reader: IClimateDataReader | None = None,
+        action_effect_timeout_seconds: float = ACTION_EFFECT_TIMEOUT_SECONDS,
     ) -> None:
         """Initialize the use case.
 
@@ -40,10 +42,14 @@ class ControlPreheatingUseCase:
                 to verify a triggered action's effect. Optional: when omitted,
                 verification is skipped and every trigger is treated as
                 successful (today's behavior, unchanged).
+            action_effect_timeout_seconds: Longest wait for the VTherm to
+                apply a triggered action before reporting the scheduler
+                blocked (#256).
         """
         _LOGGER.debug("Initializing ControlPreheatingUseCase")
         self._scheduler_commander = scheduler_commander
         self._climate_data_reader = climate_data_reader
+        self._action_effect_timeout_seconds = action_effect_timeout_seconds
         self._is_preheating_active = False
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None
@@ -130,7 +136,7 @@ class ControlPreheatingUseCase:
         # Use scheduler's run_action to trigger the action
         attempted = await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
 
-        confirmed = self._verify_action_effect(attempted, target_temp)
+        confirmed = await self._verify_action_effect(attempted, target_temp)
 
         if confirmed:
             self._is_preheating_active = True
@@ -146,8 +152,13 @@ class ControlPreheatingUseCase:
         _LOGGER.debug("Exiting ControlPreheatingUseCase.start_preheating() -> %s", confirmed)
         return confirmed
 
-    def _verify_action_effect(self, attempted: bool, target_temp: float) -> bool:
+    async def _verify_action_effect(self, attempted: bool, target_temp: float) -> bool:
         """Verify whether a triggered action actually applied ``target_temp``.
+
+        scheduler-component returns from ``run_action`` before the VTherm has
+        applied the action (#256). A mismatch therefore only proves a block
+        once the VTherm had the chance to apply it: until the action effect
+        timeout, each VTherm state change is read again.
 
         Args:
             attempted: Whether an actuation attempt was made (False for a
@@ -157,17 +168,24 @@ class ControlPreheatingUseCase:
         Returns:
             True when there is nothing to disprove (no attempt, no reader
             configured, or the VTherm state is unreadable) or the resulting
-            target temperature matches within tolerance. False only on a
-            positively confirmed mismatch.
+            target temperature matches within tolerance. False only when it
+            still does not match at the timeout.
         """
-        if not attempted or self._climate_data_reader is None:
+        reader = self._climate_data_reader
+        if not attempted or reader is None:
             return True
 
-        resulting_temp = self._climate_data_reader.get_target_temperature()
-        if resulting_temp is None:
-            return True
-
-        return abs(resulting_temp - target_temp) <= TARGET_TEMP_MATCH_TOLERANCE_C
+        deadline = monotonic() + self._action_effect_timeout_seconds
+        while True:
+            resulting_temp = reader.get_target_temperature()
+            if resulting_temp is None:
+                return True
+            if abs(resulting_temp - target_temp) <= TARGET_TEMP_MATCH_TOLERANCE_C:
+                return True
+            remaining = deadline - monotonic()
+            if remaining <= 0 or not await reader.wait_for_state_change(remaining):
+                _LOGGER.debug("VTherm target still %.1f°C at the timeout", resulting_temp)
+                return False
 
     def is_preheating_active(self) -> bool:
         """Check if preheating is currently active.
