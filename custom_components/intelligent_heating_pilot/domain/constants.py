@@ -32,6 +32,13 @@ DEFAULT_DEAD_TIME_MINUTES = 0.0  # Default dead time when no learning data exist
 # Indoor temperature rise (°C) that ends a cycle's dead time: above typical sensor noise,
 # yet sensitive enough to catch early heat propagation.
 DEAD_TIME_TEMP_RISE_C = 0.2
+# A cycle's heating phase ends at its first plateau: a reading after which the room gains
+# less than PLATEAU_RISE_TOLERANCE_C (one sensor step) for at least
+# PLATEAU_MIN_DURATION_MINUTES. A TPI thermostat often settles a few tenths below its
+# target; counting that plateau as heating time lowered the learned slope at every
+# preheat (#267). A room still warming faster than 0.1 °C/h is never on a plateau.
+PLATEAU_RISE_TOLERANCE_C = 0.1
+PLATEAU_MIN_DURATION_MINUTES = 60
 # Absorbs floating-point error when comparing a temperature difference with a threshold
 # (18.2 - 18.0 is 0.19999999999999929); far below any sensor resolution.
 TEMP_FLOAT_TOLERANCE_C = 1e-6

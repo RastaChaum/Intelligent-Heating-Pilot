@@ -97,6 +97,14 @@ class HeatingCycle:
                              slot. Sub-cycles carry the slot of their cycle. None for cycles
                              no slot came due during, and for cycles cached before it was
                              recorded.
+        plateau_start_time: When the room stopped warming within the cycle: the first
+                            reading of the heating phase after which it gained less than
+                            PLATEAU_RISE_TOLERANCE_C for PLATEAU_MIN_DURATION_MINUTES. The
+                            heating phase, and the slope, end there (#267). None when the
+                            room kept warming, for sub-cycles, and for cycles cached before
+                            it was recorded.
+        plateau_start_temp: Indoor temperature of that reading. None with
+                            ``plateau_start_time``.
     """
 
     device_id: str
@@ -113,6 +121,8 @@ class HeatingCycle:
     disturbed: bool | None = None
     heating_phase_observed: bool | None = None
     scheduled_slot_time: datetime | None = None
+    plateau_start_time: datetime | None = None
+    plateau_start_temp: float | None = None
 
     @property
     def has_learning_status(self) -> bool:
@@ -146,19 +156,37 @@ class HeatingCycle:
         return self.start_temp + DEAD_TIME_TEMP_RISE_C
 
     @property
+    def heating_phase_end_time(self) -> datetime:
+        """When the room stops warming: the start of its plateau, else the cycle end."""
+        if self.plateau_start_time is not None and self.plateau_start_temp is not None:
+            return self.plateau_start_time
+        return self.end_time
+
+    @property
+    def heating_phase_end_temp(self) -> float:
+        """Indoor temperature where the heating phase ends."""
+        if self.plateau_start_time is not None and self.plateau_start_temp is not None:
+            return self.plateau_start_temp
+        return self.end_temp
+
+    @property
     def avg_heating_slope(self) -> float:
         """Calculates the average heating slope in °C/hour for the heating cycle.
 
         Measured over the heating phase only, from the end of the dead time: the rise
         (or fall) during the dead time belongs to the dead time. Counting it in a window
-        that excludes the dead time overestimated the slope (#245).
+        that excludes the dead time overestimated the slope (#245). The heating phase
+        ends where the room stops warming: a plateau below the target is waiting time,
+        not heating, and counting it lowered the slope at every preheat (#267).
 
         Returns 0.0 when the effective heating duration (after subtracting dead_time) is shorter
         than ``min_effective_duration_minutes``. This guards against aberrant slope values that
         arise when dead_time ≈ total_duration, leaving an effective duration of only a few
         microseconds and producing slopes in the range of 100 000–200 000 °C/h.
         """
-        duration_hours = (self.end_time - self.heating_phase_start_time).total_seconds() / 3600
+        duration_hours = (
+            self.heating_phase_end_time - self.heating_phase_start_time
+        ).total_seconds() / 3600
 
         if duration_hours <= 0:
             return 0.0
@@ -169,7 +197,7 @@ class HeatingCycle:
         if effective_duration_minutes < self.min_effective_duration_minutes:
             return 0.0
 
-        temp_increase = self.end_temp - self.heating_phase_start_temp
+        temp_increase = self.heating_phase_end_temp - self.heating_phase_start_temp
         return temp_increase / duration_hours
 
     @property

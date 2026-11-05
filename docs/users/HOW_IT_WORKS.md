@@ -34,9 +34,10 @@ IHP computes the Learned Heating Slope from detected heating cycles:
 1. **Detect a heating cycle** using the start/stop rules described below.
 2. **Capture temps**: record indoor temperature at cycle start, at the end of the dead time and at cycle end.
 3. **Calculate cycle slope** over the heating phase, after the dead time (see below):
-   - Temperature gain = end temp − temp at the end of the dead time
-   - Duration = end time − end of the dead time
+   - Temperature gain = temp at the end of the heating phase − temp at the end of the dead time
+   - Duration = end of the heating phase − end of the dead time
    - Cycle slope = (temperature gain ÷ effective duration hours)
+   - The heating phase ends with the cycle, unless the room stops warming first: a room that gains less than 0.1 °C for at least an hour is on a **plateau**, and the heating phase ends where that plateau starts. A thermostat that settles a few tenths below its target (common with TPI regulation) keeps the cycle going until its slot ends; that waiting time is not heating, so it no longer lowers the slope. A room that keeps warming until its target, even slowly like underfloor heating, keeps its full window. If the room stops warming as soon as its dead time ends, the cycle has no heating phase and is not learned
 4. **Apply filters**: reject cycles disturbed by load shedding or safety mode, cycles that never warmed the room, and very short effective heating windows (see below)
 5. **Average the slopes** across filtered cycles to produce the current LHS.
 
