@@ -20,8 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Validate branch naming
@@ -31,12 +32,12 @@ jobs:
         run: |
           if [[ ! "$BRANCH" =~ ^(copilot/)?(feature|fix)/issue-[0-9]+ ]] && \
              [[ ! "$BRANCH" =~ ^[0-9]{3,}-[a-z][a-z0-9-]*$ ]]; then
-            echo "❌ La branche doit suivre le format 'feature/issue-XXX', 'fix/issue-XXX' ou 'NNN-description'"
-            echo "Nom actuel : $BRANCH"
+            echo "❌ The branch must be named 'feature/issue-NNN', 'fix/issue-NNN' or 'NNN-description'"
+            echo "Current name: $BRANCH"
             exit 1
           fi
 
-          echo "✅ Nom de branche valide : $BRANCH"
+          echo "✅ Valid branch name: $BRANCH"
 
       - name: Check CHANGELOG update
         id: changelog-check
@@ -103,29 +104,31 @@ jobs:
             TYPE="Fixed"
           fi
 
-          gh pr comment "$PR_NUMBER" --body "⚠️ **CHANGELOG non mis à jour**
+          gh pr comment "$PR_NUMBER" --body "⚠️ **CHANGELOG not updated**
 
-          Veuillez ajouter une entrée dans la section \`[Unreleased]\` du CHANGELOG.md :
+          Please add an entry under the \`[Unreleased]\` section of CHANGELOG.md:
 
           \`\`\`markdown
           ## [Unreleased]
 
           ### $TYPE
-          - [Description orientée utilisateur de votre changement]
+          - [User-facing description of your change]
           \`\`\`
 
-          **Bonnes pratiques :**
-          - Utilisez un langage simple et compréhensible par l'utilisateur final
-          - Évitez les détails techniques sauf si pertinent
-          - Décrivez le bénéfice, pas l'implémentation
+          **Good practices:**
+          - Use plain language an end user understands
+          - Avoid technical details unless relevant
+          - Describe the benefit, not the implementation
 
-          **Exemples :**
-          - ✅ \`Amélioration du calcul du temps de préchauffage\`
-          - ❌ \`Refactorisation de PilotController.calculate_preheat_duration()\`
+          **Examples:**
+          - ✅ \`More accurate preheating time\`
+          - ❌ \`Refactor PilotController.calculate_preheat_duration()\`
           "
 
+      # Feature branches are 'feature/issue-NNN' (optionally under 'copilot/'),
+      # as enforced by "Validate branch naming" above (#198).
       - name: Check for documentation updates on features
-        if: startsWith(github.head_ref, 'feature-') && github.event.pull_request.head.repo.full_name == github.repository
+        if: (startsWith(github.head_ref, 'feature/') || startsWith(github.head_ref, 'copilot/feature/')) && github.event.pull_request.head.repo.full_name == github.repository
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -133,31 +136,31 @@ jobs:
           DOCS_CHANGED=$(git diff origin/integration --name-only | grep -E '(README.md|docs/)' | wc -l)
 
           if [ "$DOCS_CHANGED" -eq "0" ]; then
-            gh pr comment "$PR_NUMBER" --body "📚 **Rappel : Documentation utilisateur**
+            gh pr comment "$PR_NUMBER" --body "📚 **Reminder: user documentation**
 
-            Cette PR ajoute une nouvelle fonctionnalité. N'oubliez pas de mettre à jour la documentation si nécessaire :
-            - \`README.md\` : Guide utilisateur principal
-            - \`docs/\` : Documentation technique détaillée
+            This PR adds a new feature. Remember to update the documentation if needed:
+            - \`README.md\` (and \`README.fr.md\`): main user guide
+            - \`docs/\`: detailed documentation
 
-            Si la fonctionnalité n'est pas visible par l'utilisateur final, vous pouvez ignorer ce message.
+            If the feature is not visible to end users, you can ignore this message.
             "
           fi
 
       - name: Set up Python
         id: setup-python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
         with:
           version: 1.8.2
           virtualenvs-create: true
           virtualenvs-in-project: true
 
       - name: Cache dependencies
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .venv
           key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
@@ -179,9 +182,9 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [ "$TESTS_OUTCOME" == "success" ]; then
-            gh pr comment "$PR_NUMBER" --body "✅ **Tests unitaires réussis**"
+            gh pr comment "$PR_NUMBER" --body "✅ **Unit tests passed**"
           else
-            gh pr comment "$PR_NUMBER" --body "❌ **Tests unitaires échoués**
+            gh pr comment "$PR_NUMBER" --body "❌ **Unit tests failed**
 
-            Veuillez corriger les tests avant de merger."
+            Please fix the tests before merging."
           fi
