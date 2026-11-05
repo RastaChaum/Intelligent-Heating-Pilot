@@ -122,8 +122,9 @@ class TestOptionsWithAMissingScheduler:
         assert entry.options[CONF_SCHEDULER_ENTITIES] == [EXISTING_SCHEDULER]
 
     @pytest.mark.asyncio
-    async def test_scheduler_stored_as_a_string_is_listed(self, hass: HomeAssistant) -> None:
-        entry = _add_device(hass, "entry_string", BEDROOM)
+    async def test_scheduler_stored_as_a_string_is_listed(
+        self, hass: HomeAssistant, entry: MockConfigEntry
+    ) -> None:
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, CONF_SCHEDULER_ENTITIES: MISSING_SCHEDULER}
         )

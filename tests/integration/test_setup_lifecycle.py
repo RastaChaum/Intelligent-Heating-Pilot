@@ -2,6 +2,9 @@
 
 These tests go through ``hass.config_entries`` so that ``entry.async_on_unload`` callbacks run
 as they do in Home Assistant. The coordinator's own work is mocked out.
+
+``recorder_mock`` must be set up before ``hass``: classes request it with ``usefixtures``,
+and the tests take the fixtures depending on ``hass`` as arguments, which come later.
 """
 
 from __future__ import annotations
@@ -10,7 +13,6 @@ from collections.abc import Generator
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from homeassistant.components.recorder import Recorder
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState, HomeAssistant
@@ -85,9 +87,8 @@ class TestStartupWork:
     """The startup work is tied to the entry that asked for it."""
 
     @pytest.mark.asyncio
-    @pytest.mark.usefixtures("starting")
     async def test_no_startup_work_after_unload(
-        self, hass: HomeAssistant, entry: MockConfigEntry, timers: Mock
+        self, hass: HomeAssistant, starting: None, entry: MockConfigEntry, timers: Mock
     ) -> None:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.config_entries.async_unload(entry.entry_id)
@@ -99,9 +100,8 @@ class TestStartupWork:
         assert timers.call_count == armed_before_start
 
     @pytest.mark.asyncio
-    @pytest.mark.usefixtures("starting")
     async def test_startup_work_waits_for_the_start(
-        self, hass: HomeAssistant, entry: MockConfigEntry, timers: Mock
+        self, hass: HomeAssistant, starting: None, entry: MockConfigEntry, timers: Mock
     ) -> None:
         assert await hass.config_entries.async_setup(entry.entry_id)
         armed_before_start = timers.call_count
@@ -168,9 +168,8 @@ class TestServices:
             assert hass.services.has_service(DOMAIN, service), service
 
     @pytest.mark.asyncio
-    @pytest.mark.usefixtures("cleanup")
     async def test_service_for_an_unloaded_device_is_refused(
-        self, hass: HomeAssistant, entry: MockConfigEntry
+        self, hass: HomeAssistant, cleanup: AsyncMock, entry: MockConfigEntry
     ) -> None:
         assert await hass.config_entries.async_setup(entry.entry_id)
         er.async_get(hass).async_get_or_create(

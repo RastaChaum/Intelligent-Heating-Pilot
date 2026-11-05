@@ -164,6 +164,8 @@ the options and submit them unchanged.
 
 - A scheduler configured as a plain string (older entries) is handled like a one-item list.
 - A device with no scheduler shows the scheduler options of the existing entities only.
+- When no scheduler entity is found, the form keeps its entity picker, as today: it accepts any
+  `switch` or `schedule` entity, so a configured scheduler without a state does not block it.
 - The VTherm duplicate check ignores the device being edited.
 - An options entry that clears a field (stored as `None`) falls back to the setup value, as
   `HADeviceConfigReader` does.
@@ -172,8 +174,8 @@ the options and submit them unchanged.
 
 ### Functional Requirements
 
-- **FR-001**: The scheduler options of both forms MUST include every configured scheduler, those
-  without a state labelled as not found.
+- **FR-001**: When the forms offer a dropdown of the schedulers found, it MUST include every
+  configured scheduler, those without a state labelled as not found.
 - **FR-002**: The setup form MUST abort with `already_configured` when the VTherm in use by another
   device is the one selected, and MUST NOT abort on a shared name.
 - **FR-003**: A new device MUST take its VTherm entity id as `unique_id`.
@@ -197,14 +199,17 @@ the options and submit them unchanged.
 ## Plan
 
 - `config_flow.py`:
-  - `_scheduler_options(hass, configured)` builds the options shared by both forms and appends
-    the configured schedulers that have no state.
+  - `_scheduler_selector(hass, configured)` builds the scheduler field shared by both forms:
+    the dropdown of the schedulers found plus the configured ones, or the entity picker when
+    none is found.
   - `_configured_vtherm(entry)` returns the VTherm in use (options, else data).
   - `_vtherm_in_use(hass, vtherm, exclude_entry_id)` finds another entry using that VTherm.
   - User step: abort on a VTherm in use, `unique_id` = VTherm.
   - Options step: error on a VTherm in use, update the `unique_id` when the VTherm changes.
+- `services.py` (new): `async_setup_services(hass)` registers both services; the handlers move
+  out of `async_setup_entry` unchanged.
 - `__init__.py`:
-  - Move service registration to `async_setup` (`_async_register_services`).
+  - Call `async_setup_services` from `async_setup`.
   - Use `async_at_started` wrapped in `entry.async_on_unload`.
   - Reorder `async_unload_entry`.
 - `manifest.json`: `"dependencies": ["http", "recorder"]`.
