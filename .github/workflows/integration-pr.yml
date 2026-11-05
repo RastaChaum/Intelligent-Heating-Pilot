@@ -74,7 +74,7 @@ jobs:
           echo "old=$OLD_VERSION" >> "$GITHUB_OUTPUT"
           echo "new=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
-          if scripts/release-gates.sh version-gt "$NEW_VERSION" "$OLD_VERSION"; then
+          if bash scripts/release-gates.sh version-gt "$NEW_VERSION" "$OLD_VERSION"; then
             echo "incremented=true" >> "$GITHUB_OUTPUT"
             echo "✅ Version incremented: $OLD_VERSION → $NEW_VERSION"
           else
@@ -115,7 +115,7 @@ jobs:
           VERSION: ${{ steps.version-check.outputs.new }}
         run: |
           RC_TAG=$(gh release list --limit 100 --json tagName,isPrerelease \
-            | scripts/release-gates.sh latest-rc "$VERSION")
+            | bash scripts/release-gates.sh latest-rc "$VERSION")
 
           if [ -n "$RC_TAG" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"

@@ -55,7 +55,7 @@ jobs:
           # Latest published RC pre-release: its notes are carried over and it
           # is deleted once the new RC is published.
           PREV_RELEASE=$(gh release list --limit 100 --json tagName,isPrerelease \
-            | scripts/release-gates.sh latest-rc "$VERSION")
+            | bash scripts/release-gates.sh latest-rc "$VERSION")
 
           if gh release view "$LAST_TAG" --json tagName >/dev/null 2>&1; then
             LAST_RC_NUM=${LAST_TAG##*-rc}
