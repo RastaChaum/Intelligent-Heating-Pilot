@@ -36,27 +36,29 @@ jobs:
         run: |
           if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "⚠️ Le tag v${VERSION} existe déjà"
+            echo "⚠️ Tag v${VERSION} already exists"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
+      # Same check as "Check release candidate exists" in integration-pr.yml
+      # (shared in scripts/release-gates.sh), so a merge the gate accepted can
+      # always be promoted (#196).
       - name: Verify RC exists
         id: rc-check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          RC_COUNT=$(gh release list --limit 100 --json tagName,isPrerelease \
-            | jq -r --arg v "$VERSION" \
-                '[.[] | select(.isPrerelease and (.tagName | test("^v" + $v + "-rc[0-9]+$")))] | length')
-          if [ "$RC_COUNT" -eq 0 ]; then
+          RC_TAG=$(gh release list --limit 100 --json tagName,isPrerelease \
+            | scripts/release-gates.sh latest-rc "$VERSION")
+          if [ -z "$RC_TAG" ]; then
             echo "❌ No release candidate found for v${VERSION}."
             echo "A validated RC (vX.Y.Z-rcN) must exist before promoting to a final release."
             echo "Use the 'Prepare Release Candidate' or 'Increment RC Version' workflows first."
             exit 1
           fi
-          echo "✅ Found ${RC_COUNT} RC(s) for v${VERSION} — proceeding with promotion"
+          echo "✅ Found $RC_TAG for v${VERSION} — proceeding with promotion"
 
       - name: Prepare release notes
         id: release-notes
@@ -66,23 +68,23 @@ jobs:
         run: |
           CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next} flag && /^## \[/{flag=0} flag{print}' CHANGELOG.md)
           if [ -z "$CHANGELOG_CONTENT" ]; then
-            echo "❌ Aucune entrée Unreleased dans CHANGELOG.md"
+            echo "❌ No [Unreleased] entry in CHANGELOG.md"
             exit 1
           fi
 
           # Count RC iterations for traceability (GitHub Releases API = ground truth)
-            RC_TAGS=$(gh release list --json tagName,isPrerelease \
-              | jq -r --arg v "$VERSION" '
-                  [
-                    .[]
-                    | select(
-                        .isPrerelease == true
-                        and (.tagName | test("^v" + $v + "-rc[0-9]+$"))
-                      )
-                  ]
-                  | sort_by(.tagName | capture("-rc(?<number>[0-9]+)$").number | tonumber)
-                  | .[].tagName
-                ')
+          RC_TAGS=$(gh release list --json tagName,isPrerelease \
+            | jq -r --arg v "$VERSION" '
+                [
+                  .[]
+                  | select(
+                      .isPrerelease == true
+                      and (.tagName | test("^v" + $v + "-rc[0-9]+$"))
+                    )
+                ]
+                | sort_by(.tagName | capture("-rc(?<number>[0-9]+)$").number | tonumber)
+                | .[].tagName
+              ')
           RC_COUNT=$(echo "$RC_TAGS" | grep -c . || true)
           LATEST_RC=$(echo "$RC_TAGS" | tail -1)
 
@@ -92,7 +94,7 @@ jobs:
               echo ""
               echo "---"
               echo ""
-              echo "> ✅ Validé via ${RC_COUNT} release candidate(s). Dernière RC : \`${LATEST_RC}\`"
+              echo "> ✅ Validated through ${RC_COUNT} release candidate(s). Last RC: \`${LATEST_RC}\`"
             fi
           } > /tmp/release-notes.md
 
@@ -132,9 +134,15 @@ jobs:
             git push origin ":refs/tags/$tag" 2>/dev/null || true
           done
 
+      # A PR opened with GITHUB_TOKEN does not trigger workflows, so its
+      # validate-integration-pr check would never run (#195). When the
+      # optional RELEASE_PR_TOKEN secret (a fine-grained PAT or GitHub App
+      # token with pull-requests: write) is set, the PR is opened with it and
+      # the checks run; otherwise a maintainer closes and reopens the PR.
       - name: Update CHANGELOG with version (via PR)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           TODAY=$(date +%Y-%m-%d)
@@ -187,12 +195,15 @@ jobs:
             PR_BODY=$(printf '%s\n\n%s' \
               "🤖 Automatic CHANGELOG update triggered by the release of v${VERSION}." \
               "This PR was created automatically by the **Promote RC to Release** workflow after the \`integration\` → \`main\` merge. It replaces the \`[Unreleased]\` section header with the actual version number and today's date.")
-            PR_URL=$(gh pr create \
+            PR_URL=$(GH_TOKEN="${PR_TOKEN:-$GITHUB_TOKEN}" gh pr create \
               --title "chore: update CHANGELOG for v$VERSION" \
               --body "$PR_BODY" \
               --base main \
               --head "$BRANCH")
             echo "✅ PR created: $PR_URL"
+            if [ -z "$PR_TOKEN" ]; then
+              echo "::notice::$PR_URL was opened with GITHUB_TOKEN, so its checks do not run. Close and reopen it to run them, or set the RELEASE_PR_TOKEN secret."
+            fi
           fi
 
           # Enable auto-merge with a merge commit, the only method the main ruleset
@@ -236,12 +247,12 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh pr comment "$PR_NUMBER" --body "🚀 **Release v${VERSION} publiée !**
+          gh pr comment "$PR_NUMBER" --body "🚀 **Release v${VERSION} published!**
 
-          La release est maintenant disponible pour tous les utilisateurs.
+          The release is now available to all users.
 
-          **Prochaines étapes :**
-          1. Créer une nouvelle branche à partir de \`integration\` pour la prochaine version
-          2. Incrémenter la version dans \`manifest.json\` et \`hacs.json\`
-          3. Vérifier que HACS détecte bien la nouvelle release
+          **Next steps:**
+          1. Approve and merge the \`chore/changelog-v${VERSION}\` PR that stamps the release date on \`main\`
+          2. On \`integration\`, bump the version in \`manifest.json\` and \`hacs.json\` for the next release
+          3. Check that HACS detects the new release
           "

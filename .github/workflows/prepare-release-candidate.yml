@@ -33,11 +33,18 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "❌ Version invalide. Format attendu: X.Y.Z"
+            echo "❌ Invalid version. Expected format: X.Y.Z"
             exit 1
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "rc_tag=v${VERSION}-rc1" >> $GITHUB_OUTPUT
+
+          # integration-pr.yml only lets integration into main when an RC
+          # exists for exactly the manifest.json version (#196).
+          MANIFEST_VERSION=$(jq -r '.version' custom_components/intelligent_heating_pilot/manifest.json)
+          if [ "$MANIFEST_VERSION" != "$VERSION" ]; then
+            echo "::warning::manifest.json on integration is $MANIFEST_VERSION, not $VERSION. Bump manifest.json and hacs.json to $VERSION before opening the integration → main PR."
+          fi
 
       - name: Check RC tag and release state
         id: rc_state
@@ -52,14 +59,14 @@ jobs:
 
             if gh release view "$RC_TAG" --json tagName --jq '.tagName' >/dev/null 2>&1; then
               echo "release_exists=true" >> $GITHUB_OUTPUT
-              echo "⚠️ Une RC complète existe déjà pour cette version"
-              echo "Utilisez le workflow 'Increment RC Version' pour créer rc2, rc3, etc."
+              echo "⚠️ A complete RC already exists for this version"
+              echo "Use the 'Increment RC Version' workflow to create rc2, rc3, etc."
               exit 1
             fi
 
             echo "release_exists=false" >> $GITHUB_OUTPUT
-            echo "ℹ️ Le tag $RC_TAG existe déjà, mais la pre-release GitHub est absente"
-            echo "ℹ️ Le workflow va réutiliser ce tag et créer la pre-release manquante"
+            echo "ℹ️ Tag $RC_TAG already exists, but its GitHub pre-release is missing"
+            echo "ℹ️ The workflow reuses this tag and creates the missing pre-release"
           else
             echo "tag_exists=false" >> $GITHUB_OUTPUT
             echo "release_exists=false" >> $GITHUB_OUTPUT
@@ -74,26 +81,26 @@ jobs:
           # Query GitHub Releases API — source of truth
           DEV_RELEASE=$(gh release view "$DEV_TAG" --json tagName --jq '.tagName' 2>/dev/null || echo "")
           if [ -n "$DEV_RELEASE" ]; then
-            echo "🗑️ Suppression de la dev pre-release $DEV_TAG..."
+            echo "🗑️ Deleting dev pre-release $DEV_TAG..."
             gh release delete "$DEV_TAG" --yes 2>/dev/null || true
             git push origin ":refs/tags/$DEV_TAG" 2>/dev/null || true
-            echo "✅ Dev pre-release supprimée"
+            echo "✅ Dev pre-release deleted"
           else
-            echo "ℹ️ Aucune dev pre-release à supprimer"
+            echo "ℹ️ No dev pre-release to delete"
           fi
 
       - name: Extract unreleased changes from CHANGELOG
         id: changelog
         run: |
-          # Extraction de la section Unreleased (entre ## [Unreleased] et la prochaine section ##)
+          # Extract the Unreleased section (between ## [Unreleased] and the next ## section)
           CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next}/^## \[/{flag=0}flag' CHANGELOG.md)
 
-          # Supprimer les lignes vides au début et à la fin
+          # Trim leading and trailing blank lines
           CHANGELOG_CONTENT=$(echo "$CHANGELOG_CONTENT" | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
 
           if [ -z "$CHANGELOG_CONTENT" ]; then
-            echo "❌ Aucun changement dans la section Unreleased du CHANGELOG.md"
-            echo "Veuillez d'abord documenter vos changements dans CHANGELOG.md"
+            echo "❌ No change in the Unreleased section of CHANGELOG.md"
+            echo "Document your changes in CHANGELOG.md first"
             exit 1
           fi
 
@@ -101,15 +108,15 @@ jobs:
           {
             echo "## 🧪 Release Candidate"
             echo ""
-            echo "Cette version est une **release candidate** destinée aux tests en production et aux beta-testeurs."
+            echo "This version is a **release candidate** for production testing and beta testers."
             echo ""
             echo "$CHANGELOG_CONTENT"
             echo ""
             echo "---"
             echo ""
-            echo "> ⚠️ Cette version est en phase de test. Veuillez remonter tout problème via les Issues GitHub."
+            echo "> ⚠️ This version is being tested. Please report any problem through GitHub Issues."
           } > /tmp/rc-notes.md
-          echo "✅ Notes de version prêtes"
+          echo "✅ Release notes ready"
 
       - name: Create RC tag
         if: steps.rc_state.outputs.tag_exists != 'true'
@@ -117,7 +124,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           RC_TAG: ${{ steps.validate.outputs.rc_tag }}
         run: |
-          git tag -a "$RC_TAG" -m "Release Candidate v${VERSION}-rc1" -m "Release candidate pour tests en production." -m "Changements prévus :" -m "$(cat /tmp/rc-notes.md)"
+          git tag -a "$RC_TAG" -m "Release Candidate v${VERSION}-rc1" -m "Release candidate for production testing." -m "Planned changes:" -m "$(cat /tmp/rc-notes.md)"
 
           git push origin "$RC_TAG"
 
@@ -126,7 +133,7 @@ jobs:
         env:
           RC_TAG: ${{ steps.validate.outputs.rc_tag }}
         run: |
-          echo "✅ Réutilisation du tag existant $RC_TAG"
+          echo "✅ Reusing existing tag $RC_TAG"
 
       - name: Create GitHub Pre-Release
         env:
@@ -144,16 +151,18 @@ jobs:
         env:
           RC_TAG: ${{ steps.validate.outputs.rc_tag }}
         run: |
-          echo "## ✅ Release Candidate créée avec succès" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** \`$RC_TAG\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Branche:** \`integration\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📋 Prochaines étapes" >> $GITHUB_STEP_SUMMARY
-          echo "1. Testez la RC en production" >> $GITHUB_STEP_SUMMARY
-          echo "2. Si corrections nécessaires:" >> $GITHUB_STEP_SUMMARY
-          echo "   - Faire les corrections sur \`integration\`" >> $GITHUB_STEP_SUMMARY
-          echo "   - Utiliser le workflow 'Increment RC Version'" >> $GITHUB_STEP_SUMMARY
-          echo "3. Si tout OK:" >> $GITHUB_STEP_SUMMARY
-          echo "   - Créer une PR \`integration\` → \`main\`" >> $GITHUB_STEP_SUMMARY
-          echo "   - Le merge déclenchera la release finale" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## ✅ Release candidate created"
+            echo ""
+            echo "**Tag:** \`$RC_TAG\`"
+            echo "**Branch:** \`integration\`"
+            echo ""
+            echo "### 📋 Next steps"
+            echo "1. Test the RC in production"
+            echo "2. If fixes are needed:"
+            echo "   - Merge the fixes into \`integration\`"
+            echo "   - Run the 'Increment RC Version' workflow"
+            echo "3. If everything is OK:"
+            echo "   - Open a PR \`integration\` → \`main\`"
+            echo "   - The merge triggers the final release"
+          } >> "$GITHUB_STEP_SUMMARY"
