@@ -37,7 +37,7 @@ from custom_components.intelligent_heating_pilot.infrastructure.adapters.device_
     HADeviceConfigReader,
 )
 
-pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
+pytestmark = pytest.mark.usefixtures("flow_environment")
 
 
 def _find_schema_key(schema: dict[Any, Any], key_name: str) -> Any:

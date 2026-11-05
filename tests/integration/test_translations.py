@@ -29,7 +29,7 @@ from custom_components.intelligent_heating_pilot.const import (
     DOMAIN,
 )
 
-pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
+pytestmark = pytest.mark.usefixtures("flow_environment")
 
 # Flow results are TypedDicts whose schema and errors are optional; the tests read them as
 # plain mappings and let a missing key fail the test.
@@ -47,6 +47,16 @@ SERVICE_TEXT_KEYS = ("name", "description")
 
 # Input the flow handlers reject with their own errors (not the schema's).
 MISSING_VTHERM_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: ""}
+OTHER_DEVICE_VTHERM = "climate.office"
+VTHERM_IN_USE_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: OTHER_DEVICE_VTHERM}
+REJECTED_INPUTS = [MISSING_VTHERM_INPUT, VTHERM_IN_USE_INPUT]
+
+# Errors each form raises for REJECTED_INPUTS. A VTherm in use aborts the setup (#192),
+# so it is no form error there.
+EXPECTED_ERRORS = {
+    "setup": {"required"},
+    "options": {"required", "vtherm_already_configured"},
+}
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -54,11 +64,16 @@ def _load_json(path: Path) -> dict[str, Any]:
     return content
 
 
-def _add_entry(hass: HomeAssistant) -> MockConfigEntry:
+def _add_entry(
+    hass: HomeAssistant,
+    entry_id: str = "translations_entry",
+    vtherm: str = "climate.living_room",
+) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
-        entry_id="translations_entry",
-        data={CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: "climate.living_room"},
+        entry_id=entry_id,
+        unique_id=vtherm,
+        data={CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: vtherm},
         options={},
     )
     entry.add_to_hass(hass)
@@ -83,7 +98,8 @@ async def _submit_user_form(hass: HomeAssistant, user_input: dict[str, Any]) -> 
 async def _submit_options_form(hass: HomeAssistant, user_input: dict[str, Any]) -> FlowResult:
     flow = IntelligentHeatingPilotOptionsFlow()
     flow.hass = hass
-    flow.handler = _add_entry(hass).entry_id
+    entry = hass.config_entries.async_get_entry("translations_entry") or _add_entry(hass)
+    flow.handler = entry.entry_id
     return await flow.async_step_init(user_input)
 
 
@@ -147,10 +163,13 @@ async def test_declared_errors_are_the_ones_the_form_raises(
 ) -> None:
     """A validation error shows a message, and no error is declared that cannot occur."""
     section, _, _, submit_form = FORMS[form_name]
-    result = await submit_form(hass, MISSING_VTHERM_INPUT)
-    raised = set(result["errors"].values())
+    _add_entry(hass, entry_id="other_device", vtherm=OTHER_DEVICE_VTHERM)
+    raised: set[str] = set()
+    for user_input in REJECTED_INPUTS:
+        result = await submit_form(hass, user_input)
+        raised |= set((result.get("errors") or {}).values())
 
-    assert raised == {"required"}
+    assert raised == EXPECTED_ERRORS[form_name]
     assert set(_load_json(translation_file)[section].get("error", {})) == raised
 
 
