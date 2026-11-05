@@ -3,6 +3,7 @@ name: Workflow Lint
 # Static analysis of the GitHub Actions workflows themselves:
 #  - actionlint: syntax, expression typing and shellcheck on every `run:` script
 #  - zizmor: security audit (e.g. template injection through `${{ }}` in `run:`)
+#  - release scripts: shellcheck and the test harnesses of the release gates
 
 on:
   pull_request:
@@ -12,6 +13,7 @@ on:
     paths:
       - '.github/workflows/**'
       - '.github/zizmor.yml'
+      - 'scripts/**'
   workflow_dispatch:
 
 permissions:
@@ -48,3 +50,22 @@ jobs:
       # Rules enabled/disabled in .github/zizmor.yml
       - name: Run zizmor
         run: pipx run zizmor==1.31.1 --no-progress --format plain .github/workflows
+
+  release-scripts:
+    name: release scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Shellcheck scripts
+        run: shellcheck -x -S warning scripts/*.sh
+
+      # The workflows and rc-helper.sh share scripts/release-gates.sh; these
+      # harnesses pin its behaviour (#196).
+      - name: Test release gates
+        run: |
+          bash scripts/test-rc-check.sh
+          bash scripts/test-changelog-check.sh
