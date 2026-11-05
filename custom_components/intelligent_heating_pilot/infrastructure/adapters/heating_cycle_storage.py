@@ -438,6 +438,12 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
                 if cycle.scheduled_slot_time is not None
                 else None
             ),
+            "plateau_start_time": (
+                self._serialize_datetime(cycle.plateau_start_time)
+                if cycle.plateau_start_time is not None
+                else None
+            ),
+            "plateau_start_temp": cycle.plateau_start_temp,
         }
 
         # Serialize tariff details if present
@@ -521,6 +527,10 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             scheduled_slot_time=self._parse_optional_datetime(
                 cycle_dict.get("scheduled_slot_time")
             ),
+            # Absent from cycles stored before it was recorded (#267): such cycles keep
+            # their slope measured up to the cycle end
+            plateau_start_time=self._parse_optional_datetime(cycle_dict.get("plateau_start_time")),
+            plateau_start_temp=cycle_dict.get("plateau_start_temp"),
         )
 
     def _parse_optional_datetime(self, dt_string: str | None) -> datetime | None:

@@ -8,12 +8,14 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from ..constants import (
     DEAD_TIME_TEMP_RISE_C,
     DISTURBANCE_PRESETS,
     LOAD_SHEDDING_PRESET,
+    PLATEAU_MIN_DURATION_MINUTES,
+    PLATEAU_RISE_TOLERANCE_C,
     TEMP_FLOAT_TOLERANCE_C,
 )
 from ..interfaces.heating_cycle_service_interface import IHeatingCycleService
@@ -38,6 +40,18 @@ class DeadTimeEnd:
     """
 
     minutes: float
+    temperature: float
+
+
+class PlateauStart(NamedTuple):
+    """The reading where a cycle's room stopped warming (#267).
+
+    Attributes:
+        time: Timestamp of that reading, where the heating phase ends.
+        temperature: Indoor temperature of that reading.
+    """
+
+    time: datetime
     temperature: float
 
 
@@ -616,6 +630,22 @@ class HeatingCycleService(IHeatingCycleService):
             start_temp=start_indoor_temp,
             history_data_set=history_data_set,
         )
+        plateau = (
+            self._find_plateau_start(
+                start_time + timedelta(minutes=dead_time_end.minutes), end_time, history_data_set
+            )
+            if dead_time_end is not None
+            else None
+        )
+        if plateau is not None:
+            _LOGGER.debug(
+                "Cycle from %s to %s stopped warming at %s (%.2f°C): "
+                "its heating slope is measured up to there",
+                start_time,
+                end_time,
+                plateau.time,
+                plateau.temperature,
+            )
         disturbed = self._is_disturbed(data, start_time, end_time, bridged_interruptions)
         if disturbed:
             _LOGGER.debug(
@@ -652,6 +682,8 @@ class HeatingCycleService(IHeatingCycleService):
             disturbed=disturbed,
             heating_phase_observed=dead_time_end is not None,
             scheduled_slot_time=scheduled_slot_time,
+            plateau_start_time=plateau.time if plateau else None,
+            plateau_start_temp=plateau.temperature if plateau else None,
         )
         _LOGGER.debug(
             "Created single heating cycle: %s (energy=%.3fkWh duration=%.1fmin cost=%.3f€)",
@@ -676,7 +708,9 @@ class HeatingCycleService(IHeatingCycleService):
         """Split a long cycle's heating phase into sub-cycles of the split duration.
 
         Temperatures are interpolated linearly over the heating phase, from the end of the
-        dead time to the cycle end, so every sub-cycle gets the slope of that phase.
+        dead time to the end of the heating phase, so every sub-cycle gets the slope of that
+        phase. The plateau after it, if any, is not split: it is not heating (#267), and
+        no sub-cycle carries it.
         Interpolating from the cycle start spread the dead time over every sub-cycle, and
         the first one removed it a second time (#218, #245). The first sub-cycle starts with
         the cycle and also covers the dead time: it keeps the dead time and the temperature
@@ -687,26 +721,29 @@ class HeatingCycleService(IHeatingCycleService):
         """
         phase_start = parent.heating_phase_start_time
         phase_start_temp = parent.heating_phase_start_temp
-        phase_minutes = (parent.end_time - phase_start).total_seconds() / 60.0
+        phase_end = parent.heating_phase_end_time
+        phase_end_temp = parent.heating_phase_end_temp
+        phase_minutes = (phase_end - phase_start).total_seconds() / 60.0
         if phase_minutes <= split_duration_minutes:
             return [parent]
 
-        temp_per_minute = (parent.end_temp - phase_start_temp) / phase_minutes
+        temp_per_minute = (phase_end_temp - phase_start_temp) / phase_minutes
         _LOGGER.debug(
-            "Splitting cycle from %s to %s (heating phase from %s, %.1f min) every %d min",
+            "Splitting cycle from %s to %s (heating phase from %s to %s, %.1f min) every %d min",
             parent.start_time,
             parent.end_time,
             phase_start,
+            phase_end,
             phase_minutes,
             split_duration_minutes,
         )
 
         created: list[HeatingCycle] = []
         sub_start, sub_start_temp = parent.start_time, parent.start_temp
-        for sub_end in self._split_boundaries(phase_start, parent.end_time, split_duration_minutes):
+        for sub_end in self._split_boundaries(phase_start, phase_end, split_duration_minutes):
             sub_end_temp = (
-                parent.end_temp
-                if sub_end == parent.end_time
+                phase_end_temp
+                if sub_end == phase_end
                 else phase_start_temp
                 + temp_per_minute * (sub_end - phase_start).total_seconds() / 60.0
             )
@@ -723,6 +760,8 @@ class HeatingCycleService(IHeatingCycleService):
                 avg_outdoor_temp=self._compute_average_outdoor_temp(
                     history_data_set.data, sub_start, sub_end
                 ),
+                plateau_start_time=None,
+                plateau_start_temp=None,
             )
             created.append(sub_cycle)
             _LOGGER.debug("  Created sub-cycle %d: %s", len(created), sub_cycle)
@@ -1043,6 +1082,72 @@ class HeatingCycleService(IHeatingCycleService):
 
         # If no temperature change detected within the cycle, cannot determine dead time
         return None
+
+    def _find_plateau_start(
+        self,
+        heating_phase_start: datetime,
+        end_time: datetime,
+        history_data_set: HistoricalDataSet,
+    ) -> PlateauStart | None:
+        """Find where the room stopped warming within a cycle (#267).
+
+        The plateau starts at the first reading of the heating phase after which the room
+        gains less than PLATEAU_RISE_TOLERANCE_C for at least PLATEAU_MIN_DURATION_MINUTES,
+        all within the cycle. A TPI thermostat settling a few tenths below its target keeps
+        the cycle going on such a plateau until the slot ends; that waiting time is not
+        heating. A room still warming faster than PLATEAU_RISE_TOLERANCE_C per
+        PLATEAU_MIN_DURATION_MINUTES has no plateau, and a slower one is cut at one of its
+        readings, which leaves its steady rate unchanged. A flat stretch shorter than
+        PLATEAU_MIN_DURATION_MINUTES at the end of the cycle is not a plateau.
+
+        Args:
+            heating_phase_start: End of the dead time, where the heating phase starts.
+            end_time: End of the cycle; readings after it are ignored.
+            history_data_set: Historical indoor temperature data.
+
+        Returns:
+            The first plateau reading, or None if the room kept warming until the cycle
+            ended or no reading is available.
+        """
+        readings = self._indoor_readings_between(history_data_set, heating_phase_start, end_time)
+        min_duration = timedelta(minutes=PLATEAU_MIN_DURATION_MINUTES)
+        for index, (timestamp, temperature) in enumerate(readings):
+            if timestamp + min_duration > end_time:
+                return None
+            if not self._rises_within(readings[index + 1 :], timestamp + min_duration, temperature):
+                return PlateauStart(time=timestamp, temperature=temperature)
+        return None
+
+    @staticmethod
+    def _indoor_readings_between(
+        history_data_set: HistoricalDataSet, start: datetime, end: datetime
+    ) -> list[tuple[datetime, float]]:
+        """Indoor readings from start to end, both included, sorted, unparsable ones dropped."""
+        readings: list[tuple[datetime, float]] = []
+        indoor_history = history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, [])
+        for measurement in sorted(indoor_history, key=lambda m: m.timestamp):
+            if not start <= measurement.timestamp <= end:
+                continue
+            try:
+                readings.append((measurement.timestamp, float(measurement.value)))
+            except (ValueError, TypeError):
+                continue
+        return readings
+
+    @staticmethod
+    def _rises_within(
+        later_readings: list[tuple[datetime, float]], until: datetime, temperature: float
+    ) -> bool:
+        """Whether a reading up to ``until`` is PLATEAU_RISE_TOLERANCE_C above temperature.
+
+        A rise of exactly the tolerance counts, despite floating-point error.
+        """
+        for timestamp, value in later_readings:
+            if timestamp > until:
+                return False
+            if value - temperature >= PLATEAU_RISE_TOLERANCE_C - TEMP_FLOAT_TOLERANCE_C:
+                return True
+        return False
 
     def _validate_critical_data(self, history_data_set: HistoricalDataSet) -> None:
         """Validate that critical historical data keys are present in the dataset.
