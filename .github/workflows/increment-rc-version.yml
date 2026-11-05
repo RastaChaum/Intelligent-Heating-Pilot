@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout integration branch
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1  # zizmor: ignore[artipacked] pushes the RC tag
         with:
           ref: integration
           fetch-depth: 0
@@ -31,40 +31,65 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      # The next RC tag normally follows the latest tag. If a previous run
+      # pushed that tag but failed before publishing its release, the tag is
+      # reused instead of skipping a number (#196).
       - name: Find next RC number
         id: rc-number
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ inputs.version }}
         run: |
-          # Trouver le dernier RC pour cette version
-          LAST_RC=$(git tag -l "v${VERSION}-rc*" | sort -V | tail -1)
-
-          if [ -z "$LAST_RC" ]; then
-            echo "❌ Aucun RC trouvé pour v${VERSION}"
-            echo "Utilisez d'abord le workflow 'Prepare Release Candidate'"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid version. Expected format: X.Y.Z"
             exit 1
           fi
 
-          # Extraire le numéro du dernier RC
-          LAST_RC_NUM=$(echo "$LAST_RC" | grep -oP 'rc\K\d+')
-          NEXT_RC_NUM=$((LAST_RC_NUM + 1))
+          LAST_TAG=$(git tag -l "v${VERSION}-rc*" | grep -E "^v${VERSION//./\\.}-rc[0-9]+$" | sort -V | tail -1 || true)
+          if [ -z "$LAST_TAG" ]; then
+            echo "❌ No RC found for v${VERSION}"
+            echo "Use the 'Prepare Release Candidate' workflow first"
+            exit 1
+          fi
 
-          echo "last_rc=$LAST_RC" >> $GITHUB_OUTPUT
-          echo "next_rc_num=$NEXT_RC_NUM" >> $GITHUB_OUTPUT
-          echo "next_rc_tag=v${VERSION}-rc${NEXT_RC_NUM}" >> $GITHUB_OUTPUT
+          # Latest published RC pre-release: its notes are carried over and it
+          # is deleted once the new RC is published.
+          PREV_RELEASE=$(gh release list --limit 100 --json tagName,isPrerelease \
+            | scripts/release-gates.sh latest-rc "$VERSION")
 
-          echo "📊 Dernier RC: $LAST_RC"
-          echo "📊 Prochain RC: v${VERSION}-rc${NEXT_RC_NUM}"
+          if gh release view "$LAST_TAG" --json tagName >/dev/null 2>&1; then
+            LAST_RC_NUM=${LAST_TAG##*-rc}
+            NEXT_RC_NUM=$((LAST_RC_NUM + 1))
+            RESUME=false
+          else
+            NEXT_RC_NUM=${LAST_TAG##*-rc}
+            RESUME=true
+            echo "⚠️ Tag $LAST_TAG has no GitHub release (interrupted run): publishing it instead of a new number"
+          fi
+
+          {
+            echo "prev_release=$PREV_RELEASE"
+            echo "next_rc_num=$NEXT_RC_NUM"
+            echo "next_rc_tag=v${VERSION}-rc${NEXT_RC_NUM}"
+            echo "resume=$RESUME"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "📊 Current RC release: ${PREV_RELEASE:-none}"
+          echo "📊 Next RC: v${VERSION}-rc${NEXT_RC_NUM}"
 
       - name: Build updated release notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RC_NUM: ${{ steps.rc-number.outputs.next_rc_num }}
-          LAST_RC: ${{ steps.rc-number.outputs.last_rc }}
+          PREV_RELEASE: ${{ steps.rc-number.outputs.prev_release }}
           FIX_DESCRIPTION: ${{ inputs.fix_description }}
         run: |
-          # Prefer previous GitHub release notes, but tolerate a missing release when only the tag exists.
-          PREV_NOTES=$(gh release view "$LAST_RC" --json body --jq '.body' 2>/dev/null || true)
+          # Carry over the current RC notes (with their "RC N" sections); rebuild
+          # them from the CHANGELOG when no RC release is left.
+          PREV_NOTES=""
+          if [ -n "$PREV_RELEASE" ]; then
+            PREV_NOTES=$(gh release view "$PREV_RELEASE" --json body --jq '.body' 2>/dev/null || true)
+          fi
 
           if [ -z "$PREV_NOTES" ]; then
             CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next} flag && /^## \[/{flag=0} flag{print}' CHANGELOG.md | sed '/./,$!d')
@@ -72,13 +97,13 @@ jobs:
             {
               echo "## 🧪 Release Candidate"
               echo ""
-              echo "Cette version est une **release candidate** destinée aux tests en production et aux beta-testeurs."
+              echo "This version is a **release candidate** for production testing and beta testers."
               echo ""
               if [ -n "$CHANGELOG_CONTENT" ]; then
                 echo "$CHANGELOG_CONTENT"
                 echo ""
               else
-                echo "> ℹ️ Notes initiales indisponibles : reconstruction à partir de l'état courant de la branche integration."
+                echo "> ℹ️ Initial notes unavailable: rebuilt from the current state of the integration branch."
                 echo ""
               fi
               echo "---"
@@ -95,26 +120,19 @@ jobs:
             echo ""
             echo "$FIX_DESCRIPTION"
           } > /tmp/new-rc-notes.md
-          echo "✅ Notes de version mises à jour"
+          echo "✅ Release notes updated"
 
       - name: Create new RC tag
+        if: steps.rc-number.outputs.resume != 'true'
         env:
           VERSION: ${{ inputs.version }}
           RC_NUM: ${{ steps.rc-number.outputs.next_rc_num }}
           NEXT_RC_TAG: ${{ steps.rc-number.outputs.next_rc_tag }}
           FIX_DESCRIPTION: ${{ inputs.fix_description }}
         run: |
-          git tag -a "$NEXT_RC_TAG" -m "Release Candidate v${VERSION}-rc${RC_NUM}" -m "Corrections apportées:" -m "$FIX_DESCRIPTION"
+          git tag -a "$NEXT_RC_TAG" -m "Release Candidate v${VERSION}-rc${RC_NUM}" -m "Fixes:" -m "$FIX_DESCRIPTION"
 
           git push origin "$NEXT_RC_TAG"
-
-      - name: Delete previous RC release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LAST_RC: ${{ steps.rc-number.outputs.last_rc }}
-        run: |
-          # Supprimer l'ancienne pre-release (mais garder le tag pour l'historique)
-          gh release delete "$LAST_RC" --yes 2>/dev/null || true
 
       - name: Create new GitHub Pre-Release
         env:
@@ -127,7 +145,25 @@ jobs:
             --title "🧪 v${VERSION}-rc${RC_NUM} - Release Candidate" \
             --notes-file /tmp/new-rc-notes.md \
             --prerelease \
-            --target integration
+            --verify-tag
+
+      # Only once the new RC is published: deleting first left no RC at all
+      # when the creation failed (#196). The old tag is kept for history.
+      - name: Delete previous RC release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREV_RELEASE: ${{ steps.rc-number.outputs.prev_release }}
+          NEXT_RC_TAG: ${{ steps.rc-number.outputs.next_rc_tag }}
+        run: |
+          # Non-fatal: re-running the workflow after a failure here would
+          # publish yet another RC instead of retrying the deletion.
+          if [ -n "$PREV_RELEASE" ] && [ "$PREV_RELEASE" != "$NEXT_RC_TAG" ]; then
+            if gh release delete "$PREV_RELEASE" --yes; then
+              echo "🗑️ Deleted previous RC release $PREV_RELEASE (tag kept)"
+            else
+              echo "::warning::Could not delete $PREV_RELEASE. Delete it manually (keep its tag); do not re-run this workflow."
+            fi
+          fi
 
       - name: Find and update tracking issue
         env:
@@ -138,7 +174,6 @@ jobs:
           FIX_DESCRIPTION: ${{ inputs.fix_description }}
           RELEASE_URL_BASE: ${{ github.server_url }}/${{ github.repository }}/releases/tag
         run: |
-          # Chercher l'issue de tracking
           ISSUE_NUMBER=$(gh issue list \
             --label "release-candidate" \
             --search "RC Testing: v${VERSION}" \
@@ -146,34 +181,36 @@ jobs:
             --jq '.[0].number')
 
           if [ -n "$ISSUE_NUMBER" ]; then
-            gh issue comment "$ISSUE_NUMBER" --body "## 🔄 Nouveau RC disponible: rc${RC_NUM}
+            gh issue comment "$ISSUE_NUMBER" --body "## 🔄 New RC available: rc${RC_NUM}
 
             **Tag:** \`$NEXT_RC_TAG\`
 
-            ### Corrections apportées
+            ### Fixes
             $FIX_DESCRIPTION
 
-            ### 🔗 Lien
-            [Pre-Release GitHub]($RELEASE_URL_BASE/$NEXT_RC_TAG)
+            ### 🔗 Link
+            [GitHub pre-release]($RELEASE_URL_BASE/$NEXT_RC_TAG)
 
-            Merci de tester cette nouvelle version et de signaler tout problème dans cette issue."
+            Please test this new version and report any problem in this issue."
           fi
 
       - name: Summary
         env:
           NEXT_RC_TAG: ${{ steps.rc-number.outputs.next_rc_tag }}
-          LAST_RC: ${{ steps.rc-number.outputs.last_rc }}
+          PREV_RELEASE: ${{ steps.rc-number.outputs.prev_release }}
           FIX_DESCRIPTION: ${{ inputs.fix_description }}
         run: |
-          echo "## ✅ Nouvelle Release Candidate créée" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** \`$NEXT_RC_TAG\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Précédent:** \`$LAST_RC\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔧 Corrections" >> $GITHUB_STEP_SUMMARY
-          echo "$FIX_DESCRIPTION" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📋 Prochaines étapes" >> $GITHUB_STEP_SUMMARY
-          echo "1. Testez la nouvelle RC" >> $GITHUB_STEP_SUMMARY
-          echo "2. Si autres corrections nécessaires → relancer ce workflow" >> $GITHUB_STEP_SUMMARY
-          echo "3. Si tout OK → créer PR \`integration\` → \`main\` pour release finale" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## ✅ New release candidate created"
+            echo ""
+            echo "**Tag:** \`$NEXT_RC_TAG\`"
+            echo "**Previous:** \`${PREV_RELEASE:-none}\`"
+            echo ""
+            echo "### 🔧 Fixes"
+            echo "$FIX_DESCRIPTION"
+            echo ""
+            echo "### 📋 Next steps"
+            echo "1. Test the new RC"
+            echo "2. If more fixes are needed → run this workflow again"
+            echo "3. If everything is OK → open the \`integration\` → \`main\` PR for the final release"
+          } >> "$GITHUB_STEP_SUMMARY"

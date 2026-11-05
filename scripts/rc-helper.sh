@@ -1,348 +1,227 @@
 #!/usr/bin/env bash
 
-# Script helper pour gérer les Release Candidates
+# Release candidate helper.
+#
+# The release workflows are the single implementation of the RC process: this
+# script only dispatches them and reads GitHub Releases, the source of truth
+# the release gates check (#198). It never pushes tags or commits release-note
+# files itself.
+#
 # Usage: ./scripts/rc-helper.sh [command] [options]
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+MANIFEST="custom_components/intelligent_heating_pilot/manifest.json"
+RELEASE_BRANCH="integration"
+RELEASE_LIST_LIMIT=100
 
-# Couleurs pour l'affichage
+# shellcheck source=scripts/release-gates.sh
+source "$SCRIPT_DIR/release-gates.sh"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Fonctions d'affichage
-info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
+info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
+success() { echo -e "${GREEN}✅ $1${NC}"; }
+warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
+error() { echo -e "${RED}❌ $1${NC}"; exit 1; }
+
+require_tools() {
+    command -v gh >/dev/null 2>&1 || error "The GitHub CLI (gh) is required: https://cli.github.com"
+    command -v jq >/dev/null 2>&1 || error "jq is required"
+    gh auth status >/dev/null 2>&1 || error "gh is not authenticated: run 'gh auth login'"
 }
 
-success() {
-    echo -e "${GREEN}✅ $1${NC}"
+# Version of manifest.json on the remote integration branch, which is what
+# the workflows read.
+get_integration_version() {
+    git fetch --quiet origin "$RELEASE_BRANCH"
+    git show "origin/$RELEASE_BRANCH:$MANIFEST" | jq -r '.version'
 }
 
-warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
+get_main_version() {
+    git fetch --quiet origin main
+    git show "origin/main:$MANIFEST" | jq -r '.version'
 }
 
-error() {
-    echo -e "${RED}❌ $1${NC}"
-    exit 1
+list_releases() {
+    gh release list --limit "$RELEASE_LIST_LIMIT" --json tagName,isPrerelease
 }
 
-# Fonction pour extraire la version du manifest.json
-get_current_version() {
-    grep -oP '"version":\s*"\K[^"]+' "$PROJECT_ROOT/custom_components/intelligent_heating_pilot/manifest.json"
+validate_version() {
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || error "Invalid version format '$1'. Use X.Y.Z"
 }
 
-# Fonction pour vérifier si on est sur la branche integration
-check_integration_branch() {
-    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-    if [ "$CURRENT_BRANCH" != "integration" ]; then
-        error "Vous devez être sur la branche 'integration' pour cette opération"
-    fi
+confirm() {
+    local reply
+    read -r -p "$1 (y/N): " -n 1 reply
+    echo
+    [[ "$reply" =~ ^[Yy]$ ]] || error "Cancelled"
 }
 
-# Fonction pour vérifier que le working directory est propre
-check_clean_working_directory() {
-    if [ -n "$(git status --porcelain)" ]; then
-        error "Le working directory n'est pas propre. Committez ou stashez vos changements."
-    fi
+show_runs_hint() {
+    info "Follow the run with: gh run watch \$(gh run list --workflow $1 --limit 1 --json databaseId --jq '.[0].databaseId')"
 }
 
-# Commande: prepare
-# Prépare une nouvelle release candidate
+# Command: prepare [VERSION]
 cmd_prepare() {
-    info "Préparation d'une nouvelle Release Candidate..."
+    require_tools
+    local version="${1:-}"
+    if [ -z "$version" ]; then
+        read -r -p "Release version (e.g. 0.5.0): " version
+    fi
+    validate_version "$version"
 
-    check_integration_branch
-    check_clean_working_directory
-
-    # Demander la version
-    read -p "Version de la release (ex: 0.5.0): " VERSION
-
-    if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        error "Format de version invalide. Utilisez X.Y.Z"
+    local manifest_version
+    manifest_version=$(get_integration_version)
+    if [ "$manifest_version" != "$version" ]; then
+        warning "manifest.json on $RELEASE_BRANCH is $manifest_version, not $version."
+        warning "Bump manifest.json and hacs.json to $version before the $RELEASE_BRANCH → main PR."
     fi
 
-    RC_TAG="v${VERSION}-rc1"
-
-    # Vérifier si le RC existe déjà
-    if git rev-parse "$RC_TAG" >/dev/null 2>&1; then
-        error "Le tag $RC_TAG existe déjà. Utilisez 'increment' pour créer rc2, rc3, etc."
-    fi
-
-    info "Vérification du CHANGELOG..."
-    if ! grep -q "^## \[Unreleased\]$" CHANGELOG.md; then
-        error "Section [Unreleased] manquante dans CHANGELOG.md"
-    fi
-
-    # Extraire les changements du CHANGELOG
-    CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next} /^## \[/{flag=0} flag' CHANGELOG.md | sed '/./,$!d')
-    if [ -z "$CHANGELOG_CONTENT" ]; then
-        error "Aucun changement dans la section [Unreleased] du CHANGELOG.md"
-    fi
-
-    info "Création du fichier GITHUB_RELEASE_v${VERSION}.md..."
-    cat > "GITHUB_RELEASE_v${VERSION}.md" << EOF
-# Release v${VERSION} - Release Candidate
-
-## 🧪 Release Candidate
-Cette version est une **release candidate** destinée aux tests en production et aux beta-testeurs.
-
-${CHANGELOG_CONTENT}
-
----
-
-## ⚠️ Important
-Cette version est en phase de test. Veuillez remonter tout problème via les Issues GitHub.
-EOF
-
-    success "Fichier de release notes créé"
-
-    # Demander confirmation
-    warning "Prêt à créer le RC ${RC_TAG}"
-    echo "Fichiers à committer:"
-    echo "  - GITHUB_RELEASE_v${VERSION}.md"
-    echo ""
-    read -p "Continuer? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        error "Opération annulée"
-    fi
-
-    # Committer et créer le tag
-    git add "GITHUB_RELEASE_v${VERSION}.md"
-    git commit -m "chore(release): prepare RC for v${VERSION}"
-    git push origin integration
-
-    git tag -a "$RC_TAG" -m "Release Candidate v${VERSION}-rc1"
-    git push origin "$RC_TAG"
-
-    success "Release Candidate créée: $RC_TAG"
-    info "Une pre-release GitHub sera créée automatiquement par le workflow"
-    info "Surveillez: https://github.com/$(git config remote.origin.url | sed 's/.*://;s/.git$//')/actions"
+    confirm "Dispatch 'Prepare Release Candidate' for v${version}-rc1 on $RELEASE_BRANCH?"
+    gh workflow run prepare-release-candidate.yml --ref "$RELEASE_BRANCH" -f version="$version"
+    success "Workflow dispatched: it creates the v${version}-rc1 tag and its GitHub pre-release"
+    show_runs_hint prepare-release-candidate.yml
 }
 
-# Commande: increment
-# Incrémente le numéro de RC
+# Command: increment [VERSION] [DESCRIPTION]
 cmd_increment() {
-    info "Incrémentation du numéro de RC..."
-
-    check_integration_branch
-    check_clean_working_directory
-
-    # Demander la version de base
-    read -p "Version de base (ex: 0.5.0): " VERSION
-
-    # Trouver le dernier RC
-    LAST_RC=$(git tag -l "v${VERSION}-rc*" | sort -V | tail -1)
-
-    if [ -z "$LAST_RC" ]; then
-        error "Aucun RC trouvé pour v${VERSION}. Utilisez 'prepare' d'abord."
+    require_tools
+    local version="${1:-}"
+    local description="${2:-}"
+    if [ -z "$version" ]; then
+        read -r -p "Base version (e.g. 0.5.0): " version
     fi
+    validate_version "$version"
 
-    # Extraire et incrémenter le numéro RC
-    LAST_RC_NUM=$(echo "$LAST_RC" | grep -oP 'rc\K\d+')
-    NEXT_RC_NUM=$((LAST_RC_NUM + 1))
-    NEXT_RC_TAG="v${VERSION}-rc${NEXT_RC_NUM}"
+    local current_rc
+    current_rc=$(list_releases | latest_rc_for_version "$version")
+    [ -n "$current_rc" ] || error "No RC pre-release found for v${version}. Use 'prepare' first."
+    info "Current RC: $current_rc"
 
-    info "Dernier RC: $LAST_RC"
-    info "Prochain RC: $NEXT_RC_TAG"
-
-    # Demander description des corrections
-    echo ""
-    echo "Décrivez les corrections apportées dans ce RC:"
-    echo "(Terminez avec une ligne vide)"
-    FIX_DESCRIPTION=""
-    while IFS= read -r line; do
-        [ -z "$line" ] && break
-        FIX_DESCRIPTION="${FIX_DESCRIPTION}${line}\n"
-    done
-
-    if [ -z "$FIX_DESCRIPTION" ]; then
-        error "Description des corrections requise"
-    fi
-
-    # Mettre à jour le fichier de release notes
-    cat >> "GITHUB_RELEASE_v${VERSION}.md" << EOF
-
----
-
-## 🔧 RC ${NEXT_RC_NUM} - $(date +%Y-%m-%d)
-
-$(echo -e "$FIX_DESCRIPTION")
-EOF
-
-    success "Release notes mises à jour"
-
-    # Demander confirmation
-    warning "Prêt à créer le RC ${NEXT_RC_TAG}"
-    read -p "Continuer? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        error "Opération annulée"
-    fi
-
-    # Committer et créer le tag
-    git add "GITHUB_RELEASE_v${VERSION}.md"
-    git commit -m "chore(release): update RC notes for v${VERSION}-rc${NEXT_RC_NUM}"
-    git push origin integration
-
-    git tag -a "$NEXT_RC_TAG" -m "Release Candidate v${VERSION}-rc${NEXT_RC_NUM}
-
-$(echo -e "$FIX_DESCRIPTION")"
-    git push origin "$NEXT_RC_TAG"
-
-    success "Release Candidate incrémentée: $NEXT_RC_TAG"
-    info "Une nouvelle pre-release sera créée automatiquement"
-}
-
-# Commande: status
-# Affiche le statut des RC actuels
-cmd_status() {
-    info "Statut des Release Candidates..."
-
-    CURRENT_VERSION=$(get_current_version)
-    info "Version actuelle (manifest.json): $CURRENT_VERSION"
-
-    echo ""
-    echo "Release Candidates pour v${CURRENT_VERSION}:"
-    RC_TAGS=$(git tag -l "v${CURRENT_VERSION}-rc*" | sort -V)
-
-    if [ -z "$RC_TAGS" ]; then
-        warning "Aucun RC trouvé pour v${CURRENT_VERSION}"
-    else
-        echo "$RC_TAGS" | while read tag; do
-            DATE=$(git log -1 --format=%ai "$tag" | cut -d' ' -f1)
-            echo "  📌 $tag (créé le $DATE)"
+    if [ -z "$description" ]; then
+        echo "Describe the fixes in this RC (end with an empty line):"
+        local line
+        while IFS= read -r line; do
+            [ -z "$line" ] && break
+            description+="${line}"$'\n'
         done
-
-        LATEST_RC=$(echo "$RC_TAGS" | tail -1)
-        success "Dernier RC: $LATEST_RC"
     fi
+    [ -n "$description" ] || error "A description of the fixes is required"
 
-    # Vérifier si le fichier de release notes existe
-    NOTES_FILE="GITHUB_RELEASE_v${CURRENT_VERSION}.md"
-    if [ -f "$NOTES_FILE" ]; then
-        success "Fichier de release notes: $NOTES_FILE"
+    confirm "Dispatch 'Increment RC Version' for v${version} on $RELEASE_BRANCH?"
+    gh workflow run increment-rc-version.yml --ref "$RELEASE_BRANCH" \
+        -f version="$version" -f fix_description="$description"
+    success "Workflow dispatched: it publishes the next RC, then deletes $current_rc's release"
+    show_runs_hint increment-rc-version.yml
+}
+
+# Command: status
+cmd_status() {
+    require_tools
+    local version releases current_rc
+    version=$(get_integration_version)
+    info "Version on $RELEASE_BRANCH (manifest.json): $version"
+    info "Version on main: $(get_main_version)"
+
+    releases=$(list_releases)
+    echo ""
+    echo "Pre-releases for v${version}:"
+    printf '%s' "$releases" | jq -r --arg v "$version" \
+        '.[] | select(.isPrerelease and (.tagName | startswith("v" + $v + "-"))) | "  📌 " + .tagName'
+
+    current_rc=$(printf '%s' "$releases" | latest_rc_for_version "$version")
+    if [ -n "$current_rc" ]; then
+        success "Current RC: $current_rc"
     else
-        warning "Fichier de release notes absent: $NOTES_FILE"
+        warning "No RC pre-release for v${version}"
     fi
 }
 
-# Commande: promote
-# Prépare la promotion vers release finale
+# Command: promote
 cmd_promote() {
-    info "Préparation pour la promotion en release finale..."
+    require_tools
+    local version main_version current_rc
+    version=$(get_integration_version)
+    main_version=$(get_main_version)
+    info "Version: $main_version (main) → $version ($RELEASE_BRANCH)"
 
-    check_integration_branch
-    check_clean_working_directory
+    version_gt "$version" "$main_version" \
+        || error "manifest.json on $RELEASE_BRANCH ($version) must be greater than main ($main_version)"
 
-    CURRENT_VERSION=$(get_current_version)
-    info "Version actuelle: $CURRENT_VERSION"
-
-    # Vérifier qu'un RC existe
-    RC_TAGS=$(git tag -l "v${CURRENT_VERSION}-rc*" | sort -V)
-    if [ -z "$RC_TAGS" ]; then
-        error "Aucun RC trouvé pour v${CURRENT_VERSION}"
-    fi
-
-    LATEST_RC=$(echo "$RC_TAGS" | tail -1)
-    success "Dernier RC: $LATEST_RC"
-
-    # Vérifier le fichier de release notes
-    NOTES_FILE="GITHUB_RELEASE_v${CURRENT_VERSION}.md"
-    if [ ! -f "$NOTES_FILE" ]; then
-        error "Fichier de release notes manquant: $NOTES_FILE"
-    fi
+    current_rc=$(list_releases | latest_rc_for_version "$version")
+    [ -n "$current_rc" ] || error "No RC pre-release found for v${version}"
+    success "Current RC: $current_rc"
 
     echo ""
-    warning "Checklist avant promotion:"
-    echo "  [ ] Tous les tests RC passés avec succès"
-    echo "  [ ] Aucun bug critique restant"
-    echo "  [ ] Documentation à jour"
-    echo "  [ ] CHANGELOG.md contient tous les changements"
-    echo "  [ ] Versions synchronisées dans tous les fichiers"
+    warning "Checklist before promotion:"
+    echo "  [ ] All RC tests passed"
+    echo "  [ ] No critical bug left"
+    echo "  [ ] Documentation up to date"
+    echo "  [ ] CHANGELOG.md lists every change under [Unreleased]"
+    echo "  [ ] manifest.json and hacs.json both at $version"
     echo ""
-    read -p "Tous les critères sont-ils remplis? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        error "Vérifiez d'abord tous les critères"
-    fi
+    confirm "Are all criteria met?"
 
-    info "Pour promouvoir en release finale:"
-    echo "  1. Créez une Pull Request: integration → main"
-    echo "  2. Le merge déclenchera automatiquement le workflow de release"
-    echo "  3. Le workflow va:"
-    echo "     - Mettre à jour le CHANGELOG"
-    echo "     - Créer le tag v${CURRENT_VERSION}"
-    echo "     - Créer la release finale GitHub"
-    echo "     - Fermer les issues référencées"
-    echo "     - Nettoyer les pre-releases RC"
+    info "To promote to a final release:"
+    echo "  1. Open a pull request: $RELEASE_BRANCH → main"
+    echo "  2. Merging it triggers the 'Promote RC to Final Release' workflow, which:"
+    echo "     - creates the v${version} tag and the final GitHub release"
+    echo "     - deletes the RC and dev pre-releases"
+    echo "     - opens the chore/changelog-v${version} PR stamping the CHANGELOG on main"
     echo ""
-    success "Utilisez: gh pr create --base main --head integration"
+    success "Use: gh pr create --base main --head $RELEASE_BRANCH"
 }
 
-# Commande: help
 cmd_help() {
     cat << EOF
-🚀 RC Helper - Gestionnaire de Release Candidates
+🚀 RC Helper - Release candidate manager
 
-Usage: $0 [command]
+Usage: $0 [command] [options]
 
 Commands:
-  prepare   Préparer une nouvelle Release Candidate (rc1)
-  increment Incrémenter le numéro de RC (rc2, rc3, ...)
-  status    Afficher le statut des RC actuels
-  promote   Préparer la promotion en release finale
-  help      Afficher cette aide
+  prepare [VERSION]                Dispatch 'Prepare Release Candidate' (rc1)
+  increment [VERSION] [FIXES]      Dispatch 'Increment RC Version' (rc2, rc3, ...)
+  status                           Show the RC pre-releases of the current version
+  promote                          Check the release gates before the final release
+  help                             Show this help
 
-Workflow typique:
-  1. Sur 'integration', développer les fonctionnalités
-  2. ./scripts/rc-helper.sh prepare → Créer rc1
-  3. Tester en production
-  4. Si corrections nécessaires:
-     - Faire les corrections sur 'integration'
-     - ./scripts/rc-helper.sh increment → Créer rc2, rc3, ...
-  5. Quand tout OK:
+Typical workflow:
+  1. Merge features and fixes into '$RELEASE_BRANCH'
+  2. Bump manifest.json and hacs.json to the release version
+  3. ./scripts/rc-helper.sh prepare → create rc1
+  4. Test in production
+  5. If fixes are needed:
+     - Merge the fixes into '$RELEASE_BRANCH'
+     - ./scripts/rc-helper.sh increment → create rc2, rc3, ...
+  6. When everything is OK:
      - ./scripts/rc-helper.sh promote
-     - Créer PR integration → main
-     - Le merge déclenche la release finale
+     - Open the $RELEASE_BRANCH → main PR; its merge triggers the final release
 
 Documentation:
-    Voir docs/maintainers/RELEASE_PROCESS.md pour plus de détails
+    See docs/maintainers/RELEASE_PROCESS.md
 EOF
 }
 
-# Point d'entrée principal
 main() {
     cd "$PROJECT_ROOT"
 
-    COMMAND="${1:-help}"
+    local command="${1:-help}"
+    shift || true
 
-    case "$COMMAND" in
-        prepare)
-            cmd_prepare
-            ;;
-        increment)
-            cmd_increment
-            ;;
-        status)
-            cmd_status
-            ;;
-        promote)
-            cmd_promote
-            ;;
-        help|--help|-h)
-            cmd_help
-            ;;
-        *)
-            error "Commande inconnue: $COMMAND (utilisez 'help' pour l'aide)"
-            ;;
+    case "$command" in
+        prepare) cmd_prepare "$@" ;;
+        increment) cmd_increment "$@" ;;
+        status) cmd_status ;;
+        promote) cmd_promote ;;
+        help|--help|-h) cmd_help ;;
+        *) error "Unknown command: $command (use 'help')" ;;
     esac
 }
 

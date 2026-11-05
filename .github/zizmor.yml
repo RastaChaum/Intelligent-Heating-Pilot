@@ -1,14 +1,6 @@
 # zizmor configuration (https://docs.zizmor.sh/configuration/)
 #
-# Template injection and the other injection-class rules stay enabled and
-# blocking. The rules below flag existing, unrelated hardening work (pinning
-# actions by SHA, narrowing permissions, checkout credential persistence);
-# they are disabled until that work is done so the check can gate PRs now.
-# Re-enable them one by one once their findings are fixed (tracked in #202).
-rules:
-  unpinned-uses:
-    disable: true
-  excessive-permissions:
-    disable: true
-  artipacked:
-    disable: true
+# Every rule of the default set is enabled (#202). Findings that are accepted
+# on purpose are silenced inline with `# zizmor: ignore[<rule>]` and a reason,
+# next to the code they apply to.
+rules: {}

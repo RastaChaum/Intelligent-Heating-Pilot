@@ -1,7 +1,12 @@
 #!/bin/bash
-# Script helper pour gérer le workflow de développement
+# Development workflow helper.
+#
+# Branch names must match what the CI accepts (#198):
+#   - feature-fix-pr.yml requires '(copilot/)?(feature|fix)/issue-NNN' or 'NNN-description';
+#   - ci.yml only runs on pushes to 'feature/**' and 'fix/**'.
+# This helper therefore creates 'feature/issue-NNN[-slug]' and 'fix/issue-NNN[-slug]'.
 
-set -e
+set -euo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -9,234 +14,197 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-function print_header() {
-    echo -e "${BLUE}=== $1 ===${NC}"
+BASE_BRANCH="integration"
+
+print_header() { echo -e "${BLUE}=== $1 ===${NC}"; }
+print_success() { echo -e "${GREEN}✅ $1${NC}"; }
+print_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
+print_error() { echo -e "${RED}❌ $1${NC}"; }
+
+# Builds '<kind>/issue-<number>[-<slug>]' from the user's answers.
+# Usage: build_branch_name KIND ISSUE_NUMBER [DESCRIPTION]
+build_branch_name() {
+    local kind="$1" issue="$2" description="${3:-}"
+    local slug
+    slug=$(printf '%s' "$description" \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+    if [ -n "$slug" ]; then
+        echo "${kind}/issue-${issue}-${slug}"
+    else
+        echo "${kind}/issue-${issue}"
+    fi
 }
 
-function print_success() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
+create_branch() {
+    local kind="$1"
+    print_header "Create a $kind branch"
 
-function print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
-function print_error() {
-    echo -e "${RED}❌ $1${NC}"
-}
-
-function create_feature_branch() {
-    print_header "Création d'une branche feature"
-
-    read -p "Nom de la feature (sans 'feature-'): " feature_name
-
-    # Assurez-vous d'être sur integration
-    git checkout integration
-    git pull origin integration
-
-    # Créez la branche
-    git checkout -b "feature-$feature_name"
-
-    print_success "Branche feature-$feature_name créée à partir de integration"
-    print_warning "N'oubliez pas de mettre à jour le CHANGELOG.md !"
-}
-
-function create_fix_branch() {
-    print_header "Création d'une branche fix"
-
-    read -p "Nom du fix (sans 'fix-'): " fix_name
-
-    # Assurez-vous d'être sur integration
-    git checkout integration
-    git pull origin integration
-
-    # Créez la branche
-    git checkout -b "fix-$fix_name"
-
-    print_success "Branche fix-$fix_name créée à partir de integration"
-    print_warning "N'oubliez pas de mettre à jour le CHANGELOG.md !"
-}
-
-function prepare_release() {
-    print_header "Préparation d'une RC (Release Candidate)"
-
-    # Vérifier qu'on est sur integration
-    CURRENT_BRANCH=$(git branch --show-current)
-    if [ "$CURRENT_BRANCH" != "integration" ]; then
-        print_error "Vous devez être sur la branche integration"
+    local issue description
+    read -r -p "GitHub issue number: " issue
+    if [[ ! "$issue" =~ ^[0-9]+$ ]]; then
+        print_error "The issue number must be digits only (got '$issue')"
         exit 1
     fi
+    read -r -p "Short description (optional, e.g. 'setup lifecycle'): " description
 
-    print_warning "Utiliser le script dedié : ./scripts/rc-helper.sh"
+    local branch
+    branch=$(build_branch_name "$kind" "$issue" "$description")
+
+    git checkout "$BASE_BRANCH"
+    git pull origin "$BASE_BRANCH"
+    git checkout -b "$branch"
+
+    print_success "Branch $branch created from $BASE_BRANCH"
+    print_warning "Remember to update CHANGELOG.md under [Unreleased]!"
+}
+
+prepare_release() {
+    print_header "Prepare a release candidate"
+    print_warning "Use the dedicated script: ./scripts/rc-helper.sh"
     echo ""
-    echo "Pour préparer une RC :"
+    echo "Prepare an RC (dispatches the 'Prepare Release Candidate' workflow):"
     echo "  $ ./scripts/rc-helper.sh prepare"
     echo ""
-    echo "Pour voir le statut actuel :"
+    echo "Show the current status:"
     echo "  $ ./scripts/rc-helper.sh status"
     echo ""
-    echo "Pour incrémenter la RC (après corrections) :"
+    echo "Increment the RC after fixes (dispatches 'Increment RC Version'):"
     echo "  $ ./scripts/rc-helper.sh increment"
-    echo ""
-    echo "Workflow RC complet :"
-    echo "  1. Préparez RC1 : ./scripts/rc-helper.sh prepare"
-    echo "  2. Testez sur votre instance HA"
-    echo "  3. Si corrections : créez des branches fix-* vers integration"
-    echo "  4. Incrémentez RC : ./scripts/rc-helper.sh increment"
-    echo "  5. Retestez"
-    echo "  6. Quand prêt : créez PR integration → main"
-    echo "  7. Mergez PR → Release stable automatiquement"
 }
 
-function check_changelog() {
-    print_header "Vérification du CHANGELOG"
+check_changelog() {
+    print_header "CHANGELOG check"
 
     if ! git diff --cached --name-only | grep -q "CHANGELOG.md"; then
-        print_error "CHANGELOG.md n'a pas été modifié"
+        print_error "CHANGELOG.md has not been modified"
         echo ""
-        echo "Ajoutez une entrée dans la section [Unreleased]:"
+        echo "Add an entry under the [Unreleased] section:"
         echo ""
-        echo "### Added (pour features)"
-        echo "- [Description orientée utilisateur]"
+        echo "### Added (for features)"
+        echo "- [User-facing description]"
         echo ""
-        echo "### Fixed (pour fixes)"
-        echo "- [Description du problème corrigé]"
+        echo "### Fixed (for fixes)"
+        echo "- [Description of the fixed problem]"
         exit 1
     fi
 
-    print_success "CHANGELOG.md a été modifié"
+    print_success "CHANGELOG.md has been modified"
 }
 
-function show_workflow() {
+show_workflow() {
     cat << 'EOF'
 
-📋 WORKFLOW DE DÉVELOPPEMENT - INTELLIGENT HEATING PILOT (RC Model)
-════════════════════════════════════════════════════════════════════
+📋 DEVELOPMENT WORKFLOW - INTELLIGENT HEATING PILOT (RC model)
+════════════════════════════════════════════════════════════════
 
 ┌─────────────────────────────────────────────────────────────┐
-│  1. NOUVELLE FONCTIONNALITÉ                                 │
+│  1. NEW FEATURE                                             │
 └─────────────────────────────────────────────────────────────┘
 
    $ ./scripts/workflow-helper.sh feature
 
-   → Créez votre branche feature-* depuis integration
-   → Développez avec TDD (tests d'abord!)
-   → Mettez à jour CHANGELOG.md (section [Unreleased])
-   → Créez une PR vers integration
-   → Les checks automatiques vérifient:
-     - Nommage de branche (feature/*)
-     - CHANGELOG mis à jour
-     - Tests passent
-     - Documentation (si nécessaire)
+   → Creates feature/issue-NNN[-slug] from integration
+   → Develop with TDD (tests first!)
+   → Update CHANGELOG.md ([Unreleased] section)
+   → Open a PR to integration
+   → Automatic checks verify:
+     - Branch naming (feature/issue-NNN, fix/issue-NNN or NNN-description)
+     - CHANGELOG updated
+     - Tests pass
+     - Documentation (reminder for features)
 
 ┌─────────────────────────────────────────────────────────────┐
-│  2. CORRECTION DE BUG                                       │
+│  2. BUG FIX                                                 │
 └─────────────────────────────────────────────────────────────┘
 
    $ ./scripts/workflow-helper.sh fix
 
-   → Créez votre branche fix-* depuis integration
-   → Corrigez avec TDD (tests de régression!)
-   → Mettez à jour CHANGELOG.md (section [Unreleased])
-   → Créez une PR vers integration
-   → Mêmes checks automatiques (fix/*)
+   → Creates fix/issue-NNN[-slug] from integration
+   → Fix with TDD (regression tests!)
+   → Update CHANGELOG.md ([Unreleased] section)
+   → Open a PR to integration
+   → Same automatic checks
 
 ┌─────────────────────────────────────────────────────────────┐
-│  3. CYCLE DE RELEASE - PHASE RC (Release Candidate)        │
+│  3. RELEASE CYCLE - RC (release candidate) PHASE            │
 └─────────────────────────────────────────────────────────────┘
 
-   a) PRÉPARER RC1
+   a) PREPARE RC1
 
+      → Bump manifest.json and hacs.json to the release version
       $ ./scripts/rc-helper.sh prepare
+      → Dispatches 'Prepare Release Candidate':
+        tag vX.Y.Z-rc1 and its GitHub pre-release
 
-      → Choisissez le type (major/minor/patch)
-      → Version incrémentée (v0.4.4 → v0.5.0-rc1)
-            → GitHub release notes préparées pour v0.5.0-rc1
-      → Tag v0.5.0-rc1 créé
-      → Pre-release GitHub créée
-      → Issue de suivi créée
+   b) TEST RC1
 
-   b) TESTER RC1
+      → Deploy on your Home Assistant instance
+      → Test every new feature
+      → Report bugs on the tracking issue
 
-      → Déployez sur votre instance Home Assistant
-      → Testez toutes les nouvelles features
-      → Signaler bugs sur l'issue de suivi
+   c) FIXES DURING THE RC PHASE
 
-   c) CORRECTIONS PENDANT LES RCs
-
-      $ git checkout integration
       $ ./scripts/workflow-helper.sh fix
-      → Corrigez le bug
-      → Créez PR vers integration
-      → Mergez PR
-      → Créez PR vide vers main (pour déclencher les checks)
+      → Fix the bug, open a PR to integration, merge it
       $ ./scripts/rc-helper.sh increment
-      → Crée rc2, puis rc3, etc.
+      → Dispatches 'Increment RC Version': rc2, then rc3, etc.
 
-   d) RETESTEZ
+   d) RETEST
 
-      → Testez la nouvelle RC
-      → Répétez jusqu'à satisfaction
-
-┌─────────────────────────────────────────────────────────────┐
-│  4. PUBLIER LA RELEASE STABLE                               │
-└─────────────────────────────────────────────────────────────┘
-
-   Quand la RC est stable:
-
-      $ git checkout integration
-      $ git pull origin integration
-
-      → Créez une PR: integration → main
-      → Titre: "chore: release v0.5.0"
-      → Les checks vérifient:
-        - Version incrémentée
-        - CHANGELOG contient des entrées
-        - RC pre-release existe
-        - Tous les tests passent
-
-      → Mergez la PR (sans squash!)
-      → AUTOMATIQUEMENT:
-        - Version finale créée (v0.5.0)
-        - CHANGELOG mis à jour avec date
-        - Release stable publiée
-        - RCs nettoyées
-        - HACS détecte la version
+      → Test the new RC
+      → Repeat until satisfied
 
 ┌─────────────────────────────────────────────────────────────┐
-│  5. COMMANDES UTILES                                        │
+│  4. PUBLISH THE STABLE RELEASE                              │
 └─────────────────────────────────────────────────────────────┘
 
-   Voir l'état de la RC actuelle :
+   When the RC is stable:
+
+      $ ./scripts/rc-helper.sh promote
+
+      → Open a PR: integration → main
+      → Checks verify:
+        - Version greater than main (manifest.json = hacs.json)
+        - CHANGELOG has entries
+        - An RC pre-release exists for exactly that version
+        - All tests pass
+
+      → Merge the PR (merge commit, no squash!)
+      → AUTOMATICALLY:
+        - Final release published (vX.Y.Z)
+        - RC and dev pre-releases deleted
+        - chore/changelog-vX.Y.Z PR opened to stamp the CHANGELOG
+          (approve and merge it)
+        - HACS detects the version
+
+┌─────────────────────────────────────────────────────────────┐
+│  5. USEFUL COMMANDS                                         │
+└─────────────────────────────────────────────────────────────┘
+
+   Current RC status:
       $ ./scripts/rc-helper.sh status
 
-   Voir les versions disponibles :
-      $ git tag | grep -v rc | tail -5
-
-   Préparer une nouvelle RC :
-      $ ./scripts/rc-helper.sh prepare
-
-   Incrémenter RC après corrections :
-      $ ./scripts/rc-helper.sh increment
+   Available versions:
+      $ gh release list --exclude-pre-releases --limit 5
 
 ┌─────────────────────────────────────────────────────────────┐
-│  📚 DOCUMENTATION COMPLÈTE                                  │
+│  📚 DOCUMENTATION                                           │
 └─────────────────────────────────────────────────────────────┘
 
-   Workflow RC :     ./scripts/rc-helper.sh (version interactive)
-   Workflow Dev :    ./scripts/workflow-helper.sh workflow
-   Vérif Setup :     ./scripts/check-workflow-setup.sh
+   Release process:  docs/maintainers/RELEASE_PROCESS.md
+   RC workflows:     docs/maintainers/RC_WORKFLOWS.md
+   Setup check:      ./scripts/check-workflow-setup.sh
 
 EOF
 }
 
-# Menu principal
 case "${1:-}" in
     feature)
-        create_feature_branch
+        create_branch feature
         ;;
     fix)
-        create_fix_branch
+        create_branch fix
         ;;
     prepare-release)
         prepare_release
@@ -253,14 +221,12 @@ case "${1:-}" in
         echo "Usage: $0 [command]"
         echo ""
         echo "Commands:"
-        echo "  feature          Créer une nouvelle branche feature"
-        echo "  fix              Créer une nouvelle branche fix"
-        echo "  prepare-release  Préparer une nouvelle release"
-        echo "  check-changelog  Vérifier que le CHANGELOG est à jour"
-        echo "  workflow         Afficher le workflow complet"
+        echo "  feature          Create a feature/issue-NNN branch"
+        echo "  fix              Create a fix/issue-NNN branch"
+        echo "  prepare-release  Show how to prepare a release candidate"
+        echo "  check-changelog  Check that CHANGELOG.md is staged"
+        echo "  workflow         Show the full workflow"
         echo ""
-        echo "Pour les releases, utiliser : ./scripts/rc-helper.sh"
-        echo ""
-        echo "Pour plus d'aide: $0 workflow"
+        echo "For releases, use: ./scripts/rc-helper.sh"
         ;;
 esac
