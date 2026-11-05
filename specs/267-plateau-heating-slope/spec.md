@@ -151,7 +151,9 @@ A room that keeps warming until its target, however slowly, keeps the slope it l
 
 ### Key Entities
 
-- **HeatingCycle**: gains `heating_phase_end_time` and `heating_phase_end_temp` (both optional).
+- **HeatingCycle**: gains `plateau_start_time` and `plateau_start_temp` (both optional, recorded
+  by the extraction), and the `heating_phase_end_time` / `heating_phase_end_temp` properties: the
+  plateau start when recorded, else the cycle end.
 
 ## Success Criteria *(mandatory)*
 
@@ -164,8 +166,8 @@ A room that keeps warming until its target, however slowly, keeps the slope it l
 
 - `domain/constants.py`: add `PLATEAU_RISE_TOLERANCE_C = 0.1` and
   `PLATEAU_MIN_DURATION_MINUTES = 60`.
-- `domain/value_objects/heating.py`: add the two optional fields, a `heating_phase_end` window used
-  by `avg_heating_slope`, and document them.
+- `domain/value_objects/heating.py`: add the two optional fields and the `heating_phase_end_*`
+  properties used by `avg_heating_slope`, and document them.
 - `domain/services/heating_cycle_service.py`: `_find_heating_phase_end` scans the indoor readings
   from the end of the dead time to the cycle end and returns the first plateau reading.
   `_create_cycles` records it; `_split_into_cycles` splits up to it and clears it on sub-cycles.

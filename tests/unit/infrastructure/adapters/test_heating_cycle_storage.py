@@ -758,3 +758,36 @@ async def test_cycle_stored_before_slot_recording_has_no_slot(
     stored.pop("scheduled_slot_time", None)
 
     assert cache._deserialize_heating_cycle(stored).scheduled_slot_time is None
+
+
+@pytest.mark.asyncio
+async def test_plateau_start_survives_serialization(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """Where the plateau of a cycle starts is stored and read back (#267)."""
+    plateau = datetime(2025, 1, 15, 6, 10, tzinfo=UTC)
+    cycle = replace(
+        create_test_heating_cycle(device_id, base_time),
+        plateau_start_time=plateau,
+        plateau_start_temp=19.6,
+    )
+
+    restored = cache._deserialize_heating_cycle(cache._serialize_heating_cycle(cycle))
+
+    assert restored.plateau_start_time == plateau
+    assert restored.plateau_start_temp == 19.6
+
+
+@pytest.mark.asyncio
+async def test_cycle_stored_before_plateau_recording_has_no_plateau(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """Cycles persisted by older versions keep their full slope window (#267)."""
+    stored = cache._serialize_heating_cycle(create_test_heating_cycle(device_id, base_time))
+    stored.pop("plateau_start_time", None)
+    stored.pop("plateau_start_temp", None)
+
+    restored = cache._deserialize_heating_cycle(stored)
+
+    assert restored.plateau_start_time is None
+    assert restored.plateau_start_temp is None

@@ -9,6 +9,7 @@ Feature: HeatingCycle.avg_heating_slope — min_effective_duration_minutes filte
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 import pytest
@@ -268,3 +269,65 @@ class TestHeatingCycleSlopeFromDeadTimeEnd:
         cycle = make_cycle(total_duration_minutes=60.0, dead_time_minutes=10.0)
 
         assert cycle.dead_time_end_temp is None
+
+
+# ---------------------------------------------------------------------------
+# TestHeatingPhaseEnd (#267)
+# ---------------------------------------------------------------------------
+
+
+class TestHeatingPhaseEnd:
+    """The heating slope is measured up to the end of the heating phase when recorded (#267).
+
+    A thermostat settling below its target keeps the cycle going on a plateau: counting
+    the plateau as heating time lowered the slope at every preheat.
+    """
+
+    def _plateau_cycle(self, phase_end_minutes: float | None, phase_end_temp: float | None):
+        """18.0 °C, dead time 42 min ending at 18.2 °C, then 19.2 °C at 102 min, ends at 222."""
+        return replace(
+            make_cycle(
+                total_duration_minutes=222.0,
+                dead_time_minutes=42.0,
+                temp_increase=1.2,
+                dead_time_end_temp=18.2,
+            ),
+            plateau_start_time=(
+                BASE_TIME + timedelta(minutes=phase_end_minutes)
+                if phase_end_minutes is not None
+                else None
+            ),
+            plateau_start_temp=phase_end_temp,
+        )
+
+    def test_slope_measured_up_to_the_heating_phase_end(self) -> None:
+        """18.2 → 19.2 °C from 42 to 102 min is 1.0 °C/h, the plateau after it is left out."""
+        cycle = self._plateau_cycle(102.0, 19.2)
+
+        assert cycle.avg_heating_slope == pytest.approx(1.0)
+
+    def test_without_heating_phase_end_the_slope_runs_to_the_cycle_end(self) -> None:
+        """Cycles without a recorded end (no plateau, or cached earlier) keep the full window."""
+        cycle = self._plateau_cycle(None, None)
+
+        assert cycle.avg_heating_slope == pytest.approx(1.0 / 3.0)
+
+    def test_heating_phase_end_defaults_to_cycle_end(self) -> None:
+        """The heating phase ends with the cycle when no plateau was recorded."""
+        cycle = self._plateau_cycle(None, None)
+
+        assert cycle.heating_phase_end_time == cycle.end_time
+        assert cycle.heating_phase_end_temp == cycle.end_temp
+
+    def test_plateau_at_the_dead_time_end_gives_no_slope(self) -> None:
+        """A room that stops warming as its dead time ends has no heating phase to measure."""
+        cycle = self._plateau_cycle(42.0, 18.2)
+
+        assert cycle.avg_heating_slope == 0.0
+
+    def test_plateau_fields_default_to_none(self) -> None:
+        """Cycles built without them (cache from older versions) have no recorded plateau."""
+        cycle = make_cycle(total_duration_minutes=60.0, dead_time_minutes=10.0)
+
+        assert cycle.plateau_start_time is None
+        assert cycle.plateau_start_temp is None

@@ -1384,3 +1384,154 @@ class TestExtractInterruptionBridge:
 
         assert (cycle.start_time, cycle.end_time) == (base_time, self._at(base_time, 90))
         assert cycle.disturbed is False
+
+
+class TestPlateauStart:
+    """The heating phase ends at the first plateau of the cycle (#267).
+
+    A plateau is a reading after which the room gains less than 0.1 °C for at least
+    60 minutes, all within the cycle.
+    """
+
+    @staticmethod
+    def _history(base_time, readings):
+        return HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(base_time + timedelta(minutes=minute), value) for minute, value in readings
+                ]
+            }
+        )
+
+    def _plateau(self, service, base_time, readings, end_minutes=240.0):
+        return service._find_plateau_start(
+            base_time,
+            base_time + timedelta(minutes=end_minutes),
+            self._history(base_time, readings),
+        )
+
+    def test_first_reading_followed_by_an_hour_without_rise(self, service, base_time):
+        """19.6 °C at 60 min, then nothing above 19.69 °C: the plateau starts at 60 min."""
+        readings = [(0, 19.0), (30, 19.3), (60, 19.6), (90, 19.65), (150, 19.6), (200, 19.68)]
+
+        plateau = self._plateau(service, base_time, readings)
+
+        assert plateau == (base_time + timedelta(minutes=60), 19.6)
+
+    def test_a_rise_of_exactly_the_tolerance_is_not_a_plateau(self, service, base_time):
+        """19.6 → 19.7 °C within the hour is still a rise, despite floating-point error."""
+        readings = [(0, 19.6), (50, 19.7), (200, 19.7)]
+
+        plateau = self._plateau(service, base_time, readings)
+
+        assert plateau == (base_time + timedelta(minutes=50), 19.7)
+
+    def test_flat_stretch_shorter_than_an_hour_before_the_end_is_not_a_plateau(
+        self, service, base_time
+    ):
+        """A room flat for the last 40 minutes of the cycle keeps its full window."""
+        readings = [(0, 19.0), (30, 19.5), (60, 19.7)]
+
+        assert self._plateau(service, base_time, readings, end_minutes=100.0) is None
+
+    def test_steady_rise_has_no_plateau(self, service, base_time):
+        """A room gaining 0.1 °C every 20 minutes, slowly, is never on a plateau."""
+        readings = [(minute, round(19.0 + 0.1 * minute / 20, 1)) for minute in range(0, 241, 20)]
+
+        assert self._plateau(service, base_time, readings) is None
+
+    def test_readings_before_the_heating_phase_or_after_the_cycle_are_ignored(
+        self, service, base_time
+    ):
+        """Only readings from the heating phase start to the cycle end are searched."""
+        readings = [(-30, 18.0), (0, 19.0), (30, 19.5), (60, 19.9), (130, 21.0)]
+
+        plateau = self._plateau(service, base_time, readings, end_minutes=125.0)
+
+        assert plateau == (base_time + timedelta(minutes=60), 19.9)
+
+    def test_unparsable_reading_is_ignored(self, service, base_time):
+        """A reading that is not a number neither starts nor breaks a plateau."""
+        readings = [(0, 19.0), (30, "unavailable"), (60, 19.0), (130, 19.05)]
+
+        plateau = self._plateau(service, base_time, readings)
+
+        assert plateau == (base_time, 19.0)
+
+    def test_no_readings_gives_no_plateau(self, service, base_time):
+        """Without indoor readings, the heating phase ends with the cycle."""
+        assert self._plateau(service, base_time, []) is None
+
+
+class TestExtractPlateauCycle:
+    """An extracted cycle records where its plateau starts (#267)."""
+
+    @staticmethod
+    def _plateau_history(base_time):
+        """18.0 °C, +0.2 °C at 30 min, 19.2 °C at 90 min, flat until heating stops at 210 min."""
+        indoor = [
+            m(base_time, 18.0),
+            m(base_time + timedelta(minutes=30), 18.2),
+            m(base_time + timedelta(minutes=60), 18.7),
+            m(base_time + timedelta(minutes=90), 19.2),
+            m(base_time + timedelta(minutes=150), 19.25),
+            m(base_time + timedelta(minutes=210), 19.2),
+        ]
+        states = [
+            m(base_time, "heat", hvac_action="heating", hvac_mode="heat"),
+            m(base_time + timedelta(minutes=210), "off", hvac_action="idle", hvac_mode="off"),
+        ]
+        targets = [m(base_time, 20.0)]
+        return HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: indoor,
+                HistoricalDataKey.TARGET_TEMP: targets,
+                HistoricalDataKey.HEATING_STATE: states,
+            }
+        )
+
+    @pytest.mark.asyncio
+    async def test_cycle_records_its_plateau_and_keeps_its_end(self, service, base_time):
+        """The cycle ends when heating stops, its slope only covers 30 → 90 min."""
+        cycles = await service.extract_heating_cycles(
+            "test.device",
+            self._plateau_history(base_time),
+            base_time,
+            base_time + timedelta(hours=6),
+        )
+
+        assert len(cycles) == 1
+        cycle = cycles[0]
+        assert cycle.end_time == base_time + timedelta(minutes=210)
+        assert cycle.plateau_start_time == base_time + timedelta(minutes=90)
+        assert cycle.plateau_start_temp == 19.2
+        assert cycle.dead_time_cycle_minutes == pytest.approx(30.0)
+        assert cycle.avg_heating_slope == pytest.approx(1.0)
+
+    def test_sub_cycles_cover_the_heating_phase_up_to_the_plateau(
+        self, service_with_splitting, base_time
+    ):
+        """Sub-cycles stop where the plateau starts and do not carry it themselves."""
+        parent = HeatingCycle(
+            device_id="my_device_id",
+            start_time=base_time,
+            end_time=base_time + timedelta(minutes=210),
+            target_temp=20.0,
+            end_temp=19.2,
+            start_temp=18.0,
+            dead_time_cycle_minutes=30.0,
+            dead_time_end_temp=18.2,
+            plateau_start_time=base_time + timedelta(minutes=90),
+            plateau_start_temp=19.2,
+        )
+
+        cycles = service_with_splitting._split_into_cycles(parent, HistoricalDataSet(data={}), 30)
+
+        assert [c.end_time for c in cycles] == [
+            base_time + timedelta(minutes=60),
+            base_time + timedelta(minutes=90),
+        ]
+        assert cycles[-1].end_temp == pytest.approx(19.2)
+        assert [c.avg_heating_slope for c in cycles] == pytest.approx([1.0, 1.0])
+        assert all(c.plateau_start_time is None for c in cycles)
+        assert all(c.plateau_start_temp is None for c in cycles)
