@@ -63,6 +63,20 @@ jobs:
       - name: Shellcheck scripts
         run: shellcheck -x -S warning scripts/*.sh
 
+      # Commits from a checkout with core.fileMode=false (e.g. WSL) drop the
+      # executable bit, and rc-helper.sh or a workflow calling a script
+      # directly then fails with "Permission denied".
+      - name: Check scripts are executable in git
+        run: |
+          NOT_EXECUTABLE=$(git ls-files -s -- 'scripts/*.sh' | awk '$1 != "100755" {print $4}')
+          if [ -n "$NOT_EXECUTABLE" ]; then
+            echo "❌ Scripts committed without the executable bit:"
+            echo "$NOT_EXECUTABLE"
+            echo "Fix with: git update-index --chmod=+x <file>"
+            exit 1
+          fi
+          echo "✅ All scripts are executable"
+
       # The workflows and rc-helper.sh share scripts/release-gates.sh; these
       # harnesses pin its behaviour (#196).
       - name: Test release gates

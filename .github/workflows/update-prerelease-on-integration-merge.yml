@@ -44,7 +44,7 @@ jobs:
           # GitHub Releases are the ground truth, not git tags: old RC tags are
           # kept after their release is deleted.
           LATEST_RC=$(gh release list --limit 100 --json tagName,isPrerelease \
-            | scripts/release-gates.sh latest-rc "$VERSION")
+            | bash scripts/release-gates.sh latest-rc "$VERSION")
           DEV_RELEASE=$(gh release view "$DEV_TAG" --json tagName --jq '.tagName' 2>/dev/null || echo "")
 
           if [ -n "$LATEST_RC" ]; then
