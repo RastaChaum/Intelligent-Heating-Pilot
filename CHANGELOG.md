@@ -38,6 +38,7 @@ This release makes learning match how each room really heats, slow underfloor he
 ### Setup and options
 
 - **Every setting has a label and help text**, in English and French. The services are translated, and submitting without a thermostat shows a real message. (#193)
+- **Setting up, changing and removing a device is more robust.** A removed or renamed scheduler no longer blocks saving the options: it is listed as *(not found)*. A thermostat can be driven by one IHP device only, and two devices may share a name. A device reloaded or removed while Home Assistant starts no longer runs its first update afterwards, and a failed removal no longer freezes its sensors. The services stay available when no device is set up and return a clear error for a device that is not loaded. (#192)
 - **Home Assistant 2024.11 or later is now declared as the minimum version.** IHP already needed it; HACS no longer offers it to older installations, where it failed to load or to open its options.
 
 ### New
