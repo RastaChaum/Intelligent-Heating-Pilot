@@ -26,6 +26,8 @@ _LOGGER = logging.getLogger(__name__)
 
 SERVICE_RESET_LEARNING = "reset_learning"
 
+# Home Assistant 2026.3+ aliases voluptuous to probatio at runtime, but its type
+# hints name probatio: voluptuous schemas still work, only mypy disagrees.
 RESET_LEARNING_SCHEMA = vol.Schema({vol.Required("entity_id"): cv.entity_id})
 
 CALCULATE_ANTICIPATED_START_TIME_SCHEMA = vol.Schema(
@@ -52,13 +54,16 @@ def async_setup_services(hass: HomeAssistant) -> None:
         return await _async_handle_calculate_anticipated_start_time(hass, call)
 
     hass.services.async_register(
-        DOMAIN, SERVICE_RESET_LEARNING, _reset_learning, schema=RESET_LEARNING_SCHEMA
+        DOMAIN,
+        SERVICE_RESET_LEARNING,
+        _reset_learning,
+        schema=RESET_LEARNING_SCHEMA,  # type: ignore[arg-type, unused-ignore]
     )
     hass.services.async_register(
         DOMAIN,
         SERVICE_CALCULATE_ANTICIPATED_START_TIME,
         _calculate_anticipated_start_time,
-        schema=CALCULATE_ANTICIPATED_START_TIME_SCHEMA,
+        schema=CALCULATE_ANTICIPATED_START_TIME_SCHEMA,  # type: ignore[arg-type, unused-ignore]
         supports_response=SupportsResponse.ONLY,
     )
 

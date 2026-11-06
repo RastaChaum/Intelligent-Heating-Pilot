@@ -54,13 +54,20 @@ def _outdoor_source_selector(device_class: str | None = None) -> selector.Entity
 
     Weather entities expose temperature, humidity and cloud coverage as attributes,
     so they are valid outdoor sources alongside dedicated sensors.
+
+    The filters are dict literals rather than a named selector config TypedDict:
+    the filter item type was renamed across Home Assistant releases, and literals
+    type-check against whichever one the installed release declares.
     """
-    sensor_filter = selector.EntityFilterSelectorConfig(domain="sensor")
-    if device_class:
-        sensor_filter["device_class"] = device_class
-    weather_filter = selector.EntityFilterSelectorConfig(domain="weather")
     return selector.EntitySelector(
-        selector.EntitySelectorConfig(filter=[sensor_filter, weather_filter])
+        selector.EntitySelectorConfig(
+            filter=[
+                {"domain": "sensor", "device_class": device_class},
+                {"domain": "weather"},
+            ]
+            if device_class
+            else [{"domain": "sensor"}, {"domain": "weather"}]
+        )
     )
 
 
@@ -312,7 +319,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
         return self.async_show_form(
             step_id="user",
-            data_schema=data_schema,
+            data_schema=data_schema,  # type: ignore[arg-type, unused-ignore]  # HA types schemas as probatio
             errors=errors,
         )
 
@@ -617,6 +624,6 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="init",
-            data_schema=data_schema,
+            data_schema=data_schema,  # type: ignore[arg-type, unused-ignore]  # HA types schemas as probatio
             errors=errors,
         )
