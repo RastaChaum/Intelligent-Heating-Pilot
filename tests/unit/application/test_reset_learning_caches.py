@@ -153,7 +153,6 @@ def app_with_stale_caches() -> HeatingApplication:
     app._event_bridge = Mock()
     app._lhs_cache = STALE_GLOBAL_LHS
     app._contextual_lhs_cache = {6: STALE_CONTEXTUAL_LHS}
-    app._last_known_dead_time = STALE_DEAD_TIME
     return app
 
 
@@ -178,7 +177,6 @@ class TestHeatingApplicationResetLearning:
 
         assert app_with_stale_caches.get_learned_heating_slope() == DEFAULT_LEARNED_SLOPE
         assert app_with_stale_caches.get_contextual_learned_heating_slope(6) is None
-        assert app_with_stale_caches._last_known_dead_time is None
 
     @pytest.mark.asyncio
     async def test_dead_time_event_fired_and_recalculation_requested(
@@ -217,10 +215,10 @@ class TestHeatingApplicationResetLearning:
         app_with_stale_caches._event_bridge.request_forced_publish.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_update_in_flight_cannot_restore_old_dead_time(
+    async def test_update_in_flight_finishes_before_reset(
         self, app_with_stale_caches: HeatingApplication
     ) -> None:
-        """An update computed before the reset finishes first; the reset then wins."""
+        """An update computed before the reset finishes first and stores no dead time (#224)."""
         anticipation_started = asyncio.Event()
         release_anticipation = asyncio.Event()
 
@@ -245,9 +243,8 @@ class TestHeatingApplicationResetLearning:
         release_anticipation.set()
         await asyncio.gather(update, reset)
 
-        app._lhs_storage.set_learned_dead_time.assert_awaited_once_with(STALE_DEAD_TIME + 1)
+        app._lhs_storage.set_learned_dead_time.assert_not_awaited()
         app._orchestrator.reset_all_learning_data.assert_awaited_once()
-        assert app._last_known_dead_time is None
 
     @pytest.mark.asyncio
     async def test_noop_when_not_initialized(

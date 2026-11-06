@@ -7,7 +7,7 @@ and delegates to them without changing behavior.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 
@@ -193,3 +193,163 @@ class TestHeatingOrchestrator:
 
         mock_control_preheating.is_preheating_active.return_value = True
         assert orchestrator.is_preheating_active() is True
+
+
+class TestHeatingOrchestratorSchedulerFallback:
+    """Tests for the retry-on-blocked-scheduler loop added for issue #64."""
+
+    @pytest.fixture
+    def mock_calculate_anticipation(self) -> Mock:
+        uc = Mock(spec=CalculateAnticipationUseCase)
+        uc.calculate_anticipation_datas = AsyncMock()
+        return uc
+
+    @pytest.fixture
+    def mock_schedule_anticipation_action(self) -> Mock:
+        uc = Mock(spec=ScheduleAnticipationActionUseCase)
+        uc.handle_anticipation_scheduling = AsyncMock()
+        return uc
+
+    @pytest.fixture
+    def orchestrator(
+        self,
+        mock_calculate_anticipation: Mock,
+        mock_schedule_anticipation_action: Mock,
+    ) -> HeatingOrchestrator:
+        control_preheating = Mock(spec=ControlPreheatingUseCase)
+        update_cache = Mock(spec=UpdateCacheDataUseCase)
+        return HeatingOrchestrator(
+            calculate_anticipation=mock_calculate_anticipation,
+            control_preheating=control_preheating,
+            schedule_anticipation_action=mock_schedule_anticipation_action,
+            update_cache=update_cache,
+        )
+
+    def _data(self, scheduler_entity: str | None, anticipated_start) -> dict:
+        return {
+            "anticipated_start_time": anticipated_start,
+            "scheduler_entity": scheduler_entity,
+        }
+
+    @pytest.mark.asyncio
+    async def test_no_fallback_needed_on_first_success(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_calculate_anticipation: Mock,
+        mock_schedule_anticipation_action: Mock,
+    ) -> None:
+        """A confirmed-successful first attempt does not retry and reports not blocked."""
+        mock_calculate_anticipation.calculate_anticipation_datas.return_value = self._data(
+            "switch.non_vacation", datetime(2025, 2, 10, 4, 30, tzinfo=UTC)
+        )
+        mock_schedule_anticipation_action.handle_anticipation_scheduling.return_value = None
+
+        result = await orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
+
+        mock_calculate_anticipation.calculate_anticipation_datas.assert_called_once_with(
+            exclude_entity_ids=frozenset()
+        )
+        assert result["scheduler_blocked"] is False
+        assert result["blocked_schedulers"] == []
+
+    @pytest.mark.asyncio
+    async def test_retries_excluding_blocked_scheduler_until_success(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_calculate_anticipation: Mock,
+        mock_schedule_anticipation_action: Mock,
+    ) -> None:
+        """A blocked first candidate triggers a retry excluding it (the #64 scenario)."""
+        first_attempt = self._data("switch.non_vacation", datetime(2025, 2, 10, 4, 30, tzinfo=UTC))
+        second_attempt = self._data("switch.vacation", datetime(2025, 2, 10, 6, 0, tzinfo=UTC))
+        mock_calculate_anticipation.calculate_anticipation_datas = AsyncMock(
+            side_effect=[first_attempt, second_attempt]
+        )
+        mock_schedule_anticipation_action.handle_anticipation_scheduling = AsyncMock(
+            side_effect=["switch.non_vacation", None]
+        )
+
+        result = await orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
+
+        assert mock_calculate_anticipation.calculate_anticipation_datas.call_args_list == [
+            call(exclude_entity_ids=frozenset()),
+            call(exclude_entity_ids=frozenset({"switch.non_vacation"})),
+        ]
+        assert result is second_attempt
+        assert result["scheduler_blocked"] is False
+        assert result["blocked_schedulers"] == ["switch.non_vacation"]
+
+    @pytest.mark.asyncio
+    async def test_exhausting_all_candidates_reports_blocked(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_calculate_anticipation: Mock,
+        mock_schedule_anticipation_action: Mock,
+    ) -> None:
+        """When every candidate is confirmed blocked, the cycle stops and reports it."""
+        first_attempt = self._data("switch.a", datetime(2025, 2, 10, 4, 30, tzinfo=UTC))
+        second_attempt = self._data("switch.b", datetime(2025, 2, 10, 5, 0, tzinfo=UTC))
+        exhausted = self._data(None, None)  # no candidate left -> no anticipated_start_time
+        mock_calculate_anticipation.calculate_anticipation_datas = AsyncMock(
+            side_effect=[first_attempt, second_attempt, exhausted]
+        )
+        mock_schedule_anticipation_action.handle_anticipation_scheduling = AsyncMock(
+            side_effect=["switch.a", "switch.b", None]
+        )
+
+        result = await orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
+
+        assert result["scheduler_blocked"] is True
+        assert result["blocked_schedulers"] == ["switch.a", "switch.b"]
+
+    @pytest.mark.asyncio
+    async def test_excluded_set_not_carried_over_between_separate_calls(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_calculate_anticipation: Mock,
+        mock_schedule_anticipation_action: Mock,
+    ) -> None:
+        """FR-004a: exclusion is scoped to one cycle; the next call starts fresh."""
+        mock_calculate_anticipation.calculate_anticipation_datas = AsyncMock(
+            side_effect=[
+                self._data("switch.a", datetime(2025, 2, 10, 4, 30, tzinfo=UTC)),
+                self._data(None, None),
+            ]
+        )
+        mock_schedule_anticipation_action.handle_anticipation_scheduling = AsyncMock(
+            side_effect=["switch.a", None]
+        )
+        await orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
+
+        # Second, independent call: reset mocks to observe only this call's exclude set
+        mock_calculate_anticipation.calculate_anticipation_datas = AsyncMock(
+            return_value=self._data("switch.a", datetime(2025, 2, 10, 4, 30, tzinfo=UTC))
+        )
+        mock_schedule_anticipation_action.handle_anticipation_scheduling = AsyncMock(
+            return_value=None
+        )
+
+        await orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
+
+        mock_calculate_anticipation.calculate_anticipation_datas.assert_called_once_with(
+            exclude_entity_ids=frozenset()
+        )
+
+    @pytest.mark.asyncio
+    async def test_retry_after_blocked_scheduler_seeds_exclusion(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_calculate_anticipation: Mock,
+        mock_schedule_anticipation_action: Mock,
+    ) -> None:
+        """The timer-fired re-entry point seeds the exclusion set with the blocked id."""
+        mock_calculate_anticipation.calculate_anticipation_datas.return_value = self._data(
+            "switch.vacation", datetime(2025, 2, 10, 6, 0, tzinfo=UTC)
+        )
+        mock_schedule_anticipation_action.handle_anticipation_scheduling.return_value = None
+
+        await orchestrator.retry_anticipation_after_blocked_scheduler("switch.non_vacation")
+
+        mock_calculate_anticipation.calculate_anticipation_datas.assert_called_once_with(
+            exclude_entity_ids=frozenset({"switch.non_vacation"})
+        )

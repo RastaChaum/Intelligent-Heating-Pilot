@@ -7,7 +7,7 @@ anticipation calculations, including revert logic when conditions change.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from homeassistant.util import dt as dt_util
@@ -39,6 +39,7 @@ class ScheduleAnticipationActionUseCase:
         timer_scheduler: ITimerScheduler,
         control_preheating_use_case,  # ControlPreheatingUseCase (avoid circular import)
         anticipation_recalc_tolerance_minutes: int = DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+        on_scheduler_blocked: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize the use case.
 
@@ -49,12 +50,20 @@ class ScheduleAnticipationActionUseCase:
             control_preheating_use_case: Use case for managing preheating state
             anticipation_recalc_tolerance_minutes: Min absolute delta in anticipated
                 start time required to cancel active preheating and reschedule
+            on_scheduler_blocked: Called with the scheduler entity id when a
+                timer-fired trigger is confirmed blocked. The immediate-trigger
+                path (inside an awaited call) instead returns the blocked id
+                directly to its caller; the timer-fired path fires later, with
+                no caller left to receive a return value, so it uses this
+                callback instead. Optional: when omitted, a timer-fired block
+                is still logged, just not retried.
         """
         _LOGGER.debug("Initializing ScheduleAnticipationActionUseCase")
         self._scheduler_reader = scheduler_reader
         self._scheduler_commander = scheduler_commander
         self._timer_scheduler = timer_scheduler
         self._control_preheating = control_preheating_use_case
+        self._on_scheduler_blocked = on_scheduler_blocked
 
         # Scheduling-specific state (not preheating state - delegated to ControlPreheatingUseCase)
         self._last_scheduled_time: datetime | None = None
@@ -62,6 +71,19 @@ class ScheduleAnticipationActionUseCase:
         self._anticipation_timer_cancel: Callable[[], None] | None = None
         self._preheating_target_temp: float | None = None  # Temp only (time/active delegated)
         self._anticipation_recalc_tolerance_seconds = anticipation_recalc_tolerance_minutes * 60
+
+    def set_on_scheduler_blocked(self, callback: Callable[[str], Awaitable[None]] | None) -> None:
+        """Set the callback invoked when a timer-fired trigger is confirmed blocked.
+
+        Wired by the composition root *after* the orchestrator is constructed,
+        breaking the circular dependency between this use case (built first)
+        and the orchestrator, which owns the retry loop this callback re-enters.
+
+        Args:
+            callback: Async callback receiving the blocked scheduler entity id,
+                or None to clear it.
+        """
+        self._on_scheduler_blocked = callback
 
     def set_preheating_temp(self, target_temp: float | None) -> None:
         """Update preheating target temperature.
@@ -78,7 +100,7 @@ class ScheduleAnticipationActionUseCase:
         self,
         anticipation_data: dict,
         ihp_enabled: bool,
-    ) -> None:
+    ) -> str | None:
         """Handle the complete scheduling workflow based on anticipation data and IHP status.
 
         This method contains all the business logic for deciding when to schedule/cancel
@@ -87,6 +109,11 @@ class ScheduleAnticipationActionUseCase:
         Args:
             anticipation_data: Calculated anticipation data
             ihp_enabled: Whether IHP is enabled
+
+        Returns:
+            The scheduler entity id if an immediate trigger was confirmed blocked
+            this call (conditions unmet), so the caller can retry excluding it;
+            None otherwise (nothing attempted, or the attempt succeeded).
         """
         _LOGGER.debug(
             "Entering handle_anticipation_scheduling(ihp_enabled=%s, has_data=%s)",
@@ -104,7 +131,7 @@ class ScheduleAnticipationActionUseCase:
                 self._control_preheating.get_active_scheduler_entity()
                 or anticipation_data.get("scheduler_entity")
             )
-            return
+            return None
 
         # Decision 2: IHP disabled - cancel but don't schedule
         if not ihp_enabled:
@@ -114,23 +141,23 @@ class ScheduleAnticipationActionUseCase:
                 or anticipation_data.get("scheduler_entity")
             )
             await self.cancel_action()
-            return
+            return None
 
         await self._cancel_preheating_for_other_slot(anticipation_data["next_schedule_time"])
 
         # Decision 3: No heating time needed (anticipation_minutes == 0)
         if anticipation_data.get("anticipation_minutes") == 0:
             await self._handle_no_heating_needed(anticipation_data)
-            return
+            return None
 
         # Decision 4: No scheduler entity - skip scheduling
         scheduler_entity = anticipation_data.get("scheduler_entity")
         if not scheduler_entity:
             _LOGGER.debug("No scheduler entity - skipping scheduling")
-            return
+            return None
 
         # Decision 5: Valid data + IHP enabled + scheduler available - schedule
-        await self.schedule_action(
+        return await self.schedule_action(
             anticipated_start=anticipation_data["anticipated_start_time"],
             target_time=anticipation_data["next_schedule_time"],
             target_temp=anticipation_data["next_target_temperature"],
@@ -144,6 +171,17 @@ class ScheduleAnticipationActionUseCase:
         The slot was removed or moved, so the scheduler will never apply it and
         _complete_elapsed_preheating() would leave its setpoint on the thermostat.
 
+        Does NOT revert when the active scheduler is still enabled: with the
+        earliest-scheduler-first retry added for #64, a fresh recalculation
+        always recomputes the "next timeslot" starting from the earliest
+        configured scheduler, even while a different scheduler is already
+        correctly, actively preheating after an earlier fallback. Reverting
+        here on every such tick - before even knowing whether this tick's
+        earliest candidate will itself be blocked again - caused a visible
+        comfort/eco flap each recalculation cycle. The active scheduler being
+        enabled is treated as "still legitimate, leave it running"; only a
+        genuinely disabled/removed active scheduler is reverted.
+
         Args:
             target_time: Target time of the next scheduled slot
         """
@@ -151,6 +189,16 @@ class ScheduleAnticipationActionUseCase:
             return
         preheating_target = self._control_preheating.get_preheating_target_time()
         if preheating_target == target_time:
+            return
+        active_scheduler = self._control_preheating.get_active_scheduler_entity()
+        if active_scheduler and await self._scheduler_reader.is_scheduler_enabled(active_scheduler):
+            _LOGGER.debug(
+                "Next slot differs (%s vs %s) but active scheduler %s is still "
+                "enabled - keeping it running instead of reverting",
+                preheating_target,
+                target_time.isoformat(),
+                active_scheduler,
+            )
             return
         _LOGGER.info(
             "Next slot changed from %s to %s - reverting active preheating",
@@ -187,7 +235,7 @@ class ScheduleAnticipationActionUseCase:
         target_temp: float,
         scheduler_entity_id: str,
         lhs: float,
-    ) -> None:
+    ) -> str | None:
         """Schedule heating anticipation action.
 
         This method handles all the scheduling logic including:
@@ -202,6 +250,10 @@ class ScheduleAnticipationActionUseCase:
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity to trigger
             lhs: Learned heating slope
+
+        Returns:
+            ``scheduler_entity_id`` if an immediate trigger was confirmed blocked
+            this call, otherwise None.
         """
         _LOGGER.debug(
             "Entering ScheduleAnticipationActionUseCase.schedule_action("
@@ -221,7 +273,7 @@ class ScheduleAnticipationActionUseCase:
             active_scheduler = self._control_preheating.get_active_scheduler_entity()
             if active_scheduler == scheduler_entity_id:
                 await self._clear_state()
-            return
+            return None
 
         # Handle revert logic: cancel active preheating only when anticipated start is pushed later
         # by at least the configured tolerance, and only if the new start is still ahead:
@@ -255,6 +307,7 @@ class ScheduleAnticipationActionUseCase:
 
         # If anticipated start is in past but target is future, trigger now
         if anticipated_start <= now < target_time:
+            blocked_entity: str | None = None
             if not self._control_preheating.is_preheating_active():
                 _LOGGER.info(
                     "Anticipated start %s is past, triggering preheating immediately",
@@ -262,21 +315,26 @@ class ScheduleAnticipationActionUseCase:
                 )
                 # A timer left by an earlier calculation would otherwise fire during this preheat
                 await self._cancel_timer()
-                await self._control_preheating.start_preheating(
+                confirmed = await self._control_preheating.start_preheating(
                     target_time, target_temp, scheduler_entity_id
                 )
+                if not confirmed:
+                    _LOGGER.warning(
+                        "Scheduler %s confirmed blocked (conditions unmet)", scheduler_entity_id
+                    )
+                    blocked_entity = scheduler_entity_id
             else:
                 _LOGGER.debug(
                     "Already preheating, continuing through target time %s", target_time.isoformat()
                 )
             _LOGGER.debug("Exiting schedule_action() -> immediate trigger")
-            return
+            return blocked_entity
 
         # Both times in past - skip
         if anticipated_start <= now and target_time <= now:
             _LOGGER.debug("Both times are in past, skipping")
             await self._cancel_timer()
-            return
+            return None
 
         # Schedule timer for future start only if preheating is not already active.
         if not self._control_preheating.is_preheating_active():
@@ -287,6 +345,7 @@ class ScheduleAnticipationActionUseCase:
                 scheduler_entity_id,
             )
         _LOGGER.debug("Exiting schedule_action() -> timer scheduled")
+        return None
 
     async def _schedule_timer(
         self,
@@ -326,7 +385,16 @@ class ScheduleAnticipationActionUseCase:
             self._anticipation_timer_cancel = None
 
             # Trigger the action
-            await self._trigger_action(target_time, target_temp, scheduler_entity_id)
+            blocked_entity = await self._trigger_action(
+                target_time, target_temp, scheduler_entity_id
+            )
+
+            # The timer fires outside any caller's awaited call stack, so a
+            # confirmed block cannot be returned - it is handed to this
+            # callback instead, which the orchestrator wires to its own
+            # retry loop (see ScheduleAnticipationActionUseCase.set_on_scheduler_blocked).
+            if blocked_entity is not None and self._on_scheduler_blocked is not None:
+                await self._on_scheduler_blocked(blocked_entity)
 
         # Schedule the timer
         self._anticipation_timer_cancel = self._timer_scheduler.schedule_timer(
@@ -347,13 +415,17 @@ class ScheduleAnticipationActionUseCase:
         target_time: datetime,
         target_temp: float,
         scheduler_entity_id: str,
-    ) -> None:
+    ) -> str | None:
         """Trigger the preheating action via scheduler.
 
         Args:
             target_time: Target time
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity
+
+        Returns:
+            ``scheduler_entity_id`` if the action was confirmed blocked
+            (conditions unmet), otherwise None.
         """
         _LOGGER.debug(
             "Triggering anticipation action: target_time=%s, temp=%.1f°C",
@@ -365,15 +437,21 @@ class ScheduleAnticipationActionUseCase:
         if not await self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
             _LOGGER.warning("Scheduler %s is disabled, cannot trigger action", scheduler_entity_id)
             await self._clear_state()
-            return
+            return None
 
         # Delegate to ControlPreheatingUseCase
-        await self._control_preheating.start_preheating(
+        confirmed = await self._control_preheating.start_preheating(
             target_time, target_temp, scheduler_entity_id
         )
-        self._preheating_target_temp = target_temp
+        if not confirmed:
+            _LOGGER.warning(
+                "Scheduler %s confirmed blocked (conditions unmet)", scheduler_entity_id
+            )
+            return scheduler_entity_id
 
+        self._preheating_target_temp = target_temp
         _LOGGER.debug("Action triggered successfully")
+        return None
 
     async def _cancel_timer(self) -> None:
         """Cancel any active timer.

@@ -17,11 +17,24 @@ class ISchedulerReader(ABC):
     """
 
     @abstractmethod
-    async def get_next_timeslot(self) -> ScheduledTimeslot | None:
+    async def get_next_timeslot(
+        self, exclude_entity_ids: frozenset[str] = frozenset()
+    ) -> ScheduledTimeslot | None:
         """Retrieve the next scheduled heating timeslot.
 
+        Scans all configured scheduler entities except those listed in
+        ``exclude_entity_ids`` and returns the earliest upcoming timeslot
+        among the remaining ones.
+
+        Args:
+            exclude_entity_ids: Scheduler entity ids to skip for this call —
+                typically schedulers already confirmed blocked earlier in the
+                same recalculation cycle. Empty by default, which reproduces
+                today's behavior exactly.
+
         Returns:
-            The next schedule timeslot, or None if no timeslots are scheduled.
+            The next schedule timeslot among non-excluded schedulers, or
+            None if none qualify or no scheduler entities are configured.
         """
         pass
 

@@ -75,15 +75,19 @@ def suppress_full_lifecycle(suppress_platform_setup: None) -> None:  # type: ign
     Use this when testing configuration reading and injection,
     not when testing actual adapter creation.
     """
-    with patch(
-        "custom_components.intelligent_heating_pilot.HeatingApplication.async_load",
-        new=AsyncMock(),
-    ), patch(
-        "custom_components.intelligent_heating_pilot.HeatingApplication.setup_listeners",
-        new=Mock(),
-    ), patch(
-        "custom_components.intelligent_heating_pilot.HeatingApplication.async_update",
-        new=AsyncMock(),
+    with (
+        patch(
+            "custom_components.intelligent_heating_pilot.HeatingApplication.async_load",
+            new=AsyncMock(),
+        ),
+        patch(
+            "custom_components.intelligent_heating_pilot.HeatingApplication.setup_listeners",
+            new=Mock(),
+        ),
+        patch(
+            "custom_components.intelligent_heating_pilot.HeatingApplication.async_update",
+            new=AsyncMock(),
+        ),
     ):
         yield  # type: ignore
 

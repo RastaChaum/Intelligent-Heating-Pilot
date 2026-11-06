@@ -33,6 +33,7 @@ from .domain.services import (
     HeatingCycleService,
     PredictionService,
 )
+from .domain.services.contextual_hour import contextual_hour
 from .infrastructure.adapters import (
     HAClimateCommander,
     HAClimateDataReader,
@@ -42,6 +43,7 @@ from .infrastructure.adapters import (
     HALhsStorage,
     HASchedulerCommander,
     HASchedulerReader,
+    HASunReader,
     HATimerScheduler,
 )
 from .infrastructure.event_bridge import HAEventBridge
@@ -107,10 +109,9 @@ class HeatingApplication:
 
         # IHP enabled state
         self._ihp_enabled = device_config.ihp_enabled
-        self._last_known_dead_time: float | None = None
         # Serializes async_update and async_reset_learning: an update that
-        # computed its anticipation before a reset must not write the old
-        # dead time back after it.
+        # read the learned data before a reset must not put the old LHS back
+        # into the sensor caches after it.
         self._learning_lock = asyncio.Lock()
 
         # Infrastructure adapters
@@ -242,10 +243,12 @@ class HeatingApplication:
             auto_learning=self._auto_learning,
             default_dead_time_minutes=self._dead_time_minutes,
             lhs_storage=self._lhs_storage,
+            sun_reader=HASunReader(self.hass),
         )
 
         control_preheating = ControlPreheatingUseCase(
             scheduler_commander=self._scheduler_commander,
+            climate_data_reader=self._climate_data_reader,
         )
 
         schedule_anticipation_action = ScheduleAnticipationActionUseCase(
@@ -269,6 +272,15 @@ class HeatingApplication:
             control_preheating=control_preheating,
             schedule_anticipation_action=schedule_anticipation_action,
             update_cache=update_cache,
+        )
+        # Wire the timer-fired blocked-scheduler retry path (breaks the
+        # construction-order circular dependency: the orchestrator needs
+        # schedule_anticipation_action to exist first). Routed through
+        # _learning_lock so this re-entry cannot interleave with the periodic
+        # recalculation in _async_update_locked(), which mutates the same
+        # use-case state.
+        schedule_anticipation_action.set_on_scheduler_blocked(
+            self._retry_anticipation_after_blocked_scheduler_locked
         )
         _LOGGER.debug("Orchestrator created successfully")
 
@@ -493,6 +505,24 @@ class HeatingApplication:
         async with self._learning_lock:
             await self._async_update_locked()
 
+    async def _retry_anticipation_after_blocked_scheduler_locked(
+        self, blocked_entity_id: str
+    ) -> None:
+        """Re-enter the anticipation cycle after a timer-fired block, under the lock.
+
+        Wired as ScheduleAnticipationActionUseCase's ``on_scheduler_blocked``
+        callback. Holds ``_learning_lock`` so this re-entry cannot interleave
+        with ``_async_update_locked()``'s periodic recalculation, which
+        mutates the same use-case state (#64).
+
+        Args:
+            blocked_entity_id: Scheduler entity id confirmed blocked.
+        """
+        if not self._orchestrator:
+            return
+        async with self._learning_lock:
+            await self._orchestrator.retry_anticipation_after_blocked_scheduler(blocked_entity_id)
+
     async def _async_update_locked(self) -> None:
         """Run async_update while holding the learning lock."""
         if not self._orchestrator:
@@ -506,23 +536,19 @@ class HeatingApplication:
         # Cache for sensors
         self._last_anticipation_data = anticipation_data
 
-        # Persist and notify dead_time when freshly calculated and different from last known value
-        new_dead_time = anticipation_data.get("dead_time") if anticipation_data else None
-        if new_dead_time is not None and new_dead_time != self._last_known_dead_time:
-            self._last_known_dead_time = new_dead_time
-            if self._lhs_storage:
-                await self._lhs_storage.set_learned_dead_time(new_dead_time)
-            self._fire_dead_time_updated_event(new_dead_time)
+        # The anticipation's dead time is not stored as learned: until cycles are
+        # learned it is the configured one (#224). Only the cycle extraction stores it.
 
         # Refresh LHS caches
         if self._lhs_manager:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
 
-            # Reload contextual LHS cache for the scheduled hour only (optimization)
+            # Reload contextual LHS cache for the scheduled hour only (optimization).
+            # It is the slot's contextual hour, the one the anticipation and sensor read.
             if anticipation_data and anticipation_data.get("next_schedule_time") is not None:
                 next_schedule_time = anticipation_data.get("next_schedule_time")
                 if next_schedule_time:
-                    scheduled_hour = next_schedule_time.hour
+                    scheduled_hour = contextual_hour(next_schedule_time)
                     try:
                         contextual_lhs = await self._lhs_manager.get_learned_contextual_lhs(
                             scheduled_hour
@@ -559,6 +585,8 @@ class HeatingApplication:
                 "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
                 "humidity": anticipation_data.get("humidity"),
                 "cloud_coverage": anticipation_data.get("cloud_coverage"),
+                "scheduler_blocked": anticipation_data.get("scheduler_blocked", False),
+                "blocked_schedulers": anticipation_data.get("blocked_schedulers", []),
             }
             self.hass.bus.async_fire(
                 f"{DOMAIN}_anticipation_calculated",
@@ -610,7 +638,6 @@ class HeatingApplication:
         """Reload sensor-facing caches from the managers and force a sensor refresh."""
         self._lhs_cache = DEFAULT_LEARNED_SLOPE
         self._contextual_lhs_cache = {}
-        self._last_known_dead_time = None
         await self.refresh_caches()
 
         try:

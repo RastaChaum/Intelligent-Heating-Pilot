@@ -156,6 +156,82 @@ async def test_get_next_timeslot_multiple_entities(mock_hass: Mock) -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_next_timeslot_excludes_given_entities(mock_hass: Mock) -> None:
+    """A scheduler listed in exclude_entity_ids is skipped even though it is earliest (#64)."""
+    reader = HASchedulerReader(mock_hass, ["switch.schedule_1", "switch.schedule_2"])
+
+    mock_state_1 = Mock()
+    mock_state_1.state = "on"
+    mock_state_1.attributes = {
+        "next_trigger": "2024-01-15T08:00:00+01:00",
+        "next_slot": 0,
+        "actions": [{"service": "climate.set_temperature", "data": {"temperature": 21.0}}],
+    }
+
+    mock_state_2 = Mock()
+    mock_state_2.state = "on"
+    mock_state_2.attributes = {
+        "next_trigger": "2024-01-15T07:00:00+01:00",  # Earlier time, but excluded
+        "next_slot": 0,
+        "actions": [{"service": "climate.set_temperature", "data": {"temperature": 22.0}}],
+    }
+
+    def mock_get_state(entity_id: str) -> Mock | None:
+        if entity_id == "switch.schedule_1":
+            return mock_state_1
+        elif entity_id == "switch.schedule_2":
+            return mock_state_2
+        return None
+
+    mock_hass.states.get.side_effect = mock_get_state
+
+    result = await reader.get_next_timeslot(exclude_entity_ids=frozenset({"switch.schedule_2"}))
+
+    assert result is not None
+    assert result.scheduler_entity == "switch.schedule_1"
+    assert result.target_temp == 21.0
+
+
+@pytest.mark.asyncio
+async def test_get_next_timeslot_excluding_all_returns_none(mock_hass: Mock) -> None:
+    """Excluding every configured scheduler yields no candidate, not an error."""
+    reader = HASchedulerReader(mock_hass, ["switch.schedule_1"])
+    mock_state = _hacs_state(
+        "switch.schedule_1",
+        {
+            "next_trigger": "2024-01-15T08:00:00+01:00",
+            "next_slot": 0,
+            "actions": [{"service": "climate.set_temperature", "data": {"temperature": 21.0}}],
+        },
+    )
+    mock_hass.states.get.return_value = mock_state
+
+    result = await reader.get_next_timeslot(exclude_entity_ids=frozenset({"switch.schedule_1"}))
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_next_timeslot_default_exclude_matches_today_behavior(mock_hass: Mock) -> None:
+    """Omitting exclude_entity_ids behaves exactly as before this feature (regression guard)."""
+    reader = HASchedulerReader(mock_hass, ["switch.schedule_1"])
+    mock_state = _hacs_state(
+        "switch.schedule_1",
+        {
+            "next_trigger": "2024-01-15T08:00:00+01:00",
+            "next_slot": 0,
+            "actions": [{"service": "climate.set_temperature", "data": {"temperature": 21.0}}],
+        },
+    )
+    mock_hass.states.get.return_value = mock_state
+
+    result = await reader.get_next_timeslot()
+
+    assert result is not None
+    assert result.scheduler_entity == "switch.schedule_1"
+
+
+@pytest.mark.asyncio
 async def test_get_next_timeslot_multiple_entities_one_disabled(mock_hass: Mock) -> None:
     """Test that only enabled schedulers are considered when multiple exist."""
     # Setup multiple schedulers

@@ -23,6 +23,9 @@ class HistoricalDataKey(Enum):
     HEATING_ENERGY_KWH = "heating_energy_kwh"  # Cumulative energy meter in kWh
     HEATING_RUNTIME_SECONDS = "heating_runtime_seconds"  # Cumulative runtime in seconds
     TARIFF_PRICE_EUR_PER_KWH = "tariff_price_eur_per_kwh"  # Tariff price time series
+    # Slots of the schedule that came due: one measurement per slot, timestamped when the
+    # slot came due, valued with its target temperature (°C)
+    SCHEDULED_SLOT = "scheduled_slot"
 
     # Ajoutez d'autres clés au besoin
 

@@ -670,3 +670,124 @@ async def test_cycle_stored_before_outdoor_recording_reads_as_unknown(
     del stored["avg_outdoor_temp"]
 
     assert cache._deserialize_heating_cycle(stored).avg_outdoor_temp is None
+
+
+@pytest.mark.asyncio
+async def test_dead_time_end_temperature_survives_serialization(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """The temperature at the end of the dead time is stored and read back (#245)."""
+    cycle = replace(
+        create_test_heating_cycle(device_id, base_time),
+        dead_time_cycle_minutes=12.0,
+        dead_time_end_temp=18.2,
+    )
+
+    restored = cache._deserialize_heating_cycle(cache._serialize_heating_cycle(cycle))
+
+    assert restored.dead_time_end_temp == 18.2
+
+
+@pytest.mark.asyncio
+async def test_cycle_stored_before_dead_time_end_recording_reads_as_unknown(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """Cycles persisted by older versions have no temperature at the dead time end."""
+    stored = cache._serialize_heating_cycle(create_test_heating_cycle(device_id, base_time))
+    del stored["dead_time_end_temp"]
+
+    assert cache._deserialize_heating_cycle(stored).dead_time_end_temp is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("disturbed", "heating_phase_observed"), [(True, True), (False, False)])
+async def test_learning_status_survives_serialization(
+    cache: HAHeatingCycleStorage,
+    device_id: str,
+    base_time: datetime,
+    disturbed: bool,
+    heating_phase_observed: bool,
+) -> None:
+    """Whether a cycle was disturbed and warmed the room is stored and read back (#255)."""
+    cycle = replace(
+        create_test_heating_cycle(device_id, base_time),
+        disturbed=disturbed,
+        heating_phase_observed=heating_phase_observed,
+    )
+
+    restored = cache._deserialize_heating_cycle(cache._serialize_heating_cycle(cycle))
+
+    assert restored.disturbed is disturbed
+    assert restored.heating_phase_observed is heating_phase_observed
+
+
+@pytest.mark.asyncio
+async def test_cycle_stored_before_learning_status_reads_as_unknown(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """Cycles persisted by older versions load with an unknown learning status (#255)."""
+    stored = cache._serialize_heating_cycle(create_test_heating_cycle(device_id, base_time))
+    stored.pop("disturbed", None)
+    stored.pop("heating_phase_observed", None)
+
+    restored = cache._deserialize_heating_cycle(stored)
+
+    assert restored.disturbed is None
+    assert restored.heating_phase_observed is None
+
+
+@pytest.mark.asyncio
+async def test_scheduled_slot_survives_serialization(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """The slot a cycle heated for is stored and read back (#254)."""
+    slot = datetime(2025, 1, 15, 8, 45, tzinfo=UTC)
+    cycle = replace(create_test_heating_cycle(device_id, base_time), scheduled_slot_time=slot)
+
+    restored = cache._deserialize_heating_cycle(cache._serialize_heating_cycle(cycle))
+
+    assert restored.scheduled_slot_time == slot
+
+
+@pytest.mark.asyncio
+async def test_cycle_stored_before_slot_recording_has_no_slot(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """Cycles persisted by older versions keep the nearest-hour rule (#254)."""
+    stored = cache._serialize_heating_cycle(create_test_heating_cycle(device_id, base_time))
+    stored.pop("scheduled_slot_time", None)
+
+    assert cache._deserialize_heating_cycle(stored).scheduled_slot_time is None
+
+
+@pytest.mark.asyncio
+async def test_plateau_start_survives_serialization(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """Where the plateau of a cycle starts is stored and read back (#267)."""
+    plateau = datetime(2025, 1, 15, 6, 10, tzinfo=UTC)
+    cycle = replace(
+        create_test_heating_cycle(device_id, base_time),
+        plateau_start_time=plateau,
+        plateau_start_temp=19.6,
+    )
+
+    restored = cache._deserialize_heating_cycle(cache._serialize_heating_cycle(cycle))
+
+    assert restored.plateau_start_time == plateau
+    assert restored.plateau_start_temp == 19.6
+
+
+@pytest.mark.asyncio
+async def test_cycle_stored_before_plateau_recording_has_no_plateau(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """Cycles persisted by older versions keep their full slope window (#267)."""
+    stored = cache._serialize_heating_cycle(create_test_heating_cycle(device_id, base_time))
+    stored.pop("plateau_start_time", None)
+    stored.pop("plateau_start_temp", None)
+
+    restored = cache._deserialize_heating_cycle(stored)
+
+    assert restored.plateau_start_time is None
+    assert restored.plateau_start_temp is None

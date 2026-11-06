@@ -135,29 +135,97 @@ class HeatingOrchestrator:
         This orchestrator method:
         1. Calculates anticipation data
         2. Delegates scheduling decisions to ScheduleAnticipationActionUseCase
-        3. Always returns anticipation data structure
+        3. Retries with the next candidate scheduler if the first one is confirmed
+           blocked (its own conditions unmet), instead of waiting for its slot to
+           naturally elapse (#64)
+        4. Always returns anticipation data structure
 
         Args:
             ihp_enabled: Whether IHP preheating is enabled
 
         Returns:
-            Dict with anticipation data for sensors (always returns structure)
+            Dict with anticipation data for sensors (always returns structure).
+            Includes ``scheduler_blocked`` (bool) and ``blocked_schedulers``
+            (list[str]) reporting whether every configured scheduler was
+            confirmed blocked this cycle.
+        """
+        return await self._run_anticipation_cycle(ihp_enabled, frozenset())
+
+    async def retry_anticipation_after_blocked_scheduler(self, blocked_entity_id: str) -> None:
+        """Re-enter the anticipation cycle, excluding a scheduler just confirmed blocked.
+
+        Called by ScheduleAnticipationActionUseCase's ``on_scheduler_blocked``
+        callback when a *timer-fired* trigger is confirmed blocked — that path
+        fires outside any caller's awaited call stack, so it cannot propagate
+        the blocked id through a return value the way the immediate-trigger
+        path does. Not part of the integration-facing API.
+
+        Args:
+            blocked_entity_id: Scheduler entity id confirmed blocked.
         """
         _LOGGER.debug(
-            "Entering HeatingOrchestrator.calculate_and_schedule_anticipation(ihp_enabled=%s)",
+            "Entering HeatingOrchestrator.retry_anticipation_after_blocked_scheduler(%s)",
+            blocked_entity_id,
+        )
+        await self._run_anticipation_cycle(True, frozenset({blocked_entity_id}))
+
+    async def _run_anticipation_cycle(
+        self, ihp_enabled: bool, seed_excluded: frozenset[str]
+    ) -> dict[str, Any]:
+        """Run one calculate-then-schedule cycle, retrying past confirmed-blocked schedulers.
+
+        Args:
+            ihp_enabled: Whether IHP preheating is enabled
+            seed_excluded: Scheduler entity ids to exclude from the first attempt
+                of this cycle (empty for a normal cycle; seeded with one entity
+                when re-entering after a timer-fired block)
+
+        Returns:
+            The final anticipation data, annotated with ``scheduler_blocked``
+            and ``blocked_schedulers``.
+        """
+        _LOGGER.debug(
+            "Entering HeatingOrchestrator._run_anticipation_cycle(ihp_enabled=%s, seed_excluded=%s)",
             ihp_enabled,
+            seed_excluded,
         )
 
-        # Step 1: Always calculate anticipation data regardless of IHP state.
-        # The switch only controls whether preheating is scheduled, not whether
-        # calculations happen. This ensures sensors and LHS caches stay up-to-date.
-        anticipation_data = await self._calculate_anticipation.calculate_anticipation_datas()
+        excluded = seed_excluded
+        blocked: list[str] = list(seed_excluded)
 
-        # Step 2: Delegate scheduling decisions to use case (respects ihp_enabled)
-        await self._schedule_anticipation_action.handle_anticipation_scheduling(
-            anticipation_data,
-            ihp_enabled,
+        while True:
+            # Step 1: Always calculate anticipation data regardless of IHP state.
+            # The switch only controls whether preheating is scheduled, not whether
+            # calculations happen. This ensures sensors and LHS caches stay up-to-date.
+            anticipation_data = await self._calculate_anticipation.calculate_anticipation_datas(
+                exclude_entity_ids=excluded
+            )
+
+            # Step 2: Delegate scheduling decisions to use case (respects ihp_enabled)
+            blocked_entity = (
+                await self._schedule_anticipation_action.handle_anticipation_scheduling(
+                    anticipation_data,
+                    ihp_enabled,
+                )
+            )
+
+            if blocked_entity is None:
+                break
+            _LOGGER.info(
+                "Scheduler %s confirmed blocked, retrying with the next candidate",
+                blocked_entity,
+            )
+            blocked.append(blocked_entity)
+            excluded = excluded | {blocked_entity}
+            if anticipation_data.get("scheduler_entity") is None:
+                break  # no candidate was even attempted this iteration; nothing to retry
+
+        anticipation_data["scheduler_blocked"] = bool(blocked) and (
+            anticipation_data.get("anticipated_start_time") is None
         )
+        anticipation_data["blocked_schedulers"] = blocked
+        if anticipation_data["scheduler_blocked"]:
+            _LOGGER.warning("All configured schedulers are blocked this cycle: %s", blocked)
 
-        _LOGGER.debug("Exiting HeatingOrchestrator.calculate_and_schedule_anticipation() -> data")
+        _LOGGER.debug("Exiting HeatingOrchestrator._run_anticipation_cycle() -> data")
         return anticipation_data

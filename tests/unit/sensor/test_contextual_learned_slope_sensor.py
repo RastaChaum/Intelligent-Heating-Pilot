@@ -12,6 +12,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from custom_components.intelligent_heating_pilot.const import ATTR_NEXT_SCHEDULE_TIME
 from custom_components.intelligent_heating_pilot.domain.constants import (
     DEFAULT_LEARNED_SLOPE,
 )
@@ -89,3 +90,50 @@ class TestContextualLearnedSlopeSensorNativeValue:
 
         assert contextual_sensor.native_value is None
         mock_coordinator.get_contextual_learned_heating_slope.assert_not_called()
+
+
+SLOT_AFTER_HALF_HOUR = datetime(2026, 1, 15, 6, 45)
+NEAREST_HOUR_OF_SLOT = 7
+
+
+class TestContextualLearnedSlopeSensorNearestHour:
+    """The sensor shows the contextual hour of the next slot, the hour nearest to it (#214)."""
+
+    def test_slot_after_half_hour_shows_slope_of_next_hour(
+        self,
+        contextual_sensor: IntelligentHeatingPilotContextualLearnedSlopeSensor,
+        mock_coordinator: Mock,
+    ) -> None:
+        """A 06:45 slot uses the slope of 07:00, so the sensor shows it."""
+        contextual_sensor._next_schedule_time = SLOT_AFTER_HALF_HOUR
+        mock_coordinator.get_contextual_learned_heating_slope.return_value = LEARNED_CONTEXTUAL_LHS
+
+        assert contextual_sensor.native_value == ROUNDED_CONTEXTUAL_LHS
+        mock_coordinator.get_contextual_learned_heating_slope.assert_called_once_with(
+            NEAREST_HOUR_OF_SLOT
+        )
+
+    def test_scheduled_hour_attribute_is_the_contextual_hour(
+        self,
+        contextual_sensor: IntelligentHeatingPilotContextualLearnedSlopeSensor,
+    ) -> None:
+        """The attribute names the hour whose slope is shown."""
+        contextual_sensor._next_schedule_time = SLOT_AFTER_HALF_HOUR
+
+        assert contextual_sensor.extra_state_attributes["scheduled_hour"] == "07:00"
+
+    def test_state_is_written_when_the_contextual_hour_changes(
+        self,
+        contextual_sensor: IntelligentHeatingPilotContextualLearnedSlopeSensor,
+        mock_coordinator: Mock,
+    ) -> None:
+        """06:20 and 06:40 share the clock hour but not the contextual hour."""
+        contextual_sensor._next_schedule_time = datetime(2026, 1, 15, 6, 20)
+        contextual_sensor._last_contextual_lhs_displayed = None
+        contextual_sensor.async_write_ha_state = Mock()  # type: ignore[method-assign]
+
+        contextual_sensor._handle_anticipation_result(
+            {ATTR_NEXT_SCHEDULE_TIME: datetime(2026, 1, 15, 6, 40)}
+        )
+
+        contextual_sensor.async_write_ha_state.assert_called_once()

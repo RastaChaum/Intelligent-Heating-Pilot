@@ -18,16 +18,16 @@ jobs:
           BRANCH: ${{ github.event.pull_request.head.ref }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          # Ne pas supprimer integration ou main
+          # Never delete integration or main
           if [[ "$BRANCH" == "integration" ]] || [[ "$BRANCH" == "main" ]]; then
-            echo "⏭️  Branche protégée, pas de suppression"
+            echo "⏭️  Protected branch, not deleted"
             exit 0
           fi
 
-          # Supprimer la branche
+          # Delete the branch
           gh api \
             --method DELETE \
             -H "Accept: application/vnd.github+json" \
             "/repos/${REPOSITORY}/git/refs/heads/${BRANCH}" \
-          && echo "✅ Branche $BRANCH supprimée" \
-          || echo "⚠️  Impossible de supprimer la branche $BRANCH"
+          && echo "✅ Branch $BRANCH deleted" \
+          || echo "⚠️  Could not delete branch $BRANCH"

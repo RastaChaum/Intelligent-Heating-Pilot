@@ -10,7 +10,7 @@ Instead of manually deciding when to turn on heating, IHP:
 
 - ✅ **Learns** how fast your room heats
 - ✅ **Calculates** the optimal start time
-- ✅ **Triggers** heating automatically
+- ✅ **Triggers** heating automatically, through HACS Scheduler
 - ✅ **Improves** predictions with each cycle
 
 ### What IHP Doesn't Do (Yet)
@@ -68,30 +68,30 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 
 **Steps:**
 1. Find your IHP device
-2. Look for "Learned Heating Slope" sensor
-3. Value should be between 0.5-5.0 (°C per hour)
-4. If 0 or 99.9, IHP is still learning (wait 1-2 more cycles)
+2. Look for the "Global Learned Heating Slope" sensor (°C per hour)
+3. Exactly 2.0 usually means no cycle is learned yet: that is the default value
+4. The "Contextual Learned Heating Slope" sensor shows the slope learned for the next slot's hour, or *unknown* if that hour has no learned cycle yet
 
 ### Task: Understand the Dead Time sensor
 
 **Steps:**
 1. Find your IHP device
-2. Look for "Dead Time" sensor (shows value in seconds)
+2. Look for "Dead Time" sensor (shows value in minutes)
 3. This represents system lag before temperature starts changing
 4. Higher values = slower response to heating commands
 
 **What is Dead Time?**
-- Time between when heating turns on and when temperature actually starts rising
+- Time between when heating turns on and when temperature actually starts rising, measured as the time until the room is 0.2°C above its starting temperature
 - IHP automatically learns this from your heating cycles
 - Improves prediction accuracy for your system
-- Value typically ranges from 30-300 seconds depending on system type
+- Until a dead time is learned (new device, after `reset_learning`, or with **Automatic Learning** disabled), the sensor shows the **Initial Dead Time** setting
 
 ### Task: See next heating plan
 
 **Steps:**
 1. Find your IHP device
-2. Look for "Anticipation Time" sensor
-3. Shows when IHP will trigger heating next
+2. Look for the "Anticipated Start Time" sensor
+3. Shows when IHP will trigger heating next; "Next Schedule Time" shows the slot it is aimed at
 
 ### Task: Enable or disable IHP preheating
 
@@ -113,10 +113,9 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 **Steps:**
 1. Settings → Devices & Services
 2. Find your Intelligent Heating Pilot
-3. Click ⋮ (three dots) menu
-4. Select "Reconfigure"
-5. Update entities, click Submit
-6. Integration reloads automatically
+3. Click "Configure" on the device
+4. Update entities or settings, click Submit
+5. The device reloads automatically
 
 ## Related Documentation
 
@@ -130,8 +129,9 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 
 ### ✅ Do This
 
-- ✅ Let IHP run for 5-10 heating cycles before judging accuracy
-- ✅ Monitor the "Learned Heating Slope" sensor (should stabilize)
+- ✅ Use a [supported scheduler](CONFIGURATION.md#supported-schedulers): HACS Scheduler, with slots that set a temperature or a preset
+- ✅ Let IHP run a few days before judging accuracy
+- ✅ Monitor the "Global Learned Heating Slope" sensor (should stabilize)
 - ✅ Check logs if behavior seems strange
 
 ### ❌ Don't Do This
@@ -171,11 +171,11 @@ Check Home Assistant logs if:
 
 ### Q: How many heating cycles before IHP is accurate?
 
-**A:** Typically 5-10 cycles. IHP uses conservative defaults initially and becomes more confident as it learns. After 20+ cycles, predictions are usually very accurate.
+**A:** Often from the start: right after setup, IHP reads your past heating cycles from the Home Assistant recorder history. Without usable history, it uses a default slope of 2.0 °C/h, which is not cautious: a slow room starts too late until its first cycles are learned. Each slot uses the slope learned for its own hour, so a slot gets accurate once a few preheats aimed at it have been learned.
 
 ### Q: What is the cycle cache and how does it help?
 
-**A:** **New in v0.4.0+**: IHP caches detected heating cycles locally instead of repeatedly scanning Home Assistant's database. This means:
+**A:** IHP caches detected heating cycles locally instead of repeatedly scanning Home Assistant's database. This means:
 - ⚡ **Much faster** LHS calculations (~95% fewer database queries)
 - 📈 **Longer history** retained (30 days by default vs. typical 7-10 day HA retention)
 - 🎯 **Better accuracy** from more historical data
@@ -184,7 +184,7 @@ The cache automatically refreshes every 24 hours to include new cycles and remov
 
 ### Q: How do I tune cycle detection for my heating system?
 
-**A:** **New in v0.4.3+**: You can now configure how IHP detects heating cycles in the integration settings:
+**A:** You can configure how IHP detects heating cycles in the device settings:
 
 **Common scenarios:**
 
@@ -197,11 +197,20 @@ See [Configuration Guide](CONFIGURATION.md#heating-cycle-detection-parameters) f
 
 ### Q: Can I use IHP with multiple thermostats?
 
-**A:** Yes! Create multiple IHP instances (one per thermostat). Each learns independently.
+**A:** Yes! Create one IHP device per thermostat, each with its own name. Each learns independently. Do not create two IHP devices for the same thermostat: both would trigger its schedulers.
 
-### Q: Can I use IHP without a scheduler? (New in v0.5.0+)
+### Q: Which schedulers does IHP support?
 
-**A:** Yes! The scheduler is now **optional**. When configured without a scheduler:
+**A:** Only two kinds, see [Supported Schedulers](CONFIGURATION.md#supported-schedulers):
+
+- **HACS Scheduler** (`switch.schedule_*`): IHP computes the anticipated start **and** starts the heating. Each slot's action must be `climate.set_temperature` or `climate.set_preset_mode`, and the schedule must control this VTherm.
+- **Native `schedule.*` helpers**: IHP only computes the anticipated start, with the VTherm comfort preset as target. It does not start the heating.
+
+Other schedulers (automations, calendars, other scheduler integrations) are not read. Use the `calculate_anticipated_start_time` service with them.
+
+### Q: Can I use IHP without a scheduler?
+
+**A:** Yes, the scheduler is **optional**. When configured without a scheduler:
 
 - ✅ IHP continues to **learn** your heating slope
 - ✅ All learning sensors work normally
@@ -214,12 +223,12 @@ See [Configuration Guide - Using IHP Without a Scheduler](CONFIGURATION.md#using
 
 ### Q: How do I use the calculation service?
 
-**A:** **New in v0.5.0+**: Call `intelligent_heating_pilot.calculate_anticipated_start_time` in automations:
+**A:** Call `intelligent_heating_pilot.calculate_anticipated_start_time` in automations:
 
 ```yaml
-service: intelligent_heating_pilot.calculate_anticipated_start_time
+action: intelligent_heating_pilot.calculate_anticipated_start_time
 data:
-  entity_id: sensor.intelligent_heating_pilot_living_room_anticipated_start_time
+  entity_id: sensor.living_room_anticipated_start_time
   target_time: "{{ states('sensor.phone_next_alarm') }}"
   target_temp: 21.0
 response_variable: heating_calc
@@ -241,7 +250,7 @@ The service returns when to start heating, estimated duration, learned slope, an
 
 1. **Use the IHP Preheating switch** - Turn OFF to disable automatic preheating while keeping learning active
 2. **Manual thermostat control** - You can manually turn on/off your thermostat anytime. IHP won't interfere.
-3. **Disable the scheduler** - IHP automatically stops when scheduler is disabled
+3. **Switch off the HACS Scheduler** - IHP stops anticipating its slots
 
 The switch is useful when you want temporary manual control but want IHP to continue learning in the background.
 
@@ -251,9 +260,9 @@ The switch is useful when you want temporary manual control but want IHP to cont
 
 ### Q: What happens when I go on vacation? Does IHP stop automatically?
 
-**A:** Yes! IHP automatically stops when you disable your scheduler or when scheduler conditions aren't met. Here's how:
+**A:** With HACS Scheduler, yes: IHP stops when you switch the scheduler off or when its conditions aren't met. A native `schedule.*` helper cannot be switched off, but IHP never starts the heating for it anyway. Here's how it works with HACS Scheduler:
 
-**When scheduler is disabled (state = "off"):**
+**When the scheduler is switched off (state = "off"):**
 - IHP detects no upcoming timeslots
 - Anticipation sensors return to `unknown`
 - No heating will be triggered
@@ -262,18 +271,18 @@ The switch is useful when you want temporary manual control but want IHP to cont
 **When scheduler conditions aren't met (e.g., vacation mode):**
 - IHP calls `run_action` with `skip_conditions: false`
 - The scheduler respects its own conditions (like `input_boolean.vacation`)
-- If conditions fail, heating won't trigger
+- If conditions fail, heating won't trigger, and IHP tries the next configured scheduler, if any
 - IHP stays ready but inactive
 
 **How IHP interacts with your system:**
-- IHP does NOT directly control VTherm
-- IHP triggers the scheduler's `run_action` service
+- IHP does not set the VTherm itself to start preheating
+- IHP triggers HACS Scheduler's `run_action` service
 - The scheduler then controls VTherm based on its conditions
 - This ensures all your existing automations and conditions work as expected
 
 **For vacation mode:**
 1. Set your thermostat to eco mode (optional)
-2. Disable your scheduler (turn switch to "off")
+2. Switch your HACS Scheduler off (turn its switch to "off"), or use a scheduler condition
 3. IHP automatically becomes inactive
 4. When you return, enable the scheduler
 5. IHP resumes normal operation
@@ -301,4 +310,4 @@ Rest assured, you can go on vacation without any additional configuration!
 
 **Happy heating!** 🔥
 
-_Intelligent Heating Pilot v0.7.0 - Documentation Last Updated: October 2026_
+_Intelligent Heating Pilot v0.7.1 - Documentation Last Updated: November 2026_

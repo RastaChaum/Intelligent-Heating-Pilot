@@ -32,42 +32,47 @@ The **Learned Heating Slope (LHS)** is how fast your room heats up, measured in 
 IHP computes the Learned Heating Slope from detected heating cycles:
 
 1. **Detect a heating cycle** using the start/stop rules described below.
-2. **Capture temps**: record indoor temperature at cycle start and at cycle end.
-3. **Calculate cycle slope**:
-   - Temperature gain = end temp − start temp
-   - Duration = end time − start time (minus dead time, see below)
+2. **Capture temps**: record indoor temperature at cycle start, at the end of the dead time and at cycle end.
+3. **Calculate cycle slope** over the heating phase, after the dead time (see below):
+   - Temperature gain = temp at the end of the heating phase − temp at the end of the dead time
+   - Duration = end of the heating phase − end of the dead time
    - Cycle slope = (temperature gain ÷ effective duration hours)
-4. **Apply filters**: reject cycles that heated too slowly (below 0.2 °C/h) and very short effective heating windows
+   - The heating phase ends with the cycle, unless the room stops warming first: a room that gains less than 0.1 °C for at least an hour is on a **plateau**, and the heating phase ends where that plateau starts. A thermostat that settles a few tenths below its target (common with TPI regulation) keeps the cycle going until its slot ends; that waiting time is not heating, so it no longer lowers the slope. A room that keeps warming until its target, even slowly like underfloor heating, keeps its full window. If the room stops warming as soon as its dead time ends, the cycle has no heating phase and is not learned
+4. **Apply filters**: reject cycles disturbed by load shedding or safety mode, cycles that never warmed the room, and very short effective heating windows (see below)
 5. **Average the slopes** across filtered cycles to produce the current LHS.
 
 ### Two Types of LHS
 
 IHP uses two complementary approaches:
 
-**Global LHS** — Simple average of all realistic cycles (slope of at least 0.2 °C/h) regardless of time of day; if no cycle qualifies, the 2.0 °C/h default is used
+**Global LHS** — Simple average of all the cycles kept by the filters, however slow, regardless of time of day; if no cycle qualifies, the 2.0 °C/h default is used. This default is not a cautious value: a room that heats slower than 2 °C/h starts too late until its first cycle is learned
 - Used as a fallback when no contextual data is available
 - Represents your system's "typical" heating performance
 
 **Contextual LHS** — Per-hour-of-day averages (e.g., cycles that reach their target around 7am average separately from those around 9pm, so a 7am slot uses what IHP learned preheating for it)
+- Each cycle counts for the hour nearest to when it reached its target, and each slot reads the hour nearest to it. A preheat usually reaches the target a few minutes before its slot (at 6:58 for a 7:00 slot): it counts for 7:00, like a cycle reaching it at 7:20
+- A time exactly on the half hour counts for the earlier hour, because cycles reach the target before their slot rather than after it: a 6:30 slot uses the cycles that reached their target after 5:30 and up to 6:30, and a 6:45 slot uses those of 7:00
+- A preheat that is still heating when its slot comes due counts for that slot, however late it reaches the target: a preheat for an 8:45 slot that reaches 20 °C at 9:56 counts for 8:45, so the slot learns that its preheats are late and starts them earlier. IHP finds these slots in the history of its **Next Schedule Time** sensor; if that sensor is excluded from the recorder, such a cycle counts for the hour nearest to when it reached its target
 - More accurate because heating behavior varies by time (thermal mass, occupancy patterns, outdoor conditions)
-- IHP uses contextual LHS when available for the current hour, falls back to global LHS if insufficient data
+- IHP uses contextual LHS when available for the slot's hour, falls back to global LHS if insufficient data
 
 **Result:** More precise predictions as you use IHP throughout different times of day
 
 ### Important: Dead Time in Slope Calculations
 
-When calculating a cycle's slope, IHP excludes the **dead time** (system startup lag) from the duration. Here's why:
+When calculating a cycle's slope, IHP excludes the **dead time** (system startup lag): both its duration and the temperature gained during it. Here's why:
 
 ```
-Total cycle: 60 minutes
-Dead time: 5 minutes (system ramps up, no temperature change)
-Effective heating duration: 55 minutes
+Total cycle: 60 minutes, from 18.0°C to 19.0°C
+Dead time: 20 minutes (until the room reached 18.2°C)
+Heating phase: 40 minutes, from 18.2°C to 19.0°C
 
-Cycle slope = temperature_gain / (55 minutes / 60)
-NOT: temperature_gain / 60 minutes
+Cycle slope = (19.0 − 18.2) / (40 / 60) = 1.2°C/h
+NOT: (19.0 − 18.0) / (60 / 60) = 1.0°C/h  (dead time counted as heating time)
+NOT: (19.0 − 18.0) / (40 / 60) = 1.5°C/h  (dead time gain counted in the heating phase)
 ```
 
-This makes the slope more accurate by only counting the time when the room was actually heating.
+This makes the slope more accurate by only counting how the room heated once it was actually heating.
 
 For the system structure and DDD boundaries behind these calculations, see [Architecture Overview](../architecture/OVERVIEW.md).
 
@@ -75,17 +80,26 @@ For the system structure and DDD boundaries behind these calculations, see [Arch
 
 Before a cycle contributes to LHS:
 
-1. **Minimum realistic slope filter**: Cycles that heated slower than 0.2 °C/h are discarded from both the global and the per-hour LHS
-   - Why? A cycle where the temperature didn't rise, or barely rose (e.g. thermostat in safety mode or load shedding), says nothing about how fast the room can actually heat, and would make preheating start far too early
-   - If every cycle of an hour is below the threshold, that hour has no learned value and falls back to the global LHS
-2. **Minimum effective duration filter**: Cycles whose effective heating window (after subtracting dead time) is too short are rejected
+These filters decide which cycles are learned, for the global LHS, the per-hour LHS and the learned dead time alike:
+
+1. **Disturbance filter**: Cycles during which Versatile Thermostat reported load shedding (`power` preset) or safety mode (`safety` preset) are discarded, however fast or slow they heated
+   - A load shedding shorter than the grace period is the exception: it does not end the cycle (see [What Stops a Heating Cycle?](#what-stops-a-heating-cycle)) and does not discard it
+   - Why? Such a cycle says nothing about how fast the room can heat, and would make preheating start far too early. The preset is the only trace of these events that the Home Assistant recorder keeps
+   - A slow cycle is **not** discarded for being slow: underfloor heating at partial power can take four hours before the room warms up, then heat at 0.15 °C/h. A speed threshold could not tell such a room from a disturbed cycle, and kept only its fastest mornings
+   - A disturbance that leaves no trace in the thermostat history (heater shed by an external device, window open without a window sensor) cannot be detected, and the cycle is learned
+2. **Heating phase filter**: A cycle whose temperature never rose 0.2 °C above its start is discarded: its dead time is unknown and it has no heating phase. A cycle whose slope after the dead time is zero or negative is discarded too
+3. **Minimum effective duration filter**: Cycles whose effective heating window (after subtracting dead time) is too short are rejected
    - Why? When dead time ≈ total duration, the slope formula amplifies noise by orders of magnitude (e.g., 100,000°C/h)
    - Default threshold: 5 minutes of effective heating required
    - Example: A 6-minute cycle with 5-minute dead time has only 1 minute effective duration → rejected
 
+If every cycle of an hour is discarded, that hour has no learned value and falls back to the global LHS. A learned slope is used however slow it is: only a slope that is zero or negative is replaced by the 2.0 °C/h default.
+
+**Cycles learned by earlier versions** were stored without their disturbance status. They keep the former rule (kept only if they heated at 0.2 °C/h or more) until `reset_learning` reads them again from the recorder history, or until they leave the retention window.
+
 ### Cycle Cache: Performance Optimization
 
-**New in v0.4.0+**: IHP uses an **incremental cycle cache** with progressive extraction to optimize performance and data retention.
+IHP uses an **incremental cycle cache** with progressive extraction to optimize performance and data retention.
 
 **How It Works:**
 
@@ -146,7 +160,11 @@ However, **brief heating interruptions** (< 10 minutes by default) do NOT immedi
 
 **Safety Shutoff Grace Period**: When heating stops unexpectedly (e.g., safety shutoff, frost protection mode), IHP waits up to **10 minutes** (configurable, default 10 min) before closing the cycle. If heating resumes within this window, the interruption is absorbed and the cycle continues.
 
-**Why?** Brief safety interruptions cause extreme slopes (100,000+ °C/h) if treated as separate micro-cycles. The grace period prevents these spurious learning events.
+The same grace period covers **load shedding**: while Versatile Thermostat sheds its load, it records the `power` preset and drops the target to its power temperature for a minute or two, so the room looks as if it had reached its target. If the preset comes back within the grace period, the cycle continues and is learned. Each load shedding is timed on its own, so a preheat shed several times in a row stays one cycle as long as each shedding is shorter than the grace period.
+
+It also covers **a window or a door opened for a few minutes**: Versatile Thermostat drops the target to its window action temperature, and the cycle continues if the target comes back within the grace period. Any target drop low enough to end the cycle is handled the same way. If the target stays low (the schedule moved to eco), the cycle ends when the target dropped, once the grace period has expired. A target lowered by less than that does not interrupt the cycle.
+
+**Why?** Brief safety interruptions cause extreme slopes (100,000+ °C/h) if treated as separate micro-cycles. A preheat cut by load sheddings or a window opened for two minutes would also learn its dead time from the last fragment only: on underfloor heating, 73 minutes instead of 142. The grace period prevents these spurious learning events. The minutes spent interrupted stay in the cycle: the dead time runs from when heating really started.
 
 **Example Scenarios:**
 
@@ -156,6 +174,11 @@ However, **brief heating interruptions** (< 10 minutes by default) do NOT immedi
 | Scheduler or manual stop | Mode switches off → End detected immediately |
 | Safety shutoff (brief, <10 min) | Mode stops → Grace period starts; if mode resumes within 10 min → interruption absorbed, cycle continues |
 | Safety shutoff (extended, >10 min) | Mode stops → Grace period expires after 10 min → Cycle closes at the moment grace started |
+| Load shedding (brief, <10 min) | `power` preset, target dropped → Grace period starts; if the preset comes back within 10 min → cycle continues and is learned |
+| Load shedding (extended, >10 min) | Grace period expires → Cycle closes when the shedding started and is not learned |
+| Window or door opened (brief, <10 min) | Target dropped to the window temperature → Grace period starts; if the target comes back within 10 min → cycle continues and is learned |
+| Window left open (extended, >10 min) | Grace period expires → Cycle closes when the target dropped |
+| Schedule moves to eco before the target is reached | Grace period expires → Cycle closes when the target dropped |
 | Early comfort | Target lowered while heating | Mode may stay on; end triggers when room is within 0.2°C of the new target |
 
 ### Why These Rules?
@@ -167,6 +190,12 @@ The current logic favors **quick detection** for natural completions and manual 
 ## 🧮 Prediction Algorithm
 
 Once IHP has learned the heating slope and dead time, it predicts when heating should start.
+
+### Room Temperature Used
+
+IHP predicts from the room temperature smoothed by Versatile Thermostat (its `ema_temp` attribute), the one VTherm regulates on, and recalculates when that temperature changes. A sensor toggling between two adjacent values (for example 18.9 and 19.1 °C) would otherwise move the anticipated start back and forth by several minutes, and a higher reading just before the start would delay the preheat. A thermostat without `ema_temp` is read from its `current_temperature`. The current temperature shown on the IHP sensors is this same temperature.
+
+Heating cycles are still learned from the measured temperature recorded in the history.
 
 ### Active Preheating Recalculation Rule
 
@@ -189,8 +218,6 @@ If the slot being preheated is removed or moved, IHP reverts the preheating.
 
 ### The Calculation
 
-**New in v0.6.0**: The prediction formula now includes dead time for more accurate predictions.
-
 ```
 Anticipation Time (minutes) = Dead Time + (Temperature Difference / Learned Slope) × 60
 
@@ -210,20 +237,30 @@ Anticipation Time = 1.5 + (3 / 2.0) × 60 = 1.5 + 90 = 91.5 minutes
 
 So IHP will trigger heating **91.5 minutes before the scheduled time** (accounting for the 1.5-minute delay).
 
+The dead time ends once the room has gained 0.2°C, and the formula then counts the whole temperature difference at the learned slope: those first 0.2°C are counted twice. This is deliberate. It starts preheating a few minutes early (6 minutes at 2°C/hour), which covers the room cooling further between the calculation and the start of preheating.
+
 ### What is Dead Time?
 
-**Dead Time** is the delay between when your heating system turns on and when indoor temperature actually starts rising. It accounts for:
+**Dead Time** is the delay between when your heating system turns on and when indoor temperature actually starts rising. On each heating cycle, IHP measures it as the time until the indoor temperature is 0.2°C above its starting value, a margin that rules out sensor noise. If the room keeps cooling at first and then climbs back, that time is part of the dead time. It accounts for:
 
 - **Heat distribution delay**: Time for warm air to reach the temperature sensor
 - **Thermal inertia**: Building elements warming up before affecting room temperature
 - **System latency**: Time for boiler/heat pump to ramp up
 - **Sensor response**: Temperature sensor accuracy and measurement lag
 
-IHP automatically learns dead time from your heating cycles and refines it over time, similar to how it learns the heating slope.
+IHP automatically learns dead time from your heating cycles and refines it over time, similar to how it learns the heating slope. It uses the same cycles: a cycle ignored for the heating slope (disturbed, or one that never warmed the room) is ignored for the dead time too. No dead time is too long to be learned: a slow underfloor preheat is learned with its full dead time. A cycle longer than the **Maximum Cycle Duration** setting (5 hours by default) is not learned at all, so raise that setting if your preheats take longer.
 
 ### Environmental Adjustments
 
-The basic calculation is then **adjusted** based on real-world conditions:
+The basic calculation is then **adjusted** based on real-world conditions. The adjustments apply to the heating phase only, never to the dead time: the dead time is how long your heating system takes to warm the room at all, and neither the sun nor humidity makes it respond faster.
+
+```
+Anticipation Time = Dead Time + Heating Phase × Humidity Factor × Solar Factor + 5 minutes
+
+Where:
+- Heating Phase = (Temperature Difference / Learned Slope) × 60
+- 5 minutes = safety margin, so the target is reached on time
+```
 
 #### 1. **Outdoor Temperature**
 
@@ -246,16 +283,23 @@ Examples:
 
 #### 3. **Solar Gain (Cloud Coverage)**
 
-Clear sky = **Solar heat gain** = **Might heat faster**
+Clear sky **in daylight** = **Solar heat gain** = **Might heat faster**
 
 ```
 Adjustment Factor = 1.0 - (100 - cloud_coverage%) × 0.001
 
-Examples:
+Examples, for a heating phase entirely in daylight:
 - Cloud coverage 100%: factor = 1.0 (no solar gain)
 - Cloud coverage 0% (clear sky): factor = 0.9 (heat 10% faster)
 - Cloud coverage 50%: factor = 0.95 (heat 5% faster)
 ```
+
+A clear sky only warms the room while the sun is up. IHP takes sunrise and sunset from your Home Assistant location (no setting needed) and applies the solar gain to the share of the heating phase spent in daylight:
+
+- A winter morning preheat ending before sunrise: no solar gain, whatever the sky.
+- A 60-minute heating phase ending 30 minutes after sunrise: half the solar gain (factor 0.95 under a clear sky).
+
+The cloud coverage is the current one: IHP does not read a forecast.
 
 ### Safety Bounds
 
@@ -263,37 +307,43 @@ IHP applies **minimum and maximum limits** to predictions to stay reasonable:
 
 | Limit | Value | Reason |
 |-------|-------|--------|
-| **Minimum Anticipation** | 10 minutes | Don't trigger too early if slope is very high |
-| **Maximum Anticipation** | 6 hours (360 minutes) | Don't trigger too early for slow heating |
+| **Minimum Anticipation** | 10 minutes | Always leave the heating some time, even with a very high slope |
+| **Maximum Anticipation** | 6 hours (360 minutes) | Never start more than 6 hours ahead, even for very slow heating |
+
+A room that needs more than 6 hours to reach its target starts 6 hours before its slot and reaches the target late.
 
 ---
 
 ## 📈 Confidence Levels
 
-IHP calculates a **confidence score** (0-100%) for each prediction.
+IHP calculates a **confidence score** (0-100%) for each prediction, shown by the **Prediction Confidence** sensor and returned by the `calculate_anticipated_start_time` service.
 
-### What Affects Confidence?
+### How Is It Calculated?
 
-| Factor | Impact |
-|--------|--------|
-| **No heating history** | Very low (≈30%) - First prediction uses default |
-| **Few cycles observed** | Low (≈50%) - Limited data to learn from |
-| **Many cycles observed** | High (≈80%+) - Solid understanding of your system |
-| **Extra sensors available** | +10% per sensor - Better environmental awareness |
+The confidence only depends on the heating slope used for the prediction and on the indoor humidity sensor. It does **not** count how many heating cycles were learned.
 
-**Why Confidence Matters:**
-- **High confidence (80%+)**: IHP knows your system well, predictions are accurate
-- **Low confidence (30-50%)**: IHP is still learning, predictions may be less accurate
-- **Zero confidence (0%)**: Error condition - heating won't trigger automatically
+| Heating slope used | Confidence |
+|--------------------|------------|
+| Above 1.5 °C/h | 90% |
+| Above 0.5 °C/h, up to 1.5 °C/h | 75% |
+| 0.5 °C/h or less | 60% |
+| Indoor humidity available | +5% |
+| Calculation impossible (invalid slope) | 0% |
+
+**What this means:**
+- A slow room (underfloor heating, for instance) always shows a lower confidence, even when its slope is learned from many cycles
+- The default slope of 2.0 °C/h, used before any cycle is learned, shows 90%: a high confidence does not mean that IHP has learned your room
+- The confidence does not block anything: IHP preheats whatever its value
+
+To judge whether IHP has learned your room, look at the **Global Learned Heating Slope** and **Contextual Learned Heating Slope** sensors instead.
 
 ### First-Time Setup: Default Behavior
 
-When IHP has no learning history:
+When IHP has no learned cycle (new device with no usable recorder history, or after `reset_learning` until the history is read again):
 
-- ✅ It uses a **conservative default slope of 2°C/hour**
-- ✅ **Confidence is ~30%** (low confidence, conservative approach)
-- ✅ **It will trigger heating early** to avoid undershooting
-- ✅ After 3-5 cycles, confidence increases and predictions improve
+- It uses a default slope of **2.0 °C/hour** and the **Initial Dead Time** setting
+- A room heating slower than that starts **too late**; a faster room starts too early
+- As soon as cycles are learned, the slope and dead time are your room's
 
 ---
 
@@ -310,39 +360,36 @@ Here's the full journey from a scheduled event to IHP triggering heating:
       ├─ Get current temp (18°C)
       ├─ Calculate delta (21°C - 18°C = 3°C)
       ├─ Use learned slope (2°C/hour)
-      ├─ Apply environmental adjustments (+/- minutes)
-      ├─ Apply safety bounds (5 min to 4 hours)
+      ├─ Add the dead time and apply environmental adjustments
+      ├─ Add the 5-minute margin and apply safety bounds (10 min to 6 hours)
       └─ Result: "Start heating at 04:30"
 
 3. HEATING CYCLE STARTS
-   └─ At 04:30 → IHP triggers the scheduler
-      └─ VTherm detects heating activity
+   └─ At 04:30 → IHP triggers the HACS Scheduler slot
+      └─ VTherm takes the 21°C target
       └─ Temperature rises toward 21°C
 
 4. HEATING CYCLE MONITORING
-   └─ IHP watches temperature rise
-      ├─ Collects VTherm's slope observations
+   └─ IHP keeps recalculating
       ├─ Postpones preheating if the room heats faster than predicted
-      └─ Waits for cycle completion
+      └─ Keeps preheating until the slot
 
-5. CYCLE COMPLETION & LEARNING
-   └─ Temperature reaches 21°C (or schedule ends)
-      ├─ Heating stops
-      ├─ IHP captures final slope reading
-      ├─ Adds slope to history
-      ├─ Recalculates learned slope average
-      └─ Confidence increases
+5. CYCLE LEARNING
+   └─ IHP reads the new cycle from the recorder history (at the latest at the daily refresh)
+      ├─ Measures its dead time and heating slope
+      ├─ Adds them to the cycle cache
+      └─ Recalculates the learned slopes and dead time
 
 6. NEXT CYCLE
    └─ Next scheduled heating event
       └─ IHP uses updated slope for even better predictions
 ```
 
-### Important: IHP Does Not Directly Control VTherm
+### Important: IHP Starts Heating Through HACS Scheduler
 
 **Key architectural principle:**
-- IHP never directly controls your thermostat (VTherm)
-- IHP triggers the **scheduler's run_action service**
+- IHP starts preheating through **HACS Scheduler's `run_action` service**, not by setting the thermostat itself
+- A native `schedule.*` helper has no such service: IHP only computes its anticipated start (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers))
 - The scheduler then controls VTherm based on its configuration
 - This ensures all your scheduler conditions and automations work as expected
 
@@ -353,7 +400,7 @@ Here's the full journey from a scheduled event to IHP triggering heating:
 - ✅ You maintain full control through your scheduler
 - ✅ IHP is only an intelligent trigger mechanism
 
-**What happens when scheduler is disabled:**
+**What happens when a HACS Scheduler is switched off:**
 ```
 Scheduler State = "off"
    ├─ IHP detects no upcoming timeslots
@@ -366,25 +413,23 @@ Scheduler State = "off"
 
 ## ⚠️ Common Scenarios & Expected Behavior
 
-### Scenario 1: First Heating Cycle
+### Scenario 1: New Device
 
 **Expected:**
-- Low confidence (30%)
-- Heating triggers **early** (conservative approach)
-- May reach target before scheduled time (overshoots)
+- IHP reads your heating cycles from the recorder history in the background
+- Until it finds some, it uses the default 2.0 °C/h slope: a slow room starts too late, a fast one too early
 
-**Why:** No learning history yet, using default slope
+**Why:** No learned cycle yet
 
-**Next:** After 2-3 more cycles, accuracy improves
+**Next:** As soon as cycles are learned, predictions use your room's slope and dead time
 
-### Scenario 2: After 3-5 Cycles
+### Scenario 2: After a Few Days
 
 **Expected:**
-- Confidence increases (50-70%)
+- The **Contextual Learned Heating Slope** gets a value for the hours of your slots
 - Predictions get **closer to actual scheduled time**
-- Less overshoot, more precise timing
 
-**Why:** IHP has learned your actual heating slope
+**Why:** Each slot uses the slope learned from the preheats aimed at it
 
 ### Scenario 3: Very Cold Weather
 
@@ -405,12 +450,13 @@ Scheduler State = "off"
 ### Scenario 5: Very Sunny Day
 
 **Expected:**
-- Predictions **might decrease slightly** (start heating later)
+- Predictions **might decrease slightly** (start heating later), for preheats while the sun is up
 - Solar gain helps heating
+- Preheats ending before sunrise are not shortened
 
-**Why:** Environmental adjustment for solar gain
+**Why:** Environmental adjustment for solar gain, applied only to the part of the heating phase in daylight
 
-### Scenario 6: Vacation Mode / Scheduler Disabled
+### Scenario 6: Vacation Mode / HACS Scheduler Switched Off
 
 **Expected:**
 - Anticipation sensors show `unknown`
@@ -421,8 +467,10 @@ Scheduler State = "off"
 **Why:** When scheduler state is "off", IHP detects no upcoming timeslots
 
 **How to trigger vacation mode:**
-1. Turn off your scheduler switch (state becomes "off")
+1. Turn off your HACS Scheduler switch (state becomes "off")
 2. OR: Use scheduler conditions (e.g., `input_boolean.vacation`)
+
+A native `schedule.*` helper cannot be switched off: IHP keeps computing its anticipated start. It never starts the heating for it anyway.
 3. IHP automatically stops monitoring
 4. When you return, re-enable scheduler
 5. IHP resumes normal operation with preserved learning
@@ -430,7 +478,6 @@ Scheduler State = "off"
 **What's preserved:**
 - ✅ Learned heating slope
 - ✅ Historical data
-- ✅ Confidence level
 - ✅ All configuration
 
 **What happens:**
@@ -444,7 +491,9 @@ Scheduler State = "off"
 - IHP calculates anticipation time normally
 - At trigger time, IHP calls `run_action`
 - Scheduler evaluates its conditions
-- If conditions fail, heating is skipped
+- IHP waits up to 10 seconds for the thermostat to take the slot's temperature
+- If it does not, the scheduler's conditions failed: heating is skipped for this scheduler, and IHP tries the next configured scheduler, if any, right away
+- When every scheduler is blocked, the anticipation sensor lists them in its `blocked_schedulers` attribute
 - IHP continues monitoring for next timeslot
 
 **Why:** IHP uses `skip_conditions: false` to respect scheduler logic
@@ -477,8 +526,13 @@ condition:
 - **External heat source** (sunlight, other heating) not accounted for
 
 **Solution:**
-- Wait 3-5 more heating cycles
-- Or manually reset learning: `service: intelligent_heating_pilot.reset_learning`
+- Check the **Contextual Learned Heating Slope** of the slot's hour: *unknown* means the global slope is used
+- Or reset learning, which relearns from the recorder history:
+  ```yaml
+  action: intelligent_heating_pilot.reset_learning
+  data:
+    entity_id: sensor.living_room_anticipated_start_time
+  ```
 
 ### Problem: Always heats too late (room never reaches target)
 
@@ -507,13 +561,13 @@ condition:
 ### Problem: No prediction at all
 
 **Possible Causes:**
-- **No learning history** yet
-- **Zero confidence** - Something prevented learning
-- **Scheduler not detected** - IHP can't see upcoming events
+- **No scheduler configured**, or a scheduler IHP does not support (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers))
+- **The next slot has no temperature IHP can read**: its action is not `climate.set_temperature` or `climate.set_preset_mode`, or its preset temperature is not exposed by the VTherm
+- **Every scheduler is switched off**, or a native schedule is currently ON
 
 **Solution:**
-1. Check IHP is configured with correct scheduler entity
-2. Create a test schedule
+1. Check the scheduler entities in the IHP device's **Configure** form
+2. Check the next slot's action in the scheduler
 3. Check logs: `logger: custom_components.intelligent_heating_pilot: debug`
 
 ---
@@ -524,9 +578,10 @@ condition:
 
 | Sensor | What to Check |
 |--------|--------------|
-| **Learned Heating Slope** | Should gradually stabilize around your actual slope (0.5-5.0°C/h) |
-| **Anticipation Time** | Should match when heating actually starts |
-| **Confidence** | Should increase toward 80%+ after 5-10 cycles |
+| **Global Learned Heating Slope** | Should stabilize around your room's actual slope; 2.0 °C/h exactly usually means nothing is learned yet |
+| **Contextual Learned Heating Slope** | Should get a value for the hours of your slots |
+| **Anticipated Start Time** | Should match when heating actually starts |
+| **Dead Time** | Should stabilize around your system's response delay |
 
 ### Debug Mode
 
@@ -550,9 +605,9 @@ Then check Home Assistant logs for detailed calculations and decision-making.
 | **Learned Heating Slope (LHS)** | How fast your room heats (°C/hour) |
 | **Heating Cycle** | A period from when heating starts until it stops |
 | **Cycle Detection** | Rules that identify when heating cycles begin and end |
-| **Anticipation Time** | When to trigger heating to reach target on time |
-| **Confidence** | How sure IHP is about its predictions |
-| **Environmental Adjustments** | Tweaks to account for weather, humidity, etc. |
+| **Anticipated Start Time** | When to trigger heating to reach target on time |
+| **Confidence** | An indication based on the slope used and the sensors available |
+| **Environmental Adjustments** | Tweaks for indoor humidity and solar gain |
 
 ---
 

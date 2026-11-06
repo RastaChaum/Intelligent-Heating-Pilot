@@ -39,15 +39,19 @@ def suppress_platform_setup(hass: HomeAssistant) -> None:
 @pytest.fixture
 def suppress_full_lifecycle(suppress_platform_setup: None):  # type: ignore[return]
     """Suppress HeatingApplication side-effects during setup."""
-    with patch(
-        "custom_components.intelligent_heating_pilot.HeatingApplication.async_load",
-        new=AsyncMock(),
-    ), patch(
-        "custom_components.intelligent_heating_pilot.HeatingApplication.setup_listeners",
-        new=Mock(),
-    ), patch(
-        "custom_components.intelligent_heating_pilot.HeatingApplication.async_update",
-        new=AsyncMock(),
+    with (
+        patch(
+            "custom_components.intelligent_heating_pilot.HeatingApplication.async_load",
+            new=AsyncMock(),
+        ),
+        patch(
+            "custom_components.intelligent_heating_pilot.HeatingApplication.setup_listeners",
+            new=Mock(),
+        ),
+        patch(
+            "custom_components.intelligent_heating_pilot.HeatingApplication.async_update",
+            new=AsyncMock(),
+        ),
     ):
         yield
 
@@ -140,9 +144,9 @@ class TestResetLearningTypeErrorRegression:
         # Verify reset_all_learning_data was called WITH a device_id argument
         mock_orchestrator.reset_all_learning_data.assert_awaited_once()
         call_kwargs = mock_orchestrator.reset_all_learning_data.call_args
-        assert "device_id" in (
-            call_kwargs.kwargs or {}
-        ), "reset_all_learning_data must receive device_id keyword argument"
+        assert "device_id" in (call_kwargs.kwargs or {}), (
+            "reset_all_learning_data must receive device_id keyword argument"
+        )
         assert call_kwargs.kwargs["device_id"] == "entry_device_a"
 
 

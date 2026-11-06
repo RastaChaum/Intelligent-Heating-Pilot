@@ -46,15 +46,28 @@ async def test_run_action_success(
     target_time = datetime(2024, 1, 15, 7, 30)
 
     # Execute
-    await commander.run_action(target_time, scheduler_entity)
+    attempted = await commander.run_action(target_time, scheduler_entity)
 
     # Assert
+    assert attempted is True
     mock_hass.services.async_call.assert_called_once_with(
         SCHEDULER_DOMAIN,
         SERVICE_RUN_ACTION,
         {"entity_id": scheduler_entity, "time": "07:30", "skip_conditions": False},
         blocking=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_run_action_never_bypasses_conditions(
+    commander: HASchedulerCommander, mock_hass: Mock, scheduler_entity: str
+) -> None:
+    """Regression guard for FR-003: the actuation call must always respect the
+    scheduler's own conditions, even after the bool-return change (#64)."""
+    await commander.run_action(datetime(2024, 1, 15, 7, 30), scheduler_entity)
+
+    _, _, service_data = mock_hass.services.async_call.call_args[0]
+    assert service_data["skip_conditions"] is False
 
 
 @pytest.mark.asyncio
@@ -160,8 +173,9 @@ async def test_run_action_native_schedule_calls_no_service(
     ``scheduler.run_action`` only exists with HACS Scheduler and only accepts its
     switch entities; calling it on a native schedule raises ServiceNotFound.
     """
-    await commander.run_action(datetime(2024, 1, 15, 7, 0), "schedule.heating")
+    attempted = await commander.run_action(datetime(2024, 1, 15, 7, 0), "schedule.heating")
 
+    assert attempted is False
     mock_hass.services.async_call.assert_not_called()
 
 

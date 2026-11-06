@@ -11,11 +11,37 @@ DEFAULT_ANTICIPATION_BUFFER = 5  # Safety buffer to ensure target is reached on 
 
 # Heating slope thresholds (in °C/hour)
 MIN_VALID_SLOPE = 0.1  # Minimum valid heating slope (technical threshold)
-MINIMUM_REALISTIC_LHS = 0.2  # Minimum realistic LHS for effective heating (business threshold)
+# Former speed floor of the learning rule. A cycle is now excluded for an explicit
+# disturbance signal, not for its speed (#255). Cycles cached before their disturbance
+# was recorded keep this floor: some of them are safety-mode cycles (#223).
+LEGACY_MINIMUM_REALISTIC_LHS = 0.2
 DEFAULT_LEARNED_SLOPE = 2.0  # Default slope when no learning data exists
+
+# Presets VTherm applies by itself when it cannot heat normally: "power" while shedding
+# load (overpowering), "safety" when its temperature sensors stop reporting. They are
+# the only disturbance signals the Recorder keeps: VTherm does not record its safety,
+# power and window manager states. A cycle during which one is recorded is not learned,
+# except for a load shedding shorter than the grace period: it is bridged within the
+# cycle, like a brief window opening (#260).
+LOAD_SHEDDING_PRESET = "power"
+SAFETY_PRESET = "safety"
+DISTURBANCE_PRESETS = frozenset({LOAD_SHEDDING_PRESET, SAFETY_PRESET})
 
 # Dead time (in minutes)
 DEFAULT_DEAD_TIME_MINUTES = 0.0  # Default dead time when no learning data exists
+# Indoor temperature rise (°C) that ends a cycle's dead time: above typical sensor noise,
+# yet sensitive enough to catch early heat propagation.
+DEAD_TIME_TEMP_RISE_C = 0.2
+# A cycle's heating phase ends at its first plateau: a reading after which the room gains
+# less than PLATEAU_RISE_TOLERANCE_C (one sensor step) for at least
+# PLATEAU_MIN_DURATION_MINUTES. A TPI thermostat often settles a few tenths below its
+# target; counting that plateau as heating time lowered the learned slope at every
+# preheat (#267). A room still warming faster than 0.1 °C/h is never on a plateau.
+PLATEAU_RISE_TOLERANCE_C = 0.1
+PLATEAU_MIN_DURATION_MINUTES = 60
+# Absorbs floating-point error when comparing a temperature difference with a threshold
+# (18.2 - 18.0 is 0.19999999999999929); far below any sensor resolution.
+TEMP_FLOAT_TOLERANCE_C = 1e-6
 
 # Environmental correction factors
 HUMIDITY_REFERENCE = 50.0  # Reference humidity percentage
@@ -29,3 +55,12 @@ BASE_HIGH_CONFIDENCE = 0.9  # Base confidence with good slope
 BASE_MEDIUM_CONFIDENCE = 0.75  # Base confidence with medium slope
 BASE_LOW_CONFIDENCE = 0.6  # Base confidence with low slope
 CONFIDENCE_BOOST_PER_SENSOR = 0.05  # Confidence increase per environmental sensor
+
+# Scheduler action verification
+# Absorbs floating-point representation noise only (VTherm's own step is 0.1-0.5°C);
+# not a user-facing tuning knob.
+TARGET_TEMP_MATCH_TOLERANCE_C = 0.05
+# Longest wait for the VTherm to apply a triggered scheduler action. scheduler-component
+# returns from run_action before the climate entity has changed (8 ms later in the #256
+# logs); past this delay with no matching target, the scheduler is reported blocked.
+ACTION_EFFECT_TIMEOUT_SECONDS = 10.0

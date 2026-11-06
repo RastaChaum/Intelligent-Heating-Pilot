@@ -35,7 +35,7 @@ The IHP cache system is organized into 4 distinct layers, each with specific res
 │  • Lifetime: Retention window (e.g., 30 days)                           │
 │  • Purpose: Avoid re-extraction from HA Recorder                        │
 │  • Eviction: Prune cycles older than retention (on_24h_timer)           │
-│  • Population: Via update_cycles_for_window() on startup/refresh        │
+│  • Population: By _on_cycles_extracted() from the extraction queue      │
 └─────────────────────────────────────────────────────────────────────────┘
                                     ↓
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -108,7 +108,7 @@ When heating cycles change (startup, retention change, 24h refresh), updates cas
 │  update_contextual_lhs_from_cycles(cycles):                             │
 │    1. Compute contextual LHS by hour from cycles                        │
 │    2. Persist each learned hour to ILhsStorage (Tier 4)                 │
-│    3. Delete hours rejected below MINIMUM_REALISTIC_LHS from storage    │
+│    3. Delete hours without a learnable cycle from storage               │
 │    4. Update _cached_contextual_lhs (Tier 3)                            │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -141,7 +141,7 @@ Contextual LHS is populated on-demand per hour to minimize memory usage:
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  Check: ILhsStorage has hour X? (Tier 4 storage)                        │
 │    YES → Load value, cache in memory (Tier 3), return                   │
-│          (a value below MINIMUM_REALISTIC_LHS is deleted instead and    │
+│          (a value that is not positive is deleted instead and           │
 │           the hour falls back to global)                                │
 │    NO  → Continue to computation                                        │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -223,24 +223,31 @@ cycles = await get_cycles_for_target_time(device_id, target_time)
 # Cache lookup order:
 # 1. Tier 1: Check _cached_cycles_for_target_time[(device_id, date)]
 # 2. Tier 2: If miss, read from IHeatingCycleStorage.get_cache_data()
-# 3. If miss, extract from historical data (HA Recorder)
+# 3. If miss, return [] (only the background extraction queue reads the HA Recorder)
 # 4. Cache result in Tier 1 for next query
 ```
 
 ### 5.2 Write Operations (Tier 4 ← Tier 1)
 
 ```python
-# Example: Update cycles for window (startup/refresh)
-cycles = await update_cycles_for_window(device_id, start_time, end_time)
+# Example: one day of cycles delivered by RecordingExtractionQueue
+# (startup / 24h refresh / on-demand extraction)
+await _on_cycles_extracted(cycles)
 
 # Cache write order:
-# 1. Extract cycles from historical data
-# 2. Tier 2: Persist to IHeatingCycleStorage.append_cycles()
-# 3. Cascade: Call _trigger_lhs_cascade(cycles)
-# 4. Tier 4: Persist LHS to ILhsStorage.set_cached_*_lhs()
-# 5. Tier 3: Update _cached_global_lhs and _cached_contextual_lhs
-# 6. Tier 1: Populated on-demand by get_cycles_for_target_time()
+# 1. Tier 2: Persist to IHeatingCycleStorage.append_cycles()
+# 2. Tier 1: Invalidate _cached_cycles_for_target_time
+# 3. Reload ALL cached cycles (IHeatingCycleStorage.get_cache_data())
+# 4. Cascade: Call _trigger_lhs_cascade(all_cycles)
+# 5. Tier 4: Persist LHS to ILhsStorage.set_cached_*_lhs()
+# 6. Tier 3: Update _cached_global_lhs and _cached_contextual_lhs
+# 7. Persist the learned dead time from ALL cached cycles (_persist_learned_dead_time())
+# 8. Tier 1: Populated on-demand by get_cycles_for_target_time()
 ```
+
+Pruning in `refresh_heating_cycle_cache()` runs steps 2–7 on the remaining cycles; when
+nothing is pruned, only step 7 runs.
+`_persist_learned_dead_time()` is the only place a learned dead time is stored.
 
 ---
 
@@ -302,7 +309,7 @@ cycles = await update_cycles_for_window(device_id, start_time, end_time)
 |------------------------|---------------------------------------------------------------------------|
 | **Heating Cycle**      | A complete heating event: start time, end time, temperature rise          |
 | **LHS**                | Learned Heating Slope (rate of temperature increase in °C/hour)           |
-| **Global LHS**         | Average LHS across realistic heating cycles (>= MINIMUM_REALISTIC_LHS, time-agnostic) |
+| **Global LHS**         | Average LHS across learnable heating cycles (see `learning_cycle_filter`, time-agnostic) |
 | **Contextual LHS**     | Hour-specific LHS (e.g., 8am vs 2pm may have different rates)             |
 | **Retention Window**   | Number of historical days used for LHS calculation (e.g., 30 days)        |
 | **Cascade Update**     | Automatic propagation of cycle changes to dependent LHS caches            |

@@ -15,6 +15,9 @@ from ..infrastructure.adapters.entity_attribute_mapper_registry import (
 from ..infrastructure.adapters.outdoor_temperature_history_reader import (
     HAOutdoorTemperatureHistoryReader,
 )
+from ..infrastructure.adapters.scheduled_slot_history_reader import (
+    HAScheduledSlotHistoryReader,
+)
 from ..infrastructure.adapters.vtherm_attribute_mapper import VThermAttributeMapper
 from ..infrastructure.recorder_queue import get_extraction_semaphore, get_recorder_queue
 from .heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
@@ -126,7 +129,11 @@ class HeatingCycleLifecycleManagerFactory:
         )
 
         climate_adapter = HAClimateDataReader(hass, get_recorder_queue(hass), vtherm_entity_id)
-        historical_adapters: list[IHistoricalDataAdapter] = [climate_adapter]
+        # Read which slots came due, so a late preheat is learned by its slot (#254)
+        slot_adapter = HAScheduledSlotHistoryReader(
+            hass, get_recorder_queue(hass), device_config.device_id
+        )
+        historical_adapters: list[IHistoricalDataAdapter] = [climate_adapter, slot_adapter]
         if device_config.temperature_out_entity_id:
             # Record the outdoor temperature of each cycle, so the learned slope can
             # later be matched to the weather it was observed in

@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+This release makes learning match how each room really heats, slow underfloor heating included, and makes preheating hold up when a scheduler is blocked, the recorder is slow or the room sensor is noisy.
+
+### ⚠️ After upgrading
+
+- **Call the `reset_learning` service once per device.** Heating cycles learned by earlier versions keep their former measurement until they are relearned. Learning restarts right away from the Home Assistant recorder history.
+- **Keep the *Next Schedule Time* sensor recorded.** IHP now reads its history to know which slot a late preheat was aimed at.
+- **Underfloor heating:** if your preheats last more than 5 hours, raise **Maximum Cycle Duration** so those cycles are learned.
+
+### Learning that matches how your room really heats
+
+- **More accurate dead time and heating slope.** The dead time is measured from where heating really starts, and the slope only counts the heating that follows it, so it is no longer overestimated. Preheating may start a few minutes earlier than before. (#245)
+- **Slow heating systems are learned too.** Underfloor heating and other slow systems were learned only on their fastest mornings, or not at all. Any cycle is now learned however slow, unless Versatile Thermostat reported load shedding or safety mode, or the room never warmed up. (#255)
+- **A thermostat that settles just below its target no longer drags the slope down.** The slope is measured up to the first plateau, so preheats stop drifting earlier and earlier. (#267)
+- **A short window opening or load shedding no longer breaks a preheat into pieces.** An interruption shorter than the **Safety Shutoff Grace Period** (10 minutes by default) is bridged, and the preheat is learned as one cycle. (#260)
+- **Each slot learns from the preheats aimed at it.** A preheat reaching its target just before its slot, or late after it, now counts for that slot, so a slot that keeps starting late learns that it is late. (#214, #254)
+- **Your Initial Dead Time setting is respected.** It is no longer stored as if it had been learned, so changing it later takes effect. (#224)
+- **Learning history is no longer lost** when the recorder is slow or Home Assistant restarts during an extraction: missed days are read again at the next daily refresh. (#187)
+
+### Preheating starts at the right time
+
+- **A jittery room sensor no longer moves the start back and forth.** IHP predicts from the temperature smoothed by Versatile Thermostat (`ema_temp`) when it is available. (#258)
+- **A clear sky no longer delays winter morning preheats.** The weather adjustment now applies to the heating phase only, and solar gain only counts between sunrise and sunset. (#257)
+
+### Schedulers
+
+- **Several HACS Schedulers work together.** When the earliest one is blocked by its own conditions (e.g. a vacation condition), IHP falls back to the next one in the same cycle, and lists them on the anticipation sensor when all of them are blocked. (#64)
+- **A scheduler that started the preheat is no longer reported as blocked.** IHP waits for the thermostat to apply the slot before drawing conclusions. (#256)
+
+### Setup and options
+
+- **Every setting has a label and help text**, in English and French. The services are translated, and submitting without a thermostat shows a real message. (#193)
+- **Home Assistant 2024.11 or later is now declared as the minimum version.** IHP already needed it; HACS no longer offers it to older installations, where it failed to load or to open its options.
+
+### New
+
+- **French README.** `README.fr.md` is shown to French-speaking visitors of the [Versatile Thermostat plugin registry](https://www.versatile-thermostat.org/en/plugins/). (#242)
+
+### Documentation
+
+- The user guides now describe which schedulers and scheduler actions IHP supports, how prediction confidence is really computed, and the actual settings, sensors and service parameters.
+
+### Maintenance
+
+- Type-checking cleanup and removal of dead code. No behavior change. (#203, #218)
+- Release tooling: the release gates, RC workflows and helper scripts are fixed, every GitHub Action is pinned to a commit SHA, and the CHANGELOG PR opened after a release passes its checks again (the 0.7.0 entry below was never promoted on `integration` because of it). (#195, #196, #197, #198, #202)
+- Version bumped to 0.7.1.
+- The pull request template is now in English only.
+
 ## [0.7.0] - 2026-10-26
 
 > **After upgrading, call the `reset_learning` service once per device.** Data learned by earlier versions is skewed and would keep distorting preheating. Learning restarts right away from the Home Assistant recorder history.

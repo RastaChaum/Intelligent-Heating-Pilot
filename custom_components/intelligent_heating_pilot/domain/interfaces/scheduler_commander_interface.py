@@ -20,14 +20,23 @@ class ISchedulerCommander(ABC):
     """
 
     @abstractmethod
-    async def run_action(self, target_time: datetime, scheduler_entity_id: str) -> None:
+    async def run_action(self, target_time: datetime, scheduler_entity_id: str) -> bool:
         """Trigger a scheduler action for a specific timeslot.
 
         This will start heating in the mode configured in the scheduler
-        for the timeslot at the given time.
+        for the timeslot at the given time. Never bypasses the scheduler's
+        own conditions (no ``skip_conditions`` override).
 
         Args:
             target_time: The time of the scheduler timeslot to trigger
+            scheduler_entity_id: Scheduler entity ID to control
+
+        Returns:
+            ``True`` if an actuation attempt was made on the underlying HACS
+            Scheduler (whether or not its conditions ultimately let the
+            action through — that is for the caller to verify separately).
+            ``False`` for a native HA schedule entity, which is never
+            actuated (compute-only).
         """
         pass
 

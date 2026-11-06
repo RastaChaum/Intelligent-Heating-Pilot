@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
@@ -61,7 +61,7 @@ def _outdoor_source_selector(device_class: str | None = None) -> selector.Entity
     )
 
 
-class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
+class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Intelligent Heating Pilot."""
 
     VERSION = 1
@@ -74,7 +74,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         """Get the options flow for this handler."""
         return IntelligentHeatingPilotOptionsFlow()
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
 
@@ -106,16 +106,13 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                 _LOGGER.info("Creating entry with data: %s", processed)
                 await self.async_set_unique_id(processed[CONF_NAME])
                 self._abort_if_unique_id_configured()
-                return cast(
-                    FlowResult,
-                    self.async_create_entry(
-                        title=processed[CONF_NAME],
-                        data=processed,
-                    ),
+                return self.async_create_entry(
+                    title=processed[CONF_NAME],
+                    data=processed,
                 )
 
         # Get all scheduler entities with their friendly names
-        scheduler_options = []
+        scheduler_options: list[selector.SelectOptionDict] = []
         for state in self.hass.states.async_all():
             if state.domain not in ("switch", "schedule"):
                 continue
@@ -127,7 +124,9 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             ):
                 friendly_name = state.attributes.get("friendly_name", state.entity_id)
                 scheduler_options.append(
-                    {"value": state.entity_id, "label": f"{friendly_name} ({state.entity_id})"}
+                    selector.SelectOptionDict(
+                        value=state.entity_id, label=f"{friendly_name} ({state.entity_id})"
+                    )
                 )
 
         # Sort by label for easier selection
@@ -264,26 +263,24 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         min=0,
                         max=30,
                         step=1,
+                        unit_of_measurement="minutes",
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
             }
         )
 
-        return cast(
-            FlowResult,
-            self.async_show_form(
-                step_id="user",
-                data_schema=data_schema,
-                errors=errors,
-            ),
+        return self.async_show_form(
+            step_id="user",
+            data_schema=data_schema,
+            errors=errors,
         )
 
 
 class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Intelligent Heating Pilot."""
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage the options."""
         errors: dict[str, str] = {}
         normalized_input: dict[str, Any] = {}
@@ -329,10 +326,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 # For optional fields that were cleared: explicitly set to None to override data
                 for field in fields_to_delete:
                     merged_options[field] = None
-                return cast(
-                    FlowResult,
-                    self.async_create_entry(title="", data=merged_options),
-                )
+                return self.async_create_entry(title="", data=merged_options)
 
         # Prepare data sources for defaults
         current_options = getattr(self.config_entry, "options", {})
@@ -354,7 +348,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             return current_data.get(key, default)
 
         # Get all scheduler entities for SelectSelector
-        scheduler_options = []
+        scheduler_options: list[selector.SelectOptionDict] = []
         for state in self.hass.states.async_all():
             if state.domain not in ("switch", "schedule"):
                 continue
@@ -365,7 +359,9 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             ):
                 friendly_name = state.attributes.get("friendly_name", state.entity_id)
                 scheduler_options.append(
-                    {"value": state.entity_id, "label": f"{friendly_name} ({state.entity_id})"}
+                    selector.SelectOptionDict(
+                        value=state.entity_id, label=f"{friendly_name} ({state.entity_id})"
+                    )
                 )
         scheduler_options.sort(key=lambda x: x["label"])
 
@@ -589,17 +585,15 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 min=0,
                 max=30,
                 step=1,
+                unit_of_measurement="minutes",
                 mode=selector.NumberSelectorMode.BOX,
             )
         )
 
         data_schema = vol.Schema(schema_dict)
 
-        return cast(
-            FlowResult,
-            self.async_show_form(
-                step_id="init",
-                data_schema=data_schema,
-                errors=errors,
-            ),
+        return self.async_show_form(
+            step_id="init",
+            data_schema=data_schema,
+            errors=errors,
         )

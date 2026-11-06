@@ -86,7 +86,7 @@ class ILhsStorage(ABC):
     async def delete_cached_contextual_lhs(self, hour: int) -> None:
         """Remove the cached contextual LHS for the given hour, if any.
 
-        Needed when an hour no longer has a realistic slope: leaving the old
+        Needed when an hour no longer has a learnable cycle: leaving the old
         entry in place would keep it in use instead of the global LHS.
 
         Args:

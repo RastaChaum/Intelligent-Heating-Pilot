@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from homeassistant.core import State
 
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     HistoricalDataKey,
@@ -130,6 +132,53 @@ def test_is_heating_active_false_when_not_heating_mode(
     assert reader.is_heating_active() is False
 
 
+def test_get_target_temperature_returns_float(
+    mock_hass: Mock, recorder_queue: RecorderAccessQueue
+) -> None:
+    """Return the VTherm's current target temperature."""
+    vtherm_state = _make_state(state_value="heat", attributes={"temperature": 20.0})
+    mock_hass.states.get.return_value = vtherm_state
+
+    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+    assert reader.get_target_temperature() == 20.0
+
+
+def test_get_target_temperature_returns_none_when_entity_unavailable(
+    mock_hass: Mock, recorder_queue: RecorderAccessQueue
+) -> None:
+    """Return None when the VTherm entity cannot be read."""
+    mock_hass.states.get.return_value = None
+
+    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+    assert reader.get_target_temperature() is None
+
+
+def test_get_target_temperature_returns_none_when_attribute_missing(
+    mock_hass: Mock, recorder_queue: RecorderAccessQueue
+) -> None:
+    """Return None when the target temperature attribute is absent."""
+    vtherm_state = _make_state(state_value="heat", attributes={})
+    mock_hass.states.get.return_value = vtherm_state
+
+    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+    assert reader.get_target_temperature() is None
+
+
+def test_get_target_temperature_returns_none_on_invalid_value(
+    mock_hass: Mock, recorder_queue: RecorderAccessQueue
+) -> None:
+    """Return None when the target temperature attribute is not numeric."""
+    vtherm_state = _make_state(state_value="heat", attributes={"temperature": "bad"})
+    mock_hass.states.get.return_value = vtherm_state
+
+    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+    assert reader.get_target_temperature() is None
+
+
 def test_is_heating_active_false_when_at_or_above_target(
     mock_hass: Mock, recorder_queue: RecorderAccessQueue
 ) -> None:
@@ -143,6 +192,66 @@ def test_is_heating_active_false_when_at_or_above_target(
     reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
 
     assert reader.is_heating_active() is False
+
+
+_TRACK_STATE_CHANGE = (
+    "custom_components.intelligent_heating_pilot.infrastructure.adapters."
+    "climate_data_reader.async_track_state_change_event"
+)
+
+
+class TestWaitForStateChange:
+    """wait_for_state_change translates the VTherm state change events (#256)."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_the_vtherm_changes(
+        self, mock_hass: Mock, recorder_queue: RecorderAccessQueue
+    ) -> None:
+        """A state change of the VTherm before the timeout ends the wait."""
+        unsubscribe = Mock()
+        reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+        def _track(_hass: Mock, entity_ids: list[str], action) -> Mock:
+            asyncio.get_running_loop().call_soon(action, Mock())
+            return unsubscribe
+
+        with patch(_TRACK_STATE_CHANGE, side_effect=_track) as track:
+            changed = await reader.wait_for_state_change(timeout_seconds=5.0)
+
+        assert changed is True
+        assert track.call_args.args[:2] == (mock_hass, ["climate.vtherm"])
+        unsubscribe.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_timeout(
+        self, mock_hass: Mock, recorder_queue: RecorderAccessQueue
+    ) -> None:
+        """No state change before the timeout: False, and the listener is removed."""
+        unsubscribe = Mock()
+        reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+        with patch(_TRACK_STATE_CHANGE, return_value=unsubscribe):
+            changed = await reader.wait_for_state_change(timeout_seconds=0.01)
+
+        assert changed is False
+        unsubscribe.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_removes_the_listener_when_cancelled(
+        self, mock_hass: Mock, recorder_queue: RecorderAccessQueue
+    ) -> None:
+        """A cancelled wait (IHP unloading) does not leave a listener behind."""
+        unsubscribe = Mock()
+        reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+        with patch(_TRACK_STATE_CHANGE, return_value=unsubscribe):
+            task = asyncio.create_task(reader.wait_for_state_change(timeout_seconds=5.0))
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        unsubscribe.assert_called_once()
 
 
 # ===========================================================================
@@ -287,6 +396,66 @@ class TestFetchHistoricalData:
                 start_time,
                 end_time,
             )
+
+    @pytest.mark.asyncio
+    async def test_propagates_cancellation(self, reader: HAClimateDataReader) -> None:
+        """A cancelled history read stays a cancellation, not a ValueError (#187)."""
+        reader._fetch_history = AsyncMock(side_effect=asyncio.CancelledError())
+
+        with pytest.raises(asyncio.CancelledError):
+            await reader.fetch_historical_data(
+                TEST_ENTITY_ID,
+                HistoricalDataKey.INDOOR_TEMP,
+                get_test_datetime(),
+                get_future_datetime(hours=1),
+            )
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_propagates_cancellation(self, reader: HAClimateDataReader) -> None:
+        """The single-query read used by extraction also propagates cancellation (#187)."""
+        reader._fetch_history = AsyncMock(side_effect=asyncio.CancelledError())
+
+        with pytest.raises(asyncio.CancelledError):
+            await reader.fetch_all_historical_data(
+                TEST_ENTITY_ID, get_test_datetime(), get_future_datetime(hours=1)
+            )
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_keeps_preset_mode_on_heating_state(
+        self, reader: HAClimateDataReader
+    ) -> None:
+        """The extraction read keeps the preset: it flags load shedding and safety mode (#255).
+
+        The Recorder returns State objects, trimmed twice before the domain sees them: the
+        test goes through both trimming points.
+        """
+        state = State(
+            TEST_ENTITY_ID,
+            "heat",
+            {
+                "current_temperature": 19.5,
+                "temperature": 21.0,
+                "hvac_action": "heating",
+                "hvac_mode": "heat",
+                "preset_mode": "safety",
+                "friendly_name": "Living room",
+            },
+            last_changed=get_test_datetime(),
+        )
+        recorder = Mock()
+        recorder.async_add_executor_job = AsyncMock(return_value={TEST_ENTITY_ID: [state]})
+
+        with patch("homeassistant.components.recorder.get_instance", return_value=recorder):
+            result = await reader.fetch_all_historical_data(
+                TEST_ENTITY_ID, get_test_datetime(), get_future_datetime(hours=1)
+            )
+
+        attributes = result.data[HistoricalDataKey.HEATING_STATE][0].attributes
+        assert attributes == {
+            "hvac_action": "heating",
+            "hvac_mode": "heat",
+            "preset_mode": "safety",
+        }
 
     @pytest.mark.asyncio
     async def test_raises_value_error_on_mapper_failure(self, reader: HAClimateDataReader) -> None:

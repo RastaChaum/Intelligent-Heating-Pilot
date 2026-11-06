@@ -738,6 +738,34 @@ class TestFullDataPublishing:
         assert event_data["next_schedule_time"] == full_data["next_schedule_time"].isoformat()
         assert event_data["next_target_temperature"] == 21.0
         assert "clear_values" not in event_data
+        # Issue #64: the fallback-tracking keys are always present, defaulting to
+        # "nothing blocked" when the orchestrator did not report a block.
+        assert event_data["scheduler_blocked"] is False
+        assert event_data["blocked_schedulers"] == []
+
+    @pytest.mark.asyncio
+    @patch("homeassistant.core.EventBus.async_fire")
+    async def test_publishes_scheduler_blocked_fields_when_reported(
+        self,
+        mock_async_fire: Mock,
+        hass: HomeAssistant,
+        event_bridge: HAEventBridge,
+        mock_orchestrator: Mock,
+    ) -> None:
+        """Issue #64: a fully-exhausted cycle's scheduler_blocked/blocked_schedulers
+        reach the event payload, not just a successfully-resolved one."""
+        partial = _partial_anticipation_data()
+        partial["scheduler_blocked"] = True
+        partial["blocked_schedulers"] = ["switch.a", "switch.b"]
+        mock_orchestrator.calculate_and_schedule_anticipation.return_value = partial
+        event_bridge.setup_listeners()
+
+        hass.states.async_set("switch.bedroom_schedule", "on")
+        await hass.async_block_till_done()
+
+        event_data = mock_async_fire.call_args[0][1]
+        assert event_data["scheduler_blocked"] is True
+        assert event_data["blocked_schedulers"] == ["switch.a", "switch.b"]
 
     @pytest.mark.asyncio
     @patch("homeassistant.core.EventBus.async_fire")
@@ -920,3 +948,44 @@ class TestMonitoredDrift:
     def test_temperature_sensor_uses_temperature_threshold(self):
         bridge = _make_bridge()
         assert self._feed(bridge, [10.0, 10.0 - _MONITORED_TEMPERATURE_CHANGE_THRESHOLD]) == [True]
+
+
+class TestVthermRoomTemperatureTrigger:
+    """A thermostat change triggers a recalculation when its room temperature moves (#258)."""
+
+    @staticmethod
+    def _triggers(old_attributes: dict, new_attributes: dict) -> bool:
+        bridge = _make_bridge()
+        bridge._request_recalculate = Mock()  # type: ignore[method-assign]
+        event = _make_event(
+            "climate.vtherm",
+            _make_state("heat", old_attributes),
+            _make_state("heat", new_attributes),
+        )
+        bridge._handle_vtherm_change(event)
+        return bridge._request_recalculate.called
+
+    def test_raw_change_with_same_smoothed_does_not_trigger(self):
+        old = {"current_temperature": 19.12, "ema_temp": 19.2}
+        new = {"current_temperature": 19.33, "ema_temp": 19.2}
+        assert self._triggers(old, new) is False
+
+    def test_smoothed_change_with_same_raw_triggers(self):
+        old = {"current_temperature": 19.33, "ema_temp": 19.2}
+        new = {"current_temperature": 19.33, "ema_temp": 19.25}
+        assert self._triggers(old, new) is True
+
+    def test_raw_change_without_smoothed_triggers(self):
+        """A thermostat without ema_temp keeps today's behavior."""
+        assert self._triggers({"current_temperature": 19.1}, {"current_temperature": 19.3})
+
+    def test_smoothed_appearing_with_another_value_triggers(self):
+        """The room temperature each state yields is compared, whatever its source."""
+        old = {"current_temperature": 19.1}
+        new = {"current_temperature": 19.1, "ema_temp": 19.0}
+        assert self._triggers(old, new) is True
+
+    def test_smoothed_appearing_with_same_value_does_not_trigger(self):
+        old = {"current_temperature": 19.1}
+        new = {"current_temperature": 19.1, "ema_temp": 19.1}
+        assert self._triggers(old, new) is False

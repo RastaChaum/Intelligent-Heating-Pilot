@@ -8,13 +8,12 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import replace
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from ..domain.interfaces.device_config_reader_interface import DeviceConfig
 from ..domain.interfaces.heating_cycle_service_interface import IHeatingCycleService
 from ..domain.services.extraction_date_range_calculator import ExtractionDateRangeCalculator
 from ..domain.value_objects.heating import HeatingCycle
-from ..domain.value_objects.historical_data import HistoricalDataKey, HistoricalDataSet
 from ..infrastructure.adapters.recording_extraction_queue import RecordingExtractionQueue
 
 if TYPE_CHECKING:
@@ -34,7 +33,7 @@ MAX_MEMORY_CACHE_ENTRIES = 50
 try:
     from homeassistant.util import dt as dt_util
 except ImportError:
-    dt_util = None  # For testing without HA
+    dt_util = None  # type: ignore[assignment]  # optional import: tests run without HA
 
 
 class HeatingCycleLifecycleManager:
@@ -180,16 +179,7 @@ class HeatingCycleLifecycleManager:
             if pruned:
                 _LOGGER.debug("Cycles pruned — recalculating LHS and dead time")
                 self.invalidate_memory_cache()
-                try:
-                    cache_data = await self._heating_cycle_storage.get_cache_data(
-                        self._device_config.device_id
-                    )
-                    remaining_cycles: list[HeatingCycle] = (
-                        list(cache_data.cycles) if cache_data is not None else []
-                    )
-                except Exception as exc:
-                    _LOGGER.warning("Error loading remaining cycles for LHS recalculation: %s", exc)
-                    remaining_cycles = []
+                remaining_cycles = await self._load_cached_cycles()
 
                 if remaining_cycles:
                     await self._trigger_lhs_cascade(remaining_cycles)
@@ -204,6 +194,9 @@ class HeatingCycleLifecycleManager:
                 _LOGGER.debug(
                     "No cycles pruned — skipping LHS recalculation (model_storage already up to date)"
                 )
+                # The dead time is still learned: cycles extracted while auto-learning was
+                # off were never learned from (#224). An unchanged value is not saved again.
+                await self._persist_learned_dead_time(await self._load_cached_cycles())
 
         # Step 4: Find missing date ranges vs current (pruned) cache
         missing_ranges = await self._find_missing_date_ranges(start_date, end_date)
@@ -280,8 +273,10 @@ class HeatingCycleLifecycleManager:
         Cache Strategy (read-only operation):
         - **Reads from memory**: Not used (no time-based caching for arbitrary windows)
         - **Reads from storage**: Tries cycle_cache.get_cache_data() first
-        - **Falls back to extraction**: If no cache, extracts from historical data
-        - **Does NOT write**: This is a read-only operation, use update_cycles_for_window() to persist
+        - **No fallback to extraction**: If no cache, returns an empty list (only the
+          background extraction queue reads the Recorder)
+        - **Does NOT write**: Cycles are stored by _on_cycles_extracted() as the
+          extraction queue delivers them
 
         Args:
             device_id: Device identifier used for history queries and cache keys.
@@ -387,105 +382,6 @@ class HeatingCycleLifecycleManager:
         await self._evict_old_memory_cache_entries()
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.get_cycles_for_target_time")
-        return cycles
-
-    async def update_cycles_for_window(
-        self,
-        device_id: str,
-        start_time: datetime,
-        end_time: datetime,
-    ) -> list[HeatingCycle]:
-        """Extract and persist cycles for a specific window.
-
-        Cache Strategy (write operation):
-        - **Reads from**: Historical data adapters via _extract_cycles()
-        - **Writes to storage cache**: Via cycle_cache.append_cycles() or set_cached_cycles()
-        - **Writes to model storage**: Via model_storage.save_heating_cycle() for each cycle
-        - **Does NOT write to memory**: Memory cache is populated on-demand by get_cycles_for_target_time()
-
-        Use Case:
-        This is the primary write operation for persisting newly extracted cycles.
-        Called by:
-        - startup(): Initial load
-        - on_retention_change(): Reload after retention change
-        - on_24h_timer(): Periodic refresh
-
-        Args:
-            device_id: Device identifier used for history queries and cache keys.
-            start_time: Start of the extraction window.
-            end_time: End of the extraction window.
-
-        Returns:
-            Newly extracted heating cycles for the window.
-        """
-        _LOGGER.debug("Entering HeatingCycleLifecycleManager.update_cycles_for_window")
-        effective_device_id = device_id
-        _LOGGER.debug(
-            "Updating cycles for device=%s from %s to %s",
-            effective_device_id,
-            start_time,
-            end_time,
-        )
-
-        # Extract cycles
-        cycles = await self._extract_cycles(effective_device_id, start_time, end_time)
-
-        # Update cache if available
-        if self._heating_cycle_storage is not None and cycles:
-            try:
-                await self._heating_cycle_storage.append_cycles(
-                    effective_device_id,
-                    cycles,
-                    end_time,
-                    self._device_config.lhs_retention_days,
-                )
-                _LOGGER.debug("Updated cache with %d cycles", len(cycles))
-            except Exception as exc:
-                _LOGGER.error("Error updating cycle cache: %s", exc)
-
-        # Calculate and persist learned dead time from cycles
-        _LOGGER.debug(
-            "Dead time persistence check: cycles=%d, lhs_storage=%s, auto_learning=%s",
-            len(cycles) if cycles else 0,
-            "Not None" if self._lhs_storage is not None else "None",
-            self._device_config.auto_learning,
-        )
-        if cycles and self._lhs_storage is not None and self._device_config.auto_learning:
-            try:
-                from ..domain.services import DeadTimeCalculationService
-
-                dead_time_calculator = DeadTimeCalculationService()
-                learned_dead_time = dead_time_calculator.calculate_average_dead_time(cycles)
-
-                _LOGGER.debug(
-                    "Calculated learned_dead_time: %s minutes",
-                    f"{learned_dead_time:.1f}" if learned_dead_time is not None else "None",
-                )
-
-                if learned_dead_time is not None:
-                    await self._lhs_storage.set_learned_dead_time(learned_dead_time)
-                    _LOGGER.info(
-                        "Updated learned dead time from %d cycles: %.1f minutes",
-                        len(cycles),
-                        learned_dead_time,
-                    )
-                    if self._dead_time_updated_callback is not None:
-                        try:
-                            self._dead_time_updated_callback(learned_dead_time)
-                        except Exception as exc:
-                            _LOGGER.warning("Dead time update callback failed: %s", exc)
-            except Exception as exc:
-                _LOGGER.warning("Failed to calculate/persist dead time: %s", exc, exc_info=True)
-        elif cycles and self._lhs_storage is not None and not self._device_config.auto_learning:
-            _LOGGER.debug(
-                "Auto-learning disabled; skipping dead time persistence for device=%s",
-                effective_device_id,
-            )
-
-        # Note: ILhsStorage interface does not include save_heating_cycle()
-        # Cycles are extracted from Home Assistant recorder, not persisted via this interface
-
-        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.update_cycles_for_window")
         return cycles
 
     async def cancel(self) -> None:
@@ -769,48 +665,75 @@ class HeatingCycleLifecycleManager:
 
             _LOGGER.info("24h refresh extraction queue launched")
 
-            # Historical backfill: extend coverage backward by one task_range_days step.
-            # This progressively builds the full lhs_retention_days model without
-            # overwhelming the Recorder at startup (one extra query per device per day).
-            backfill_window = await self._calculate_backfill_window()
-            if backfill_window is not None:
-                backfill_start, backfill_end = backfill_window
-                _LOGGER.info(
-                    "Historical backfill step: %s to %s (device=%s)",
-                    backfill_start,
-                    backfill_end,
-                    self._device_config.device_id,
-                )
-                missing_backfill = await self._find_missing_date_ranges(
-                    backfill_start, backfill_end
-                )
-                if missing_backfill:
-                    # Detach recent-refresh references before launching backfill.
-                    # _launch_extraction_for_ranges cancels self._extraction_task and
-                    # self._extraction_queue first; without this, the just-launched
-                    # recent-refresh task (yesterday+today) would be cancelled before
-                    # it completes. The detached asyncio.Task continues running until
-                    # it finishes, then is garbage-collected.
-                    self._extraction_task = None
-                    self._extraction_queue = None
-                    self._extraction_queues = []
-                    await self._launch_extraction_for_ranges(missing_backfill)
-                else:
-                    _LOGGER.debug(
-                        "Backfill window %s-%s already explored for device=%s",
-                        backfill_start,
-                        backfill_end,
-                        self._device_config.device_id,
-                    )
-            else:
-                _LOGGER.debug(
-                    "Historical backfill complete for device=%s", self._device_config.device_id
-                )
+            catch_up_ranges = await self._collect_catch_up_ranges(start_date)
+            if catch_up_ranges:
+                # Detach recent-refresh references before launching the catch-up.
+                # _launch_extraction_for_ranges cancels self._extraction_task and
+                # self._extraction_queue first; without this, the just-launched
+                # recent-refresh task (yesterday+today) would be cancelled before
+                # it completes. The detached asyncio.Task continues running until
+                # it finishes, then is garbage-collected.
+                self._extraction_task = None
+                self._extraction_queue = None
+                self._extraction_queues = []
+                await self._launch_extraction_for_ranges(catch_up_ranges)
 
         except Exception as exc:
             _LOGGER.error("Failed to trigger 24h refresh: %s", exc)
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.trigger_24h_refresh")
+
+    async def _collect_catch_up_ranges(self, refresh_start: date) -> list[tuple[date, date]]:
+        """Return the older ranges the daily refresh extracts besides the recent days.
+
+        Two steps of at most task_range_days each, so the Recorder load stays at one
+        extra query per device per day, plus one only while a failed read is pending:
+        - retry: the most recent period left unexplored by a failed history read (#187)
+        - backfill: extend coverage backward, progressively building the full
+          lhs_retention_days model without overwhelming the Recorder at startup
+
+        Args:
+            refresh_start: First day re-extracted by the recent-days refresh.
+
+        Returns:
+            The retry range (if any) followed by the missing backfill ranges.
+        """
+        ranges: list[tuple[date, date]] = []
+
+        retry_window = await self._calculate_retry_window(refresh_start)
+        if retry_window is not None:
+            _LOGGER.info(
+                "Retrying history left unexplored by a failed read: %s to %s (device=%s)",
+                retry_window[0],
+                retry_window[1],
+                self._device_config.device_id,
+            )
+            ranges.append(retry_window)
+
+        backfill_window = await self._calculate_backfill_window()
+        if backfill_window is None:
+            _LOGGER.debug(
+                "Historical backfill complete for device=%s", self._device_config.device_id
+            )
+            return ranges
+
+        backfill_start, backfill_end = backfill_window
+        _LOGGER.info(
+            "Historical backfill step: %s to %s (device=%s)",
+            backfill_start,
+            backfill_end,
+            self._device_config.device_id,
+        )
+        missing_backfill = await self._find_missing_date_ranges(backfill_start, backfill_end)
+        if not missing_backfill:
+            _LOGGER.debug(
+                "Backfill window %s-%s already explored for device=%s",
+                backfill_start,
+                backfill_end,
+                self._device_config.device_id,
+            )
+        ranges.extend(missing_backfill)
+        return ranges
 
     # ------------------------------------------------------------------
     # Extraction Window Helpers
@@ -886,6 +809,47 @@ class HeatingCycleLifecycleManager:
             max_start,
         )
         return start_date, end_date
+
+    async def _calculate_retry_window(self, before: date) -> tuple[date, date] | None:
+        """Return the most recent period left unexplored by a failed read, or None.
+
+        A period whose history read failed stays unexplored so it can be read again
+        (#187). The startup window only covers the most recent days, and the backfill
+        only steps back from the oldest explored day, so a gap between the two would
+        otherwise never be retried. The most recent gap goes first, as recent cycles
+        weigh most in learning, trimmed to one task_range_days period.
+
+        Args:
+            before: First day re-extracted by the recent-days refresh; the search
+                stops the day before it.
+
+        Returns:
+            Tuple of (start_date, end_date) to retry, or None when there is no gap,
+            no explored day yet (the backfill owns that case) or no storage.
+        """
+        if self._heating_cycle_storage is None:
+            return None
+
+        cache_data = await self._heating_cycle_storage.get_cache_data(self._device_config.device_id)
+        if cache_data is None or not cache_data.explored_dates:
+            return None
+
+        retention_start = (
+            self._get_current_time_for_extraction(None)
+            - timedelta(days=self._device_config.lhs_retention_days)
+        ).date()
+        search_start = max(min(cache_data.explored_dates), retention_start)
+        search_end = before - timedelta(days=1)
+        if search_start > search_end:
+            return None
+
+        gaps = await self._find_missing_date_ranges(search_start, search_end)
+        if not gaps:
+            return None
+
+        gap_start, gap_end = gaps[-1]
+        period_start = gap_end - timedelta(days=self._device_config.task_range_days - 1)
+        return max(gap_start, period_start), gap_end
 
     async def _find_missing_date_ranges(
         self,
@@ -1097,6 +1061,10 @@ class HeatingCycleLifecycleManager:
         2. Persists to storage (model_storage)
         3. Fires callback to notify sensors
 
+        This is the only place the learned dead time is stored. A value equal to
+        the stored one is neither saved again nor announced, so a restart that
+        learns nothing new does not report an update.
+
         Args:
             cycles: Heating cycles used to calculate dead time
 
@@ -1123,7 +1091,14 @@ class HeatingCycleLifecycleManager:
                     f"{learned_dead_time:.1f}" if learned_dead_time is not None else "None",
                 )
 
-                if learned_dead_time is not None:
+                if learned_dead_time is not None and learned_dead_time == (
+                    await self._lhs_storage.get_learned_dead_time()
+                ):
+                    _LOGGER.debug(
+                        "Learned dead time unchanged (%.1f minutes); not saved again",
+                        learned_dead_time,
+                    )
+                elif learned_dead_time is not None:
                     await self._lhs_storage.set_learned_dead_time(learned_dead_time)
                     _LOGGER.info(
                         "Updated learned dead time from %d cycles: %.1f minutes",
@@ -1144,6 +1119,27 @@ class HeatingCycleLifecycleManager:
             )
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager._persist_learned_dead_time")
+
+    async def _load_cached_cycles(self) -> list[HeatingCycle]:
+        """Return every cycle of the persistent cache, or none if it cannot be read.
+
+        Learning is a replacement operation, so it must see the whole cache, not
+        only the cycles just extracted. A read error is logged and yields no cycle,
+        which leaves the learned values as they are.
+
+        Returns:
+            Cached heating cycles, empty without storage or on a read error.
+        """
+        if self._heating_cycle_storage is None:
+            return []
+        try:
+            cache_data = await self._heating_cycle_storage.get_cache_data(
+                self._device_config.device_id
+            )
+        except Exception as exc:
+            _LOGGER.warning("Error loading cached cycles: %s", exc)
+            return []
+        return list(cache_data.cycles) if cache_data is not None else []
 
     async def _trigger_lhs_cascade(self, cycles: list[HeatingCycle]) -> None:
         """Trigger cascade update to LHS lifecycle manager with error isolation.
@@ -1198,7 +1194,7 @@ class HeatingCycleLifecycleManager:
         """Return a now() timestamp aligned to the reference time's tz awareness."""
         if reference_time.tzinfo is not None and reference_time.tzinfo.utcoffset(reference_time):
             if dt_util is not None:
-                return cast(datetime, dt_util.now())
+                return dt_util.now()
             return datetime.now(tz=reference_time.tzinfo)
         return datetime.now()
 
@@ -1210,9 +1206,9 @@ class HeatingCycleLifecycleManager:
             and reference_time.tzinfo.utcoffset(reference_time)
         ):
             if dt_util is not None:
-                return cast(datetime, dt_util.now())
+                return dt_util.now()
             return datetime.now(tz=reference_time.tzinfo)
-        return cast(datetime, dt_util.now()) if dt_util is not None else datetime.now()
+        return dt_util.now() if dt_util is not None else datetime.now()
 
     async def _evict_old_memory_cache_entries(self) -> None:
         """Evict oldest entries from memory cache if limit exceeded.
@@ -1271,91 +1267,6 @@ class HeatingCycleLifecycleManager:
             len(keys_to_remove),
             len(self._cached_cycles_for_target_time),
         )
-
-    async def _extract_cycles(
-        self,
-        device_id: str,
-        start_time: datetime,
-        end_time: datetime,
-    ) -> list[HeatingCycle]:
-        """Extract heating cycles from historical data.
-
-        Args:
-            device_id: Device identifier
-            start_time: Start of extraction window
-            end_time: End of extraction window
-
-        Returns:
-            List of extracted heating cycles
-        """
-        _LOGGER.debug("Entering HeatingCycleLifecycleManager._extract_cycles")
-
-        # Diagnostic logs for troubleshooting empty data issue
-        _LOGGER.debug(
-            "Extracting cycles for device_id=%s, time window: %s to %s",
-            device_id,
-            start_time.isoformat(),
-            end_time.isoformat(),
-        )
-        _LOGGER.debug("Number of historical adapters available: %d", len(self._historical_adapters))
-        if not self._historical_adapters:
-            _LOGGER.warning(
-                "No historical adapters configured for device_id=%s. "
-                "This will result in empty historical data. "
-                "Check factory initialization.",
-                device_id,
-            )
-
-        # Load historical data from all adapters
-        combined_data: HistoricalDataSet = HistoricalDataSet(data={})
-
-        for adapter in self._historical_adapters:
-            try:
-                # Call the interface method to fetch historical data for each data key
-                # Use the configured VTherm entity ID from device_config, not the device_id
-                vtherm_entity_id = self._device_config.vtherm_entity_id
-                _LOGGER.debug(
-                    "Fetching historical data from adapter for entity_id=%s",
-                    vtherm_entity_id,
-                )
-                for data_key in HistoricalDataKey:
-                    adapter_data = await adapter.fetch_historical_data(
-                        entity_id=vtherm_entity_id,
-                        data_key=data_key,
-                        start_time=start_time,
-                        end_time=end_time,
-                    )
-                    # Merge adapter data into combined_data
-                    if adapter_data is not None and adapter_data.data:
-                        # Only extend if this data_key exists in the adapter response
-                        if data_key in adapter_data.data:
-                            if data_key not in combined_data.data:
-                                combined_data.data[data_key] = []
-                            combined_data.data[data_key].extend(adapter_data.data[data_key])
-                        else:
-                            _LOGGER.debug(
-                                "Data key %s not found in adapter response for entity %s",
-                                data_key.value,
-                                device_id,
-                            )
-            except Exception as exc:
-                _LOGGER.error("Error loading data from adapter: %s", exc)
-                raise
-
-        # Create historical dataset
-        historical_data_set = HistoricalDataSet(data=combined_data.data)
-
-        # Extract cycles using domain service
-        cycles = await self._heating_cycle_service.extract_heating_cycles(
-            device_id=device_id,
-            history_data_set=historical_data_set,
-            start_time=start_time,
-            end_time=end_time,
-        )
-
-        _LOGGER.debug("Extracted %d cycles from historical data", len(cycles))
-        _LOGGER.debug("Exiting HeatingCycleLifecycleManager._extract_cycles")
-        return cycles
 
     # ------------------------------------------------------------------
     # Async Incremental Extraction Integration Methods

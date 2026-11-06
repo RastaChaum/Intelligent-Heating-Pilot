@@ -23,13 +23,14 @@ documentation set concise, consistent, and easy to navigate.
 ## Responsibilities
 
 1. Keep user-facing documentation accurate:
-   - README.md
+   - README.md, and its French translation README.fr.md in the same change
    - CHANGELOG.md
    - configuration, installation, usage, and troubleshooting docs
 2. Keep contributor-facing documentation accurate when workflow, architecture, or
    project rules changed.
 3. Remove outdated guidance instead of stacking duplicate explanations.
-4. Keep all documentation in English with valid relative links.
+4. Keep all documentation in English with valid relative links. The only exception
+   is README.fr.md, the French translation of README.md.
 
 ## Standards
 

@@ -477,6 +477,96 @@ class TestScheduleAnticipationActionRevertLogic:
             assert len(timer_scheduler.scheduled_timers) == 0  # type: ignore
 
 
+class TestCancelPreheatingForOtherSlotStability:
+    """Regression test for a flap discovered while implementing #64's fallback.
+
+    The earliest-scheduler-first retry recomputes "next timeslot" from scratch
+    every cycle, so a fresh calculation can show a different (earlier, still
+    blocked) candidate even while a successful fallback is actively
+    preheating. _cancel_preheating_for_other_slot must not revert that active
+    preheat just because this tick's freshly computed candidate differs -
+    only when the active scheduler is no longer usable at all.
+    """
+
+    @pytest.mark.asyncio
+    async def test_active_scheduler_still_enabled_is_not_reverted(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        control_preheating_use_case,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """A different, earlier candidate this tick must not revert a still-valid
+        active preheat for a different scheduler (the #64 flap finding)."""
+        schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
+        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+
+        with patch.object(dt_util, "now", return_value=test_now):
+            await control_preheating_use_case.start_preheating(
+                target_time=test_now + timedelta(minutes=30),
+                target_temp=20.0,
+                scheduler_entity_id="switch.vacation",
+            )
+            control_preheating_use_case._scheduler_commander.cancel_action = AsyncMock()
+
+            await schedule_anticipation_action_use_case.handle_anticipation_scheduling(
+                anticipation_data={
+                    "anticipated_start_time": test_now,
+                    "next_schedule_time": test_now + timedelta(minutes=5),
+                    "next_target_temperature": 20.0,
+                    "scheduler_entity": "switch.non_vacation",
+                    "learned_heating_slope": 2.0,
+                    "anticipation_minutes": 5,
+                    "current_temp": 17.0,
+                },
+                ihp_enabled=True,
+            )
+
+        control_preheating_use_case._scheduler_commander.cancel_action.assert_not_awaited()
+        assert control_preheating_use_case.is_preheating_active() is True
+        assert control_preheating_use_case.get_active_scheduler_entity() == "switch.vacation"
+
+    @pytest.mark.asyncio
+    async def test_active_scheduler_no_longer_enabled_is_still_reverted(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        control_preheating_use_case,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """A genuinely disabled/removed active scheduler is still reverted -
+        the pre-existing #182 anti-flap behavior must not regress."""
+        schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
+        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+
+        with patch.object(dt_util, "now", return_value=test_now):
+            await control_preheating_use_case.start_preheating(
+                target_time=test_now + timedelta(minutes=30),
+                target_temp=20.0,
+                scheduler_entity_id="switch.vacation",
+            )
+            control_preheating_use_case._scheduler_commander.cancel_action = AsyncMock()
+            scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=False)
+
+            await schedule_anticipation_action_use_case.handle_anticipation_scheduling(
+                anticipation_data={
+                    "anticipated_start_time": test_now,
+                    "next_schedule_time": test_now + timedelta(minutes=5),
+                    "next_target_temperature": 20.0,
+                    "scheduler_entity": "switch.non_vacation",
+                    "learned_heating_slope": 2.0,
+                    "anticipation_minutes": 5,
+                    "current_temp": 17.0,
+                },
+                ihp_enabled=True,
+            )
+
+        control_preheating_use_case._scheduler_commander.cancel_action.assert_awaited_once_with(
+            "switch.vacation"
+        )
+        assert control_preheating_use_case.is_preheating_active() is False
+
+
 class TestScheduleAnticipationActionStateTransitions:
     """Test preheating state transitions around target reached and slot completion."""
 
@@ -616,3 +706,120 @@ class TestScheduleAnticipationActionStateTransitions:
 
         cancel_timer.assert_called_once()
         assert control_preheating_use_case.is_preheating_active()
+
+
+class TestScheduleAnticipationActionBlockedPropagation:
+    """Tests for surfacing a confirmed-blocked scheduler to the caller (#64).
+
+    ``start_preheating()`` now returns a bool; these tests verify
+    ``schedule_action()``/``_trigger_action()``/``handle_anticipation_scheduling()``
+    propagate a blocked entity id (instead of swallowing it) so the caller
+    (``HeatingOrchestrator``) can attempt a fallback candidate.
+    """
+
+    def _mock_control_preheating(self, start_preheating_result: bool) -> Mock:
+        control = Mock()
+        control.start_preheating = AsyncMock(return_value=start_preheating_result)
+        control.is_preheating_active = Mock(return_value=False)
+        control.get_preheating_target_time = Mock(return_value=None)
+        control.get_active_scheduler_entity = Mock(return_value=None)
+        control.cancel_preheating = AsyncMock()
+        return control
+
+    @pytest.mark.asyncio
+    async def test_schedule_action_immediate_trigger_returns_blocked_entity_on_false(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """A confirmed-blocked immediate trigger returns the scheduler's entity id."""
+        schedule_anticipation_action_use_case._control_preheating = self._mock_control_preheating(
+            False
+        )
+        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+
+        with patch.object(dt_util, "now", return_value=test_now):
+            result = await schedule_anticipation_action_use_case.schedule_action(
+                anticipated_start=test_now - timedelta(minutes=5),
+                target_time=test_now + timedelta(hours=1),
+                target_temp=21.0,
+                scheduler_entity_id="switch.non_vacation",
+                lhs=2.0,
+            )
+
+        assert result == "switch.non_vacation"
+
+    @pytest.mark.asyncio
+    async def test_schedule_action_immediate_trigger_returns_none_on_confirmed_success(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """A confirmed-successful immediate trigger returns None (no fallback needed)."""
+        schedule_anticipation_action_use_case._control_preheating = self._mock_control_preheating(
+            True
+        )
+        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+
+        with patch.object(dt_util, "now", return_value=test_now):
+            result = await schedule_anticipation_action_use_case.schedule_action(
+                anticipated_start=test_now - timedelta(minutes=5),
+                target_time=test_now + timedelta(hours=1),
+                target_temp=21.0,
+                scheduler_entity_id="switch.non_vacation",
+                lhs=2.0,
+            )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_timer_fired_trigger_returns_blocked_entity_on_false(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """A confirmed-blocked action when the anticipation timer fires is surfaced too."""
+        schedule_anticipation_action_use_case._control_preheating = self._mock_control_preheating(
+            False
+        )
+        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+
+        result = await schedule_anticipation_action_use_case._trigger_action(
+            target_time=test_now + timedelta(hours=1),
+            target_temp=21.0,
+            scheduler_entity_id="switch.non_vacation",
+        )
+
+        assert result == "switch.non_vacation"
+
+    @pytest.mark.asyncio
+    async def test_handle_anticipation_scheduling_propagates_blocked_entity(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """The top-level entry point also surfaces the blocked entity id to its caller."""
+        schedule_anticipation_action_use_case._control_preheating = self._mock_control_preheating(
+            False
+        )
+        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+        anticipation_data = {
+            "anticipated_start_time": test_now - timedelta(minutes=5),
+            "next_schedule_time": test_now + timedelta(hours=1),
+            "next_target_temperature": 21.0,
+            "scheduler_entity": "switch.non_vacation",
+            "learned_heating_slope": 2.0,
+            "anticipation_minutes": 30,
+        }
+
+        with patch.object(dt_util, "now", return_value=test_now):
+            result = await schedule_anticipation_action_use_case.handle_anticipation_scheduling(
+                anticipation_data=anticipation_data,
+                ihp_enabled=True,
+            )
+
+        assert result == "switch.non_vacation"

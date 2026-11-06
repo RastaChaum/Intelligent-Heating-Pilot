@@ -1,7 +1,8 @@
 """pytest-bdd step definitions for contextual LHS slot lookup scenarios.
 
 Exercises the real write path (update_contextual_lhs_from_cycles) and read path
-(get_contextual_lhs) together, so both sides must agree on the hour key (#183).
+(get_contextual_lhs) together, so both sides must agree on the hour key (#183),
+including for cycles that reach the target around the slot (#214).
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from custom_components.intelligent_heating_pilot.domain.value_objects.lhs_cache_
 )
 
 scenarios("contextual_lhs_slot_lookup.feature")
+scenarios("contextual_lhs_nearest_hour.feature")
 
 CYCLE_DAY = datetime(2025, 2, 9, tzinfo=UTC)
 SLOT_DAY = datetime(2025, 2, 10, tzinfo=UTC)
@@ -121,13 +123,9 @@ def global_slope(slot_context: dict, slope: float) -> None:
     asyncio.run(slot_context["storage"].set_cached_global_lhs(slope, CYCLE_DAY))
 
 
-@given(
-    parsers.parse(
-        "a slope of {slope:f} degrees per hour is stored for {slot} by an earlier version"
-    )
-)
+@given(parsers.parse("a slope of {slope:f} degrees per hour is stored for {slot}"))
 def stored_slope(slot_context: dict, slope: float, slot: str) -> None:
-    """GIVEN: Storage still holds a contextual slope written before the fix (#184)."""
+    """GIVEN: Storage holds a contextual slope, possibly written by an earlier version."""
     hour = _at(SLOT_DAY, slot).hour
     asyncio.run(slot_context["storage"].set_cached_contextual_lhs(hour, slope, CYCLE_DAY))
 

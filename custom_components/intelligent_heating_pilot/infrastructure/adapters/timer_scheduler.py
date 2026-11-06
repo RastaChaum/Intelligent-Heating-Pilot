@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Coroutine
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_point_in_time
@@ -66,4 +66,4 @@ class HATimerScheduler(ITimerScheduler):
             target_time.isoformat(),
         )
 
-        return cast(Callable[[], None], cancel_func)
+        return cancel_func

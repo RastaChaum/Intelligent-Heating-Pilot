@@ -58,26 +58,16 @@
 
 ## ⚙️ Configuration Issues
 
-### "VTherm entity not found" error
+### My thermostat is not in the list
 
 **Symptoms:**
-- Configuration fails with entity lookup error
-- Can't save configuration
+- The VTherm field does not offer your thermostat
+- Or "This integration is already configured" when you submit
 
 **Solution:**
 
-1. Find your VTherm entity:
-   - Go to **Developer Tools** → **States**
-   - Search for `climate.`
-   - Find your thermostat entity (e.g., `climate.living_room`)
-
-2. Copy the **exact entity name** (case-sensitive!)
-
-3. Reconfigure IHP:
-   - Settings → Devices & Services
-   - Find Intelligent Heating Pilot
-   - Click ⋮ → Reconfigure
-   - Paste the exact entity name
+1. Only **Versatile Thermostat** entities are offered. A thermostat from another integration cannot be used with IHP
+2. "This integration is already configured" means another IHP device already has this **Name**: choose another name
 
 ### Home Assistant slow or unresponsive after IHP configuration
 
@@ -89,7 +79,7 @@
 
 **Cause:**
 - IHP is performing initial extraction of heating cycles from recorder history
-- With high **Data Retention Days** settings (>30 days) or high recorder `purge_keep_days` (>10 days), this can take several minutes
+- With high **Slope Data Retention** settings (>30 days) or high recorder `purge_keep_days` (>10 days), this can take several minutes
 
 **Expected behavior:**
 - ⏱️ **Processing time**: 2-5 minutes depending on retention settings
@@ -113,11 +103,11 @@
      ```
    - Look for messages about heating cycle extraction
 
-3. **Reduce Data Retention Days if needed:**
+3. **Reduce Slope Data Retention if needed:**
    - Settings → Devices & Services
-   - Find Intelligent Heating Pilot
-   - Click ⋮ → Reconfigure
-   - Lower **Data Retention Days** to 30 or less
+   - Open Intelligent Heating Pilot
+   - Click **Configure** on the device
+   - Lower **Slope Data Retention** to 30 or less
    - This reduces initial processing time
 
 4. **Check your recorder configuration:**
@@ -126,17 +116,19 @@
    - See Home Assistant recorder documentation
 
 **Prevention:**
-- Use default **Data Retention Days** (30 days) initially
+- Use default **Slope Data Retention** (30 days) initially
 - Increase retention gradually after IHP is stable
 - Be aware that higher retention = longer initial processing
 
-### "No scheduler entities available" error
+### My scheduler is not in the list
 
 **Symptoms:**
-- Configuration shows empty dropdown for scheduler
-- "Please create a schedule first" message
+- The scheduler field does not offer your scheduler
 
 **Solution:**
+
+IHP only supports HACS Scheduler switches and native `schedule.*` helpers (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers)). Automations, calendars and other scheduler integrations cannot be selected.
+
 
 1. Verify HACS Scheduler is installed:
    - Go to HACS → Integrations
@@ -153,7 +145,7 @@
    - Search for `switch.` 
    - Should see `switch.schedule_*` entities
 
-4. Reconfigure IHP and select the scheduler
+4. Open the IHP device's **Configure** form and select the scheduler
 
 ### Configuration saves but integration doesn't load
 
@@ -178,14 +170,14 @@
    ```
 
 3. Try reconfiguring with minimal options:
-   - Use **required fields only** (Name, VTherm, Scheduler)
+   - Use **required fields only** (Name, VTherm)
    - Skip optional sensors first
    - Add them later if needed
 
 4. If error persists:
-   - Delete integration: Settings → Devices & Services → ⋮ → Delete
+   - Delete the device: Settings → Devices & Services → Intelligent Heating Pilot → ⋮ → Delete
    - Restart Home Assistant
-   - Reconfigure from scratch
+   - Add the device again from scratch
 
 ---
 
@@ -194,17 +186,17 @@
 ### Sensors showing "unknown" or "unavailable"
 
 **Symptoms:**
-- Learned Heating Slope: `unknown`
-- Anticipation Time: `unavailable`
-- Next Schedule: No data
+- Contextual Learned Heating Slope: `unknown`
+- Anticipated Start Time: `unknown`
+- Next Schedule Time: No data
 
 **Possible Causes:**
 
-1. **IHP just installed** - Wait 1-2 minutes for initialization
-2. **No heating cycles yet** - Sensors need data to show values
-3. **VTherm not heating** - Make sure your thermostat is actually controlling heat
-4. **Scheduler disabled** - If scheduler state is "off", sensors show `unknown` (this is normal)
-5. **Vacation mode active** - If scheduler conditions aren't met, anticipation sensors may show `unknown`
+1. **IHP just installed** - Wait a few minutes for initialization and the history extraction
+2. **No cycle learned for this hour** - The Contextual Learned Heating Slope stays `unknown` until a cycle is learned for the next slot's hour (the global slope is used meanwhile)
+3. **No supported scheduler, or no slot IHP can read** - See [Supported Schedulers](CONFIGURATION.md#supported-schedulers)
+4. **Scheduler switched off** - If a HACS Scheduler's state is "off", its slots are ignored (this is normal)
+5. **Native schedule ON** - While a `schedule.*` helper is ON, its next block is not known yet
 
 **Solution:**
 
@@ -214,41 +206,39 @@
    - State should NOT be "off"
    - If "off", this is expected behavior (IHP is inactive)
 
-2. **Wait for first heating cycle:**
-   - Manually trigger scheduler (or wait for scheduled time)
-   - Watch temperature rise
-   - Sensors should populate after heating stops
+2. **Check the next slot:**
+   - Its action must be `climate.set_temperature` or `climate.set_preset_mode`
+   - For a preset, the VTherm must expose that preset's temperature
 
 3. **Verify VTherm is working:**
    - Check VTherm entity in Developer Tools → States
-   - Look for `temperature_slope` attribute
-   - If empty/zero, VTherm may not be heating
+   - It must report a current temperature and a target temperature
 
 4. **Check IHP is running:**
    - Settings → Devices & Services
    - Click Intelligent Heating Pilot
-   - Should show "1 device" with status
+   - Each device should be listed without error
 
 ### IHP configured without a scheduler
 
 **What you see:**
 - Anticipation-related sensors show `unknown`
-- No errors in logs (after the fix)
+- No errors in logs
 
 **Expected behavior:**
 - Without a scheduler, IHP cannot compute upcoming targets, so sensors remain `unknown`
 - This is normal and does not indicate a failure
 
 **How to enable scheduler-based predictions:**
-- Configure a scheduler entity during setup or options flow
-- See [INSTALLATION.md](INSTALLATION.md) for scheduler installation and setup steps
+- Configure a scheduler in the IHP device's **Configure** form
+- See [Supported Schedulers](CONFIGURATION.md#supported-schedulers) for what IHP can read
 
 ### Sensors show data but it looks wrong
 
 **Symptoms:**
-- Learned Heating Slope shows 0.0 or 99.9
-- Anticipation Time shows extreme values
-- Confidence is always 0%
+- Global Learned Heating Slope stays at exactly 2.0 °C/h (the default)
+- Anticipated Start Time is 6 hours before the slot (the maximum)
+- Prediction Confidence is 0%
 
 **Solution:**
 
@@ -263,22 +253,24 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
 **Symptoms:**
 - Scheduler is configured and has upcoming events
 - You wait for the scheduled time
-- Heating never starts (or starts too late)
+- Heating never starts early (it starts at the slot's time)
 
 **Possible Causes:**
 
-1. **Configuration issue** - IHP not linked to correct scheduler
-2. **No learned slope** - IHP hasn't learned your heating yet
-3. **Confidence too low** - IHP not confident enough to act
-4. **Scheduler entity format wrong** - Entity name mismatch
+1. **Native `schedule.*` helper** - IHP never starts the heating for it: it only computes the anticipated start (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers))
+2. **IHP Preheating switch is off** - IHP keeps calculating but does not trigger anything
+3. **Unsupported slot action** - The slot does not use `climate.set_temperature` or `climate.set_preset_mode`, so IHP has no target to anticipate
+4. **Scheduler conditions not met** - The scheduler refused the slot; when every scheduler is blocked, the anticipation sensor lists them in its `blocked_schedulers` attribute
+5. **The schedule controls another thermostat** - IHP waits for its own VTherm to take the slot's temperature; otherwise it treats the scheduler as blocked
+6. **No heating needed** - The room is already at the slot's target
 
 **Solution:**
 
 1. **Verify configuration:**
    - Settings → Devices & Services → Intelligent Heating Pilot
-   - Click ⋮ → Device Details
-   - Check "Scheduler entities" list
-   - Should show your scheduler entity
+   - Click **Configure** on the device
+   - Check the scheduler entities
+   - Should show your HACS Scheduler switch
 
 2. **Check logs for errors:**
    ```yaml
@@ -289,14 +281,9 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
    ```
    Look for trigger-related messages
 
-3. **Manually trigger heating:**
-   - Manually turn ON your scheduler entity
-   - Watch logs to see if IHP detects it
-   - Temperatures should start rising
-
-4. **Check permissions:**
-   - Verify scheduler service can be called
-   - Try calling scheduler manually: Developer Tools → Services
+3. **Check the scheduler service:**
+   - Call `scheduler.run_action` manually: Developer Tools → Actions
+   - The VTherm should take the slot's temperature
 
 ### Heating triggers too early
 
@@ -309,20 +296,14 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
 
 **Solutions:**
 
-- **Wait for learning phase:**
-  - During first 5-10 cycles, IHP may overshoot
-  - It learns and improves with each cycle
-  - Confidence should increase over time
-
-- **Speed up learning:**
-  - Let several heating cycles complete
-  - Check that VTherm `temperature_slope` is updating
-  - Monitor the "Learned Heating Slope" sensor - should stabilize
+- **Check the learned values:**
+  - Monitor the "Global Learned Heating Slope" and "Contextual Learned Heating Slope" sensors
+  - A contextual slope learned for the slot's hour is used before the global one
 
 - **Manual reset if something changed:**
-  - If you replaced radiators or changed insulation:
-  - Call service: `intelligent_heating_pilot.reset_learning`
-  - IHP will start learning from scratch
+  - If you replaced radiators or changed insulation, or after upgrading from an earlier version
+  - Call the `intelligent_heating_pilot.reset_learning` service with any sensor of the device as `entity_id`
+  - IHP clears its learned values and relearns them from the recorder history
 
 ### Heating triggers too late (room doesn't reach target)
 
@@ -341,20 +322,21 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
    - Is thermostat sensor reading correctly?
    - Try manual heating to verify it works
 
-2. **Check environmental factors:**
-   - Is humidity extremely high (>80%)?
-   - Is it very cold outside (< -10°C)?
-   - These affect heating efficiency
+2. **Check the limits:**
+   - IHP never starts more than 6 hours before a slot
+   - A heating cycle longer than **Maximum Cycle Duration** (5 hours by default) is not learned: raise it for slow underfloor heating
 
-3. **Reset learning:**
+3. **Check the weather:**
+   - A sudden cold spell slows the room down before new cycles are learned
+   - IHP does not use the outdoor temperature in the prediction yet
+
+4. **Reset learning:**
    ```yaml
-   service: intelligent_heating_pilot.reset_learning
+   action: intelligent_heating_pilot.reset_learning
+   data:
+     entity_id: sensor.living_room_anticipated_start_time
    ```
-   Then wait for 5-10 new cycles to rebuild slope
-
-4. **Increase environmental adjustments:**
-   - Add humidity/outdoor temp sensors if not already present
-   - These help IHP account for real-world factors
+   IHP relearns the slope from the recorder history
 
 ---
 
@@ -367,6 +349,8 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
 - But heating still triggers
 
 **Diagnosis:**
+
+A native `schedule.*` helper never makes IHP start the heating: if heating starts, it comes from your own automation or the schedule itself. The steps below are for HACS Scheduler.
 
 1. **Check scheduler state:**
    - Developer Tools → States
@@ -395,7 +379,7 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
            entity_id: input_boolean.vacation_mode
            to: 'on'
        action:
-         - service: switch.turn_off
+         - action: switch.turn_off
            target:
              entity_id: switch.schedule_heating
    ```
@@ -432,11 +416,12 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
    - Find your scheduler entity
    - Look for `next_trigger` attribute
    - Should show next scheduled time
+   - Check that the next slot's action is `climate.set_temperature` or `climate.set_preset_mode`
 
-3. **Reconfigure IHP with correct scheduler:**
+3. **Check the IHP device's schedulers:**
    - Settings → Devices & Services
-   - Find Intelligent Heating Pilot
-   - Click ⋮ → Reconfigure
+   - Open Intelligent Heating Pilot
+   - Click **Configure** on the device
    - Verify scheduler entity is correct
 
 ---
@@ -456,9 +441,8 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
 **Solution:**
 
 - **Wait for stabilization:**
-  - Let 10+ heating cycles complete
-  - IHP needs data to average out variations
-  - Consistency should improve significantly
+  - Each slot's hour needs a few learned preheats
+  - IHP averages the cycles, so a few unusual ones weigh less over time
 
 - **Check for inconsistencies:**
   - Are heating cycles similar? (target temp, duration)
@@ -466,28 +450,28 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
   - If different, IHP will naturally vary more
   - Variations in your schedule cause variations in slope
 
-### Confidence never increases
+### Nothing seems to be learned
 
 **Symptoms:**
-- Learned Heating Slope sensor stays near 0.0
-- Confidence stays below 30%
-- No improvement over many cycles
+- Global Learned Heating Slope stays at exactly 2.0 °C/h (the default)
+- Dead Time stays at the **Initial Dead Time** setting
+- No improvement over many days
+
+Prediction Confidence is not a sign of learning: it only depends on the slope used and on the humidity sensor (see [Confidence Levels](HOW_IT_WORKS.md#-confidence-levels)).
 
 **Cause:**
-- Learning data not being captured (cycle detection failing)
+- No heating cycle is detected or kept in the recorder history
 
 **Solution:**
 
-1. **Check VTherm attribute:**
-   - Developer Tools → States
-   - Find your climate entity
-   - Look for `temperature_slope` attribute
-   - It should show values during heating (not 0)
+1. **Check the recorder:**
+   - The VTherm's history must be recorded (not excluded from the recorder)
+   - IHP learns from the current temperature, target temperature, `hvac_mode` and `hvac_action` history
 
 2. **Verify heating cycles:**
-   - Manually trigger heating
-   - Watch logs for cycle detection messages
-   - Should see messages like "Heating cycle detected"
+   - Cycles disturbed by load shedding or safety mode are not learned
+   - Cycles longer than **Maximum Cycle Duration** are not learned
+   - Enable debug logging and look for heating cycle extraction messages
 
 3. **Check thermostat settings:**
    - VTherm must be in "heat" mode
@@ -519,10 +503,10 @@ logger:
 ```
 
 **Or through UI:**
-1. Developer Tools → Logs
-2. Logger → Set log level
-3. Filter: `custom_components.intelligent_heating_pilot`
-4. Level: `DEBUG`
+1. Settings → Devices & Services
+2. Open Intelligent Heating Pilot
+3. Click ⋮ → **Enable debug logging**
+4. Disable it again later to download the log file
 
 **Then:**
 - Trigger heating manually
@@ -536,12 +520,11 @@ logger:
 1. **VTherm is active:**
    - Should show current temperature
    - Should show target temperature
-   - Should have `temperature_slope` attribute
 
 2. **Scheduler is active:**
-   - Scheduler entity should exist (`switch.schedule_*`)
-   - Should toggle between ON/OFF
-   - Should accept service calls
+   - HACS Scheduler entity should exist (`switch.schedule_*`) and not be "off"
+   - Should have a `next_trigger` attribute
+   - Should accept `scheduler.run_action` calls
 
 3. **Home Assistant logs are clean:**
    - No Python errors in logs
@@ -552,7 +535,7 @@ logger:
 
 **Test VTherm heating:**
 ```yaml
-service: climate.turn_on
+action: climate.set_temperature
 target:
   entity_id: climate.your_thermostat
 data:
@@ -561,14 +544,16 @@ data:
 
 **Test scheduler:**
 ```yaml
-service: switch.turn_on
+action: switch.turn_on
 target:
   entity_id: switch.your_schedule
 ```
 
 **Test IHP service:**
 ```yaml
-service: intelligent_heating_pilot.reset_learning
+action: intelligent_heating_pilot.reset_learning
+data:
+  entity_id: sensor.living_room_anticipated_start_time
 ```
 
 ---

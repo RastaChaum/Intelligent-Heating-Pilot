@@ -5,7 +5,7 @@
 ### Step 1: Open Integration Settings
 
 1. Go to **Settings** (⚙️) → **Devices & Services**
-2. Click **+ Create Integration**
+2. Click **+ Add Integration**
 3. Search for **"Intelligent Heating Pilot"** (or "IHP")
 4. Select it from the list
 
@@ -15,13 +15,46 @@ A configuration dialog will appear. Here's what you need:
 
 | Field | Required? | What It Is | How to Find |
 |-------|-----------|-----------|------------|
-| **Name** | ✅ Yes | A friendly name for this IHP instance | Any name you want (e.g., "Living Room") |
-| **VTherm Entity** | ✅ Yes | Your Versatile Thermostat climate entity | Go to **Devices** → Find your thermostat → Copy entity name (e.g., `climate.living_room`) |
-| **Scheduler Entity** | ⚠️ Optional | HACS Scheduler switch(es) that control the VTherm | Go to **Devices** → Find your scheduler → Copy entity name (e.g., `switch.schedule_heating`) |
+| **Name** | ✅ Yes | A friendly name for this IHP device; it also names the device and its entities. Each device needs its own name | Any name you want (e.g., "Living Room" gives `sensor.living_room_anticipated_start_time`) |
+| **VTherm Entity** | ✅ Yes | Your Versatile Thermostat climate entity | Pick it from the list: only Versatile Thermostat entities are offered. Use one IHP device per thermostat |
+| **Scheduler Entities** | ⚠️ Optional | The schedulers that control this VTherm | Pick them from the list (e.g., `switch.schedule_heating`). See [Supported Schedulers](#supported-schedulers) below |
 
-> **Native Home Assistant schedules**: a `schedule.*` helper can be selected instead of a HACS Scheduler switch. It only tells IHP when the next ON block starts, so IHP computes the anticipated start and the next target from the VTherm **comfort** preset temperature (20 °C if the comfort preset is not set) and exposes them as sensors. IHP does **not** start the heating itself for a native schedule: actual preheating is delegated to HACS Scheduler, which a native schedule does not have. To get real preheating, use a HACS Scheduler switch, or build your own automation on the anticipated start sensor (see [Using IHP Without a Scheduler](#using-ihp-without-a-scheduler)).
+The scheduler list offers the `switch.*` and `schedule.*` entities that look like schedulers. If none is found, an entity picker accepting any `switch.*` or `schedule.*` entity is shown instead.
 
-> **New in v0.5.0+**: The Scheduler Entity is now **optional**. See [Using IHP Without a Scheduler](#using-ihp-without-a-scheduler) below.
+### Supported Schedulers
+
+IHP does not work with every scheduler. What it can do depends on the scheduler type:
+
+| Scheduler | Anticipated start computed | Heating started by IHP |
+|-----------|---------------------------|------------------------|
+| [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) switch (`switch.schedule_*`) | ✅ Yes | ✅ Yes |
+| Native Home Assistant `schedule.*` helper | ✅ Yes, with the VTherm comfort preset as target | ❌ No |
+| Anything else (automations, calendars, `input_datetime`, other scheduler integrations) | ❌ No | ❌ No |
+
+Without a supported scheduler, use the [`calculate_anticipated_start_time` service](#using-ihp-without-a-scheduler) in your own automations.
+
+#### HACS Scheduler
+
+This is the only scheduler IHP can start the heating with. At the anticipated start, IHP calls `scheduler.run_action` so that the scheduler applies the upcoming slot early, with the scheduler's own conditions still checked. Restrictions:
+
+- **The slot action must set a temperature.** IHP reads the target temperature from the slot's action, and only understands two actions:
+  - `climate.set_temperature` with a `temperature`
+  - `climate.set_preset_mode` with a preset (e.g. `comfort`), whose temperature IHP reads from the VTherm preset temperatures
+
+  A slot whose action is anything else (`climate.set_hvac_mode`, a script, a scene, a preset whose temperature the VTherm does not expose) has no target for IHP and is not anticipated.
+- **The schedule must control the VTherm of this IHP device.** IHP does not check which entity the action targets. After triggering the slot, it waits up to 10 seconds for this VTherm to take the slot's temperature; if it does not, IHP treats the scheduler as blocked by its conditions.
+- **Only the next slot of each scheduler is anticipated.** If the next slot does not need heating (an eco slot, or a room already warm enough), nothing is preheated until that slot has passed, and the slot after it is anticipated then.
+- **A scheduler switched off is ignored.** Switching it back on makes IHP use it again.
+- **Several schedulers can be configured.** IHP anticipates the earliest upcoming slot among them. If that scheduler's conditions block it, IHP tries the next scheduler right away.
+
+#### Native `schedule.*` Helpers
+
+A native schedule only tells IHP when its next ON block starts. It does not hold a temperature and has no service to apply a block early. So:
+
+- IHP computes the anticipated start for the next ON block, with the VTherm **comfort** preset temperature as target (20 °C if the comfort preset cannot be read).
+- IHP does **not** start the heating. To preheat, build an automation on the **Anticipated Start Time** sensor, or use a HACS Scheduler.
+- Nothing is anticipated while the schedule is ON: the next block is only known once the current one has ended.
+- A native schedule cannot be switched off: IHP keeps computing its anticipated start, during a vacation too.
 
 ### Step 3: (Optional) Add Environmental Sensors
 
@@ -40,7 +73,7 @@ These sensors help IHP make better predictions but are **not required**:
 
 1. Click **Submit**
 2. IHP will initialize and start monitoring your heating system
-3. You should see a new device: **"Intelligent Heating Pilot [Your Name]"**
+3. You should see a new device named after the **Name** you entered
 
 ✅ **Setup complete!** IHP is now running. Continue reading to understand what to expect.
 
@@ -48,28 +81,23 @@ These sensors help IHP make better predictions but are **not required**:
 
 ## After Installation: What to Expect
 
-### First 3-5 Heating Cycles
+### Learning Starts From Your History
 
-During this initial learning phase:
+IHP does not wait for new heating cycles: right after setup, it reads the heating cycles of your VTherm from the Home Assistant recorder history, over the **Slope Data Retention** period (limited to what the recorder still keeps). This runs in the background and can take a few minutes.
 
-- ✅ IHP monitors your VTherm's heating behavior
-- ✅ It collects data about how fast your room heats
-- 📊 The **Learned Heating Slope** sensor might show default values (conservative)
-- 📈 Predictions improve with each heating cycle
-
-**What you'll see:**
-- New sensors appear on your device
-- Logs show IHP learning and calculating
-- Predictions become more accurate over time
+- 📊 If cycles are found, the **Global Learned Heating Slope** and **Dead Time** sensors show learned values as soon as the extraction ends
+- 📊 Until then, or if the history holds no usable cycle, the default slope of 2.0 °C/h and the **Initial Dead Time** are used
+- 📈 Each new heating cycle refines the values; a new cycle is picked up at the latest by the daily refresh
+- 🕐 The **Contextual Learned Heating Slope** stays *unknown* for an hour of the day until a cycle has been learned for it
 
 ### What IHP Does Automatically
 
 Once configured, IHP operates automatically:
 
-1. **Monitors** your scheduler for upcoming heating schedules
+1. **Monitors** your schedulers for the next slot
 2. **Learns** how your heating system performs
-3. **Calculates** when to trigger heating to reach target temperature exactly on time
-4. **Triggers** heating at the optimal anticipation time
+3. **Calculates** when to start heating to reach the target temperature exactly on time
+4. **Triggers** the slot early through HACS Scheduler (a native schedule only gets the calculation)
 
 **You don't need to do anything—IHP works in the background!**
 
@@ -77,7 +105,7 @@ Once configured, IHP operates automatically:
 
 ## Using IHP Without a Scheduler
 
-**New in v0.5.0+**: You can now use IHP without configuring a scheduler entity. This is useful for:
+IHP can be used without a scheduler, or with a scheduler it cannot start (native `schedule.*`). This is useful for:
 
 - 🤖 **Dynamic scheduling** based on external triggers (e.g., smartphone alarm, calendar events)
 - 🔧 **Custom automations** that calculate start times programmatically
@@ -89,7 +117,7 @@ Once configured, IHP operates automatically:
 When no scheduler is configured:
 
 - ✅ IHP continues to **learn** from your heating cycles
-- ✅ The **Learned Heating Slope** sensor updates normally
+- ✅ The **Global Learned Heating Slope** and **Dead Time** sensors update normally
 - ⚠️ Anticipation sensors show **"unknown"** (no scheduled events to anticipate)
 - ⚠️ IHP does **not automatically trigger** heating (you control this via automations)
 
@@ -101,35 +129,36 @@ Without a scheduler, you can use the **`calculate_anticipated_start_time`** serv
 
 ```yaml
 alias: "Dynamic Wake-up Heating"
-trigger:
-    - platform: state
+mode: restart
+triggers:
+  - trigger: state
     entity_id: sensor.phone_next_alarm
-action:
-    # Calculate when to start heating
-    - service: intelligent_heating_pilot.calculate_anticipated_start_time
+actions:
+  # Calculate when to start heating
+  - action: intelligent_heating_pilot.calculate_anticipated_start_time
     data:
-        entity_id: sensor.intelligent_heating_pilot_living_room_anticipated_start_time
-        target_time: "{{ states('sensor.phone_next_alarm') }}"
-        target_temp: 21.0
+      entity_id: sensor.living_room_anticipated_start_time
+      target_time: "{{ states('sensor.phone_next_alarm') }}"
+      target_temp: 21.0
     response_variable: heating_calc
 
-    # Wait until the calculated start time
-    - delay:
-        seconds: "{{ (as_datetime(heating_calc.anticipated_start_time) - now()).total_seconds() }}"
+  # Wait until the calculated start time
+  - delay:
+      seconds: "{{ [0, (as_datetime(heating_calc.anticipated_start_time) - now()).total_seconds()] | max }}"
 
-    # Start heating
-    - service: climate.set_temperature
+  # Start heating
+  - action: climate.set_temperature
     target:
-        entity_id: climate.living_room
+      entity_id: climate.living_room
     data:
-        temperature: 21.0
+      temperature: 21.0
 ```
 
 **Service Parameters:**
 
 | Parameter | Required? | Description | Example |
 |-----------|-----------|-------------|---------|
-| `entity_id` | ✅ Yes | Any IHP sensor entity (to identify the device) | `sensor.intelligent_heating_pilot_living_room_anticipated_start_time` |
+| `entity_id` | ✅ Yes | Any IHP sensor of the device (to identify it) | `sensor.living_room_anticipated_start_time` |
 | `target_time` | ✅ Yes | When you want target temperature reached | `"2024-01-15 07:00:00"` or template |
 | `target_temp` | ⚠️ Optional | Desired temperature (defaults to VTherm's current target) | `21.0` |
 
@@ -144,8 +173,10 @@ target_temp: 21.0
 current_temp: 18.5
 estimated_duration_minutes: 33.0
 learned_heating_slope: 2.1
-confidence_level: 0.85
+confidence_level: 0.9
 ```
+
+When IHP cannot calculate (no current temperature, for instance), `anticipated_start_time`, `estimated_duration_minutes` and `confidence_level` are `null`.
 
 **Use these values in your automations** to create intelligent, adaptive heating schedules!
 
@@ -153,16 +184,15 @@ confidence_level: 0.85
 
 ## Modifying Configuration
 
-Need to change entities after setup?
+Need to change entities or settings after setup?
 
 1. Go to **Settings** → **Devices & Services**
-2. Find your **Intelligent Heating Pilot** integration
-3. Click the **⋮ (three dots)** menu
-4. Select **Reconfigure** or **Options**
-5. Update the entities
-6. Click **Submit**
+2. Open **Intelligent Heating Pilot**
+3. Click **Configure** on the device you want to change
+4. Update the entities or settings
+5. Click **Submit**
 
-The integration will reload automatically.
+The device reloads automatically. The **Name** cannot be changed there: rename the device from its device page.
 
 ---
 
@@ -184,9 +214,9 @@ When to use: If you know your heating system has a significant startup lag (e.g.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Automatic Learning** | Enabled | When enabled, IHP updates learned heating slope and dead time after each cycle |
+| **Automatic Learning** | Enabled | When enabled, IHP learns the dead time from heating cycles. When disabled, the **Initial Dead Time** is always used. The heating slope is learned in both cases |
 
-When to disable: During testing or when you want to freeze parameters for a period while evaluating IHP's behavior with fixed values.
+When to disable: During testing or when you want to freeze the dead time for a period while evaluating IHP's behavior with a fixed value.
 
 ---
 
@@ -213,8 +243,11 @@ This controls how the initial recorder extraction is chunked. Smaller values = l
 
 When heating stops unexpectedly (e.g., safety protection, frost mode), IHP waits this long. If heating resumes, the interruption is ignored and the cycle continues. If not, the cycle closes.
 
+The same delay applies to Versatile Thermostat **load shedding** (`power` preset) and to **target drops**, such as a window or a door opened for a couple of minutes: an interruption shorter than this delay does not split the preheat, which is learned as one cycle. A longer one ends the cycle when it started; after a load shedding, that cycle is not learned.
+
 **When to adjust:**
-- **Set lower (0–2 min)**: For systems that stop cleanly with no safety interruptions
+- **Set lower (0–2 min)**: For systems that stop cleanly with no safety interruptions. With 0, every load shedding ends the cycle
+- **Keep it above your load sheddings and brief openings**: Versatile Thermostat usually sheds the load for 1–3 minutes; the default 10 minutes covers them, and a window opened to air the room for longer is not bridged
 - **Set higher (15–20 min)**: For boilers with long safety cycle lockouts or heat pumps with regular defrost cycles
 
 ---
@@ -240,7 +273,7 @@ This setting controls how IHP reacts when anticipation is recalculated while pre
 
 ### Data Retention Settings
 
-**New in v0.4.0+**: IHP now caches heating cycles for improved performance and longer learning history.
+IHP caches heating cycles for performance and a longer learning history.
 
 | Setting | Default | Range | Description |
 |---------|---------|-------|-------------|
@@ -282,7 +315,7 @@ When you first configure IHP or increase the **Slope Data Retention** setting, I
 
 ### Heating Cycle Detection Parameters
 
-**New in v0.4.3+**: Fine-tune how IHP detects and processes heating cycles for optimal Learning Heating Slope calculation.
+Fine-tune how IHP detects and processes heating cycles for the Learned Heating Slope calculation.
 
 #### Temperature Detection Threshold
 
@@ -313,8 +346,8 @@ When you first configure IHP or increase the **Slope Data Retention** setting, I
 
 **Maximum Duration:**
 - 🔻 **Lower (120-180 min)**: For well-insulated homes or powerful heating systems
-- 🔺 **Higher (240-360 min)**: For poorly insulated spaces or weak heating systems
-- ⚠️ **Too low**: May exclude long but valid heating cycles
+- 🔺 **Higher (240-360 min)**: For poorly insulated spaces, weak heating systems, or underfloor heating whose preheats last more than 5 hours
+- ⚠️ **Too low**: May exclude long but valid heating cycles: a cycle longer than this setting is not learned at all, and the slowest preheats are the ones that teach IHP to start earlier
 - ⚠️ **Too high**: May include abnormal cycles from sensor malfunctions
 
 #### Cycle Split Duration (Advanced)
@@ -333,14 +366,16 @@ When you first configure IHP or increase the **Slope Data Retention** setting, I
 - 60 minutes: For very long heating cycles
 - Disabled (0): For simple mode users
 
+**How cycles are split:** the heating phase, after the dead time, is cut into periods of this duration. The first sub-cycle also covers the dead time, so the dead time is still learned, and every sub-cycle gets the heating slope of the whole heating phase. A cycle whose heating phase is not longer than this duration is not split.
+
 ---
 
 ### How to Modify Advanced Settings
 
 1. Go to **Settings** → **Devices & Services**
-2. Find **Intelligent Heating Pilot** integration
-3. Click **⋮ (three dots)** → **Reconfigure**
-4. Scroll to **Advanced Configuration** section
+2. Open **Intelligent Heating Pilot**
+3. Click **Configure** on the device
+4. Scroll down to the settings below the entities
 5. Adjust parameters based on your heating system
 6. Click **Submit**
 
@@ -358,9 +393,9 @@ If you don't have certain sensors and don't want to see warnings:
 You can configure multiple IHP instances—one per VTherm:
 
 1. Go to **Settings** → **Devices & Services**
-2. Click **+ Create Integration** again
-3. Configure a **new instance** with a different VTherm entity
-4. Each instance learns independently and triggers its own scheduler
+2. Click **+ Add Integration** again
+3. Configure a **new device** with another name and a different VTherm entity
+4. Each device learns independently and triggers its own schedulers
 
 ---
 
@@ -380,7 +415,7 @@ After configuration, IHP creates these entities on your device:
 - ✅ All sensors update as expected
 
 **When Disabled (OFF):**
-- ❌ IHP does NOT trigger heating (scheduler runs in legacy mode)
+- ❌ IHP does NOT trigger heating early: your scheduler applies its slots at their normal time
 - ✅ Learning continues (heating cycles still detected)
 - ✅ Calculations continue (predictions still shown in sensors)
 - ✅ You can monitor what IHP would do without it taking control
@@ -391,16 +426,12 @@ After configuration, IHP creates these entities on your device:
 
 | Sensor | What It Shows | Updated |
 |--------|--------------|---------|
-| **Anticipated Start Time** | When heating will start | Every update cycle |
-| **Next Schedule Time** | Time and target of the next heating event | Every schedule change |
+| **Anticipated Start Time** | When heating will start (also available as **Anticipated Start Time (HMS)**, a plain time) | Every update cycle |
+| **Next Schedule Time** | Time and target of the next heating event (also available as **Next Schedule Time (HMS)**) | Every schedule change |
 | **Global Learned Heating Slope** | How fast your room heats (°C/hour), all hours combined | Every heating cycle |
-| **Contextual Learned Heating Slope** | Slope learned for the hour of the next slot; *unknown* until that hour is learned (the global slope is used meanwhile) | Every heating cycle |
+| **Contextual Learned Heating Slope** | Slope learned for the hour nearest to the next slot (a 6:45 slot uses 7:00, shown in the `scheduled_hour` attribute); *unknown* until that hour is learned (the global slope is used meanwhile) | Every heating cycle |
 | **Dead Time** | System delay in temperature response (minutes) | Every heating cycle |
-| **Prediction Confidence** | How reliable the current prediction is (%) | Every update cycle |
-
-### Debug/Status Sensors
-
-Additional sensors may appear for monitoring and troubleshooting (see [How IHP Works](HOW_IT_WORKS.md)).
+| **Prediction Confidence** | An indication of how reliable the prediction is (%), see [Confidence Levels](HOW_IT_WORKS.md#-confidence-levels) | Every update cycle |
 
 ---
 
@@ -409,8 +440,8 @@ Additional sensors may appear for monitoring and troubleshooting (see [How IHP W
 Before moving forward, verify:
 
 - [ ] IHP appears in integrations
-- [ ] At least one VTherm entity selected
-- [ ] Scheduler entity configured (optional — required for automatic preheating)
+- [ ] A VTherm entity selected
+- [ ] A HACS Scheduler configured (optional — required for automatic preheating)
 - [ ] New sensors appear on your IHP device
 - [ ] No error messages in logs
 
@@ -420,21 +451,23 @@ Before moving forward, verify:
 
 ## Troubleshooting Configuration
 
-### "VTherm entity not found"
+### My thermostat is not in the list
 
 **Solution:**
-1. Go to **Developer Tools** → **States**
-2. Search for entities starting with `climate.`
-3. Copy the exact entity name (case-sensitive)
-4. Update IHP configuration with correct name
+- Only Versatile Thermostat entities are offered. Check that Versatile Thermostat is installed and that your thermostat is one of its entities
 
-### "No scheduler entities available"
+### "This integration is already configured"
 
 **Solution:**
-1. Verify HACS Scheduler Component is installed
-2. Create at least one schedule in the scheduler
-3. Verify scheduler switch entity exists (should start with `switch.`)
-4. Restart Home Assistant and reconfigure IHP
+- Another IHP device already has this **Name**. Choose another name
+
+### My scheduler is not in the list
+
+**Solution:**
+1. Verify the HACS Scheduler component is installed (or that your `schedule.*` helper exists)
+2. Create at least one schedule that controls this VTherm
+3. Verify its entity exists in **Developer Tools** → **States** (`switch.schedule_*`)
+4. Open the IHP device's **Configure** form again
 
 ### IHP won't save configuration
 

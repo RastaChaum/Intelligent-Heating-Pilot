@@ -6,12 +6,15 @@ reached (end hour) and calculating contextual heating slopes.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from homeassistant.util import dt as dt_util
 
-from custom_components.intelligent_heating_pilot.domain.constants import MINIMUM_REALISTIC_LHS
+from custom_components.intelligent_heating_pilot.domain.constants import (
+    LEGACY_MINIMUM_REALISTIC_LHS,
+)
 from custom_components.intelligent_heating_pilot.domain.services.contextual_lhs_calculator_service import (
     ContextualLHSCalculatorService,
 )
@@ -395,7 +398,7 @@ class TestContextualLHSCalculatorService:
     def test_contextual_lhs_returns_none_when_average_below_realistic_minimum(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """An average below MINIMUM_REALISTIC_LHS is not learned, so callers use global (#184)."""
+        """An average below LEGACY_MINIMUM_REALISTIC_LHS is not learned, so callers use global (#184)."""
         cycles = [
             self._create_cycle(
                 start_time=base_datetime.replace(hour=6),
@@ -412,8 +415,8 @@ class TestContextualLHSCalculatorService:
     def test_contextual_lhs_keeps_slow_but_realistic_average(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """A slow average just above MINIMUM_REALISTIC_LHS is still a learned value."""
-        slow_slope = MINIMUM_REALISTIC_LHS + 0.05
+        """A slow average just above LEGACY_MINIMUM_REALISTIC_LHS is still a learned value."""
+        slow_slope = LEGACY_MINIMUM_REALISTIC_LHS + 0.05
         cycles = [
             self._create_cycle(
                 start_time=base_datetime.replace(hour=6),
@@ -550,3 +553,145 @@ class TestContextualHourTimezone:
         )
 
         assert service.extract_hour_from_cycle(cycle) == 7
+
+    def test_nearest_hour_is_taken_on_the_local_clock(self) -> None:
+        """A cycle ending 04:58 UTC reached the target at 06:58 in UTC+2: hour 7 (#214)."""
+        service = ContextualLHSCalculatorService(local_tz=timezone(timedelta(hours=2)))
+        cycle = HeatingCycle(
+            device_id="test_device",
+            start_time=datetime(2025, 2, 9, 3, 30),
+            end_time=datetime(2025, 2, 9, 4, 58),
+            target_temp=20.0,
+            end_temp=20.0,
+            start_temp=17.0,
+        )
+
+        assert service.extract_hour_from_cycle(cycle) == 7
+
+
+class TestContextualHourOfCycleEnd:
+    """A cycle is filed under the hour nearest to its end (#214)."""
+
+    @pytest.fixture
+    def service(self) -> ContextualLHSCalculatorService:
+        """Create service instance."""
+        return ContextualLHSCalculatorService()
+
+    @staticmethod
+    def _cycle_ending_at(hour: int, minute: int) -> HeatingCycle:
+        end_time = datetime(2025, 2, 9, hour, minute, tzinfo=UTC)
+        return HeatingCycle(
+            device_id="test_device",
+            start_time=end_time - timedelta(hours=1),
+            end_time=end_time,
+            target_temp=20.0,
+            end_temp=20.0,
+            start_temp=17.0,
+        )
+
+    def test_cycle_ending_just_before_the_hour_is_filed_under_that_hour(
+        self, service: ContextualLHSCalculatorService
+    ) -> None:
+        """A preheat that reaches the target at 06:58 served the 07:00 slot."""
+        assert service.extract_hour_from_cycle(self._cycle_ending_at(6, 58)) == 7
+
+    def test_cycle_ending_on_the_half_hour_stays_in_the_earlier_hour(
+        self, service: ContextualLHSCalculatorService
+    ) -> None:
+        """A cycle ending exactly at 06:30 counts for a 06:30 slot, which reads hour 6."""
+        assert service.extract_hour_from_cycle(self._cycle_ending_at(6, 30)) == 6
+
+    def test_cycle_ending_just_before_midnight_is_filed_under_hour_0(
+        self, service: ContextualLHSCalculatorService
+    ) -> None:
+        """The hour after 23 wraps to 0 instead of leaving the 0-23 range."""
+        assert service.extract_hour_from_cycle(self._cycle_ending_at(23, 50)) == 0
+
+    def test_hour_slope_averages_cycles_landing_around_the_slot(
+        self, service: ContextualLHSCalculatorService
+    ) -> None:
+        """Cycles reaching the target at 06:58 and 07:20 both teach hour 7."""
+        early = self._cycle_ending_at(6, 58)  # 3.0 °C/h
+        late = replace(self._cycle_ending_at(7, 20), end_temp=21.0)  # 4.0 °C/h
+
+        assert service.calculate_contextual_lhs_for_hour([early, late], 7) == pytest.approx(3.5)
+
+
+class TestContextualLHSFromCyclesWithKnownStatus:
+    """Cycles extracted since #255: an hour learns its slow cycles, not its disturbed ones."""
+
+    @staticmethod
+    def _cycle(day: int, slope: float, disturbed: bool = False) -> HeatingCycle:
+        """A cycle reaching its target at 07:00 local time."""
+        end = datetime(2025, 2, 9, 7, 0, 0) + timedelta(days=day)
+        return HeatingCycle(
+            device_id="climate.test_vtherm",
+            start_time=end - timedelta(hours=1),
+            end_time=end,
+            target_temp=21.0,
+            end_temp=20.0 + slope,
+            start_temp=20.0,
+            disturbed=disturbed,
+            heating_phase_observed=True,
+        )
+
+    def test_slow_hour_is_learned(self) -> None:
+        """An hour whose undisturbed cycles heat at 0.15 °C/h learns 0.15 °C/h."""
+        result = ContextualLHSCalculatorService().calculate_contextual_lhs_by_hour(
+            [self._cycle(0, 0.15)]
+        )
+
+        assert result.learned[7] == pytest.approx(0.15)
+        assert 7 not in result.rejected_hours
+
+    def test_hour_with_only_disturbed_cycles_is_rejected(self) -> None:
+        """Its earlier stored slope is dropped, so the slot falls back to the global LHS."""
+        result = ContextualLHSCalculatorService().calculate_contextual_lhs_by_hour(
+            [self._cycle(0, 1.0, disturbed=True)]
+        )
+
+        assert 7 not in result.learned
+        assert result.rejected_hours == frozenset({7})
+
+
+class TestContextualHourOfCycleTiedToSlot:
+    """A cycle during which its slot came due is filed under the slot's hour (#254)."""
+
+    @staticmethod
+    def _late_preheat(slot: datetime | None) -> HeatingCycle:
+        """A preheat from 06:20 to 09:56 UTC, possibly tied to a slot."""
+        return HeatingCycle(
+            device_id="test_device",
+            start_time=datetime(2026, 11, 1, 6, 20, tzinfo=UTC),
+            end_time=datetime(2026, 11, 1, 9, 56, tzinfo=UTC),
+            target_temp=20.0,
+            end_temp=19.8,
+            start_temp=18.9,
+            scheduled_slot_time=slot,
+        )
+
+    def test_late_preheat_is_filed_under_its_slot_hour(self) -> None:
+        """The 08:45 slot reads hour 9; a preheat ending at 09:56 for it must be there too."""
+        cycle = self._late_preheat(datetime(2026, 11, 1, 8, 45, tzinfo=UTC))
+
+        assert ContextualLHSCalculatorService().extract_hour_from_cycle(cycle) == 9
+
+    def test_cycle_without_slot_keeps_the_hour_nearest_to_its_end(self) -> None:
+        """Cycles not tied to a slot, and cycles cached before #254, keep the #214 rule."""
+        assert (
+            ContextualLHSCalculatorService().extract_hour_from_cycle(self._late_preheat(None)) == 10
+        )
+
+    def test_slot_hour_is_read_on_the_local_clock(self) -> None:
+        """A slot that came due at 07:45 UTC is the 08:45 slot in UTC+1: hour 9."""
+        service = ContextualLHSCalculatorService(local_tz=timezone(timedelta(hours=1)))
+        cycle = self._late_preheat(datetime(2026, 11, 1, 7, 45, tzinfo=UTC))
+
+        assert service.extract_hour_from_cycle(cycle) == 9
+
+    def test_naive_slot_time_is_read_as_utc(self) -> None:
+        """Slot times follow the convention of the other cycle times."""
+        service = ContextualLHSCalculatorService(local_tz=timezone(timedelta(hours=1)))
+        cycle = self._late_preheat(datetime(2026, 11, 1, 7, 45))
+
+        assert service.extract_hour_from_cycle(cycle) == 9

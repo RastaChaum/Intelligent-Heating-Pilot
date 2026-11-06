@@ -7,6 +7,7 @@ import pytest
 from custom_components.intelligent_heating_pilot.domain.services.heating_cycle_service import (
     HeatingCycleService,
 )
+from custom_components.intelligent_heating_pilot.domain.value_objects.heating import HeatingCycle
 from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
     HistoricalDataKey,
     HistoricalDataSet,
@@ -20,6 +21,7 @@ def m(
     hvac_action: str | None = None,
     hvac_mode: str | None = None,
     device_id: str = "test.device",
+    preset_mode: str | None = None,
 ) -> HistoricalMeasurement:
     """Helper to create HistoricalMeasurement with optional climate attributes."""
     attrs = {}
@@ -27,6 +29,8 @@ def m(
         attrs["hvac_action"] = hvac_action
     if hvac_mode:
         attrs["hvac_mode"] = hvac_mode
+    if preset_mode:
+        attrs["preset_mode"] = preset_mode
     return HistoricalMeasurement(timestamp, value, attrs, device_id)
 
 
@@ -290,9 +294,10 @@ class TestExtractWithCycleSplitting:
             "my_device_id", dataset, t0, t3 + timedelta(minutes=5)
         )
 
-        # With 30-min split duration and ~90 min cycle: should get 3 sub-cycles + 1 remaining
-        # or 3 complete + 1 remainder (90 = 3*30 + 10)
-        assert len(cycles) == 4
+        # 100-min cycle (t1 → t4) with a 30-min dead time (first 0.2 °C rise at t2): its
+        # 70-min heating phase splits into 30 + 30 + 10 min, the first sub-cycle also
+        # covering the dead time (#245)
+        assert len(cycles) == 3
         # Verify sub-cycles are contiguous and cover the full time range
         total_duration = sum((c.end_time - c.start_time).total_seconds() / 60.0 for c in cycles)
         expected_duration = (t4 - t1).total_seconds() / 60.0
@@ -330,6 +335,91 @@ class TestExtractWithCycleSplitting:
 
         # Should not split (25 min < 30 min threshold)
         assert len(cycles) == 1
+
+
+class TestSplitFromDeadTimeEnd:
+    """Sub-cycles split the heating phase, from the end of the dead time (#218, #245).
+
+    Interpolating from the cycle start spread the dead time over every sub-cycle, and
+    the first one then removed it a second time: its slope was inflated, or 0 once the
+    dead time outlasted it, which also dropped the dead time from learning.
+    """
+
+    @staticmethod
+    def _parent(base_time, dead_time, dead_time_end_temp, duration=138.0, end_temp=19.8):
+        return HeatingCycle(
+            device_id="my_device_id",
+            start_time=base_time,
+            end_time=base_time + timedelta(minutes=duration),
+            target_temp=20.0,
+            end_temp=end_temp,
+            start_temp=18.0,
+            dead_time_cycle_minutes=dead_time,
+            dead_time_end_temp=dead_time_end_temp,
+        )
+
+    def test_first_sub_cycle_covers_dead_time_and_one_split(
+        self, service_with_splitting, base_time
+    ):
+        """The first sub-cycle starts with the cycle and ends one split after the dead time."""
+        parent = self._parent(base_time, dead_time=42.0, dead_time_end_temp=18.2)
+
+        first, *others = service_with_splitting._split_into_cycles(
+            parent, HistoricalDataSet(data={}), 30
+        )
+
+        assert first.start_time == base_time
+        assert first.start_temp == 18.0
+        assert first.end_time == base_time + timedelta(minutes=72)
+        assert first.dead_time_cycle_minutes == 42.0
+        assert first.dead_time_end_temp == 18.2
+        assert all(c.dead_time_cycle_minutes is None for c in others)
+        assert all(c.dead_time_end_temp is None for c in others)
+
+    def test_every_sub_cycle_has_the_heating_phase_slope(self, service_with_splitting, base_time):
+        """18.2 → 19.8 °C in the 96 min after the dead time is 1.0 °C/h for every sub-cycle."""
+        parent = self._parent(base_time, dead_time=42.0, dead_time_end_temp=18.2)
+
+        cycles = service_with_splitting._split_into_cycles(parent, HistoricalDataSet(data={}), 30)
+
+        assert len(cycles) == 4  # 30 + 30 + 30 + 6 min of heating phase
+        assert [c.avg_heating_slope for c in cycles] == pytest.approx([1.0] * 4)
+
+    def test_sub_cycles_are_contiguous_and_cover_the_cycle(self, service_with_splitting, base_time):
+        """No gap, no overlap: each sub-cycle starts where and at the temperature the previous ended."""
+        parent = self._parent(base_time, dead_time=42.0, dead_time_end_temp=18.2)
+
+        cycles = service_with_splitting._split_into_cycles(parent, HistoricalDataSet(data={}), 30)
+
+        for previous, current in zip(cycles, cycles[1:], strict=False):
+            assert current.start_time == previous.end_time
+            assert current.start_temp == pytest.approx(previous.end_temp)
+        assert cycles[-1].end_time == parent.end_time
+        assert cycles[-1].end_temp == parent.end_temp
+
+    def test_heating_phase_not_longer_than_split_is_not_split(
+        self, service_with_splitting, base_time
+    ):
+        """A 70-min cycle with a 42-min dead time heats 28 min: shorter than a split."""
+        parent = self._parent(
+            base_time, dead_time=42.0, dead_time_end_temp=18.2, duration=70.0, end_temp=18.7
+        )
+
+        cycles = service_with_splitting._split_into_cycles(parent, HistoricalDataSet(data={}), 30)
+
+        assert cycles == [parent]
+
+    def test_without_dead_time_split_from_cycle_start(self, service_with_splitting, base_time):
+        """Without a dead time the whole cycle is the heating phase, as before."""
+        parent = self._parent(base_time, dead_time=None, dead_time_end_temp=None, end_temp=19.38)
+
+        cycles = service_with_splitting._split_into_cycles(parent, HistoricalDataSet(data={}), 30)
+
+        assert [c.end_time - c.start_time for c in cycles] == [timedelta(minutes=30)] * 4 + [
+            timedelta(minutes=18)
+        ]
+        assert [c.avg_heating_slope for c in cycles] == pytest.approx([0.6] * 5)
+        assert all(c.dead_time_cycle_minutes is None for c in cycles)
 
 
 class TestExtractEdgeCases:
@@ -631,9 +721,9 @@ class TestExtractHeatingCyclesGracePeriod:
         )
 
         # Grace period: the brief interruption must be absorbed — single cycle expected
-        assert (
-            len(cycles) == 1
-        ), f"Expected 1 cycle (grace absorbs 5-min interruption), got {len(cycles)}"
+        assert len(cycles) == 1, (
+            f"Expected 1 cycle (grace absorbs 5-min interruption), got {len(cycles)}"
+        )
         assert cycles[0].start_time == t0
         assert cycles[0].end_time == t3
 
@@ -724,9 +814,9 @@ class TestExtractHeatingCyclesGracePeriod:
         )
 
         # grace=0: OFF at t1 must terminate cycle 1 immediately → 2 cycles
-        assert (
-            len(cycles) == 2
-        ), f"Expected 2 cycles with grace=0 (OFF terminates immediately), got {len(cycles)}"
+        assert len(cycles) == 2, (
+            f"Expected 2 cycles with grace=0 (OFF terminates immediately), got {len(cycles)}"
+        )
 
     @pytest.mark.asyncio
     async def test_interruption_returns_on_before_grace_expires_cycle_continues(
@@ -768,9 +858,9 @@ class TestExtractHeatingCyclesGracePeriod:
             "my_device", dataset, t0, t3 + timedelta(minutes=5)
         )
 
-        assert (
-            len(cycles) == 1
-        ), f"Expected 1 cycle (3-min blip absorbed by 10-min grace), got {len(cycles)}"
+        assert len(cycles) == 1, (
+            f"Expected 1 cycle (3-min blip absorbed by 10-min grace), got {len(cycles)}"
+        )
         # The single cycle must span from the original start to the final end
         assert cycles[0].start_time == t0
         assert cycles[0].end_time == t3
@@ -818,10 +908,11 @@ class TestExtractDeadTime:
     async def test_split_cycle_keeps_parent_dead_time_on_first_sub_cycle(
         self, service_with_splitting, base_time
     ):
-        """Given a rise after the first sub-cycle ends, the first sub-cycle still carries it.
+        """Given a rise after the first split duration, the first sub-cycle still carries it.
 
-        The rise at +40 min is outside the first 30-min sub-cycle but inside the 90-min
-        parent cycle, so it is the parent's dead time.
+        The rise at +40 min comes after the first 30 minutes but inside the 90-min parent
+        cycle, so it is the parent's dead time. The first sub-cycle covers it plus one
+        split duration of heating phase (#245).
         """
         t0 = base_time
         t_rise = t0 + timedelta(minutes=40)
@@ -843,6 +934,604 @@ class TestExtractDeadTime:
             "my_device_id", dataset, t0, t_end + timedelta(minutes=5)
         )
 
-        assert len(cycles) == 3
+        assert len(cycles) == 2  # 50-min heating phase: 30 + 20 min
+        assert cycles[0].end_time == t_rise + timedelta(minutes=30)
         assert cycles[0].dead_time_cycle_minutes == pytest.approx(40.0)
         assert all(c.dead_time_cycle_minutes is None for c in cycles[1:])
+
+
+def _heating(timestamp: datetime, preset_mode: str = "comfort") -> HistoricalMeasurement:
+    """VTherm record while heating, with its recorded preset."""
+    return m(timestamp, True, hvac_action="heating", hvac_mode="heat", preset_mode=preset_mode)
+
+
+def _idle(timestamp: datetime, preset_mode: str = "comfort") -> HistoricalMeasurement:
+    """VTherm record while not heating, with its recorded preset."""
+    return m(timestamp, True, hvac_action="idle", hvac_mode="heat", preset_mode=preset_mode)
+
+
+class TestExtractLearningStatus:
+    """Each extracted cycle records whether it was disturbed and warmed the room (#255)."""
+
+    @staticmethod
+    def _dataset(
+        base_time: datetime,
+        states: list[HistoricalMeasurement],
+        targets: list[HistoricalMeasurement] | None = None,
+    ) -> HistoricalDataSet:
+        """Room heating from 18.0 °C, gaining 0.3 °C after 20 min and 19.6 °C at 90 min."""
+        return HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(base_time, 18.0),
+                    m(base_time + timedelta(minutes=20), 18.3),
+                    m(base_time + timedelta(minutes=60), 19.0),
+                    m(base_time + timedelta(minutes=90), 19.6),
+                ],
+                HistoricalDataKey.TARGET_TEMP: targets or [m(base_time, 20.0)],
+                HistoricalDataKey.HEATING_STATE: states,
+            }
+        )
+
+    @staticmethod
+    async def _extract(service, dataset, base_time) -> list[HeatingCycle]:
+        return await service.extract_heating_cycles(
+            "my_device_id", dataset, base_time - timedelta(hours=1), base_time + timedelta(hours=3)
+        )
+
+    @pytest.mark.asyncio
+    async def test_undisturbed_cycle_that_warmed_the_room(self, service, base_time):
+        """Without a disturbance preset, the status is known: not disturbed, heating phase seen."""
+        dataset = self._dataset(
+            base_time, [_heating(base_time), _heating(base_time + timedelta(minutes=90))]
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.disturbed is False
+        assert cycle.heating_phase_observed is True
+
+    @pytest.mark.asyncio
+    async def test_safety_preset_during_the_cycle_marks_it_disturbed(self, service, base_time):
+        """VTherm keeps the target in safety mode, so the cycle goes on while disturbed."""
+        dataset = self._dataset(
+            base_time,
+            [
+                _heating(base_time),
+                _heating(base_time + timedelta(minutes=30), preset_mode="safety"),
+                _heating(base_time + timedelta(minutes=45)),
+                _heating(base_time + timedelta(minutes=90)),
+            ],
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.end_time == base_time + timedelta(minutes=90)
+        assert cycle.disturbed is True
+
+    @pytest.mark.asyncio
+    async def test_load_shedding_that_ends_the_cycle_marks_it_disturbed(self, service, base_time):
+        """The power preset drops the target, ending the cycle on the disturbed record."""
+        shedding = base_time + timedelta(minutes=60)
+        dataset = self._dataset(
+            base_time,
+            [_heating(base_time), _idle(shedding, preset_mode="power")],
+            targets=[m(base_time, 20.0), m(shedding, 16.0)],
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.end_time == shedding
+        assert cycle.disturbed is True
+
+    @pytest.mark.asyncio
+    async def test_disturbance_outside_the_cycle_is_ignored(self, service, base_time):
+        """A safety preset recorded before the start or after the end does not count."""
+        dataset = self._dataset(
+            base_time,
+            [
+                _idle(base_time - timedelta(minutes=30), preset_mode="safety"),
+                _heating(base_time),
+                _heating(base_time + timedelta(minutes=90)),
+                _idle(base_time + timedelta(minutes=100), preset_mode="safety"),
+            ],
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.disturbed is False
+
+    @pytest.mark.asyncio
+    async def test_disturbance_preset_ignores_case(self, service, base_time):
+        """Preset values are compared like hvac_action and hvac_mode: case-insensitively."""
+        dataset = self._dataset(
+            base_time,
+            [
+                _heating(base_time, preset_mode="Safety"),
+                _heating(base_time + timedelta(minutes=90)),
+            ],
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.disturbed is True
+
+    @pytest.mark.asyncio
+    async def test_records_without_preset_are_not_disturbed(self, service, base_time):
+        """A non-VTherm climate records no preset: its cycles are never marked disturbed."""
+        dataset = self._dataset(
+            base_time,
+            [
+                m(base_time, True, hvac_action="heating", hvac_mode="heat"),
+                m(base_time + timedelta(minutes=90), True, hvac_action="heating", hvac_mode="heat"),
+            ],
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.disturbed is False
+
+    @pytest.mark.asyncio
+    async def test_cycle_that_never_gained_the_threshold_has_no_heating_phase(
+        self, service, base_time
+    ):
+        """A room gaining only 0.1 °C before heating stops has no observed heating phase."""
+        t_off = base_time + timedelta(minutes=40)
+        dataset = HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(base_time, 18.0),
+                    m(base_time + timedelta(minutes=30), 18.1),
+                ],
+                HistoricalDataKey.TARGET_TEMP: [m(base_time, 20.0)],
+                HistoricalDataKey.HEATING_STATE: [
+                    _heating(base_time),
+                    m(t_off, False, hvac_action="off", hvac_mode="off"),
+                ],
+            }
+        )
+
+        (cycle,) = await self._extract(service, dataset, base_time)
+
+        assert cycle.dead_time_cycle_minutes is None
+        assert cycle.heating_phase_observed is False
+        assert cycle.disturbed is False
+
+    @pytest.mark.asyncio
+    async def test_sub_cycles_inherit_the_status_of_their_cycle(
+        self, service_with_splitting, base_time
+    ):
+        """A disturbed cycle stays disturbed in every sub-cycle, wherever the disturbance was."""
+        dataset = self._dataset(
+            base_time,
+            [
+                _heating(base_time),
+                _heating(base_time + timedelta(minutes=80), preset_mode="safety"),
+                _heating(base_time + timedelta(minutes=90)),
+            ],
+        )
+
+        cycles = await self._extract(service_with_splitting, dataset, base_time)
+
+        assert len(cycles) > 1, "The cycle should have been split"
+        assert all(c.disturbed is True for c in cycles)
+        assert all(c.heating_phase_observed is True for c in cycles)
+
+
+class TestExtractInterruptionBridge:
+    """A load shedding or a target drop shorter than the grace period does not end the cycle.
+
+    Issue #260: brief load sheddings and window openings split a preheat into fragments.
+    """
+
+    SHED_AT = 30
+    POWER_TEMPERATURE = 16.0
+
+    @pytest.fixture
+    def service_with_grace(self):
+        """HeatingCycleService with the 10-minute default grace period of the options."""
+        return HeatingCycleService(
+            temp_delta_threshold=0.5,
+            min_cycle_duration_minutes=5,
+            max_cycle_duration_minutes=300,
+            safety_shutoff_grace_minutes=10,
+        )
+
+    @staticmethod
+    def _at(base_time: datetime, minutes: int) -> datetime:
+        return base_time + timedelta(minutes=minutes)
+
+    def _dataset(
+        self,
+        base_time: datetime,
+        states: list[HistoricalMeasurement],
+        targets: list[tuple[int, float]],
+    ) -> HistoricalDataSet:
+        """Room heating from 18.0 °C, gaining 0.3 °C after 20 min and 19.6 °C at 90 min."""
+        return HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(base_time, 18.0),
+                    m(self._at(base_time, 20), 18.3),
+                    m(self._at(base_time, 60), 19.0),
+                    m(self._at(base_time, 90), 19.6),
+                ],
+                HistoricalDataKey.TARGET_TEMP: [
+                    m(self._at(base_time, minutes), target) for minutes, target in targets
+                ],
+                HistoricalDataKey.HEATING_STATE: states,
+            }
+        )
+
+    def _shed_for(self, base_time: datetime, minutes: int, preset: str = "power"):
+        """Records and targets of a cycle shed for the given minutes at SHED_AT."""
+        resume = self.SHED_AT + minutes
+        states = [
+            _heating(base_time),
+            _idle(self._at(base_time, self.SHED_AT), preset_mode=preset),
+            _heating(self._at(base_time, resume)),
+            _heating(self._at(base_time, 90)),
+        ]
+        targets = [(0, 20.0), (self.SHED_AT, self.POWER_TEMPERATURE), (resume, 20.0)]
+        return states, targets
+
+    @staticmethod
+    async def _extract(service, dataset, base_time) -> list[HeatingCycle]:
+        return await service.extract_heating_cycles(
+            "my_device_id", dataset, base_time - timedelta(hours=1), base_time + timedelta(hours=3)
+        )
+
+    @pytest.mark.asyncio
+    async def test_brief_load_shedding_is_bridged(self, service_with_grace, base_time):
+        """A 2-minute load shedding leaves a single cycle, measured from its real start."""
+        states, targets = self._shed_for(base_time, 2)
+
+        cycles = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert [(c.start_time, c.end_time) for c in cycles] == [
+            (base_time, self._at(base_time, 90))
+        ]
+        assert cycles[0].dead_time_cycle_minutes == pytest.approx(20.0)
+
+    @pytest.mark.asyncio
+    async def test_bridged_load_shedding_does_not_disturb_the_cycle(
+        self, service_with_grace, base_time
+    ):
+        """The power records of a bridged load shedding do not exclude the cycle (#255)."""
+        states, targets = self._shed_for(base_time, 2)
+
+        (cycle,) = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert cycle.disturbed is False
+
+    @pytest.mark.asyncio
+    async def test_load_shedding_preset_ignores_case(self, service_with_grace, base_time):
+        """The power preset is compared case-insensitively, like the disturbance presets."""
+        states, targets = self._shed_for(base_time, 2, preset="Power")
+
+        (cycle,) = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert cycle.end_time == self._at(base_time, 90)
+        assert cycle.disturbed is False
+
+    @pytest.mark.asyncio
+    async def test_long_load_shedding_ends_the_cycle_when_it_started(
+        self, service_with_grace, base_time
+    ):
+        """A load shedding outlasting the grace period ends the cycle, disturbed."""
+        states, targets = self._shed_for(base_time, 15)
+
+        cycles = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert cycles[0].end_time == self._at(base_time, self.SHED_AT)
+        assert cycles[0].disturbed is True
+
+    @pytest.mark.asyncio
+    async def test_without_grace_period_load_shedding_ends_the_cycle(self, service, base_time):
+        """With a grace period of 0, a load shedding ends the cycle at once, as before."""
+        states, targets = self._shed_for(base_time, 2)
+
+        cycles = await self._extract(service, self._dataset(base_time, states, targets), base_time)
+
+        assert cycles[0].end_time == self._at(base_time, self.SHED_AT)
+        assert cycles[0].disturbed is True
+
+    @pytest.mark.asyncio
+    async def test_history_ending_during_load_shedding_ends_the_cycle_when_it_started(
+        self, service_with_grace, base_time
+    ):
+        """No record after the shedding: the cycle ends when the shedding started."""
+        states = [
+            _heating(base_time),
+            _idle(self._at(base_time, self.SHED_AT), preset_mode="power"),
+            _idle(self._at(base_time, self.SHED_AT + 2), preset_mode="power"),
+        ]
+        targets = [(0, 20.0), (self.SHED_AT, self.POWER_TEMPERATURE)]
+
+        (cycle,) = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert cycle.end_time == self._at(base_time, self.SHED_AT)
+        assert cycle.disturbed is True
+
+    @pytest.mark.asyncio
+    async def test_safety_preset_still_disturbs_a_bridged_cycle(
+        self, service_with_grace, base_time
+    ):
+        """Only the bridged power records are ignored: safety mode still excludes the cycle."""
+        states, targets = self._shed_for(base_time, 2)
+        states.insert(-1, _heating(self._at(base_time, 60), preset_mode="safety"))
+
+        (cycle,) = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert cycle.end_time == self._at(base_time, 90)
+        assert cycle.disturbed is True
+
+    @pytest.mark.asyncio
+    async def test_brief_window_target_drop_is_bridged(self, service_with_grace, base_time):
+        """A target dropped for 2 minutes without the power preset (open window) is bridged."""
+        states, targets = self._shed_for(base_time, 2, preset="comfort")
+
+        cycles = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert [(c.start_time, c.end_time) for c in cycles] == [
+            (base_time, self._at(base_time, 90))
+        ]
+        assert cycles[0].disturbed is False
+
+    @pytest.mark.asyncio
+    async def test_long_window_target_drop_ends_the_cycle_when_it_dropped(
+        self, service_with_grace, base_time
+    ):
+        """A window left open longer than the grace period ends the cycle, undisturbed."""
+        states, targets = self._shed_for(base_time, 15, preset="comfort")
+
+        cycles = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert cycles[0].end_time == self._at(base_time, self.SHED_AT)
+        assert cycles[0].disturbed is False
+
+    @pytest.mark.asyncio
+    async def test_target_lowered_for_good_ends_the_cycle_when_it_dropped(
+        self, service_with_grace, base_time
+    ):
+        """The schedule moved to eco: once the grace period expires, the cycle ends at the drop."""
+        states = [
+            _heating(base_time),
+            _idle(self._at(base_time, self.SHED_AT), preset_mode="eco"),
+            _idle(self._at(base_time, self.SHED_AT + 15), preset_mode="eco"),
+        ]
+        targets = [(0, 20.0), (self.SHED_AT, 18.0)]
+
+        (cycle,) = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert cycle.end_time == self._at(base_time, self.SHED_AT)
+        assert cycle.disturbed is False
+
+    @pytest.mark.asyncio
+    async def test_slightly_lowered_target_does_not_interrupt_the_cycle(
+        self, service_with_grace, base_time
+    ):
+        """A target lowered without reaching the room goes on, and ends at the new target."""
+        states = [
+            _heating(base_time),
+            _heating(self._at(base_time, self.SHED_AT)),
+            _heating(self._at(base_time, 60)),
+            _heating(self._at(base_time, 90)),
+        ]
+        targets = [(0, 20.0), (self.SHED_AT, 19.5)]
+
+        (cycle,) = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert cycle.end_time == self._at(base_time, 60)
+
+    @pytest.mark.asyncio
+    async def test_shedding_followed_by_a_lower_target_ends_the_cycle_when_it_started(
+        self, service_with_grace, base_time
+    ):
+        """The schedule moved to eco during the shedding: the cycle ends at the shedding."""
+        resume = self.SHED_AT + 2
+        states = [
+            _heating(base_time),
+            _idle(self._at(base_time, self.SHED_AT), preset_mode="power"),
+            _idle(self._at(base_time, resume), preset_mode="eco"),
+        ]
+        targets = [(0, 20.0), (self.SHED_AT, self.POWER_TEMPERATURE), (resume, 18.0)]
+
+        (cycle,) = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert cycle.end_time == self._at(base_time, self.SHED_AT)
+        assert cycle.disturbed is True
+
+    @pytest.mark.asyncio
+    async def test_hvac_off_during_load_shedding_is_one_interruption(
+        self, service_with_grace, base_time
+    ):
+        """Shedding then hvac off, 4 minutes in all: bridged as a single interruption."""
+        states = [
+            _heating(base_time),
+            _idle(self._at(base_time, self.SHED_AT), preset_mode="power"),
+            m(self._at(base_time, self.SHED_AT + 1), False, hvac_action="off", hvac_mode="off"),
+            _heating(self._at(base_time, self.SHED_AT + 4)),
+            _heating(self._at(base_time, 90)),
+        ]
+        targets = [(0, 20.0), (self.SHED_AT, self.POWER_TEMPERATURE), (self.SHED_AT + 4, 20.0)]
+
+        (cycle,) = await self._extract(
+            service_with_grace, self._dataset(base_time, states, targets), base_time
+        )
+
+        assert (cycle.start_time, cycle.end_time) == (base_time, self._at(base_time, 90))
+        assert cycle.disturbed is False
+
+
+class TestPlateauStart:
+    """The heating phase ends at the first plateau of the cycle (#267).
+
+    A plateau is a reading after which the room gains less than 0.1 °C for at least
+    60 minutes, all within the cycle.
+    """
+
+    @staticmethod
+    def _history(base_time, readings):
+        return HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(base_time + timedelta(minutes=minute), value) for minute, value in readings
+                ]
+            }
+        )
+
+    def _plateau(self, service, base_time, readings, end_minutes=240.0):
+        return service._find_plateau_start(
+            base_time,
+            base_time + timedelta(minutes=end_minutes),
+            self._history(base_time, readings),
+        )
+
+    def test_first_reading_followed_by_an_hour_without_rise(self, service, base_time):
+        """19.6 °C at 60 min, then nothing above 19.69 °C: the plateau starts at 60 min."""
+        readings = [(0, 19.0), (30, 19.3), (60, 19.6), (90, 19.65), (150, 19.6), (200, 19.68)]
+
+        plateau = self._plateau(service, base_time, readings)
+
+        assert plateau == (base_time + timedelta(minutes=60), 19.6)
+
+    def test_a_rise_of_exactly_the_tolerance_is_not_a_plateau(self, service, base_time):
+        """19.6 → 19.7 °C within the hour is still a rise, despite floating-point error."""
+        readings = [(0, 19.6), (50, 19.7), (200, 19.7)]
+
+        plateau = self._plateau(service, base_time, readings)
+
+        assert plateau == (base_time + timedelta(minutes=50), 19.7)
+
+    def test_flat_stretch_shorter_than_an_hour_before_the_end_is_not_a_plateau(
+        self, service, base_time
+    ):
+        """A room flat for the last 40 minutes of the cycle keeps its full window."""
+        readings = [(0, 19.0), (30, 19.5), (60, 19.7)]
+
+        assert self._plateau(service, base_time, readings, end_minutes=100.0) is None
+
+    def test_steady_rise_has_no_plateau(self, service, base_time):
+        """A room gaining 0.1 °C every 20 minutes, slowly, is never on a plateau."""
+        readings = [(minute, round(19.0 + 0.1 * minute / 20, 1)) for minute in range(0, 241, 20)]
+
+        assert self._plateau(service, base_time, readings) is None
+
+    def test_readings_before_the_heating_phase_or_after_the_cycle_are_ignored(
+        self, service, base_time
+    ):
+        """Only readings from the heating phase start to the cycle end are searched."""
+        readings = [(-30, 18.0), (0, 19.0), (30, 19.5), (60, 19.9), (130, 21.0)]
+
+        plateau = self._plateau(service, base_time, readings, end_minutes=125.0)
+
+        assert plateau == (base_time + timedelta(minutes=60), 19.9)
+
+    def test_unparsable_reading_is_ignored(self, service, base_time):
+        """A reading that is not a number neither starts nor breaks a plateau."""
+        readings = [(0, 19.0), (30, "unavailable"), (60, 19.0), (130, 19.05)]
+
+        plateau = self._plateau(service, base_time, readings)
+
+        assert plateau == (base_time, 19.0)
+
+    def test_no_readings_gives_no_plateau(self, service, base_time):
+        """Without indoor readings, the heating phase ends with the cycle."""
+        assert self._plateau(service, base_time, []) is None
+
+
+class TestExtractPlateauCycle:
+    """An extracted cycle records where its plateau starts (#267)."""
+
+    @staticmethod
+    def _plateau_history(base_time):
+        """18.0 °C, +0.2 °C at 30 min, 19.2 °C at 90 min, flat until heating stops at 210 min."""
+        indoor = [
+            m(base_time, 18.0),
+            m(base_time + timedelta(minutes=30), 18.2),
+            m(base_time + timedelta(minutes=60), 18.7),
+            m(base_time + timedelta(minutes=90), 19.2),
+            m(base_time + timedelta(minutes=150), 19.25),
+            m(base_time + timedelta(minutes=210), 19.2),
+        ]
+        states = [
+            m(base_time, "heat", hvac_action="heating", hvac_mode="heat"),
+            m(base_time + timedelta(minutes=210), "off", hvac_action="idle", hvac_mode="off"),
+        ]
+        targets = [m(base_time, 20.0)]
+        return HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: indoor,
+                HistoricalDataKey.TARGET_TEMP: targets,
+                HistoricalDataKey.HEATING_STATE: states,
+            }
+        )
+
+    @pytest.mark.asyncio
+    async def test_cycle_records_its_plateau_and_keeps_its_end(self, service, base_time):
+        """The cycle ends when heating stops, its slope only covers 30 → 90 min."""
+        cycles = await service.extract_heating_cycles(
+            "test.device",
+            self._plateau_history(base_time),
+            base_time,
+            base_time + timedelta(hours=6),
+        )
+
+        assert len(cycles) == 1
+        cycle = cycles[0]
+        assert cycle.end_time == base_time + timedelta(minutes=210)
+        assert cycle.plateau_start_time == base_time + timedelta(minutes=90)
+        assert cycle.plateau_start_temp == 19.2
+        assert cycle.dead_time_cycle_minutes == pytest.approx(30.0)
+        assert cycle.avg_heating_slope == pytest.approx(1.0)
+
+    def test_sub_cycles_cover_the_heating_phase_up_to_the_plateau(
+        self, service_with_splitting, base_time
+    ):
+        """Sub-cycles stop where the plateau starts and do not carry it themselves."""
+        parent = HeatingCycle(
+            device_id="my_device_id",
+            start_time=base_time,
+            end_time=base_time + timedelta(minutes=210),
+            target_temp=20.0,
+            end_temp=19.2,
+            start_temp=18.0,
+            dead_time_cycle_minutes=30.0,
+            dead_time_end_temp=18.2,
+            plateau_start_time=base_time + timedelta(minutes=90),
+            plateau_start_temp=19.2,
+        )
+
+        cycles = service_with_splitting._split_into_cycles(parent, HistoricalDataSet(data={}), 30)
+
+        assert [c.end_time for c in cycles] == [
+            base_time + timedelta(minutes=60),
+            base_time + timedelta(minutes=90),
+        ]
+        assert cycles[-1].end_temp == pytest.approx(19.2)
+        assert [c.avg_heating_slope for c in cycles] == pytest.approx([1.0, 1.0])
+        assert all(c.plateau_start_time is None for c in cycles)
+        assert all(c.plateau_start_temp is None for c in cycles)

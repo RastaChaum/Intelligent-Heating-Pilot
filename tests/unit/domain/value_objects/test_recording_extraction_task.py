@@ -185,25 +185,33 @@ class TestExtractionTaskState:
         device = "sensor.test_device"
 
         pending_task = RecordingExtractionTask(
-            start_date=start, end_date=end, device_id=device,
+            start_date=start,
+            end_date=end,
+            device_id=device,
             state=ExtractionTaskState.PENDING,
         )
         assert pending_task.state == ExtractionTaskState.PENDING
 
         extracting_task = RecordingExtractionTask(
-            start_date=start, end_date=end, device_id=device,
+            start_date=start,
+            end_date=end,
+            device_id=device,
             state=ExtractionTaskState.EXTRACTING,
         )
         assert extracting_task.state == ExtractionTaskState.EXTRACTING
 
         completed_task = RecordingExtractionTask(
-            start_date=start, end_date=end, device_id=device,
+            start_date=start,
+            end_date=end,
+            device_id=device,
             state=ExtractionTaskState.COMPLETED,
         )
         assert completed_task.state == ExtractionTaskState.COMPLETED
 
         failed_task = RecordingExtractionTask(
-            start_date=start, end_date=end, device_id=device,
+            start_date=start,
+            end_date=end,
+            device_id=device,
             state=ExtractionTaskState.FAILED,
             error="Test error",
         )
@@ -211,7 +219,9 @@ class TestExtractionTaskState:
         assert failed_task.error == "Test error"
 
         cancelled_task = RecordingExtractionTask(
-            start_date=start, end_date=end, device_id=device,
+            start_date=start,
+            end_date=end,
+            device_id=device,
             state=ExtractionTaskState.CANCELLED,
         )
         assert cancelled_task.state == ExtractionTaskState.CANCELLED
@@ -263,15 +273,21 @@ class TestRecordingExtractionTaskDeduplicationSemantics:
         device = "sensor.test_device"
 
         task_pending = RecordingExtractionTask(
-            start_date=start, end_date=end, device_id=device,
+            start_date=start,
+            end_date=end,
+            device_id=device,
             state=ExtractionTaskState.PENDING,
         )
         task_extracting = RecordingExtractionTask(
-            start_date=start, end_date=end, device_id=device,
+            start_date=start,
+            end_date=end,
+            device_id=device,
             state=ExtractionTaskState.EXTRACTING,
         )
         task_completed = RecordingExtractionTask(
-            start_date=start, end_date=end, device_id=device,
+            start_date=start,
+            end_date=end,
+            device_id=device,
             state=ExtractionTaskState.COMPLETED,
         )
 

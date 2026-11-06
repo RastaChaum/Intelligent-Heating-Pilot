@@ -3,6 +3,7 @@ name: Workflow Lint
 # Static analysis of the GitHub Actions workflows themselves:
 #  - actionlint: syntax, expression typing and shellcheck on every `run:` script
 #  - zizmor: security audit (e.g. template injection through `${{ }}` in `run:`)
+#  - release scripts: shellcheck and the test harnesses of the release gates
 
 on:
   pull_request:
@@ -12,6 +13,7 @@ on:
     paths:
       - '.github/workflows/**'
       - '.github/zizmor.yml'
+      - 'scripts/**'
   workflow_dispatch:
 
 permissions:
@@ -23,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -41,10 +43,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       # Rules enabled/disabled in .github/zizmor.yml
       - name: Run zizmor
         run: pipx run zizmor==1.31.1 --no-progress --format plain .github/workflows
+
+  release-scripts:
+    name: release scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Shellcheck scripts
+        run: shellcheck -x -S warning scripts/*.sh
+
+      # Commits from a checkout with core.fileMode=false (e.g. WSL) drop the
+      # executable bit, and rc-helper.sh or a workflow calling a script
+      # directly then fails with "Permission denied".
+      - name: Check scripts are executable in git
+        run: |
+          NOT_EXECUTABLE=$(git ls-files -s -- 'scripts/*.sh' | awk '$1 != "100755" {print $4}')
+          if [ -n "$NOT_EXECUTABLE" ]; then
+            echo "❌ Scripts committed without the executable bit:"
+            echo "$NOT_EXECUTABLE"
+            echo "Fix with: git update-index --chmod=+x <file>"
+            exit 1
+          fi
+          echo "✅ All scripts are executable"
+
+      # The workflows and rc-helper.sh share scripts/release-gates.sh; these
+      # harnesses pin its behaviour (#196).
+      - name: Test release gates
+        run: |
+          bash scripts/test-rc-check.sh
+          bash scripts/test-changelog-check.sh

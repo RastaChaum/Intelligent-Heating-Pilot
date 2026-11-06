@@ -13,19 +13,35 @@ Do not commit versioned release-note markdown files at the repository root.
 ## Standard Flow
 
 1. Update `CHANGELOG.md` on the integration branch.
-2. Create the first RC with the workflow or helper script.
-3. Test the RC in production-like conditions.
-4. Fix issues on `integration` and increment the RC if needed.
-5. Merge `integration` into `main` when the RC is accepted.
-6. Let the promotion workflow create the final stable release.
+2. Bump the version in `manifest.json` and `hacs.json` on `integration` to the release version.
+3. Create the first RC with the workflow or helper script.
+4. Test the RC in production-like conditions.
+5. Fix issues on `integration` and increment the RC if needed.
+6. Merge `integration` into `main` when the RC is accepted.
+7. Let the promotion workflow create the final stable release.
+8. Approve and merge the `chore/changelog-vX.Y.Z` PR it opens to stamp the CHANGELOG on `main`.
+
+## Release Gates
+
+The `integration` → `main` PR (`integration-pr.yml`) passes only when:
+
+- the `manifest.json` version is greater than the one on `main`, and equals the `hacs.json` version;
+- `CHANGELOG.md` has entries under `[Unreleased]`;
+- a GitHub pre-release `vX.Y.Z-rcN` exists for **exactly** the `manifest.json` version.
+
+The promotion workflow requires the same RC. Both use `scripts/release-gates.sh`, tested by `scripts/test-rc-check.sh`, so a merge the gate accepts can always be promoted.
+
+The same check accepts one other source branch: the `chore/changelog-vX.Y.Z` PR opened by the promotion workflow, as long as it only modifies `CHANGELOG.md`. A PR opened with `GITHUB_TOKEN` does not trigger workflows: set the optional `RELEASE_PR_TOKEN` secret (fine-grained PAT or GitHub App token with "Pull requests: write") to have its checks run automatically, or close and reopen the PR.
 
 ## Helper Commands
 
+`rc-helper.sh` dispatches the release workflows and reads GitHub Releases; it never pushes tags itself.
+
 ```bash
-./scripts/rc-helper.sh status
-./scripts/rc-helper.sh prepare
-./scripts/rc-helper.sh increment
-./scripts/rc-helper.sh promote
+./scripts/rc-helper.sh status                       # RC pre-releases of the integration version
+./scripts/rc-helper.sh prepare [VERSION]            # dispatches 'Prepare Release Candidate'
+./scripts/rc-helper.sh increment [VERSION] [FIXES]  # dispatches 'Increment RC Version'
+./scripts/rc-helper.sh promote                      # checks the release gates before the main PR
 ```
 
 ## Maintainer Rules

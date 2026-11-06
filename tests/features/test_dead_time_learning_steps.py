@@ -388,9 +388,9 @@ def learned_value_persists_to_storage(dt_ctx):
     """
     storage = dt_ctx.get("storage")
     calculated = dt_ctx.get("calculated_dead_time")
-    assert (
-        calculated is not None and calculated > 0
-    ), f"Expected a valid calculated dead time, got {calculated}"
+    assert calculated is not None and calculated > 0, (
+        f"Expected a valid calculated dead time, got {calculated}"
+    )
     storage.set_learned_dead_time.assert_awaited_once_with(pytest.approx(calculated))
 
 
@@ -457,9 +457,9 @@ def returns_6_5(dt_ctx):
     # Also assert that the use case startup hydration path returns 6.5
     restarted = dt_ctx.get("restarted_dead_time")
     assert restarted is not None, "WHEN step must compute restarted_dead_time"
-    assert (
-        abs(restarted - 6.5) < 0.01
-    ), f"Expected use case to return 6.5 from storage on startup, got {restarted}"
+    assert abs(restarted - 6.5) < 0.01, (
+        f"Expected use case to return 6.5 from storage on startup, got {restarted}"
+    )
 
 
 @then("it returns the configured dead_time_minutes")

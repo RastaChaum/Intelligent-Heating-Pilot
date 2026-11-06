@@ -139,6 +139,42 @@ def test_cleared_message_logged_only_on_transition(
     assert len(cleared) == 1
 
 
+def test_scheduler_blocked_attributes_exposed_when_populated(
+    coordinator: Mock, config_entry: Mock
+) -> None:
+    """Issue #64: a successful fallback still reports which scheduler was blocked."""
+    sensor = IntelligentHeatingPilotAnticipationTimeSensor(coordinator, config_entry, DEVICE_NAME)
+    _with_write_spy(sensor)
+
+    sensor._handle_anticipation_event(
+        _event(scheduler_blocked=False, blocked_schedulers=["switch.non_vacation"])
+    )
+
+    assert sensor.extra_state_attributes["scheduler_blocked"] is False
+    assert sensor.extra_state_attributes["blocked_schedulers"] == ["switch.non_vacation"]
+
+
+def test_scheduler_blocked_attributes_survive_when_anticipation_cleared(
+    coordinator: Mock, config_entry: Mock
+) -> None:
+    """Issue #64: when every scheduler is blocked, anticipated_start_time is None but
+    the household must still see scheduler_blocked/blocked_schedulers, not an empty dict."""
+    sensor = IntelligentHeatingPilotAnticipationTimeSensor(coordinator, config_entry, DEVICE_NAME)
+    _with_write_spy(sensor)
+
+    sensor._handle_anticipation_event(
+        _event(
+            anticipated_start_time=None,
+            scheduler_blocked=True,
+            blocked_schedulers=["switch.a", "switch.b"],
+        )
+    )
+
+    assert sensor.native_value is None
+    assert sensor.extra_state_attributes["scheduler_blocked"] is True
+    assert sensor.extra_state_attributes["blocked_schedulers"] == ["switch.a", "switch.b"]
+
+
 def test_dead_time_sensor_shares_device_info(coordinator: Mock, config_entry: Mock) -> None:
     """All sensors register the same device, so they must describe it identically."""
     dead_time = IntelligentHeatingPilotDeadTimeSensor(coordinator, config_entry, DEVICE_NAME)

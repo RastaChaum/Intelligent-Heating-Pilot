@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 from ..constants import (
@@ -19,7 +20,7 @@ from ..constants import (
     MEDIUM_CONFIDENCE_SLOPE,
     MIN_ANTICIPATION_TIME,
 )
-from ..value_objects import PredictionResult
+from ..value_objects import DaylightPeriod, PredictionResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,10 +32,14 @@ class PredictionService:
     when heating should start to reach target temperature at a scheduled time.
 
     The calculation considers:
-    1. Temperature difference to heat
-    2. Humidity effects on heating efficiency
-    3. Solar gain from cloud coverage
-    4. Learned heating slope (heating rate) from historical data
+    1. Learned dead time: the emitter's delay before the room responds
+    2. Temperature difference to heat and learned heating slope (LHS)
+    3. Humidity effects on heating efficiency
+    4. Solar gain from cloud coverage, while the sun is up
+
+    The environmental correction applies to the heating phase (ΔT / LHS) only.
+    The dead time belongs to the emitter: sun or humidity does not make it
+    respond faster (#257).
     """
 
     def predict_heating_time(
@@ -46,6 +51,7 @@ class PredictionService:
         humidity: float | None = None,
         cloud_coverage: float | None = None,
         dead_time_minutes: float = 0.0,
+        daylight_periods: Sequence[DaylightPeriod] = (),
     ) -> PredictionResult:
         """Calculate when heating should start.
 
@@ -57,6 +63,9 @@ class PredictionService:
             humidity: Indoor humidity percentage (0-100) (optional)
             cloud_coverage: Cloud coverage percentage (0-100, 0=clear sky) (optional)
             dead_time_minutes: Dead time in minutes (initial period with minimal heating effect)
+            daylight_periods: Periods between sunrise and sunset around the heating phase.
+                None known means no solar gain: a preheat planned a little early beats
+                a late one.
 
         Returns:
             Prediction result with start time and confidence
@@ -102,13 +111,15 @@ class PredictionService:
                 learned_heating_slope=learned_slope or 0,
             )
 
-        # Calculate base anticipation time (in minutes)
-        # Formula: heating_time = dead_time + (temp_delta / slope) * 60
-        anticipation_minutes = dead_time_minutes + (temp_delta / learned_slope) * 60.0
-        # Apply environmental correction factors
-        correction_factor = self._calculate_environmental_correction(humidity, cloud_coverage)
-
-        anticipation_minutes *= correction_factor
+        # anticipation = dead_time + heating × correction: the dead time is never corrected
+        heating_minutes = (temp_delta / learned_slope) * 60.0
+        daylight_fraction = self._daylight_fraction(
+            target_time - timedelta(minutes=heating_minutes), target_time, daylight_periods
+        )
+        correction_factor = self._calculate_environmental_correction(
+            humidity, cloud_coverage, daylight_fraction
+        )
+        anticipation_minutes = dead_time_minutes + heating_minutes * correction_factor
 
         # Apply buffer and limits
         anticipation_minutes += DEFAULT_ANTICIPATION_BUFFER
@@ -140,17 +151,47 @@ class PredictionService:
             learned_heating_slope=learned_slope,
         )
 
+    @staticmethod
+    def _daylight_fraction(
+        heating_start: datetime,
+        heating_end: datetime,
+        daylight_periods: Sequence[DaylightPeriod],
+    ) -> float:
+        """Return the share of the heating phase spent between sunrise and sunset.
+
+        The window uses the uncorrected heating duration: the correction stays
+        within ±20 %, so the window barely moves, and this avoids solving for a
+        window that depends on its own correction.
+
+        Args:
+            heating_start: Start of the heating phase (after the dead time)
+            heating_end: When the target must be reached
+            daylight_periods: Daylight periods around the heating phase
+
+        Returns:
+            Fraction between 0.0 (all in the dark) and 1.0 (all in daylight)
+        """
+        heating_minutes = (heating_end - heating_start).total_seconds() / 60.0
+        if heating_minutes <= 0:
+            return 0.0
+        daylight_minutes = sum(
+            period.overlap_minutes(heating_start, heating_end) for period in daylight_periods
+        )
+        return min(1.0, daylight_minutes / heating_minutes)
+
     def _calculate_environmental_correction(
         self,
         humidity: float | None,
         cloud_coverage: float | None,
+        daylight_fraction: float = 0.0,
     ) -> float:
-        """Calculate combined environmental correction factor.
+        """Calculate the correction factor of the heating phase.
 
         This method combines multiple environmental factors that affect
         heating efficiency:
         - Indoor humidity (thermal mass effect)
-        - Cloud coverage (solar gain)
+        - Cloud coverage (solar gain), scaled by the share of the heating
+          phase spent in daylight: a clear sky does not warm a room at night
 
         Outdoor temperature is deliberately absent. The learned slope comes from
         recent cycles and already reflects recent weather, so a correction anchored
@@ -161,6 +202,7 @@ class PredictionService:
         Args:
             humidity: Indoor humidity percentage (0-100)
             cloud_coverage: Cloud coverage percentage (0-100)
+            daylight_fraction: Share of the heating phase between sunrise and sunset
 
         Returns:
             Combined correction factor (>1 means slower heating)
@@ -183,11 +225,18 @@ class PredictionService:
         # At 100% cloud: factor = 1.0 (no solar gain)
         # At 0% cloud (clear sky): factor = 0.9 (10% faster due to sun)
         # At 50% cloud: factor = 0.95 (5% faster)
+        # Only the daylight share of the heating phase gets the solar shortening.
         if cloud_coverage is not None:
             solar_factor = 1.0 - (100.0 - cloud_coverage) * CLOUD_COVERAGE_FACTOR
             solar_factor = max(0.8, min(1.0, solar_factor))
+            solar_factor = 1.0 - (1.0 - solar_factor) * daylight_fraction
             correction_factor *= solar_factor
-            _LOGGER.debug("Cloud coverage %.1f%% -> factor %.2f", cloud_coverage, solar_factor)
+            _LOGGER.debug(
+                "Cloud coverage %.1f%%, %.0f%% of heating in daylight -> factor %.2f",
+                cloud_coverage,
+                daylight_fraction * 100.0,
+                solar_factor,
+            )
 
         return correction_factor
 

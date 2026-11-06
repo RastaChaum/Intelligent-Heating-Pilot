@@ -508,9 +508,9 @@ class TestLhsLifecycleManager:
         # THEN: Storage access optimization
         # First call read from storage, second call used memory cache
         assert storage_calls_first >= 1, "First call should read from storage"
-        assert (
-            storage_calls_second == storage_calls_first
-        ), "Second call should NOT hit storage (memory cache used)"
+        assert storage_calls_second == storage_calls_first, (
+            "Second call should NOT hit storage (memory cache used)"
+        )
 
     # ===== Test: update_global_lhs_from_cycles() - ONE test for ALL scenarios =====
 
@@ -560,9 +560,9 @@ class TestLhsLifecycleManager:
         result = await manager.get_global_lhs()
         assert result == 2.8
         # Storage should NOT be called again (memory cache used)
-        assert (
-            mock_model_storage.get_cached_global_lhs.call_count == 0
-        ), "Should NOT hit storage on get_global_lhs after update"
+        assert mock_model_storage.get_cached_global_lhs.call_count == 0, (
+            "Should NOT hit storage on get_global_lhs after update"
+        )
 
         # THEN Aspect C: Handles empty cycles list gracefully
         # (Tested separately with new call to avoid cache interference)
@@ -573,6 +573,42 @@ class TestLhsLifecycleManager:
 
         # Default LHS is returned and persisted
         assert result_empty == DEFAULT_LEARNED_SLOPE
+
+    @pytest.mark.asyncio
+    async def test_update_global_lhs_keeps_a_slow_learned_slope(
+        self,
+        manager: LhsLifecycleManager,
+        mock_global_lhs_calculator: Mock,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """A slow room keeps its learned 0.15 °C/h instead of the 2.0 °C/h default (#255)."""
+        mock_global_lhs_calculator.calculate_global_lhs.return_value = 0.15
+
+        result = await manager.update_global_lhs_from_cycles(
+            [self._create_heating_cycle(base_datetime)]
+        )
+
+        assert result == 0.15
+        assert mock_model_storage.set_cached_global_lhs.call_args[0][0] == 0.15
+
+    @pytest.mark.asyncio
+    async def test_update_global_lhs_replaces_a_non_positive_slope_with_default(
+        self,
+        manager: LhsLifecycleManager,
+        mock_global_lhs_calculator: Mock,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """A slope that is not positive cannot drive an anticipation."""
+        mock_global_lhs_calculator.calculate_global_lhs.return_value = 0.0
+
+        result = await manager.update_global_lhs_from_cycles(
+            [self._create_heating_cycle(base_datetime)]
+        )
+
+        assert result == DEFAULT_LEARNED_SLOPE
+        assert mock_model_storage.set_cached_global_lhs.call_args[0][0] == DEFAULT_LEARNED_SLOPE
 
     # ===== Test: update_contextual_lhs_from_cycles() - ONE test for ALL scenarios =====
 
@@ -632,9 +668,9 @@ class TestLhsLifecycleManager:
         assert lhs_value == 2.5
 
         # Storage should NOT be called (memory cache used)
-        assert (
-            mock_model_storage.get_cached_contextual_lhs.call_count == 0
-        ), "Should NOT hit storage on get_contextual_lhs after update"
+        assert mock_model_storage.get_cached_contextual_lhs.call_count == 0, (
+            "Should NOT hit storage on get_contextual_lhs after update"
+        )
 
         # THEN Aspect D: Handles empty cycles gracefully
         # (Tested with separate call to avoid interference)
@@ -886,18 +922,18 @@ class TestLhsLifecycleManagerLazyLoading:
         await manager.startup()
 
         # THEN: EXACTLY ONE hour is requested (lazy loading - only current hour)
-        assert (
-            len(requested_hours) == 1
-        ), f"Expected only 1 hour loaded, but got {len(requested_hours)} hours: {requested_hours}"
+        assert len(requested_hours) == 1, (
+            f"Expected only 1 hour loaded, but got {len(requested_hours)} hours: {requested_hours}"
+        )
 
         # THEN: That hour is in the valid range (0-23)
         loaded_hour = requested_hours[0]
         assert 0 <= loaded_hour <= 23, f"Loaded hour {loaded_hour} is outside valid range 0-23"
 
         # THEN: Memory cache contains only the loaded hour (lazy loading)
-        assert (
-            len(manager._cached_contextual_lhs) == 1
-        ), f"Memory cache should have exactly 1 hour, but has {len(manager._cached_contextual_lhs)}"
+        assert len(manager._cached_contextual_lhs) == 1, (
+            f"Memory cache should have exactly 1 hour, but has {len(manager._cached_contextual_lhs)}"
+        )
         assert loaded_hour in manager._cached_contextual_lhs
 
     @pytest.mark.asyncio
@@ -927,9 +963,9 @@ class TestLhsLifecycleManagerLazyLoading:
         await manager.startup()
 
         # THEN: Exactly ONE hour is loaded (lazy loading)
-        assert (
-            len(called_hours) == 1
-        ), f"Expected 1 call (current hour only), got {len(called_hours)} calls"
+        assert len(called_hours) == 1, (
+            f"Expected 1 call (current hour only), got {len(called_hours)} calls"
+        )
 
         # THEN: All 24 hours are NOT loaded (NOT a loop over range(24))
         all_hours = set(range(24))
@@ -964,17 +1000,17 @@ class TestLhsLifecycleManagerLazyLoading:
 
         # THEN: That hour is cached in memory
         loaded_hours = list(manager._cached_contextual_lhs.keys())
-        assert (
-            len(loaded_hours) >= 1
-        ), "At least one hour should be cached after startup (lazy loading)"
+        assert len(loaded_hours) >= 1, (
+            "At least one hour should be cached after startup (lazy loading)"
+        )
 
         # THEN: The cached value matches what was returned from storage
         for hour in loaded_hours:
             cached_value = manager._cached_contextual_lhs[hour]
             expected_value = cached_values.get(hour)
-            assert (
-                cached_value == expected_value
-            ), f"Cached value for hour {hour} should match storage value"
+            assert cached_value == expected_value, (
+                f"Cached value for hour {hour} should match storage value"
+            )
 
     # ===== Lazy Loading on Demand Tests =====
 
@@ -1076,21 +1112,21 @@ class TestLhsLifecycleManagerLazyLoading:
         assert result == 2.5
 
     @pytest.mark.asyncio
-    async def test_get_contextual_lhs_ignores_unrealistic_stored_value(
+    async def test_get_contextual_lhs_ignores_non_positive_stored_value(
         self,
         manager: LhsLifecycleManager,
         mock_model_storage: Mock,
         mock_contextual_lhs_calculator: Mock,
         base_datetime: datetime,
     ) -> None:
-        """A stored value below MINIMUM_REALISTIC_LHS falls back to the global LHS (#184).
+        """A stored value that is not positive falls back to the global LHS (#184, #255).
 
-        Earlier versions persisted such values, and the anticipation would then
-        replace them with the hard-coded default instead of the learned global LHS.
+        The anticipation would otherwise replace it with the hard-coded default
+        instead of the learned global LHS.
         """
-        # GIVEN: Storage holds an unrealistic contextual value for hour 18
+        # GIVEN: Storage holds a contextual value that is not positive for hour 18
         mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
-            value=0.15, updated_at=base_datetime, hour=18
+            value=0.0, updated_at=base_datetime, hour=18
         )
         mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = None
         # GIVEN: A slow room whose learned global LHS is 0.4
@@ -1114,17 +1150,38 @@ class TestLhsLifecycleManagerLazyLoading:
         mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_ensure_contextual_lhs_populated_ignores_unrealistic_stored_value(
+    async def test_get_contextual_lhs_uses_a_slow_stored_value(
         self,
         manager: LhsLifecycleManager,
         mock_model_storage: Mock,
         mock_contextual_lhs_calculator: Mock,
         base_datetime: datetime,
     ) -> None:
-        """The populate path also falls back to global for an unrealistic stored value."""
-        # GIVEN: Storage holds an unrealistic contextual value for hour 20
+        """A slow slope learned for an hour (0.15 °C/h) is used, not dropped (#255)."""
         mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
-            value=0.15, updated_at=base_datetime, hour=20
+            value=0.15, updated_at=base_datetime, hour=18
+        )
+        mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
+            value=0.4, updated_at=base_datetime
+        )
+
+        result = await manager.get_contextual_lhs(base_datetime.replace(hour=18), [])
+
+        assert result == 0.15
+        mock_model_storage.delete_cached_contextual_lhs.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_ensure_contextual_lhs_populated_ignores_non_positive_stored_value(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        mock_contextual_lhs_calculator: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """The populate path also falls back to global for a non-positive stored value."""
+        # GIVEN: Storage holds a contextual value that is not positive for hour 20
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=-0.1, updated_at=base_datetime, hour=20
         )
         mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = None
         mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
@@ -1140,16 +1197,16 @@ class TestLhsLifecycleManagerLazyLoading:
         mock_model_storage.delete_cached_contextual_lhs.assert_awaited_once_with(20)
 
     @pytest.mark.asyncio
-    async def test_startup_does_not_cache_unrealistic_stored_value(
+    async def test_startup_does_not_cache_non_positive_stored_value(
         self,
         manager: LhsLifecycleManager,
         mock_model_storage: Mock,
         base_datetime: datetime,
     ) -> None:
-        """Startup leaves an unrealistic stored value out of the memory cache."""
-        # GIVEN: Storage holds an unrealistic contextual value for every hour
+        """Startup leaves a non-positive stored value out of the memory cache."""
+        # GIVEN: Storage holds a contextual value that is not positive for every hour
         mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
-            value=0.15, updated_at=base_datetime
+            value=0.0, updated_at=base_datetime
         )
 
         # WHEN: Startup is called
@@ -1184,6 +1241,24 @@ class TestLhsLifecycleManagerLazyLoading:
         assert later == 0.4
         assert 20 not in manager._cached_contextual_lhs
         mock_model_storage.delete_cached_contextual_lhs.assert_awaited_once_with(20)
+
+    @pytest.mark.asyncio
+    async def test_get_contextual_lhs_reads_the_nearest_hour_of_the_slot(
+        self,
+        manager: LhsLifecycleManager,
+        base_datetime: datetime,
+    ) -> None:
+        """A 06:45 slot reads hour 7, where a cycle reaching the target at 06:45 is filed (#214)."""
+        # GIVEN: Hour 7 is learned
+        manager._cached_contextual_lhs[7] = 1.8
+
+        # WHEN: The slope of a 06:45 slot is requested
+        result = await manager.get_contextual_lhs(
+            target_time=base_datetime.replace(hour=6, minute=45), cycles=[]
+        )
+
+        # THEN: The slope of hour 7 is used
+        assert result == 1.8
 
     @pytest.mark.asyncio
     async def test_get_learned_contextual_lhs_does_not_fall_back_to_global(
@@ -1350,9 +1425,9 @@ class TestLhsLifecycleManagerLazyLoading:
         await manager.startup()
 
         # THEN: Exactly ONE hour is loaded (lazy loading)
-        assert (
-            len(requested_hours) == 1
-        ), f"Expected 1 hour loaded in startup, got {len(requested_hours)}"
+        assert len(requested_hours) == 1, (
+            f"Expected 1 hour loaded in startup, got {len(requested_hours)}"
+        )
 
         # THEN: That hour is in valid range (0-23), including boundary hour 0
         loaded_hour = requested_hours[0]
@@ -1396,9 +1471,9 @@ class TestLhsLifecycleManagerLazyLoading:
         await manager.startup()
 
         # THEN: Exactly ONE hour is loaded (lazy loading)
-        assert (
-            len(requested_hours) == 1
-        ), f"Expected 1 hour loaded in startup, got {len(requested_hours)}"
+        assert len(requested_hours) == 1, (
+            f"Expected 1 hour loaded in startup, got {len(requested_hours)}"
+        )
 
         # THEN: That hour is in valid range (0-23), including boundary hour 23
         loaded_hour = requested_hours[0]

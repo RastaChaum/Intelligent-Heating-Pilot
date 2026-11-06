@@ -47,15 +47,23 @@ class HASchedulerCommander(ISchedulerCommander):
         """
         self._hass = hass
 
-    async def run_action(self, target_time: datetime, scheduler_entity_id: str) -> None:
+    async def run_action(self, target_time: datetime, scheduler_entity_id: str) -> bool:
         """Trigger a scheduler action for a specific timeslot.
 
         This will start heating in the mode configured in the scheduler
-        for the timeslot at the given time.
+        for the timeslot at the given time. Never bypasses the scheduler's
+        own conditions (no ``skip_conditions`` override).
 
         Args:
             target_time: The time of the scheduler timeslot to trigger
             scheduler_entity_id: Scheduler entity ID to control
+
+        Returns:
+            ``True`` if an actuation attempt was made on the underlying HACS
+            Scheduler (whether or not its conditions ultimately let the
+            action through — that is for the caller to verify separately).
+            ``False`` for a native HA schedule entity, which this adapter
+            never actuates (compute-only).
 
         Raises:
             ValueError: If scheduler entity is not configured
@@ -71,7 +79,7 @@ class HASchedulerCommander(ISchedulerCommander):
                 get_entity_name(self._hass, scheduler_entity_id),
                 target_time.strftime("%H:%M"),
             )
-            return
+            return False
 
         # Format time as HH:MM for scheduler service
         trigger_time_str = target_time.strftime("%H:%M")
@@ -91,6 +99,7 @@ class HASchedulerCommander(ISchedulerCommander):
                 blocking=True,
             )
             _LOGGER.debug("Scheduler action triggered successfully")
+            return True
         except Exception as err:
             _LOGGER.error(
                 "Failed to trigger scheduler action for %s: %s",

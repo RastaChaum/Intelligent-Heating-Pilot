@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from ..value_objects import HeatingCycle
+from .learning_cycle_filter import filter_learnable_cycles
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ class DeadTimeCalculationService:
     """Calculate average dead time from heating cycles.
 
     Responsibilities:
-    - Filter cycles with valid dead_time_cycle_minutes
+    - Keep the cycles learnable for the LHS that have a valid dead_time_cycle_minutes
     - Compute average dead time across valid cycles
     - Return None when no valid data exists
 
@@ -26,6 +27,13 @@ class DeadTimeCalculationService:
 
     def calculate_average_dead_time(self, heating_cycles: list[HeatingCycle]) -> float | None:
         """Calculate average dead_time from cycles with valid dead_time_cycle_minutes.
+
+        Only cycles kept for the LHS by the shared learning rule are averaged. A cycle
+        rejected there, typically one whose temperature fell and only climbed back to the
+        threshold at its last reading, has a dead time as long as the cycle and would add
+        its whole duration to the learned dead time (#245). A cycle disturbed by load
+        shedding or safety mode is left out too; a slow one is kept, however long its
+        dead time (#255).
 
         Args:
             heating_cycles: List of heating cycles to analyze
@@ -38,11 +46,14 @@ class DeadTimeCalculationService:
             len(heating_cycles),
         )
 
-        cycles_with_dead_time = [
-            cycle
-            for cycle in heating_cycles
-            if cycle.dead_time_cycle_minutes is not None and cycle.dead_time_cycle_minutes > 0
-        ]
+        learnable_cycles = filter_learnable_cycles(heating_cycles)
+        cycles_with_dead_time = [cycle for cycle in learnable_cycles if cycle.has_dead_time]
+        _LOGGER.debug(
+            "Dead time candidates: %d learnable cycles of %d, %d with a dead time",
+            len(learnable_cycles),
+            len(heating_cycles),
+            len(cycles_with_dead_time),
+        )
 
         if not cycles_with_dead_time:
             _LOGGER.debug("No cycles with valid dead_time_cycle_minutes")

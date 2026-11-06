@@ -5,9 +5,19 @@ from __future__ import annotations
 import asyncio
 import bisect
 import logging
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
+from ..constants import (
+    DEAD_TIME_TEMP_RISE_C,
+    DISTURBANCE_PRESETS,
+    LOAD_SHEDDING_PRESET,
+    PLATEAU_MIN_DURATION_MINUTES,
+    PLATEAU_RISE_TOLERANCE_C,
+    TEMP_FLOAT_TOLERANCE_C,
+)
 from ..interfaces.heating_cycle_service_interface import IHeatingCycleService
 from ..value_objects.heating import HeatingCycle, TariffPeriodDetail
 from ..value_objects.historical_data import (
@@ -15,8 +25,59 @@ from ..value_objects.historical_data import (
     HistoricalDataSet,
     HistoricalMeasurement,
 )
+from .scheduled_slot import scheduled_slot_of_cycle
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class DeadTimeEnd:
+    """The reading that ended a cycle's dead time.
+
+    Attributes:
+        minutes: Dead time, from the cycle start to that reading.
+        temperature: Indoor temperature of that reading, where the heating phase starts.
+    """
+
+    minutes: float
+    temperature: float
+
+
+class PlateauStart(NamedTuple):
+    """The reading where a cycle's room stopped warming (#267).
+
+    Attributes:
+        time: Timestamp of that reading, where the heating phase ends.
+        temperature: Indoor temperature of that reading.
+    """
+
+    time: datetime
+    temperature: float
+
+
+# A bridged interruption of a cycle: from its first record to the record it ended on
+Interruption = tuple[datetime, datetime]
+
+
+def _preset_of(measurement: HistoricalMeasurement) -> str | None:
+    """Recorded preset of a heating state record, lower-cased, if it has one."""
+    preset = (measurement.attributes or {}).get("preset_mode")
+    return preset.lower() if isinstance(preset, str) else None
+
+
+def _has_disturbance_preset(measurement: HistoricalMeasurement) -> bool:
+    """Whether a heating state record carries a preset VTherm sets when disturbed."""
+    return _preset_of(measurement) in DISTURBANCE_PRESETS
+
+
+def _is_load_shedding(measurement: HistoricalMeasurement) -> bool:
+    """Whether VTherm was shedding its load: it records the power preset meanwhile."""
+    return _preset_of(measurement) == LOAD_SHEDDING_PRESET
+
+
+def _within(timestamp: datetime, interruptions: Sequence[Interruption]) -> bool:
+    """Whether a record belongs to one of the bridged interruptions."""
+    return any(start <= timestamp < end for start, end in interruptions)
 
 
 class HeatingCycleService(IHeatingCycleService):
@@ -49,9 +110,11 @@ class HeatingCycleService(IHeatingCycleService):
                 cycles into smaller sub-cycles for granular analysis. If 0, cycles are not split.
             min_cycle_duration_minutes: Minimum duration for a valid heating cycle.
             max_cycle_duration_minutes: Maximum duration for a single heating cycle (before splitting).
-            safety_shutoff_grace_minutes: Grace period in minutes for brief heating interruptions
-                caused by safety or frost-protection mode. Interruptions shorter than this threshold
-                will not terminate an in-progress cycle. Set to 0 to disable the grace period.
+            safety_shutoff_grace_minutes: Grace period in minutes for brief heating interruptions:
+                ``hvac_mode`` off (safety or frost-protection cutoff), VTherm load shedding
+                (``power`` preset) and target drops such as an open window (#260).
+                Interruptions shorter than this threshold will not terminate an in-progress
+                cycle. Set to 0 to disable the grace period.
         """
         _LOGGER.debug("Entering HeatingCycleService.__init__")
         _LOGGER.debug(
@@ -132,11 +195,13 @@ class HeatingCycleService(IHeatingCycleService):
         cycle_start_indoor_temp: float | None = None
         cycle_start_target_temp: float | None = None
 
-        # Grace period: absorbs brief safety/frost-protection interruptions.
-        # When mode goes OFF for less than `_safety_shutoff_grace_minutes` and then resumes,
-        # the interruption is ignored so the cycle is not split into micro-cycles with
-        # aberrant slopes (e.g. 140 000 °C/h).
+        # Grace period: absorbs brief interruptions, i.e. hvac_mode OFF (safety/frost-protection
+        # cutoff), a VTherm load shedding or a target drop (open window). When one lasts less than
+        # `_safety_shutoff_grace_minutes`, it is ignored so the cycle is not split into
+        # micro-cycles with aberrant slopes (e.g. 140 000 °C/h), nor its dead time measured from
+        # the last fragment (#260).
         grace_period_start: datetime | None = None
+        bridged: list[Interruption] = []
 
         cycles: list[HeatingCycle] = []
 
@@ -196,6 +261,7 @@ class HeatingCycleService(IHeatingCycleService):
                     heating_start = timestamp
                     cycle_start_indoor_temp = current_indoor_temp
                     cycle_start_target_temp = current_target_temp
+                    bridged = []
                     _LOGGER.debug(
                         "Heating cycle started at %s (Indoor: %.1f, Target: %.1f)",
                         timestamp,
@@ -209,26 +275,33 @@ class HeatingCycleService(IHeatingCycleService):
                     elapsed_off_minutes = (timestamp - grace_period_start).total_seconds() / 60.0
 
                     if elapsed_off_minutes < self._safety_shutoff_grace_minutes:
-                        if mode_on:
-                            # Mode resumed within grace window → absorb the interruption
+                        if not self._is_interrupted(
+                            mode_on,
+                            measurement,
+                            current_indoor_temp,
+                            current_target_temp,
+                            cycle_start_target_temp,
+                        ):
+                            # Heating resumed within grace window → absorb the interruption
                             _LOGGER.debug(
-                                "Grace period absorbed: mode resumed at %s "
+                                "Grace period absorbed: heating resumed at %s "
                                 "(%.1f min < grace %d min)",
                                 timestamp,
                                 elapsed_off_minutes,
                                 self._safety_shutoff_grace_minutes,
                             )
+                            bridged.append((grace_period_start, timestamp))
                             grace_period_start = None
                             # Fall through to normal _should_end_cycle check below
                         else:
-                            # Still OFF and within grace → ignore this measurement
+                            # Still interrupted and within grace → ignore this measurement
                             continue
                     else:
                         # Grace period expired → close cycle at grace_period_start
                         end_ts = grace_period_start
                         grace_period_start = None
                         _LOGGER.debug(
-                            "Grace period expired (%.1f min >= %d min); " "ending cycle at %s",
+                            "Grace period expired (%.1f min >= %d min); ending cycle at %s",
                             elapsed_off_minutes,
                             self._safety_shutoff_grace_minutes,
                             end_ts,
@@ -250,6 +323,7 @@ class HeatingCycleService(IHeatingCycleService):
                             else current_target_temp,
                             history_data_set=history_data_set,
                             split_duration_minutes=split_duration,
+                            bridged_interruptions=bridged,
                         )
                         if created:
                             cycles.extend(created)
@@ -264,6 +338,7 @@ class HeatingCycleService(IHeatingCycleService):
                             heating_start = timestamp
                             cycle_start_indoor_temp = current_indoor_temp
                             cycle_start_target_temp = current_target_temp
+                            bridged = []
                             _LOGGER.debug(
                                 "New cycle started after grace expiry at %s "
                                 "(Indoor: %.1f, Target: %.1f)",
@@ -273,8 +348,14 @@ class HeatingCycleService(IHeatingCycleService):
                             )
                         continue
 
-                elif not mode_on and self._safety_shutoff_grace_minutes > 0:
-                    # First OFF event while a cycle is active → begin grace window
+                elif self._safety_shutoff_grace_minutes > 0 and self._is_interrupted(
+                    mode_on,
+                    measurement,
+                    current_indoor_temp,
+                    current_target_temp,
+                    cycle_start_target_temp,
+                ):
+                    # First OFF, load shedding or target drop record of the cycle → begin grace
                     grace_period_start = timestamp
                     _LOGGER.debug(
                         "Grace period started at %s (grace=%d min)",
@@ -304,6 +385,7 @@ class HeatingCycleService(IHeatingCycleService):
                         else current_target_temp,
                         history_data_set=history_data_set,
                         split_duration_minutes=split_duration,
+                        bridged_interruptions=bridged,
                     )
                     if created:
                         cycles.extend(created)
@@ -339,6 +421,7 @@ class HeatingCycleService(IHeatingCycleService):
                 target_temp=cycle_start_target_temp or 20.0,
                 history_data_set=history_data_set,
                 split_duration_minutes=split_duration,
+                bridged_interruptions=bridged,
             )
             if created:
                 cycles.extend(created)
@@ -376,6 +459,54 @@ class HeatingCycleService(IHeatingCycleService):
             state = measurement.value.lower()
             return state in ("on", "heat", "heating", "true", "1")
         return bool(measurement.value)
+
+    def _is_interrupted(
+        self,
+        mode_on: bool,
+        measurement: HistoricalMeasurement,
+        indoor_temp: float,
+        target_temp: float,
+        cycle_target_temp: float | None,
+    ) -> bool:
+        """Whether a record interrupts the cycle in progress, until the grace period expires.
+
+        ``hvac_mode`` off covers safety and frost-protection cutoffs. During a load shedding
+        or while a window or a door is open, VTherm drops the target to its power or window
+        action temperature for a few minutes, which would otherwise end the cycle as if the
+        room had reached its target (#260). A target lowered for good (the schedule moved to
+        eco) is an interruption too: once the grace period expires, the cycle ends when the
+        target dropped, as it did before.
+
+        Args:
+            mode_on: Whether the record has a heating ``hvac_mode``.
+            measurement: The heating state record.
+            indoor_temp: Indoor temperature at the record.
+            target_temp: Target temperature at the record.
+            cycle_target_temp: Target the cycle started with.
+
+        Returns:
+            True if the cycle would end on this record for any other reason than reaching
+            its own target.
+        """
+        return (
+            not mode_on
+            or _is_load_shedding(measurement)
+            or self._is_target_dropped(indoor_temp, target_temp, cycle_target_temp)
+        )
+
+    def _is_target_dropped(
+        self, indoor_temp: float, target_temp: float, cycle_target_temp: float | None
+    ) -> bool:
+        """Whether the target fell below the cycle target, low enough to end the cycle.
+
+        A target lowered by less than that leaves the cycle going on, as before.
+        """
+        if cycle_target_temp is None:
+            return False
+        return (
+            target_temp < cycle_target_temp - TEMP_FLOAT_TOLERANCE_C
+            and indoor_temp >= target_temp - self._temp_delta_threshold
+        )
 
     def _is_mode_on(self, measurement: HistoricalMeasurement) -> bool:
         """Determines if the heating system is enabled (mode indicates heating allowed).
@@ -456,11 +587,14 @@ class HeatingCycleService(IHeatingCycleService):
         target_temp: float,
         history_data_set: HistoricalDataSet,
         split_duration_minutes: int | None = None,
+        bridged_interruptions: Sequence[Interruption] = (),
     ) -> list[HeatingCycle]:
         """Build and return one or more HeatingCycle objects for the provided time range.
 
         This function no longer mutates an external list; it returns the created cycle(s)
         so the caller can decide what to do with them (append, persist, filter...).
+        ``bridged_interruptions`` are the interruptions the grace period absorbed within
+        the cycle: a load shedding among them does not make the cycle disturbed.
         """
         duration_minutes = (end_time - start_time).total_seconds() / 60.0
 
@@ -490,13 +624,47 @@ class HeatingCycleService(IHeatingCycleService):
             tariff_history, energy_history, runtime_history, start_time, end_time, total_energy_kwh
         )
 
-        # Calculate dead_time_cycle for this cycle
-        dead_time_cycle_minutes = self._calculate_dead_time_cycle(
+        dead_time_end = self._calculate_dead_time_cycle(
             start_time=start_time,
             end_time=end_time,
             start_temp=start_indoor_temp,
             history_data_set=history_data_set,
         )
+        plateau = (
+            self._find_plateau_start(
+                start_time + timedelta(minutes=dead_time_end.minutes), end_time, history_data_set
+            )
+            if dead_time_end is not None
+            else None
+        )
+        if plateau is not None:
+            _LOGGER.debug(
+                "Cycle from %s to %s stopped warming at %s (%.2f°C): "
+                "its heating slope is measured up to there",
+                start_time,
+                end_time,
+                plateau.time,
+                plateau.temperature,
+            )
+        disturbed = self._is_disturbed(data, start_time, end_time, bridged_interruptions)
+        if disturbed:
+            _LOGGER.debug(
+                "Cycle from %s to %s ran during load shedding or safety mode: "
+                "it will not be learned from",
+                start_time,
+                end_time,
+            )
+        scheduled_slot_time = scheduled_slot_of_cycle(
+            data.get(HistoricalDataKey.SCHEDULED_SLOT, []), start_time, end_time, target_temp
+        )
+        if scheduled_slot_time is not None:
+            _LOGGER.debug(
+                "Cycle from %s to %s was still heating when its slot came due at %s: "
+                "it is learned for that slot",
+                start_time,
+                end_time,
+                scheduled_slot_time,
+            )
 
         # Build HeatingCycle with computed tariff details (may be empty)
         cycle = HeatingCycle(
@@ -507,9 +675,15 @@ class HeatingCycleService(IHeatingCycleService):
             end_temp=end_indoor_temp,
             start_temp=start_indoor_temp,
             tariff_details=tariff_details,
-            dead_time_cycle_minutes=dead_time_cycle_minutes,
+            dead_time_cycle_minutes=dead_time_end.minutes if dead_time_end else None,
             min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
             avg_outdoor_temp=self._compute_average_outdoor_temp(data, start_time, end_time),
+            dead_time_end_temp=dead_time_end.temperature if dead_time_end else None,
+            disturbed=disturbed,
+            heating_phase_observed=dead_time_end is not None,
+            scheduled_slot_time=scheduled_slot_time,
+            plateau_start_time=plateau.time if plateau else None,
+            plateau_start_temp=plateau.temperature if plateau else None,
         )
         _LOGGER.debug(
             "Created single heating cycle: %s (energy=%.3fkWh duration=%.1fmin cost=%.3f€)",
@@ -520,124 +694,129 @@ class HeatingCycleService(IHeatingCycleService):
         )
 
         # If splitting is enabled, return sub-cycles (used for ML augmentation).
-        if (
-            split_duration_minutes is not None
-            and split_duration_minutes > 0
-            and duration_minutes > split_duration_minutes
-        ):
-            return self._split_into_cycles(
-                device_id,
-                start_time,
-                end_time,
-                start_indoor_temp,
-                end_indoor_temp,
-                target_temp,
-                history_data_set,
-                split_duration_minutes,
-                dead_time_cycle_minutes,
-            )
+        if split_duration_minutes is not None and split_duration_minutes > 0:
+            return self._split_into_cycles(cycle, history_data_set, split_duration_minutes)
 
         return [cycle]
 
     def _split_into_cycles(
         self,
-        device_id: str,
-        start_time: datetime,
-        end_time: datetime,
-        start_indoor_temp: float,
-        end_indoor_temp: float,
-        target_temp: float,
+        parent: HeatingCycle,
         history_data_set: HistoricalDataSet,
-        split_duration_minutes: int = 0,
-        parent_dead_time_minutes: float | None = None,
+        split_duration_minutes: int,
     ) -> list[HeatingCycle]:
-        """Splits a long heating cycle into smaller sub-cycles and returns them.
+        """Split a long cycle's heating phase into sub-cycles of the split duration.
 
-        The parent cycle's dead time is given to the first sub-cycle only. It was
-        searched up to the parent end: the first rise may come after the first
-        sub-cycle ends but still belongs to this heating cycle.
+        Temperatures are interpolated linearly over the heating phase, from the end of the
+        dead time to the end of the heating phase, so every sub-cycle gets the slope of that
+        phase. The plateau after it, if any, is not split: it is not heating (#267), and
+        no sub-cycle carries it.
+        Interpolating from the cycle start spread the dead time over every sub-cycle, and
+        the first one removed it a second time (#218, #245). The first sub-cycle starts with
+        the cycle and also covers the dead time: it keeps the dead time and the temperature
+        at its end, so the dead time is still learned. A cycle whose heating phase is not
+        longer than the split duration is returned unsplit. Every sub-cycle keeps the
+        disturbance and heating phase status of its cycle (#255), and the slot it was
+        heating for (#254).
         """
-        if split_duration_minutes <= 0:  # No splitting
-            return []
+        phase_start = parent.heating_phase_start_time
+        phase_start_temp = parent.heating_phase_start_temp
+        phase_end = parent.heating_phase_end_time
+        phase_end_temp = parent.heating_phase_end_temp
+        phase_minutes = (phase_end - phase_start).total_seconds() / 60.0
+        if phase_minutes <= split_duration_minutes:
+            return [parent]
 
-        # Ensure temperatures are available before attempting numeric operations
-        if start_indoor_temp is None or end_indoor_temp is None:
-            _LOGGER.debug("Missing start or end indoor temp for splitting; skipping split")
-            return []
-
-        duration_minutes = (end_time - start_time).total_seconds() / 60.0
-        num_sub_cycles = int(duration_minutes / split_duration_minutes)
-        remaining_minutes = duration_minutes - (num_sub_cycles * split_duration_minutes)
-
-        if duration_minutes == 0:
-            return []
-
-        temp_per_minute = (end_indoor_temp - start_indoor_temp) / duration_minutes
-
-        current_sub_cycle_start_time = start_time
-        current_sub_cycle_start_temp = start_indoor_temp
-
-        created: list[HeatingCycle] = []
-
+        temp_per_minute = (phase_end_temp - phase_start_temp) / phase_minutes
         _LOGGER.debug(
-            "Splitting cycle from %s to %s (%.1f min) into %d sub-cycles",
-            start_time,
-            end_time,
-            duration_minutes,
-            num_sub_cycles + (1 if remaining_minutes > 0 else 0),
+            "Splitting cycle from %s to %s (heating phase from %s to %s, %.1f min) every %d min",
+            parent.start_time,
+            parent.end_time,
+            phase_start,
+            phase_end,
+            phase_minutes,
+            split_duration_minutes,
         )
 
-        for i in range(num_sub_cycles):
-            sub_cycle_end_time = current_sub_cycle_start_time + timedelta(
-                minutes=split_duration_minutes
+        created: list[HeatingCycle] = []
+        sub_start, sub_start_temp = parent.start_time, parent.start_temp
+        for sub_end in self._split_boundaries(phase_start, phase_end, split_duration_minutes):
+            sub_end_temp = (
+                phase_end_temp
+                if sub_end == phase_end
+                else phase_start_temp
+                + temp_per_minute * (sub_end - phase_start).total_seconds() / 60.0
             )
-            sub_cycle_end_temp = current_sub_cycle_start_temp + (
-                temp_per_minute * split_duration_minutes
-            )
-
-            dead_time_cycle_minutes = parent_dead_time_minutes if i == 0 else None
-
-            sub_cycle = HeatingCycle(
-                device_id=device_id,
-                start_time=current_sub_cycle_start_time,
-                end_time=sub_cycle_end_time,
-                target_temp=target_temp,  # Target remains constant for sub-cycles
-                end_temp=sub_cycle_end_temp,
-                start_temp=current_sub_cycle_start_temp,
+            is_first = not created
+            sub_cycle = replace(
+                parent,
+                start_time=sub_start,
+                end_time=sub_end,
+                start_temp=sub_start_temp,
+                end_temp=sub_end_temp,
                 tariff_details=[],  # TODO: calculate for sub-cycle
-                dead_time_cycle_minutes=dead_time_cycle_minutes,
-                min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
+                dead_time_cycle_minutes=parent.dead_time_cycle_minutes if is_first else None,
+                dead_time_end_temp=parent.dead_time_end_temp if is_first else None,
                 avg_outdoor_temp=self._compute_average_outdoor_temp(
-                    history_data_set.data, current_sub_cycle_start_time, sub_cycle_end_time
+                    history_data_set.data, sub_start, sub_end
                 ),
+                plateau_start_time=None,
+                plateau_start_temp=None,
             )
             created.append(sub_cycle)
-            _LOGGER.debug("  Created sub-cycle %d: %s", i + 1, sub_cycle)
-
-            current_sub_cycle_start_time = sub_cycle_end_time
-            current_sub_cycle_start_temp = sub_cycle_end_temp
-
-        # Record remaining part if significant
-        if remaining_minutes > 0:
-            remaining_end_time = current_sub_cycle_start_time + timedelta(minutes=remaining_minutes)
-            remaining_cycle = HeatingCycle(
-                device_id=device_id,
-                start_time=current_sub_cycle_start_time,
-                end_time=remaining_end_time,
-                target_temp=target_temp,
-                end_temp=end_indoor_temp,
-                start_temp=current_sub_cycle_start_temp,
-                tariff_details=[],  # TODO: calculate for remaining sub-cycle
-                dead_time_cycle_minutes=None,  # Not for remaining cycles
-                min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
-                avg_outdoor_temp=self._compute_average_outdoor_temp(
-                    history_data_set.data, current_sub_cycle_start_time, remaining_end_time
-                ),
-            )
-            created.append(remaining_cycle)
-            _LOGGER.debug("  Created remaining sub-cycle: %s", remaining_cycle)
+            _LOGGER.debug("  Created sub-cycle %d: %s", len(created), sub_cycle)
+            sub_start, sub_start_temp = sub_end, sub_end_temp
 
         return created
+
+    @staticmethod
+    def _split_boundaries(
+        phase_start: datetime, end_time: datetime, split_duration_minutes: int
+    ) -> list[datetime]:
+        """End times of the sub-cycles: every split duration after phase_start, then end_time."""
+        step = timedelta(minutes=split_duration_minutes)
+        boundaries: list[datetime] = []
+        boundary = phase_start + step
+        while boundary < end_time:
+            boundaries.append(boundary)
+            boundary += step
+        boundaries.append(end_time)
+        return boundaries
+
+    @staticmethod
+    def _is_disturbed(
+        data: dict[HistoricalDataKey, list[HistoricalMeasurement]],
+        start_time: datetime,
+        end_time: datetime,
+        bridged_interruptions: Sequence[Interruption] = (),
+    ) -> bool:
+        """Tell whether the thermostat reported a disturbance during a cycle.
+
+        Both bounds are included: a load shedding longer than the grace period ends the
+        cycle when it started, so the record that ends the cycle is the disturbed one.
+        A load shedding bridged within the cycle lasted less than the grace period: the
+        cycle still describes how the room heats, so it does not count (#260). Safety
+        mode always does.
+
+        Args:
+            data: Historical measurements by key; uses HEATING_STATE only.
+            start_time: Start of the cycle.
+            end_time: End of the cycle.
+            bridged_interruptions: Interruptions absorbed by the grace period in the cycle.
+
+        Returns:
+            True if a record of the cycle carries one of DISTURBANCE_PRESETS, other than
+            a load shedding within a bridged interruption.
+        """
+        return any(
+            start_time <= measurement.timestamp <= end_time
+            and _has_disturbance_preset(measurement)
+            and not (
+                _is_load_shedding(measurement)
+                and _within(measurement.timestamp, bridged_interruptions)
+            )
+            for measurement in data.get(HistoricalDataKey.HEATING_STATE, [])
+        )
 
     @staticmethod
     def _compute_average_outdoor_temp(
@@ -843,31 +1022,30 @@ class HeatingCycleService(IHeatingCycleService):
         end_time: datetime,
         start_temp: float,
         history_data_set: HistoricalDataSet,
-        temp_change_threshold: float = 0.2,
-        max_dead_time_minutes: float = 180.0,
-    ) -> float | None:
+        temp_change_threshold: float = DEAD_TIME_TEMP_RISE_C,
+    ) -> DeadTimeEnd | None:
         """Calculate the dead time for a specific cycle.
 
         Dead time is the period from cycle start to the first measurable temperature rise.
         Only positive temperature changes (heating) are considered; decreases return None.
+        A fall after heating starts, and the climb back, are part of the dead time.
         The search stops at ``end_time``: a rise after the cycle ended comes from a later
-        heating episode and must not be attributed to this one (issue #185).
+        heating episode and must not be attributed to this one (issue #185). Within the
+        cycle, no dead time is too long: underfloor heating can take four hours to warm
+        the room, and dropping those dead times kept only the fast mornings (#255).
 
         Args:
             start_time: When the heating cycle started
             end_time: When the heating cycle ended; measurements after it are ignored
             start_temp: Initial temperature at cycle start
             history_data_set: Historical temperature data
-            temp_change_threshold: Minimum temperature rise to detect (default: 0.2°C, must be
-                positive). Chosen to be above typical sensor noise while remaining sensitive
-                enough to detect early heat propagation.
-            max_dead_time_minutes: Maximum acceptable dead time (default: 180 minutes).
-                Floor heating systems can require 60–120 min to transfer heat to the room.
-                Values above this threshold are considered data artifacts.
+            temp_change_threshold: Minimum temperature rise to detect (default:
+                DEAD_TIME_TEMP_RISE_C, must be positive). A rise of exactly the threshold
+                counts, despite floating-point error.
 
         Returns:
-            Dead time in minutes, or None if temperature never rises by threshold
-            within the cycle, no data available, or dead time exceeds maximum threshold
+            The dead time in minutes and the temperature that ended it, or None if
+            temperature never rises by threshold within the cycle or no data is available
         """
         indoor_temp_history = history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, [])
 
@@ -887,32 +1065,89 @@ class HeatingCycleService(IHeatingCycleService):
             try:
                 current_temp = float(measurement.value)
                 # Check if temperature has risen by at least the threshold
-                # (only positive changes indicate heating; threshold only applies to increases)
+                # (only positive changes indicate heating; threshold only applies to increases).
+                # The tolerance absorbs float error only: 18.2 - 18.0 must count as 0.2 °C.
                 temp_change = current_temp - start_temp
-                if temp_change >= temp_change_threshold:
+                if temp_change >= temp_change_threshold - TEMP_FLOAT_TOLERANCE_C:
                     dead_time_minutes = (measurement.timestamp - start_time).total_seconds() / 60.0
-
-                    # Filter out abnormally high dead times (data artifacts)
-                    if dead_time_minutes > max_dead_time_minutes:
-                        _LOGGER.debug(
-                            "Dead time %.1f minutes exceeds maximum threshold %.1f minutes - ignoring as data artifact",
-                            dead_time_minutes,
-                            max_dead_time_minutes,
-                        )
-                        return None
-
                     _LOGGER.debug(
                         "Dead time calculated: %.1f minutes (temp change from %.1f to %.1f°C)",
                         dead_time_minutes,
                         start_temp,
                         current_temp,
                     )
-                    return dead_time_minutes
+                    return DeadTimeEnd(minutes=dead_time_minutes, temperature=current_temp)
             except (ValueError, TypeError):
                 continue
 
         # If no temperature change detected within the cycle, cannot determine dead time
         return None
+
+    def _find_plateau_start(
+        self,
+        heating_phase_start: datetime,
+        end_time: datetime,
+        history_data_set: HistoricalDataSet,
+    ) -> PlateauStart | None:
+        """Find where the room stopped warming within a cycle (#267).
+
+        The plateau starts at the first reading of the heating phase after which the room
+        gains less than PLATEAU_RISE_TOLERANCE_C for at least PLATEAU_MIN_DURATION_MINUTES,
+        all within the cycle. A TPI thermostat settling a few tenths below its target keeps
+        the cycle going on such a plateau until the slot ends; that waiting time is not
+        heating. A room still warming faster than PLATEAU_RISE_TOLERANCE_C per
+        PLATEAU_MIN_DURATION_MINUTES has no plateau, and a slower one is cut at one of its
+        readings, which leaves its steady rate unchanged. A flat stretch shorter than
+        PLATEAU_MIN_DURATION_MINUTES at the end of the cycle is not a plateau.
+
+        Args:
+            heating_phase_start: End of the dead time, where the heating phase starts.
+            end_time: End of the cycle; readings after it are ignored.
+            history_data_set: Historical indoor temperature data.
+
+        Returns:
+            The first plateau reading, or None if the room kept warming until the cycle
+            ended or no reading is available.
+        """
+        readings = self._indoor_readings_between(history_data_set, heating_phase_start, end_time)
+        min_duration = timedelta(minutes=PLATEAU_MIN_DURATION_MINUTES)
+        for index, (timestamp, temperature) in enumerate(readings):
+            if timestamp + min_duration > end_time:
+                return None
+            if not self._rises_within(readings[index + 1 :], timestamp + min_duration, temperature):
+                return PlateauStart(time=timestamp, temperature=temperature)
+        return None
+
+    @staticmethod
+    def _indoor_readings_between(
+        history_data_set: HistoricalDataSet, start: datetime, end: datetime
+    ) -> list[tuple[datetime, float]]:
+        """Indoor readings from start to end, both included, sorted, unparsable ones dropped."""
+        readings: list[tuple[datetime, float]] = []
+        indoor_history = history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, [])
+        for measurement in sorted(indoor_history, key=lambda m: m.timestamp):
+            if not start <= measurement.timestamp <= end:
+                continue
+            try:
+                readings.append((measurement.timestamp, float(measurement.value)))
+            except (ValueError, TypeError):
+                continue
+        return readings
+
+    @staticmethod
+    def _rises_within(
+        later_readings: list[tuple[datetime, float]], until: datetime, temperature: float
+    ) -> bool:
+        """Whether a reading up to ``until`` is PLATEAU_RISE_TOLERANCE_C above temperature.
+
+        A rise of exactly the tolerance counts, despite floating-point error.
+        """
+        for timestamp, value in later_readings:
+            if timestamp > until:
+                return False
+            if value - temperature >= PLATEAU_RISE_TOLERANCE_C - TEMP_FLOAT_TOLERANCE_C:
+                return True
+        return False
 
     def _validate_critical_data(self, history_data_set: HistoricalDataSet) -> None:
         """Validate that critical historical data keys are present in the dataset.

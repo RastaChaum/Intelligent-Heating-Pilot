@@ -17,6 +17,7 @@ from .historical_data_adapter_interface import IHistoricalDataAdapter
 from .lhs_storage_interface import ILhsStorage
 from .scheduler_commander_interface import ISchedulerCommander
 from .scheduler_reader_interface import ISchedulerReader
+from .sun_reader_interface import ISunReader
 from .timer_scheduler import ITimerScheduler
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "IDeviceConfigReader",
     "IHistoricalDataAdapter",
     "ITimerScheduler",
+    "ISunReader",
 ]

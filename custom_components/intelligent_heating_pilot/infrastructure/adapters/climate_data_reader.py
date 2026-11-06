@@ -12,6 +12,9 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.core import Event, EventStateChangedData, callback
+from homeassistant.helpers.event import async_track_state_change_event
+
 from ...domain.interfaces.climate_data_reader_interface import IClimateDataReader
 from ...domain.interfaces.historical_data_adapter_interface import IHistoricalDataAdapter
 from ...domain.value_objects import (
@@ -40,6 +43,21 @@ DATA_KEY_TO_CONCEPT: dict[HistoricalDataKey, AttributeConcept] = {
     HistoricalDataKey.OUTDOOR_HUMIDITY: AttributeConcept.OUTDOOR_HUMIDITY,
     HistoricalDataKey.CLOUD_COVERAGE: AttributeConcept.CLOUD_COVERAGE,
 }
+
+# Attributes the heating cycle extraction reads on each historical record, kept when
+# the Recorder states are trimmed to save memory. The preset is the only recorded trace
+# of VTherm load shedding and safety mode (#255).
+CYCLE_ATTRIBUTE_KEYS: tuple[str, ...] = ("hvac_action", "hvac_mode", "preset_mode")
+
+# Attributes kept from each Recorder state: the cycle attributes, plus the values the
+# attribute mappers extract.
+_RECORDED_ATTRIBUTE_KEYS: tuple[str, ...] = (
+    *CYCLE_ATTRIBUTE_KEYS,
+    "current_temperature",
+    "temperature",
+    "target_temperature",
+    "humidity",
+)
 
 
 class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
@@ -137,6 +155,59 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         except (ValueError, TypeError):
             return False
 
+    def get_target_temperature(self) -> float | None:
+        """Get the VTherm's current target temperature.
+
+        Reads real-time state (does NOT use RecorderAccessQueue).
+
+        Returns:
+            Current target temperature in Celsius, or ``None`` if the VTherm
+            entity is unavailable or its target temperature cannot be read.
+        """
+        vtherm_state = self._hass.states.get(self._vtherm_entity_id)
+        if not vtherm_state:
+            return None
+
+        target_temp = get_vtherm_attribute(vtherm_state, "temperature")
+        if target_temp is None:
+            return None
+
+        try:
+            return float(target_temp)
+        except (ValueError, TypeError):
+            return None
+
+    async def wait_for_state_change(self, timeout_seconds: float) -> bool:
+        """Wait for the next state change of the VTherm entity.
+
+        Listens to the VTherm's state change events; the listener is removed
+        however the wait ends (change, timeout or cancellation).
+
+        Args:
+            timeout_seconds: Longest time to wait, in seconds.
+
+        Returns:
+            ``True`` when the VTherm state changed before the timeout,
+            ``False`` when the timeout elapsed first.
+        """
+        changed = asyncio.Event()
+
+        @callback
+        def _on_state_change(_event: Event[EventStateChangedData]) -> None:
+            changed.set()
+
+        unsubscribe = async_track_state_change_event(
+            self._hass, [self._vtherm_entity_id], _on_state_change
+        )
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                await changed.wait()
+        except TimeoutError:
+            return False
+        finally:
+            unsubscribe()
+        return True
+
     # ------------------------------------------------------------------
     # IHistoricalDataAdapter implementation (historical data)
     # ------------------------------------------------------------------
@@ -215,9 +286,10 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
                 end_time,
             )
         except asyncio.CancelledError:
-            # Shutdown in progress - abort gracefully
+            # Shutdown in progress: let the cancellation reach the extraction, which must
+            # stop without treating the interrupted period as read
             _LOGGER.debug("History fetch cancelled (shutdown in progress) for %s", entity_id)
-            raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
+            raise
         except TimeoutError:
             # Timeout waiting for database - likely DB is shutdown
             _LOGGER.error("Timeout fetching history for %s (DB may be shutdown)", entity_id)
@@ -322,7 +394,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
             historical_records = await self._fetch_history(entity_id, start_time, end_time)
         except asyncio.CancelledError:
             _LOGGER.debug("History fetch cancelled (shutdown in progress) for %s", entity_id)
-            raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
+            raise
         except TimeoutError:
             _LOGGER.error("Timeout fetching history for %s (DB may be shutdown)", entity_id)
             raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
@@ -336,9 +408,6 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
 
         supported_concepts = mapper.get_supported_concepts()
         data: dict[HistoricalDataKey, list[HistoricalMeasurement]] = {}
-
-        # Keys needed by domain services (heating_cycle_service uses these)
-        _ESSENTIAL_ATTR_KEYS = {"hvac_action", "hvac_mode"}
 
         # Extract all supported data keys from the single set of records
         for data_key, concept in DATA_KEY_TO_CONCEPT.items():
@@ -368,7 +437,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
                     # Only keep essential attributes to avoid holding the full
                     # HA State attribute blob in memory (OOM prevention).
                     slim_attributes = {
-                        k: full_attributes[k] for k in _ESSENTIAL_ATTR_KEYS if k in full_attributes
+                        k: full_attributes[k] for k in CYCLE_ATTRIBUTE_KEYS if k in full_attributes
                     }
 
                     measurements.append(
@@ -496,8 +565,8 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         del history_dict
 
         # Convert State objects to lightweight dicts, keeping only the
-        # attributes that downstream code actually needs (hvac_action,
-        # hvac_mode, and the mapper-extracted values).  This avoids
+        # attributes that downstream code actually needs (the cycle
+        # attributes and the mapper-extracted values).  This avoids
         # holding the full HA attribute blob (20-30 keys per VTherm state
         # change) in memory across 8 devices × 7 days of data.
         result = []
@@ -508,14 +577,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
                 # Extract only essential attributes from the State object
                 raw_attrs = state.attributes
                 slim_attrs = {}
-                for key in (
-                    "hvac_action",
-                    "hvac_mode",
-                    "current_temperature",
-                    "temperature",
-                    "target_temperature",
-                    "humidity",
-                ):
+                for key in _RECORDED_ATTRIBUTE_KEYS:
                     val = raw_attrs.get(key)
                     if val is not None:
                         slim_attrs[key] = val

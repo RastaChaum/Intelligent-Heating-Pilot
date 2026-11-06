@@ -430,6 +430,20 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             "tariff_details": None,
             "dead_time_cycle_minutes": cycle.dead_time_cycle_minutes,
             "avg_outdoor_temp": cycle.avg_outdoor_temp,
+            "dead_time_end_temp": cycle.dead_time_end_temp,
+            "disturbed": cycle.disturbed,
+            "heating_phase_observed": cycle.heating_phase_observed,
+            "scheduled_slot_time": (
+                self._serialize_datetime(cycle.scheduled_slot_time)
+                if cycle.scheduled_slot_time is not None
+                else None
+            ),
+            "plateau_start_time": (
+                self._serialize_datetime(cycle.plateau_start_time)
+                if cycle.plateau_start_time is not None
+                else None
+            ),
+            "plateau_start_temp": cycle.plateau_start_temp,
         }
 
         # Serialize tariff details if present
@@ -502,4 +516,23 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             dead_time_cycle_minutes=cycle_dict.get("dead_time_cycle_minutes"),
             # Absent from cycles stored before outdoor temperature was recorded
             avg_outdoor_temp=cycle_dict.get("avg_outdoor_temp"),
+            # Absent from cycles stored before it was recorded (#245)
+            dead_time_end_temp=cycle_dict.get("dead_time_end_temp"),
+            # Absent from cycles stored before they were recorded (#255): such cycles
+            # keep the former learning rule
+            disturbed=cycle_dict.get("disturbed"),
+            heating_phase_observed=cycle_dict.get("heating_phase_observed"),
+            # Absent from cycles stored before it was recorded (#254): such cycles keep
+            # the hour nearest to their end
+            scheduled_slot_time=self._parse_optional_datetime(
+                cycle_dict.get("scheduled_slot_time")
+            ),
+            # Absent from cycles stored before it was recorded (#267): such cycles keep
+            # their slope measured up to the cycle end
+            plateau_start_time=self._parse_optional_datetime(cycle_dict.get("plateau_start_time")),
+            plateau_start_temp=cycle_dict.get("plateau_start_temp"),
         )
+
+    def _parse_optional_datetime(self, dt_string: str | None) -> datetime | None:
+        """Parse an optional ISO datetime string; None stays None."""
+        return self._parse_datetime(dt_string) if dt_string else None
