@@ -51,7 +51,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           RC_TAG=$(gh release list --limit 100 --json tagName,isPrerelease \
-            | scripts/release-gates.sh latest-rc "$VERSION")
+            | bash scripts/release-gates.sh latest-rc "$VERSION")
           if [ -z "$RC_TAG" ]; then
             echo "❌ No release candidate found for v${VERSION}."
             echo "A validated RC (vX.Y.Z-rcN) must exist before promoting to a final release."
