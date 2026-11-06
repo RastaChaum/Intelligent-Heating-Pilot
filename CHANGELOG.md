@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 - CI and release tooling hardening (#194, #199).
+- Version bumped to 0.7.1 (`manifest.json`, `hacs.json`, `const.py`, `pyproject.toml`), matching the `v0.7.1` release candidates.
+- Release workflows (#196) – `Increment RC Version` failed with "Permission denied" on `scripts/release-gates.sh`, committed without its executable bit. The workflows now run it through `bash`, and Workflow Lint fails when a script loses its executable bit.
+- Release workflows (#195, #196, #197, #198, #202) – The CHANGELOG PR opened after a release now passes the `main` check. `integration` can only merge into `main` when an RC exists for exactly its `manifest.json` version, the same rule the promotion applies. A new RC is published before the previous one is deleted. RC notes are no longer rewritten on each merge, and the dev pre-release tag follows `integration`. The helper scripts dispatch the workflows and create branch names the CI accepts. Every action is pinned to a commit SHA, and the zizmor rules disabled in #201 are enabled again.
 - Type checking (#203) – Removed redundant `cast` calls, annotated the HA storage `Store`, and typed the optional `dt_util` import, so fewer mypy warnings are reported on every PR.
 - Dead code (#218) – Removed `HeatingCycleLifecycleManager.update_cycles_for_window`, which nothing called. It read the recorder outside the extraction queue and stored the learned dead time from the last extracted cycles only, so a future caller would have brought back the bugs fixed in #185 and #224. Heating cycles and the learned dead time are now stored by a single code path. No behavior change.
 

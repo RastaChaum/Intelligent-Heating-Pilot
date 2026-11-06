@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "intelligent-heating-pilot"
-version = "0.7.0"
+version = "0.7.1"
 description = "Intelligent Heating Pilot for Home Assistant"
 authors = ["RastaChaum"]
 license = "MIT"

@@ -1,6 +1,6 @@
 """Constants for the Intelligent Heating Pilot integration."""
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 DOMAIN = "intelligent_heating_pilot"
 EVENT_DEAD_TIME_UPDATED = f"{DOMAIN}_dead_time_updated"
 # Configuration keys
