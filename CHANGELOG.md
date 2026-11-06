@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-06
+
 This release makes learning match how each room really heats, slow underfloor heating included, and makes preheating hold up when a scheduler is blocked, the recorder is slow or the room sensor is noisy.
 
 ### ⚠️ After upgrading
