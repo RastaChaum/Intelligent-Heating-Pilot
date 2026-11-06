@@ -13,6 +13,7 @@ This ensures the complete refactoring works as a cohesive system.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -34,7 +35,9 @@ from custom_components.intelligent_heating_pilot.domain.interfaces.device_config
 
 
 @pytest.fixture
-def config_entry(hass: HomeAssistant) -> MockConfigEntry:
+def config_entry(
+    hass: HomeAssistant, release_on_teardown: Callable[[MockConfigEntry], None]
+) -> MockConfigEntry:
     """Create a config entry with realistic data."""
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -51,6 +54,7 @@ def config_entry(hass: HomeAssistant) -> MockConfigEntry:
         },
     )
     entry.add_to_hass(hass)
+    release_on_teardown(entry)
     return entry
 
 

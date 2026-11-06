@@ -9,7 +9,7 @@ and the tests take the fixtures depending on ``hass`` as arguments, which come l
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -40,7 +40,9 @@ SENSOR_ENTITY_ID = "sensor.ihp_bedroom_anticipated_start_time"
 
 
 @pytest.fixture
-def entry(hass: HomeAssistant) -> MockConfigEntry:
+def entry(
+    hass: HomeAssistant, release_on_teardown: Callable[[MockConfigEntry], None]
+) -> MockConfigEntry:
     """A device on the bedroom VTherm."""
     config_entry = MockConfigEntry(
         domain=DOMAIN,
@@ -49,6 +51,7 @@ def entry(hass: HomeAssistant) -> MockConfigEntry:
         data={CONF_VTHERM_ENTITY: "climate.bedroom"},
     )
     config_entry.add_to_hass(hass)
+    release_on_teardown(config_entry)
     return config_entry
 
 

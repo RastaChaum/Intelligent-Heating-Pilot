@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Callable, Generator
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.components.recorder import Recorder
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
 @pytest.fixture
@@ -24,3 +26,20 @@ def flow_environment(
         new=AsyncMock(return_value=True),
     ) as setup_entry:
         yield setup_entry
+
+
+@pytest.fixture
+async def release_on_teardown(
+    hass: HomeAssistant,
+) -> AsyncGenerator[Callable[[MockConfigEntry], None]]:
+    """Run, after the test, the unload callbacks of the entries it registers.
+
+    ``hass.config_entries.async_unload`` runs them for a loaded entry. Tests that call
+    ``async_setup_entry`` or ``async_unload_entry`` directly bypass it, so the startup
+    timers registered with ``entry.async_on_unload`` would outlive the test, which the
+    Home Assistant test harness reports as lingering timers.
+    """
+    entries: list[MockConfigEntry] = []
+    yield entries.append
+    for entry in entries:
+        await entry._async_process_on_unload(hass)

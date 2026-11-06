@@ -240,6 +240,8 @@ async def test_refresh_schedules_24h_timer():
     when_naive = when_arg.replace(tzinfo=None) if when_arg.tzinfo else when_arg
     assert when_naive > now
 
+    await lifecycle.cancel()
+
 
 # ============================================================================
 # Test: Extracted Cycles Feed Into Cache
@@ -369,6 +371,8 @@ async def test_24h_refresh_creates_new_queue_instance():
         # VERIFY: New queue created
         assert True
 
+    await lifecycle.cancel()
+
 
 # ============================================================================
 # Test: Extraction with Retention Boundary Respect
@@ -423,6 +427,8 @@ async def test_refresh_respects_retention_window():
             "Expected 1 (startup window = task_range_days only, not full retention). "
             "Date range calculation may be incorrect."
         )
+
+    await lifecycle.cancel()
 
 
 # ============================================================================
@@ -663,6 +669,8 @@ async def test_retention_change_invalidates_caches_and_reextracts():
     assert lifecycle._device_config.lhs_retention_days == 180, (
         f"WeakPoint: Retention not updated, got {lifecycle._device_config.lhs_retention_days}."
     )
+
+    await lifecycle.cancel()
 
 
 # ============================================================================

@@ -10,6 +10,7 @@ These tests would have caught both bugs and prevent regression.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -65,7 +66,9 @@ def registered_services(hass: HomeAssistant) -> None:
 
 
 @pytest.fixture
-def config_entry_a(hass: HomeAssistant) -> MockConfigEntry:
+def config_entry_a(
+    hass: HomeAssistant, release_on_teardown: Callable[[MockConfigEntry], None]
+) -> MockConfigEntry:
     """Config entry for device A."""
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -77,11 +80,14 @@ def config_entry_a(hass: HomeAssistant) -> MockConfigEntry:
         options={},
     )
     entry.add_to_hass(hass)
+    release_on_teardown(entry)
     return entry
 
 
 @pytest.fixture
-def config_entry_b(hass: HomeAssistant) -> MockConfigEntry:
+def config_entry_b(
+    hass: HomeAssistant, release_on_teardown: Callable[[MockConfigEntry], None]
+) -> MockConfigEntry:
     """Config entry for device B."""
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -93,6 +99,7 @@ def config_entry_b(hass: HomeAssistant) -> MockConfigEntry:
         options={},
     )
     entry.add_to_hass(hass)
+    release_on_teardown(entry)
     return entry
 
 
