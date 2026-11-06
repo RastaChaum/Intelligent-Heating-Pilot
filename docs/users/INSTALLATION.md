@@ -4,9 +4,9 @@
 
 Before installing IHP, ensure you have:
 
-- **Home Assistant** 2023.1.0 or higher
-- **Versatile Thermostat (VTherm)** integration installed and configured
-- **HACS Scheduler Component** installed (for automated scheduling)
+- **Home Assistant** 2024.11 or higher
+- **Versatile Thermostat (VTherm)** integration installed and configured: IHP only works with Versatile Thermostat entities
+- **[HACS Scheduler](https://github.com/nielsfaber/scheduler-component)** installed, if you want IHP to start the heating. Native `schedule.*` helpers only get an anticipated start sensor (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers))
 
 ## Installation Methods
 
@@ -63,7 +63,7 @@ After installation:
 
 Update through HACS (or replace the folder for a manual install), then restart Home Assistant. Read the [CHANGELOG](../../CHANGELOG.md) for steps a version may require.
 
-> **Upgrading to 0.7.0:** call the `intelligent_heating_pilot.reset_learning` service once per device (Developer Tools → Actions). Data learned by earlier versions is skewed; learning restarts right away from the Home Assistant recorder history.
+> **Upgrading to 0.7.x:** call the `intelligent_heating_pilot.reset_learning` service once per device (Developer Tools → Actions), with any sensor of the device as `entity_id`. Data learned by earlier versions is skewed; learning restarts right away from the Home Assistant recorder history.
 
 ## Troubleshooting Installation
 
