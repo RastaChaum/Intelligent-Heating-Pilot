@@ -48,7 +48,7 @@ repos:
     rev: v1.10.0
     hooks:
       - id: mypy
-        args: [--ignore-missing-imports, --python-version=3.13, --explicit-package-bases, --namespace-packages]
+        args: [--ignore-missing-imports, --python-version=3.14, --explicit-package-bases, --namespace-packages]
         additional_dependencies:
           - types-setuptools
         files: ^custom_components/intelligent_heating_pilot/
@@ -65,7 +65,7 @@ repos:
 
 # Configuration for specific hooks
 default_language_version:
-  python: python3.13
+  python: python3.14
 
 # Prevent committing to main branch directly
 fail_fast: false

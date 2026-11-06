@@ -12,6 +12,8 @@ permissions:
 
 # Dependabot branches (dependabot/...) cannot follow the naming convention and do
 # not touch the CHANGELOG, so those checks are skipped for them; tests still run.
+# Maintenance branches (chore/, ci/, docs/, refactor/, test/) carry no user-facing
+# change, so the CHANGELOG check is skipped for them too.
 # Dependabot runs and PRs from forks get a read-only token, so PR comments are
 # skipped for them (the check result itself still reports success or failure).
 
@@ -31,8 +33,10 @@ jobs:
           BRANCH: ${{ github.head_ref }}
         run: |
           if [[ ! "$BRANCH" =~ ^(copilot/)?(feature|fix)/issue-[0-9]+ ]] && \
-             [[ ! "$BRANCH" =~ ^[0-9]{3,}-[a-z][a-z0-9-]*$ ]]; then
-            echo "❌ The branch must be named 'feature/issue-NNN', 'fix/issue-NNN' or 'NNN-description'"
+             [[ ! "$BRANCH" =~ ^[0-9]{3,}-[a-z][a-z0-9-]*$ ]] && \
+             [[ ! "$BRANCH" =~ ^(chore|ci|docs|refactor|test)/[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "❌ The branch must be named 'feature/issue-NNN', 'fix/issue-NNN', 'NNN-description'"
+            echo "   or '<chore|ci|docs|refactor|test>/description'"
             echo "Current name: $BRANCH"
             exit 1
           fi
@@ -41,7 +45,11 @@ jobs:
 
       - name: Check CHANGELOG update
         id: changelog-check
-        if: github.event.pull_request.user.login != 'dependabot[bot]'
+        if: >-
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
+          !startsWith(github.head_ref, 'chore/') && !startsWith(github.head_ref, 'ci/') &&
+          !startsWith(github.head_ref, 'docs/') && !startsWith(github.head_ref, 'refactor/') &&
+          !startsWith(github.head_ref, 'test/')
         env:
           BRANCH: ${{ github.head_ref }}
         run: |
@@ -150,7 +158,7 @@ jobs:
         id: setup-python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - name: Install Poetry
         uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2

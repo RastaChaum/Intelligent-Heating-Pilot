@@ -17,6 +17,7 @@ This repository uses the speckit workflow on a single feature branch from specif
 ## Branching Rule
 
 - Feature branches must follow the naming format: `NNN-description`, `NNNN-description`, or `YYYYMMDD-HHMMSS-description` (e.g. `001-add-scheduler`, `20260319-143022-fix-slope`). The speckit tooling enforces this pattern.
+- Maintenance branches with no user-facing change use a type prefix: `chore/`, `ci/`, `docs/`, `refactor/` or `test/` followed by a lowercase description (e.g. `chore/python-3.14`). The PR checks accept them and do not require a CHANGELOG entry.
 - Keep the same feature branch for the full workflow.
 - Do not create one pull request per stage.
 - Refine artifacts and implementation on the same branch when review feedback arrives.

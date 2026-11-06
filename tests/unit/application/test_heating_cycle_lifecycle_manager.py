@@ -1036,6 +1036,8 @@ class TestHeatingCycleLifecycleManager:
         # that get_oldest_explored_date was called and backfill wasn't launched).
         mock_heating_cycle_storage.get_oldest_explored_date.assert_called_once()
 
+        await manager.cancel()
+
     # ===== Bug 2: get_cycles_for_window() must return [] on cache miss =====
 
     @pytest.mark.asyncio
