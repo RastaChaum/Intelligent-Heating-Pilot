@@ -7,47 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+This release makes learning match how each room really heats, slow underfloor heating included, and makes preheating hold up when a scheduler is blocked, the recorder is slow or the room sensor is noisy.
+
+### ⚠️ After upgrading
+
+- **Call the `reset_learning` service once per device.** Heating cycles learned by earlier versions keep their former measurement until they are relearned. Learning restarts right away from the Home Assistant recorder history.
+- **Keep the *Next Schedule Time* sensor recorded.** IHP now reads its history to know which slot a late preheat was aimed at.
+- **Underfloor heating:** if your preheats last more than 5 hours, raise **Maximum Cycle Duration** so those cycles are learned.
+
+### Learning that matches how your room really heats
+
+- **More accurate dead time and heating slope.** The dead time is measured from where heating really starts, and the slope only counts the heating that follows it, so it is no longer overestimated. Preheating may start a few minutes earlier than before. (#245)
+- **Slow heating systems are learned too.** Underfloor heating and other slow systems were learned only on their fastest mornings, or not at all. Any cycle is now learned however slow, unless Versatile Thermostat reported load shedding or safety mode, or the room never warmed up. (#255)
+- **A thermostat that settles just below its target no longer drags the slope down.** The slope is measured up to the first plateau, so preheats stop drifting earlier and earlier. (#267)
+- **A short window opening or load shedding no longer breaks a preheat into pieces.** An interruption shorter than the **Safety Shutoff Grace Period** (10 minutes by default) is bridged, and the preheat is learned as one cycle. (#260)
+- **Each slot learns from the preheats aimed at it.** A preheat reaching its target just before its slot, or late after it, now counts for that slot, so a slot that keeps starting late learns that it is late. (#214, #254)
+- **Your Initial Dead Time setting is respected.** It is no longer stored as if it had been learned, so changing it later takes effect. (#224)
+- **Learning history is no longer lost** when the recorder is slow or Home Assistant restarts during an extraction: missed days are read again at the next daily refresh. (#187)
+
+### Preheating starts at the right time
+
+- **A jittery room sensor no longer moves the start back and forth.** IHP predicts from the temperature smoothed by Versatile Thermostat (`ema_temp`) when it is available. (#258)
+- **A clear sky no longer delays winter morning preheats.** The weather adjustment now applies to the heating phase only, and solar gain only counts between sunrise and sunset. (#257)
+
+### Schedulers
+
+- **Several HACS Schedulers work together.** When the earliest one is blocked by its own conditions (e.g. a vacation condition), IHP falls back to the next one in the same cycle, and lists them on the anticipation sensor when all of them are blocked. (#64)
+- **A scheduler that started the preheat is no longer reported as blocked.** IHP waits for the thermostat to apply the slot before drawing conclusions. (#256)
+
+### Setup and options
+
+- **Every setting has a label and help text**, in English and French. The services are translated, and submitting without a thermostat shows a real message. (#193)
+- **Setting up, changing and removing a device is more robust.** A removed or renamed scheduler no longer blocks saving the options: it is listed as *(not found)*. A thermostat can be driven by one IHP device only, and two devices may share a name. A device reloaded or removed while Home Assistant starts no longer runs its first update afterwards, and a failed removal no longer freezes its sensors. The services stay available when no device is set up and return a clear error for a device that is not loaded. (#192)
+- **Home Assistant 2024.11 or later is now declared as the minimum version.** IHP already needed it; HACS no longer offers it to older installations, where it failed to load or to open its options.
+
+### New
+
+- **French README.** `README.fr.md` is shown to French-speaking visitors of the [Versatile Thermostat plugin registry](https://www.versatile-thermostat.org/en/plugins/). (#242)
+
+### Documentation
+
+- The user guides now describe which schedulers and scheduler actions IHP supports, how prediction confidence is really computed, and the actual settings, sensors and service parameters.
+
+### Maintenance
+
+- Type-checking cleanup and removal of dead code. No behavior change. (#203, #218)
+- Release tooling: the release gates, RC workflows and helper scripts are fixed, every GitHub Action is pinned to a commit SHA, and the CHANGELOG PR opened after a release passes its checks again (the 0.7.0 entry below was never promoted on `integration` because of it). (#195, #196, #197, #198, #202)
+- Version bumped to 0.7.1.
+- The pull request template is now in English only.
+
+## [0.7.0] - 2026-10-26
+
 > **After upgrading, call the `reset_learning` service once per device.** Data learned by earlier versions is skewed and would keep distorting preheating. Learning restarts right away from the Home Assistant recorder history.
 
 ### Fixed
-- **Anticipation now falls back when a scheduler is blocked** (#64) – When several scheduler entities are configured (e.g. a vacation and a non-vacation calendar) and the earliest one's own conditions are not met, IHP now retries with the next applicable scheduler within the same cycle, instead of leaving the room cold until the blocked slot's time has elapsed. When every configured scheduler is blocked, this is now visible on the anticipation sensor's attributes, not only in the logs.
-- **Learning history is no longer lost when the recorder is slow or Home Assistant restarts** (#187) – Days whose history could not be read (recorder timeout at startup, restart during an extraction) were skipped for good. They are now read again by the next daily refresh, so their heating cycles still feed the learned slope and dead time.
-- **More accurate preheating** (#179, #183, #184, #185, #223) – Heating cycles are dated and measured correctly, each scheduled slot uses the slope learned for its own hour, and cycles disturbed by safety mode or load shedding are ignored. Preheating no longer starts hours too early or too late.
+- **More accurate preheating** (#179, #183, #184, #185, #223) – Heating cycles are dated and measured correctly, each scheduled slot uses the slope learned for its own hour, and cycles that barely heated (safety mode, load shedding) are ignored. Preheating no longer starts hours too early or too late.
 - **Learning changes apply without a restart** (#181) – `reset_learning` relearns from history immediately, and sensors show new values as soon as they are learned.
 - **No more comfort/eco flapping before a slot** (#182) – A started preheat is kept until its slot, unless the slot is removed or moved.
 - **Schedulers** (#188, #189) – Native `schedule.*` entities now get an anticipated start based on the VTherm comfort preset (IHP does not start the heating for them: use HACS Scheduler or an automation on the sensor), and one misconfigured HACS scheduler no longer blocks preheating for the others.
 - **Sensors stay up to date** (#191, #226) – Attributes and prediction confidence refresh correctly, the contextual slope sensor shows *unknown* for hours not learned yet, and the device is no longer renamed.
 - **Settings and services** (#186) – Changing the retention period no longer resets the device configuration, and services called during startup return a clear error.
-- **Setup and options forms fully labelled** (#193) – Several settings showed a raw key (e.g. `auto_learning`) instead of a label, and submitting without a thermostat showed `required` instead of a message. Every setting now has a label and a help text in English and French, the services are translated, and the safety shutoff grace period shows its unit.
-- **The Initial Dead Time setting is respected** (#224) – It was saved as if it had been learned from heating cycles: a later change of the setting could be ignored, and `reset_learning` did not keep the learned dead time cleared. Only a dead time measured on heating cycles is now saved, and restarts no longer log a dead time update for every device.
-- **Dead time and heating slope measured where heating really starts** (#245) – A rise of exactly 0.2 °C was often missed, so each learned dead time was one sensor reading too long. The heating slope also counted the temperature gained during the dead time, overestimating it (for example 1.2 °C/h for a room heating at 1 °C/h). The slope now only counts the heating after the dead time, and a heating cycle ignored for the slope no longer feeds the dead time. With **Cycle Split Duration** enabled, sub-cycles now get the slope of the heating phase. Preheating can start a few minutes earlier than before.
-- **Slow heating systems learn their real dead time and slope** (#255) – A dead time longer than 3 hours was discarded as a data artifact, and a cycle heating slower than 0.2 °C/h was ignored. Underfloor heating learned only its fastest mornings, or nothing at all, and preheating started too late. A cycle is now ignored only when Versatile Thermostat reported load shedding or safety mode during it, or when the room never warmed up. Any other cycle is learned however slow, and a slow learned slope is used instead of the 2.0 °C/h default. Cycles learned by earlier versions keep the former rule until `reset_learning` relearns them from history. Underfloor heating whose preheats last more than 5 hours also needs a higher **Maximum Cycle Duration**.
-- **Each slot learns from the preheats aimed at it** (#214) – A heating cycle counted for the hour in which it reached its target. A preheat usually reaches it a few minutes before its slot, so a cycle reaching 20 °C at 6:58 for a 7:00 slot counted for 6:00 and the 7:00 slot never used it. Cycles and slots now use the nearest hour: a 7:00 slot learns from the cycles that reach their target from 6:30 to 7:30. A 6:30 slot still uses the 6:00 slope, now learned from the cycles that reached their target in the hour before 6:30. For a slot after the half hour (e.g. 6:45), preheating and the Contextual Learned Heating Slope sensor use the next hour.
-- **A late preheat teaches its slot that it is late** (#254) – A preheat reaching its target more than half an hour after its slot counted for a later hour, so the slot only learned from the preheats that were on time and kept starting too late (an 8:45 slot reaching 20 °C at 9:56 counted for 10:00). A cycle still heating when its slot comes due now counts for that slot. IHP reads these slots from the history of its **Next Schedule Time** sensor, which must stay recorded. Cycles learned by earlier versions keep the former rule until `reset_learning` relearns them from history.
-- **A plateau below the target no longer lowers the learned heating slope** (#267) – A thermostat that settles a few tenths below its target (TPI static error) kept the cycle going on a plateau until its slot ended, and those hours were counted as heating time. The slope dropped at every preheat, so the next one started earlier and its plateau lasted longer: a bedroom fell from 0.37 to 0.12 °C/h and started heating six hours before its slot. The slope is now measured up to the first plateau, where the room gains less than 0.1 °C for at least an hour; a bathroom preheat that rose 0.84 °C/h is learned at that rate instead of 0.22 °C/h. A room that keeps warming until its target, underfloor heating included, is learned as before. Cycles learned by earlier versions keep their slope until `reset_learning` relearns them from history.
-- **A brief load shedding or window opening no longer restarts the heating cycle** (#260) – While Versatile Thermostat sheds its load, or while a window or a door is open, it drops the target for a few minutes, which ended the heating cycle. A preheat interrupted several times was split into fragments, and its dead time was learned from the last one only (73 minutes instead of 142 for an underfloor heating). An interruption shorter than the **Safety Shutoff Grace Period** (10 minutes by default) is now bridged: the preheat stays one cycle, is learned, and its dead time runs from when heating really started. A longer interruption still ends the cycle; after a long load shedding, that cycle is not learned. Cycles learned by earlier versions keep their fragments until `reset_learning` relearns them from history.
-- **A clear sky no longer delays winter morning preheats** (#257) – The humidity and cloud coverage adjustment was applied to the whole anticipation, dead time included, and assumed solar gain under a clear sky even at night. On a clear morning before sunrise, a preheat got 154 minutes of anticipation instead of 167, 7 of them taken from the dead time. The adjustment now applies to the heating phase only, never to the dead time, and the solar gain only to the part of the heating phase between sunrise and sunset, taken from the Home Assistant location.
-- **A scheduler that started the preheat is no longer reported blocked** (#256) – IHP checked the thermostat right after asking the scheduler to start a preheat, a few milliseconds before the thermostat switched to the slot's temperature. It then believed the scheduler's conditions had blocked it: the preheat was not tracked for an hour, and the next scheduler could be started as well. IHP now waits up to 10 seconds for the thermostat to apply the slot before treating the scheduler as blocked.
-- **A jittery room sensor no longer delays the preheat** (#258) – Before a preheat started, every new sensor reading moved its start time. A sensor toggling between two adjacent values (18.9 and 19.1 °C) moved it back and forth by about 13 minutes, and a higher reading just before the start pushed it later: one preheat started 9 minutes late. IHP now predicts from the room temperature smoothed by Versatile Thermostat (`ema_temp`), and a raw reading that changes while the smoothed one stays put no longer moves the start. A thermostat without `ema_temp` is read as before.
-- **Device setup, options and removal are more robust** (#192):
-  - A scheduler that was removed or renamed no longer blocks saving a device's options. It is listed as *(not found)*, so it can be kept or removed.
-  - A thermostat can be driven by one device only: setting up a second device on the same thermostat is refused, and so is moving a device's options onto a thermostat already in use. Two devices may now share a name.
-  - A device reloaded or removed while Home Assistant is still starting no longer starts its first update and history extraction afterwards.
-  - If removing a device fails, its sensors keep updating instead of freezing.
-  - The `reset_learning` and `calculate_anticipated_start_time` services stay available when no device is set up, and return a clear error for a device that is not loaded.
-  - The integration declares its dependencies on `http` and `recorder`.
 
 ### Added
-- **French README** (#242) – `README.fr.md` translates the README. The [Versatile Thermostat plugin registry](https://www.versatile-thermostat.org/en/plugins/) shows it to French-speaking visitors.
 - **Outdoor temperature** (#180, #190) – A sensor or a `weather.*` entity can be configured and is recorded with each heating cycle, for a future weather-aware adjustment. The fixed outdoor correction, which counted the cold twice, is removed.
 
 ### Maintenance
 - CI and release tooling hardening (#194, #199).
-- Version bumped to 0.7.1 (`manifest.json`, `hacs.json`, `const.py`, `pyproject.toml`), matching the `v0.7.1` release candidates.
-- Release workflows (#196) – `Increment RC Version` failed with "Permission denied" on `scripts/release-gates.sh`, committed without its executable bit. The workflows now run it through `bash`, and Workflow Lint fails when a script loses its executable bit.
-- Release workflows (#195, #196, #197, #198, #202) – The CHANGELOG PR opened after a release now passes the `main` check. `integration` can only merge into `main` when an RC exists for exactly its `manifest.json` version, the same rule the promotion applies. A new RC is published before the previous one is deleted. RC notes are no longer rewritten on each merge, and the dev pre-release tag follows `integration`. The helper scripts dispatch the workflows and create branch names the CI accepts. Every action is pinned to a commit SHA, and the zizmor rules disabled in #201 are enabled again.
-- Type checking (#203) – Removed redundant `cast` calls, annotated the HA storage `Store`, and typed the optional `dt_util` import, so fewer mypy warnings are reported on every PR.
-- Dead code (#218) – Removed `HeatingCycleLifecycleManager.update_cycles_for_window`, which nothing called. It read the recorder outside the extraction queue and stored the learned dead time from the last extracted cycles only, so a future caller would have brought back the bugs fixed in #185 and #224. Heating cycles and the learned dead time are now stored by a single code path. No behavior change.
 
 ## [0.6.4] - 2026-10-24
 
