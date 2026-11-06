@@ -111,7 +111,7 @@ DOCS=(
     "docs/maintainers/RELEASE_PROCESS.md"
     "docs/maintainers/RC_WORKFLOWS.md"
     "docs/contributors/WORKFLOW_MODEL.md"
-    ".github/pull_request_template.md"
+    ".github/PULL_REQUEST_TEMPLATE.md"
     ".github/dependabot.yml"
 )
 
