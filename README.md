@@ -25,6 +25,22 @@ IHP monitors your VTherm, learns how fast your room heats, and triggers your sch
 
 ---
 
+## ✅ Requirements
+
+- **Home Assistant** 2024.11 or later
+- **[Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat)**: IHP only works with VTherm entities; use one IHP device per thermostat
+- **A supported scheduler**, for IHP to anticipate your slots:
+
+| Scheduler | Anticipated start | IHP starts the heating |
+| --- | --- | --- |
+| [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) (`switch.schedule_*`) | ✅ | ✅ |
+| Native `schedule.*` helper | ✅ (target = VTherm comfort preset) | ❌ build your own automation |
+| Other schedulers (automations, calendars, other integrations) | ❌ | ❌ use the `calculate_anticipated_start_time` service |
+
+With HACS Scheduler, each slot's action must be `climate.set_temperature` or `climate.set_preset_mode`, on the VTherm of the IHP device. **[Supported schedulers in detail →](docs/users/CONFIGURATION.md#supported-schedulers)**
+
+---
+
 ## ⚡ Quick Start
 
 ### 1. Install via HACS
@@ -42,15 +58,15 @@ HACS → Integrations → ⋮ → Custom repositories
 ```text
 Settings → Devices & Services → + Add Integration
 → Search "Intelligent Heating Pilot"
-→ Select VTherm + Scheduler → Submit
+→ Select VTherm + HACS Scheduler → Submit
 ```
 
 **[Full configuration guide →](docs/users/CONFIGURATION.md)**
 
 ### 3. Let It Learn
 
-- First 5 cycles: conservative (starts early)
-- After 20+ cycles: very accurate predictions
+- Right after setup, IHP learns from your past heating cycles in the Home Assistant recorder history
+- Each new heating cycle refines the learned slope and dead time, hour by hour
 - No manual intervention needed
 
 **[How IHP works →](docs/users/HOW_IT_WORKS.md)**
@@ -68,14 +84,14 @@ Settings → Devices & Services → + Add Integration
 - ✅ **Cycle Detection** - Learns from real heating cycles, not thermostat slopes
 - ✅ **Configurable Detection Parameters** - Fine-tune cycle detection for your heating system
 - ✅ **Time-Contextual Learning** - Different heating speeds by time of day
-- ✅ **Optional Scheduler** - Works with or without HACS Scheduler via dynamic service calls
-- ✅ **Native Schedules** - `schedule.*` helpers get an anticipated start sensor to build your own automation
+- ✅ **HACS Scheduler Preheating** - Triggers the upcoming slot early, with the scheduler's conditions respected; several schedulers per device
+- ✅ **Native Schedules** - `schedule.*` helpers get an anticipated start sensor to build your own automation (IHP does not start the heating for them)
+- ✅ **Calculation Service** - `calculate_anticipated_start_time` for your own automations, with or without a scheduler
 - ✅ **Outdoor Source** - Outdoor sensor or `weather.*` entity, recorded with each heating cycle
 - ✅ **Incremental Cache** - Reduces HA database load for long-term learning
-- ✅ **Zero-Retention Mode** - Option to disable history storage for minimal deployments
 - ✅ **VTherm v8+ Compatible** - Works with latest Versatile Thermostat versions
 - ✅ **Optimized Startup** - Lazy loading and smart filtering prevent HA watchdog timeouts
-- ✅ **Vacation Mode Ready** - Stops automatically when scheduler disabled
+- ✅ **Vacation Mode Ready** - Stops automatically when the HACS Scheduler is switched off or its conditions block it
 
 ### Future Vision
 
@@ -106,16 +122,16 @@ Settings → Devices & Services → + Add Integration
 
 **Learned Heating Slope** - How fast your room heats (°C/hour)
 
-- Calculated from detected heating cycles (start temp → end temp)
-- Refined over time with trimmed mean algorithm
+- Calculated from detected heating cycles, after the dead time
+- Averaged over the cycles kept, globally and for each hour of the day
 - Used to predict exact start time for next event
 
-**Example:** To heat 3°C at 2°C/hour → Start 90 minutes early ✅
+**Example:** To heat 3°C at 2°C/hour → 90 minutes, plus the dead time and a 5-minute margin ✅
 
 **Vacation Mode** - No action needed!
 
-- IHP automatically stops when scheduler disabled
-- Re-enables when you turn scheduler back on
+- IHP automatically stops when you switch the HACS Scheduler off, or when its conditions (e.g. `input_boolean.vacation`) block it
+- Resumes when you turn the scheduler back on
 - Preserves learned data across vacation periods
 
 ---

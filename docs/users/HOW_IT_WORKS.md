@@ -45,7 +45,7 @@ IHP computes the Learned Heating Slope from detected heating cycles:
 
 IHP uses two complementary approaches:
 
-**Global LHS** — Simple average of all the cycles kept by the filters, however slow, regardless of time of day; if no cycle qualifies, the 2.0 °C/h default is used
+**Global LHS** — Simple average of all the cycles kept by the filters, however slow, regardless of time of day; if no cycle qualifies, the 2.0 °C/h default is used. This default is not a cautious value: a room that heats slower than 2 °C/h starts too late until its first cycle is learned
 - Used as a fallback when no contextual data is available
 - Represents your system's "typical" heating performance
 
@@ -99,7 +99,7 @@ If every cycle of an hour is discarded, that hour has no learned value and falls
 
 ### Cycle Cache: Performance Optimization
 
-**New in v0.4.0+**: IHP uses an **incremental cycle cache** with progressive extraction to optimize performance and data retention.
+IHP uses an **incremental cycle cache** with progressive extraction to optimize performance and data retention.
 
 **How It Works:**
 
@@ -218,8 +218,6 @@ If the slot being preheated is removed or moved, IHP reverts the preheating.
 
 ### The Calculation
 
-**New in v0.6.0**: The prediction formula now includes dead time for more accurate predictions.
-
 ```
 Anticipation Time (minutes) = Dead Time + (Temperature Difference / Learned Slope) × 60
 
@@ -309,37 +307,43 @@ IHP applies **minimum and maximum limits** to predictions to stay reasonable:
 
 | Limit | Value | Reason |
 |-------|-------|--------|
-| **Minimum Anticipation** | 10 minutes | Don't trigger too early if slope is very high |
-| **Maximum Anticipation** | 6 hours (360 minutes) | Don't trigger too early for slow heating |
+| **Minimum Anticipation** | 10 minutes | Always leave the heating some time, even with a very high slope |
+| **Maximum Anticipation** | 6 hours (360 minutes) | Never start more than 6 hours ahead, even for very slow heating |
+
+A room that needs more than 6 hours to reach its target starts 6 hours before its slot and reaches the target late.
 
 ---
 
 ## 📈 Confidence Levels
 
-IHP calculates a **confidence score** (0-100%) for each prediction.
+IHP calculates a **confidence score** (0-100%) for each prediction, shown by the **Prediction Confidence** sensor and returned by the `calculate_anticipated_start_time` service.
 
-### What Affects Confidence?
+### How Is It Calculated?
 
-| Factor | Impact |
-|--------|--------|
-| **No heating history** | Very low (≈30%) - First prediction uses default |
-| **Few cycles observed** | Low (≈50%) - Limited data to learn from |
-| **Many cycles observed** | High (≈80%+) - Solid understanding of your system |
-| **Extra sensors available** | +10% per sensor - Better environmental awareness |
+The confidence only depends on the heating slope used for the prediction and on the indoor humidity sensor. It does **not** count how many heating cycles were learned.
 
-**Why Confidence Matters:**
-- **High confidence (80%+)**: IHP knows your system well, predictions are accurate
-- **Low confidence (30-50%)**: IHP is still learning, predictions may be less accurate
-- **Zero confidence (0%)**: Error condition - heating won't trigger automatically
+| Heating slope used | Confidence |
+|--------------------|------------|
+| Above 1.5 °C/h | 90% |
+| Above 0.5 °C/h, up to 1.5 °C/h | 75% |
+| 0.5 °C/h or less | 60% |
+| Indoor humidity available | +5% |
+| Calculation impossible (invalid slope) | 0% |
+
+**What this means:**
+- A slow room (underfloor heating, for instance) always shows a lower confidence, even when its slope is learned from many cycles
+- The default slope of 2.0 °C/h, used before any cycle is learned, shows 90%: a high confidence does not mean that IHP has learned your room
+- The confidence does not block anything: IHP preheats whatever its value
+
+To judge whether IHP has learned your room, look at the **Global Learned Heating Slope** and **Contextual Learned Heating Slope** sensors instead.
 
 ### First-Time Setup: Default Behavior
 
-When IHP has no learning history:
+When IHP has no learned cycle (new device with no usable recorder history, or after `reset_learning` until the history is read again):
 
-- ✅ It uses a **conservative default slope of 2°C/hour**
-- ✅ **Confidence is ~30%** (low confidence, conservative approach)
-- ✅ **It will trigger heating early** to avoid undershooting
-- ✅ After 3-5 cycles, confidence increases and predictions improve
+- It uses a default slope of **2.0 °C/hour** and the **Initial Dead Time** setting
+- A room heating slower than that starts **too late**; a faster room starts too early
+- As soon as cycles are learned, the slope and dead time are your room's
 
 ---
 
@@ -356,39 +360,36 @@ Here's the full journey from a scheduled event to IHP triggering heating:
       ├─ Get current temp (18°C)
       ├─ Calculate delta (21°C - 18°C = 3°C)
       ├─ Use learned slope (2°C/hour)
-      ├─ Apply environmental adjustments (+/- minutes)
-      ├─ Apply safety bounds (5 min to 4 hours)
+      ├─ Add the dead time and apply environmental adjustments
+      ├─ Add the 5-minute margin and apply safety bounds (10 min to 6 hours)
       └─ Result: "Start heating at 04:30"
 
 3. HEATING CYCLE STARTS
-   └─ At 04:30 → IHP triggers the scheduler
-      └─ VTherm detects heating activity
+   └─ At 04:30 → IHP triggers the HACS Scheduler slot
+      └─ VTherm takes the 21°C target
       └─ Temperature rises toward 21°C
 
 4. HEATING CYCLE MONITORING
-   └─ IHP watches temperature rise
-      ├─ Collects VTherm's slope observations
+   └─ IHP keeps recalculating
       ├─ Postpones preheating if the room heats faster than predicted
-      └─ Waits for cycle completion
+      └─ Keeps preheating until the slot
 
-5. CYCLE COMPLETION & LEARNING
-   └─ Temperature reaches 21°C (or schedule ends)
-      ├─ Heating stops
-      ├─ IHP captures final slope reading
-      ├─ Adds slope to history
-      ├─ Recalculates learned slope average
-      └─ Confidence increases
+5. CYCLE LEARNING
+   └─ IHP reads the new cycle from the recorder history (at the latest at the daily refresh)
+      ├─ Measures its dead time and heating slope
+      ├─ Adds them to the cycle cache
+      └─ Recalculates the learned slopes and dead time
 
 6. NEXT CYCLE
    └─ Next scheduled heating event
       └─ IHP uses updated slope for even better predictions
 ```
 
-### Important: IHP Does Not Directly Control VTherm
+### Important: IHP Starts Heating Through HACS Scheduler
 
 **Key architectural principle:**
-- IHP never directly controls your thermostat (VTherm)
-- IHP triggers the **scheduler's run_action service**
+- IHP starts preheating through **HACS Scheduler's `run_action` service**, not by setting the thermostat itself
+- A native `schedule.*` helper has no such service: IHP only computes its anticipated start (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers))
 - The scheduler then controls VTherm based on its configuration
 - This ensures all your scheduler conditions and automations work as expected
 
@@ -399,7 +400,7 @@ Here's the full journey from a scheduled event to IHP triggering heating:
 - ✅ You maintain full control through your scheduler
 - ✅ IHP is only an intelligent trigger mechanism
 
-**What happens when scheduler is disabled:**
+**What happens when a HACS Scheduler is switched off:**
 ```
 Scheduler State = "off"
    ├─ IHP detects no upcoming timeslots
@@ -412,25 +413,23 @@ Scheduler State = "off"
 
 ## ⚠️ Common Scenarios & Expected Behavior
 
-### Scenario 1: First Heating Cycle
+### Scenario 1: New Device
 
 **Expected:**
-- Low confidence (30%)
-- Heating triggers **early** (conservative approach)
-- May reach target before scheduled time (overshoots)
+- IHP reads your heating cycles from the recorder history in the background
+- Until it finds some, it uses the default 2.0 °C/h slope: a slow room starts too late, a fast one too early
 
-**Why:** No learning history yet, using default slope
+**Why:** No learned cycle yet
 
-**Next:** After 2-3 more cycles, accuracy improves
+**Next:** As soon as cycles are learned, predictions use your room's slope and dead time
 
-### Scenario 2: After 3-5 Cycles
+### Scenario 2: After a Few Days
 
 **Expected:**
-- Confidence increases (50-70%)
+- The **Contextual Learned Heating Slope** gets a value for the hours of your slots
 - Predictions get **closer to actual scheduled time**
-- Less overshoot, more precise timing
 
-**Why:** IHP has learned your actual heating slope
+**Why:** Each slot uses the slope learned from the preheats aimed at it
 
 ### Scenario 3: Very Cold Weather
 
@@ -457,7 +456,7 @@ Scheduler State = "off"
 
 **Why:** Environmental adjustment for solar gain, applied only to the part of the heating phase in daylight
 
-### Scenario 6: Vacation Mode / Scheduler Disabled
+### Scenario 6: Vacation Mode / HACS Scheduler Switched Off
 
 **Expected:**
 - Anticipation sensors show `unknown`
@@ -468,8 +467,10 @@ Scheduler State = "off"
 **Why:** When scheduler state is "off", IHP detects no upcoming timeslots
 
 **How to trigger vacation mode:**
-1. Turn off your scheduler switch (state becomes "off")
+1. Turn off your HACS Scheduler switch (state becomes "off")
 2. OR: Use scheduler conditions (e.g., `input_boolean.vacation`)
+
+A native `schedule.*` helper cannot be switched off: IHP keeps computing its anticipated start. It never starts the heating for it anyway.
 3. IHP automatically stops monitoring
 4. When you return, re-enable scheduler
 5. IHP resumes normal operation with preserved learning
@@ -477,7 +478,6 @@ Scheduler State = "off"
 **What's preserved:**
 - ✅ Learned heating slope
 - ✅ Historical data
-- ✅ Confidence level
 - ✅ All configuration
 
 **What happens:**
@@ -526,8 +526,13 @@ condition:
 - **External heat source** (sunlight, other heating) not accounted for
 
 **Solution:**
-- Wait 3-5 more heating cycles
-- Or manually reset learning: `service: intelligent_heating_pilot.reset_learning`
+- Check the **Contextual Learned Heating Slope** of the slot's hour: *unknown* means the global slope is used
+- Or reset learning, which relearns from the recorder history:
+  ```yaml
+  action: intelligent_heating_pilot.reset_learning
+  data:
+    entity_id: sensor.living_room_anticipated_start_time
+  ```
 
 ### Problem: Always heats too late (room never reaches target)
 
@@ -556,13 +561,13 @@ condition:
 ### Problem: No prediction at all
 
 **Possible Causes:**
-- **No learning history** yet
-- **Zero confidence** - Something prevented learning
-- **Scheduler not detected** - IHP can't see upcoming events
+- **No scheduler configured**, or a scheduler IHP does not support (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers))
+- **The next slot has no temperature IHP can read**: its action is not `climate.set_temperature` or `climate.set_preset_mode`, or its preset temperature is not exposed by the VTherm
+- **Every scheduler is switched off**, or a native schedule is currently ON
 
 **Solution:**
-1. Check IHP is configured with correct scheduler entity
-2. Create a test schedule
+1. Check the scheduler entities in the IHP device's **Configure** form
+2. Check the next slot's action in the scheduler
 3. Check logs: `logger: custom_components.intelligent_heating_pilot: debug`
 
 ---
@@ -573,9 +578,10 @@ condition:
 
 | Sensor | What to Check |
 |--------|--------------|
-| **Learned Heating Slope** | Should gradually stabilize around your actual slope (0.5-5.0°C/h) |
-| **Anticipation Time** | Should match when heating actually starts |
-| **Confidence** | Should increase toward 80%+ after 5-10 cycles |
+| **Global Learned Heating Slope** | Should stabilize around your room's actual slope; 2.0 °C/h exactly usually means nothing is learned yet |
+| **Contextual Learned Heating Slope** | Should get a value for the hours of your slots |
+| **Anticipated Start Time** | Should match when heating actually starts |
+| **Dead Time** | Should stabilize around your system's response delay |
 
 ### Debug Mode
 
@@ -599,9 +605,9 @@ Then check Home Assistant logs for detailed calculations and decision-making.
 | **Learned Heating Slope (LHS)** | How fast your room heats (°C/hour) |
 | **Heating Cycle** | A period from when heating starts until it stops |
 | **Cycle Detection** | Rules that identify when heating cycles begin and end |
-| **Anticipation Time** | When to trigger heating to reach target on time |
-| **Confidence** | How sure IHP is about its predictions |
-| **Environmental Adjustments** | Tweaks to account for weather, humidity, etc. |
+| **Anticipated Start Time** | When to trigger heating to reach target on time |
+| **Confidence** | An indication based on the slope used and the sensors available |
+| **Environmental Adjustments** | Tweaks for indoor humidity and solar gain |
 
 ---
 
