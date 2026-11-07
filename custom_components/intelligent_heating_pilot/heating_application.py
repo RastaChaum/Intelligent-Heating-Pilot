@@ -285,22 +285,12 @@ class HeatingApplication:
         _LOGGER.debug("Orchestrator created successfully")
 
         # Create event bridge
-        monitored_entities = []
-        if self._humidity_in_id:
-            monitored_entities.append(self._humidity_in_id)
-        if self._humidity_out_id:
-            monitored_entities.append(self._humidity_out_id)
-        if self._temperature_out_id:
-            monitored_entities.append(self._temperature_out_id)
-        if self._cloud_cover_id:
-            monitored_entities.append(self._cloud_cover_id)
-
         self._event_bridge = HAEventBridge(
             self.hass,
             self._orchestrator,
             self._vtherm_id,
             self._scheduler_ids,
-            monitored_entities,
+            self._recalculation_trigger_entity_ids(),
             entry_id=self._device_id,
             get_ihp_enabled_func=self.is_ihp_enabled,
         )
@@ -326,6 +316,17 @@ class HeatingApplication:
         # NOTE: Initial update is now deferred to async_setup_entry to avoid blocking
         # the config flow during device creation (prevents HA watchdog restart).
         # See async_setup_entry for the deferred update logic.
+
+    def _recalculation_trigger_entity_ids(self) -> list[str]:
+        """Return the optional sources whose changes warrant a recalculation.
+
+        Only the values the prediction reads live (humidity, cloud coverage)
+        belong here. The outdoor temperature is left out: the prediction does
+        not use it, and each change would rerun the anticipation for nothing
+        (#227). Cycle extraction reads its history on its own.
+        """
+        sources = (self._humidity_in_id, self._humidity_out_id, self._cloud_cover_id)
+        return [entity_id for entity_id in sources if entity_id]
 
     async def _load_contextual_lhs_cache(self) -> None:
         """Load contextual LHS values for all hours from storage.

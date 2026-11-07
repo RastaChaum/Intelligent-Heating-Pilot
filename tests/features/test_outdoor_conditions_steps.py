@@ -41,6 +41,7 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
     HistoricalMeasurement,
     ScheduledTimeslot,
 )
+from custom_components.intelligent_heating_pilot.heating_application import HeatingApplication
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.device_config_reader import (
     HADeviceConfigReader,
 )
@@ -309,20 +310,32 @@ def read_environment(outdoor_context: dict) -> None:
     outdoor_context["environment"] = asyncio.run(_read())
 
 
-@when(parsers.parse("the outdoor temperature goes {values} °C"))
-def outdoor_temperature_goes(outdoor_context: dict, values: str) -> None:
-    """WHEN: The outdoor sensor reports a sequence of temperatures."""
-    entity_id = outdoor_context["monitored_entity_id"]
-    attributes = {"device_class": "temperature", "unit_of_measurement": "°C"}
-    states = [State(entity_id, v.strip(), attributes) for v in values.split(",")]
-    triggers = []
-    for old_state, new_state in zip(states, states[1:], strict=False):
-        recalculate = outdoor_context["bridge"]._request_recalculate
-        recalculate.reset_mock()
-        event = Mock(data={"entity_id": entity_id, "old_state": old_state, "new_state": new_state})
-        outdoor_context["listener"](event)
-        triggers.append(recalculate.called)
-    outdoor_context["triggers"] = triggers
+@when("IHP starts monitoring its outdoor sources")
+def start_monitoring(outdoor_context: dict) -> None:
+    """WHEN: IHP reads its configuration and picks the sources to listen to."""
+    hass = _make_hass(outdoor_context)
+    config_entry = Mock(entry_id="entry", data=outdoor_context["data"], options={})
+    config = asyncio.run(HADeviceConfigReader(hass, config_entry).get_device_config("entry"))
+    application = HeatingApplication(hass, config)
+    outdoor_context["listened"] = application._recalculation_trigger_entity_ids()
+
+
+@when(
+    parsers.parse(
+        '"{entity_id}" goes from {before:f} °C to {after:f} °C '
+        "with the same humidity and cloud coverage"
+    )
+)
+def weather_cools(outdoor_context: dict, entity_id: str, before: float, after: float) -> None:
+    """WHEN: The weather entity reports a colder temperature, nothing else moves."""
+    attributes = {"temperature_unit": "°C", "humidity": 80, "cloud_coverage": 90}
+    old_state = State(entity_id, "cloudy", {**attributes, "temperature": before})
+    new_state = State(entity_id, "cloudy", {**attributes, "temperature": after})
+    recalculate = outdoor_context["bridge"]._request_recalculate
+    recalculate.reset_mock()
+    event = Mock(data={"entity_id": entity_id, "old_state": old_state, "new_state": new_state})
+    outdoor_context["listener"](event)
+    outdoor_context["triggered"] = recalculate.called
 
 
 # ------------------------------------------------------------------
@@ -354,11 +367,22 @@ def cloud_coverage_is(outdoor_context: dict, expected: int) -> None:
     assert outdoor_context["environment"].cloud_coverage == pytest.approx(expected)
 
 
-@then("only the last step triggers a recalculation")
-def only_last_step_triggers(outdoor_context: dict) -> None:
-    """THEN: Small steps add up until the drift is worth a recalculation."""
-    triggers = outdoor_context["triggers"]
-    assert triggers == [False] * (len(triggers) - 1) + [True]
+@then(parsers.parse('IHP listens to "{entity_id}"'))
+def listens_to(outdoor_context: dict, entity_id: str) -> None:
+    """THEN: Changes of this source trigger a recalculation."""
+    assert entity_id in outdoor_context["listened"]
+
+
+@then(parsers.parse('IHP does not listen to "{entity_id}"'))
+def does_not_listen_to(outdoor_context: dict, entity_id: str) -> None:
+    """THEN: Changes of this source are not worth a recalculation."""
+    assert entity_id not in outdoor_context["listened"]
+
+
+@then("no recalculation is triggered")
+def no_recalculation(outdoor_context: dict) -> None:
+    """THEN: The anticipation is not rerun for a value it does not use."""
+    assert outdoor_context["triggered"] is False
 
 
 @then(parsers.parse("the cycle records an average outdoor temperature of {expected:f} °C"))
