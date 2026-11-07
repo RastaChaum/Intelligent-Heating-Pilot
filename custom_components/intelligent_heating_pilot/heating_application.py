@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .application.heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
@@ -501,6 +501,18 @@ class HeatingApplication:
         except Exception as err:  # pylint: disable=broad-except
             _LOGGER.warning("Error handling retention change: %s", err, exc_info=True)
 
+    def request_startup_publish(self) -> None:
+        """Run the first calculation after startup and publish it to the sensors.
+
+        Recalculations requested while Home Assistant was starting were dropped,
+        and the sensors only refresh on the event published by the bridge, which
+        async_update() does not fire.
+        """
+        _LOGGER.debug("Entering request_startup_publish for device=%s", self._device_id)
+        if self._event_bridge is not None:
+            self._event_bridge.request_forced_publish()
+        _LOGGER.debug("Exiting request_startup_publish for device=%s", self._device_id)
+
     async def async_update(self) -> None:
         """Trigger anticipation calculation and cache results for sensors."""
         async with self._learning_lock:
@@ -527,6 +539,11 @@ class HeatingApplication:
     async def _async_update_locked(self) -> None:
         """Run async_update while holding the learning lock."""
         if not self._orchestrator:
+            return
+
+        # The delayed update is timed from setup, so a slow startup can outlast it
+        if self.hass.state is not CoreState.running:
+            _LOGGER.debug("Home Assistant still starting, deferring update")
             return
 
         # Calculate and schedule via orchestrator (passing IHP enabled state)

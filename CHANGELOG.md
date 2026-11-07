@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Versatile Thermostat is now a declared dependency.** IHP already only worked with it; without it installed, Home Assistant now refuses to load IHP and says why in the log. (#280)
+
 ### Fixed
 
 - **Needless recalculations on outdoor temperature changes** (#227) – Each outdoor temperature change of 1 °C or more reran the anticipation of every device using that source, although the prediction does not use the outdoor temperature. These changes, including the `temperature` attribute of a weather entity that also feeds humidity or cloud coverage, no longer trigger a recalculation. The outdoor temperature is still recorded with each heating cycle.
+- **A restart no longer fills the log with warnings about missing thermostats.** IHP now loads after Versatile Thermostat and waits for Home Assistant to finish starting before calculating. (#280)
 
 ## [0.7.1] - 2026-11-06
 

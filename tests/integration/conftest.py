@@ -8,12 +8,26 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from homeassistant.components.recorder import Recorder
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    MockModule,
+    mock_integration,
+)
+
+
+@pytest.fixture
+def mock_vtherm_integration(hass: HomeAssistant) -> None:
+    """Make the manifest dependency resolvable for tests going through the HA loader.
+
+    Opening a config or options flow sets up the dependencies first, and Versatile
+    Thermostat is not installed in the test environment.
+    """
+    mock_integration(hass, MockModule("versatile_thermostat"))
 
 
 @pytest.fixture
 def flow_environment(
-    recorder_mock: Recorder, enable_custom_integrations: None
+    recorder_mock: Recorder, enable_custom_integrations: None, mock_vtherm_integration: None
 ) -> Generator[AsyncMock]:
     """Let config and options flows load the integration and its dependencies.
 

@@ -150,7 +150,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         @callback
         def _run_update(_now):
-            hass.async_create_task(coordinator.async_update())
+            coordinator.request_startup_publish()
 
         entry.async_on_unload(
             async_track_point_in_time(
@@ -174,10 +174,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             extraction_delay,
         )
 
-    # Wait for HA to be fully started before initializing cycle extraction and first update,
-    # so that all entities (especially VTherm and scheduler entities) are available. Runs at
-    # once if HA has already started. The listener is cancelled if the entry unloads first,
-    # so a reloaded or removed device schedules no work for its old coordinator (#192).
     @callback
     def _ha_started(_hass: HomeAssistant) -> None:
         _LOGGER.info(
@@ -185,6 +181,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         _schedule_startup_work()
 
+    # Wait for HA to have started before the cycle extraction and first update, so that
+    # entities are available. If it already has, this runs straight away: the work is
+    # still scheduled, not awaited, to avoid blocking the config flow (HA watchdog restart).
+    # An is_running check would not do: it is also true while HA is starting, and the
+    # staggered update would then be dropped with no retry. The listener is cancelled if
+    # the entry unloads first, so a reloaded or removed device schedules no work for its
+    # old coordinator (#192).
     entry.async_on_unload(async_at_started(hass, _ha_started))
 
     # Small delayed update for late attribute population
