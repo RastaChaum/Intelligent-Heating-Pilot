@@ -117,6 +117,20 @@ class HeatingCycleLifecycleManager:
         # launch for ranges already claimed is skipped: after a learning reset, the
         # deferred startup extraction would otherwise cancel and redo the reset's one.
         self._active_ranges: list[tuple[date, date]] = []
+        # Held from reading the stored cycles to writing what is learned from them,
+        # and by a learning reset while it clears storage. Without it, a recalculation
+        # that read the cycles before a reset wrote the old LHS and dead time back
+        # right after the reset cleared them (#225).
+        self._learning_lock = asyncio.Lock()
+
+    @property
+    def learning_lock(self) -> asyncio.Lock:
+        """Return the lock a learning reset must hold while it clears storage.
+
+        Waiting for it lets a recalculation already started finish first, so the
+        reset clears its result instead of being overwritten by it.
+        """
+        return self._learning_lock
 
     async def refresh_heating_cycle_cache(self) -> None:
         """Refresh the heating cycle cache and schedule the next 24h timer.
@@ -171,32 +185,8 @@ class HeatingCycleLifecycleManager:
         # so recalculating unconditionally would generate dozens of Store.async_save()
         # calls per device at startup — causing event loop saturation with 8+ devices.
         if self._heating_cycle_storage is not None:
-            now = dt_util.now() if dt_util is not None else datetime.now()
-            pruned = await self._heating_cycle_storage.prune_old_cycles(
-                self._device_config.device_id, now
-            )
-
-            if pruned:
-                _LOGGER.debug("Cycles pruned — recalculating LHS and dead time")
-                self.invalidate_memory_cache()
-                remaining_cycles = await self._load_cached_cycles()
-
-                if remaining_cycles:
-                    await self._trigger_lhs_cascade(remaining_cycles)
-                    await self._persist_learned_dead_time(remaining_cycles)
-                    _LOGGER.debug(
-                        "Recalculated LHS and dead time from %d remaining cycles after pruning",
-                        len(remaining_cycles),
-                    )
-                else:
-                    _LOGGER.debug("All cycles pruned — skipping LHS recalculation")
-            else:
-                _LOGGER.debug(
-                    "No cycles pruned — skipping LHS recalculation (model_storage already up to date)"
-                )
-                # The dead time is still learned: cycles extracted while auto-learning was
-                # off were never learned from (#224). An unchanged value is not saved again.
-                await self._persist_learned_dead_time(await self._load_cached_cycles())
+            async with self._learning_lock:
+                await self._prune_and_relearn(self._heating_cycle_storage)
 
         # Step 4: Find missing date ranges vs current (pruned) cache
         missing_ranges = await self._find_missing_date_ranges(start_date, end_date)
@@ -212,6 +202,41 @@ class HeatingCycleLifecycleManager:
             _LOGGER.info("Cache refresh: cache is up to date, no extraction needed")
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.refresh_heating_cycle_cache")
+
+    async def _prune_and_relearn(self, storage: IHeatingCycleStorage) -> None:
+        """Prune cycles outside the retention window, then relearn from the rest.
+
+        The caller holds the learning lock, so a reset cannot clear storage
+        between reading the remaining cycles and writing what they teach.
+
+        Args:
+            storage: Persistent cycle storage of this device.
+        """
+        now = dt_util.now() if dt_util is not None else datetime.now()
+        pruned = await storage.prune_old_cycles(self._device_config.device_id, now)
+
+        if not pruned:
+            _LOGGER.debug(
+                "No cycles pruned — skipping LHS recalculation (model_storage already up to date)"
+            )
+            # The dead time is still learned: cycles extracted while auto-learning was
+            # off were never learned from (#224). An unchanged value is not saved again.
+            await self._persist_learned_dead_time(await self._load_cached_cycles())
+            return
+
+        _LOGGER.debug("Cycles pruned — recalculating LHS and dead time")
+        self.invalidate_memory_cache()
+        remaining_cycles = await self._load_cached_cycles()
+        if not remaining_cycles:
+            _LOGGER.debug("All cycles pruned — skipping LHS recalculation")
+            return
+
+        await self._trigger_lhs_cascade(remaining_cycles)
+        await self._persist_learned_dead_time(remaining_cycles)
+        _LOGGER.debug(
+            "Recalculated LHS and dead time from %d remaining cycles after pruning",
+            len(remaining_cycles),
+        )
 
     async def on_retention_change(self, new_retention_days: int) -> None:
         """Handle retention configuration changes.
@@ -495,44 +520,10 @@ class HeatingCycleLifecycleManager:
             return
 
         try:
-            # Update heating cycle storage cache (incremental persistence)
-            if self._heating_cycle_storage is not None:
-                # Use a deterministic search_end_time tied to the extracted data
-                search_end_time = max(cycle.end_time for cycle in cycles)
-                await self._heating_cycle_storage.append_cycles(
-                    self._device_config.device_id,
-                    cycles,
-                    search_end_time,
-                    self._device_config.lhs_retention_days,
-                )
-                _LOGGER.debug(
-                    "Updated heating cycle storage with %d cycles (search_end_time=%s)",
-                    len(cycles),
-                    search_end_time,
-                )
-                # Cycles read for a target date were cached before these ones existed.
-                self.invalidate_memory_cache()
-
-                # Load ALL cycles from cache for LHS recalculation.
-                # get_cache_data() is cache-only (no Recorder calls).
-                # LHS cascade is a replacement operation, so it must receive the
-                # full retention window to produce an accurate global/contextual LHS.
-                cache_data = await self._heating_cycle_storage.get_cache_data(
-                    self._device_config.device_id
-                )
-                all_cycles: list[HeatingCycle] = (
-                    list(cache_data.cycles) if cache_data is not None else []
-                )
-            else:
-                all_cycles = cycles  # Fallback: no storage, use extracted cycles
-
-            # Trigger LHS recalculation with ALL cached cycles
-            await self._trigger_lhs_cascade(all_cycles)
-
-            # Persist learned dead time from ALL cached cycles, like the LHS cascade:
-            # using only this batch would let whichever day finishes last decide it.
-            await self._persist_learned_dead_time(all_cycles)
-
+            # Held until the learned values are written, so a reset cannot clear
+            # storage in between and then be overwritten by them (#225).
+            async with self._learning_lock:
+                await self._store_and_learn_from(cycles)
         except Exception as exc:
             _LOGGER.error("Failed to process extracted cycles: %s", exc)
             # Don't fail - just log and continue
@@ -545,6 +536,50 @@ class HeatingCycleLifecycleManager:
                 _LOGGER.warning("Extraction complete callback failed: %s", exc)
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager._on_cycles_extracted")
+
+    async def _store_and_learn_from(self, cycles: list[HeatingCycle]) -> None:
+        """Store newly extracted cycles, then relearn LHS and dead time from the cache.
+
+        Args:
+            cycles: Cycles extracted for one day.
+        """
+        # Update heating cycle storage cache (incremental persistence)
+        if self._heating_cycle_storage is not None:
+            # Use a deterministic search_end_time tied to the extracted data
+            search_end_time = max(cycle.end_time for cycle in cycles)
+            await self._heating_cycle_storage.append_cycles(
+                self._device_config.device_id,
+                cycles,
+                search_end_time,
+                self._device_config.lhs_retention_days,
+            )
+            _LOGGER.debug(
+                "Updated heating cycle storage with %d cycles (search_end_time=%s)",
+                len(cycles),
+                search_end_time,
+            )
+            # Cycles read for a target date were cached before these ones existed.
+            self.invalidate_memory_cache()
+
+            # Load ALL cycles from cache for LHS recalculation.
+            # get_cache_data() is cache-only (no Recorder calls).
+            # LHS cascade is a replacement operation, so it must receive the
+            # full retention window to produce an accurate global/contextual LHS.
+            cache_data = await self._heating_cycle_storage.get_cache_data(
+                self._device_config.device_id
+            )
+            all_cycles: list[HeatingCycle] = (
+                list(cache_data.cycles) if cache_data is not None else []
+            )
+        else:
+            all_cycles = cycles  # Fallback: no storage, use extracted cycles
+
+        # Trigger LHS recalculation with ALL cached cycles
+        await self._trigger_lhs_cascade(all_cycles)
+
+        # Persist learned dead time from ALL cached cycles, like the LHS cascade:
+        # using only this batch would let whichever day finishes last decide it.
+        await self._persist_learned_dead_time(all_cycles)
 
     async def _on_period_explored(self, start_date: date, end_date: date) -> None:
         """Callback invoked after each extraction period completes.

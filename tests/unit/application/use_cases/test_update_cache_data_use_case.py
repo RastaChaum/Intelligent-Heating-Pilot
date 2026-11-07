@@ -6,6 +6,7 @@ IHeatingCycleStorage, ILhsStorage, and LhsLifecycleManager.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
@@ -56,6 +57,7 @@ class TestUpdateCacheDataUseCase:
         manager = Mock()
         manager.invalidate_memory_cache = Mock()
         manager.cancel_extraction = AsyncMock()
+        manager.learning_lock = asyncio.Lock()
         return manager
 
     @pytest.fixture

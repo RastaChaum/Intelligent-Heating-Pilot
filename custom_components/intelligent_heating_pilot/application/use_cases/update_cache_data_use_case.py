@@ -181,13 +181,16 @@ class UpdateCacheDataUseCase:
             ("learned dead time", lambda: self._lhs_storage.set_learned_dead_time(None)),
         )
         failed_steps: list[str] = []
-        for name, step in steps:
-            try:
-                await step()
-                _LOGGER.info("%s reset for device %s", name.capitalize(), device_id)
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.error("Failed to reset %s for device %s: %s", name, device_id, exc)
-                failed_steps.append(name)
+        # A refresh that already read the cycles finishes first, so its learned
+        # values are cleared below instead of being written back afterwards (#225).
+        async with self._heating_cycle_manager.learning_lock:
+            for name, step in steps:
+                try:
+                    await step()
+                    _LOGGER.info("%s reset for device %s", name.capitalize(), device_id)
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.error("Failed to reset %s for device %s: %s", name, device_id, exc)
+                    failed_steps.append(name)
 
         if failed_steps:
             raise LearningResetError(failed_steps)
