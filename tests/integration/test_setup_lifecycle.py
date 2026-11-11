@@ -34,8 +34,6 @@ TRACK_POINT_IN_TIME = "custom_components.intelligent_heating_pilot.async_track_p
 SERVICES = ("reset_learning", SERVICE_CALCULATE_ANTICIPATED_START_TIME)
 # Timers armed by the startup work: the first update and the cycle extraction.
 STARTUP_TIMERS = 2
-# Timer armed at every setup for the late attribute population.
-LATE_UPDATE_TIMERS = 1
 SENSOR_ENTITY_ID = "sensor.ihp_bedroom_anticipated_start_time"
 
 
@@ -122,7 +120,7 @@ class TestStartupWork:
     ) -> None:
         assert await hass.config_entries.async_setup(entry.entry_id)
 
-        assert timers.call_count == STARTUP_TIMERS + LATE_UPDATE_TIMERS
+        assert timers.call_count == STARTUP_TIMERS
         await hass.config_entries.async_unload(entry.entry_id)
 
 

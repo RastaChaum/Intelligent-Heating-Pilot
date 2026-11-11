@@ -13,6 +13,7 @@ from datetime import date, datetime
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from homeassistant.core import CoreState
 
 from custom_components.intelligent_heating_pilot.application import (
     heating_cycle_lifecycle_manager as lifecycle_module,
@@ -147,7 +148,9 @@ def app_with_stale_caches() -> HeatingApplication:
         scheduler_entities=["schedule.heating"],
         lhs_retention_days=30,
     )
-    app = HeatingApplication(Mock(), device_config)
+    hass = Mock()
+    hass.state = CoreState.running
+    app = HeatingApplication(hass, device_config)
     app._orchestrator = Mock()
     app._orchestrator.reset_all_learning_data = AsyncMock()
     app._event_bridge = Mock()

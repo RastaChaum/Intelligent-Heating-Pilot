@@ -12,6 +12,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from homeassistant.core import CoreState
 
 from custom_components.intelligent_heating_pilot.domain.interfaces.device_config_reader_interface import (
     DeviceConfig,
@@ -39,7 +40,9 @@ def app_with_learned_global_lhs() -> HeatingApplication:
         scheduler_entities=["schedule.heating"],
         lhs_retention_days=30,
     )
-    app = HeatingApplication(Mock(), device_config)
+    hass = Mock()
+    hass.state = CoreState.running
+    app = HeatingApplication(hass, device_config)
     app._lhs_cache = LEARNED_GLOBAL_LHS
     app._contextual_lhs_cache = {LEARNED_HOUR: LEARNED_CONTEXTUAL_LHS}
     return app
