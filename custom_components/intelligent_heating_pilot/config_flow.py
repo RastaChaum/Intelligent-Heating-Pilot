@@ -8,7 +8,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers import selector
 
 from .const import (
@@ -45,19 +45,101 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+SCHEDULER_DOMAINS = ("switch", "schedule")
+MISSING_SCHEDULER_LABEL = "{entity_id} (not found)"
+
 
 def _outdoor_source_selector(device_class: str | None = None) -> selector.EntitySelector:
     """Build a selector accepting a sensor or a weather entity.
 
     Weather entities expose temperature, humidity and cloud coverage as attributes,
     so they are valid outdoor sources alongside dedicated sensors.
+
+    The filters are dict literals rather than a named selector config TypedDict:
+    the filter item type was renamed across Home Assistant releases, and literals
+    type-check against whichever one the installed release declares.
     """
-    sensor_filter = selector.EntityFilterSelectorConfig(domain="sensor")
-    if device_class:
-        sensor_filter["device_class"] = device_class
-    weather_filter = selector.EntityFilterSelectorConfig(domain="weather")
     return selector.EntitySelector(
-        selector.EntitySelectorConfig(filter=[sensor_filter, weather_filter])
+        selector.EntitySelectorConfig(
+            filter=[
+                {"domain": "sensor", "device_class": device_class},
+                {"domain": "weather"},
+            ]
+            if device_class
+            else [{"domain": "sensor"}, {"domain": "weather"}]
+        )
+    )
+
+
+def _as_list(value: Any) -> list[str]:
+    """Return a scheduler value as a list: older entries may store a single entity id."""
+    if isinstance(value, list):
+        return value
+    return [value] if value else []
+
+
+def _scheduler_label(hass: HomeAssistant, entity_id: str) -> str:
+    """Label a scheduler with its friendly name, or flag it as not found."""
+    state = hass.states.get(entity_id)
+    if state is None:
+        return MISSING_SCHEDULER_LABEL.format(entity_id=entity_id)
+    friendly_name = state.attributes.get("friendly_name", entity_id)
+    return f"{friendly_name} ({entity_id})"
+
+
+def _is_scheduler(state: State) -> bool:
+    """Tell whether a state looks like a scheduler (scheduler-component switch or schedule)."""
+    return state.domain in SCHEDULER_DOMAINS and bool(
+        "schedule" in state.entity_id.lower()
+        or state.attributes.get("next_trigger")
+        or state.attributes.get("next_event")
+    )
+
+
+def _scheduler_selector(hass: HomeAssistant, configured: list[str]) -> Any:
+    """Build the scheduler field: a dropdown of the schedulers found, or an entity picker.
+
+    The dropdown also lists every configured scheduler. One that was removed or renamed must
+    stay among the choices: the selector rejects any value outside them, so the form could
+    not be saved, and the user could not see which entry to remove (#192). When no scheduler
+    is found, the entity picker accepts any switch or schedule entity, configured or not.
+    """
+    found = {state.entity_id for state in hass.states.async_all() if _is_scheduler(state)}
+    if not found:
+        return selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=list(SCHEDULER_DOMAINS), multiple=True)
+        )
+    options = [
+        selector.SelectOptionDict(value=entity_id, label=_scheduler_label(hass, entity_id))
+        for entity_id in found.union(configured)
+    ]
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=sorted(options, key=lambda option: option["label"]),
+            multiple=True,
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def _configured_vtherm(entry: config_entries.ConfigEntry) -> Any:
+    """Return the VTherm a device drives: the options value when set, else the setup value."""
+    if CONF_VTHERM_ENTITY in entry.options:
+        return entry.options[CONF_VTHERM_ENTITY]
+    return entry.data.get(CONF_VTHERM_ENTITY)
+
+
+def _vtherm_in_use(hass: HomeAssistant, vtherm: str, exclude_entry_id: str | None = None) -> bool:
+    """Tell whether another device already drives this VTherm.
+
+    Two devices on one VTherm would overwrite each other's setpoint, so a VTherm identifies a
+    device. Entries are compared on the VTherm they use, not on their unique_id, because
+    entries created before #192 are keyed on their name.
+    """
+    return any(
+        _configured_vtherm(entry) == vtherm
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.entry_id != exclude_entry_id
     )
 
 
@@ -85,10 +167,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
             # Schedulers already a list from SelectSelector (multiple=True)
             # Just ensure it's always a list
-            sched_in = processed.get(CONF_SCHEDULER_ENTITIES, [])
-            if not isinstance(sched_in, list):
-                sched_in = [sched_in] if sched_in else []
-            processed[CONF_SCHEDULER_ENTITIES] = sched_in
+            processed[CONF_SCHEDULER_ENTITIES] = _as_list(processed.get(CONF_SCHEDULER_ENTITIES))
 
             # Note: EntitySelector optional fields are simply not present in user_input if not filled
             # No need to remove them as they won't exist in the dict
@@ -103,50 +182,18 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             # Scheduler is now optional - no validation needed
 
             if not errors:
+                vtherm: str = processed[CONF_VTHERM_ENTITY]
+                if _vtherm_in_use(self.hass, vtherm):
+                    return self.async_abort(reason="already_configured")
                 _LOGGER.info("Creating entry with data: %s", processed)
-                await self.async_set_unique_id(processed[CONF_NAME])
+                await self.async_set_unique_id(vtherm)
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title=processed[CONF_NAME],
                     data=processed,
                 )
 
-        # Get all scheduler entities with their friendly names
-        scheduler_options: list[selector.SelectOptionDict] = []
-        for state in self.hass.states.async_all():
-            if state.domain not in ("switch", "schedule"):
-                continue
-            # Filter for scheduler entities (they typically have "schedule_" prefix or scheduler attributes)
-            if (
-                "schedule" in state.entity_id.lower()
-                or state.attributes.get("next_trigger")
-                or state.attributes.get("next_event")
-            ):
-                friendly_name = state.attributes.get("friendly_name", state.entity_id)
-                scheduler_options.append(
-                    selector.SelectOptionDict(
-                        value=state.entity_id, label=f"{friendly_name} ({state.entity_id})"
-                    )
-                )
-
-        # Sort by label for easier selection
-        scheduler_options.sort(key=lambda x: x["label"])
-
-        # Build the schema for the configuration form using Entity and Select selectors (same as options flow)
-        # Scheduler selector: use SelectSelector if options available, else EntitySelector
-        scheduler_selector = (
-            selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=scheduler_options,
-                    multiple=True,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-            if scheduler_options
-            else selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["switch", "schedule"], multiple=True)
-            )
-        )
+        scheduler_selector = _scheduler_selector(self.hass, [])
 
         data_schema = vol.Schema(
             {
@@ -272,13 +319,24 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
         return self.async_show_form(
             step_id="user",
-            data_schema=data_schema,
+            data_schema=data_schema,  # type: ignore[arg-type, unused-ignore]  # HA types schemas as probatio
             errors=errors,
         )
 
 
 class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Intelligent Heating Pilot."""
+
+    def _follow_vtherm(self, vtherm: str, options: dict[str, Any]) -> None:
+        """Key the entry on its new VTherm, so no two entries ever share a unique_id.
+
+        The options are written in the same update: updating the unique_id alone would run
+        the update listener, which reloads the device, with the previous options.
+        """
+        _LOGGER.info("[%s] VTherm changed to %s", self.config_entry.title, vtherm)
+        self.hass.config_entries.async_update_entry(
+            self.config_entry, unique_id=vtherm, options=options
+        )
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage the options."""
@@ -290,10 +348,9 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             normalized_input = {**user_input}
             # Schedulers already a list from SelectSelector (multiple=True)
             # Just ensure it's always a list
-            sched_in = normalized_input.get(CONF_SCHEDULER_ENTITIES, [])
-            if not isinstance(sched_in, list):
-                sched_in = [sched_in] if sched_in else []
-            normalized_input[CONF_SCHEDULER_ENTITIES] = sched_in
+            normalized_input[CONF_SCHEDULER_ENTITIES] = _as_list(
+                normalized_input.get(CONF_SCHEDULER_ENTITIES)
+            )
 
             # For optional fields: if not in user_input OR empty, explicitly mark for deletion
             optional_entity_fields = [
@@ -314,8 +371,11 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                     fields_to_delete.append(field)
 
             # Validate required fields
-            if not normalized_input.get(CONF_VTHERM_ENTITY):
+            vtherm: str | None = normalized_input.get(CONF_VTHERM_ENTITY)
+            if not vtherm:
                 errors[CONF_VTHERM_ENTITY] = "required"
+            elif _vtherm_in_use(self.hass, vtherm, exclude_entry_id=self.config_entry.entry_id):
+                errors[CONF_VTHERM_ENTITY] = "vtherm_already_configured"
 
             # Scheduler is now optional - no validation needed
 
@@ -326,6 +386,8 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 # For optional fields that were cleared: explicitly set to None to override data
                 for field in fields_to_delete:
                     merged_options[field] = None
+                if vtherm and vtherm != _configured_vtherm(self.config_entry):
+                    self._follow_vtherm(vtherm, merged_options)
                 return self.async_create_entry(title="", data=merged_options)
 
         # Prepare data sources for defaults
@@ -347,28 +409,8 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             # Fallback to data
             return current_data.get(key, default)
 
-        # Get all scheduler entities for SelectSelector
-        scheduler_options: list[selector.SelectOptionDict] = []
-        for state in self.hass.states.async_all():
-            if state.domain not in ("switch", "schedule"):
-                continue
-            if (
-                "schedule" in state.entity_id.lower()
-                or state.attributes.get("next_trigger")
-                or state.attributes.get("next_event")
-            ):
-                friendly_name = state.attributes.get("friendly_name", state.entity_id)
-                scheduler_options.append(
-                    selector.SelectOptionDict(
-                        value=state.entity_id, label=f"{friendly_name} ({state.entity_id})"
-                    )
-                )
-        scheduler_options.sort(key=lambda x: x["label"])
-
         # Compute defaults for entity selectors
-        default_schedulers_list = _opt_or_data(CONF_SCHEDULER_ENTITIES, [])
-        if isinstance(default_schedulers_list, str):
-            default_schedulers_list = [default_schedulers_list]
+        default_schedulers_list = _as_list(_opt_or_data(CONF_SCHEDULER_ENTITIES, []))
         vtherm_val = _opt_or_data(CONF_VTHERM_ENTITY)
         hum_in_val = _opt_or_data(CONF_HUMIDITY_IN_ENTITY)
         hum_out_val = _opt_or_data(CONF_HUMIDITY_OUT_ENTITY)
@@ -389,19 +431,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         )
 
         # Optional: Schedulers (multiple, only set default if non-empty list)
-        scheduler_selector = (
-            selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=scheduler_options,
-                    multiple=True,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-            if scheduler_options
-            else selector.EntitySelector(
-                selector.EntitySelectorConfig(domain=["switch", "schedule"], multiple=True)
-            )
-        )
+        scheduler_selector = _scheduler_selector(self.hass, default_schedulers_list)
         schedulers_field = (
             vol.Optional(CONF_SCHEDULER_ENTITIES, default=default_schedulers_list)
             if default_schedulers_list and len(default_schedulers_list) > 0
@@ -594,6 +624,6 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="init",
-            data_schema=data_schema,
+            data_schema=data_schema,  # type: ignore[arg-type, unused-ignore]  # HA types schemas as probatio
             errors=errors,
         )

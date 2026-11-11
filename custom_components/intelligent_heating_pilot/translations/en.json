@@ -48,7 +48,7 @@
       "required": "This field is required"
     },
     "abort": {
-      "already_configured": "This integration is already configured"
+      "already_configured": "This thermostat is already driven by another Intelligent Heating Pilot device"
     }
   },
   "options": {
@@ -95,7 +95,8 @@
       }
     },
     "error": {
-      "required": "This field is required"
+      "required": "This field is required",
+      "vtherm_already_configured": "This thermostat is already driven by another Intelligent Heating Pilot device"
     }
   },
   "services": {

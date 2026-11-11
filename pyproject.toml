@@ -10,20 +10,17 @@ package-mode = false
 
 # Python constraint (align with HA core supported version)
 [tool.poetry.dependencies]
-# Home Assistant 2025.9+ requires Python 3.13.2+
-python = ">=3.13.2,<3.14"
+# Home Assistant 2026.3+ requires Python 3.14.2+
+python = ">=3.14.2,<3.15"
 
 # Runtime dependencies for standalone domain experimentation (keep minimal)
 # Domain code is pure standard library; no extra runtime deps required here.
-# Pinned below 5: homeassistant pins aiodns==3.5.0, which breaks at import with pycares 5
-# (AttributeError: ares_query_a_result). Lift once HA moves to aiodns 4.
-pycares = "<5"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.2,<10.0"
 # pytest-asyncio 1.2 is required by HA test plugin
 pytest-asyncio = "^1.2.0"
-pytest-homeassistant-custom-component = "^0.13.0"
+pytest-homeassistant-custom-component = "^0.13.375"
 pytest-bdd = ">=7.2,<10.0"  # BDD support with Gherkin
 ruff = ">=0.6,<0.18"
 mypy = "^1.10"
@@ -48,7 +45,7 @@ lint.select = ["E", "F", "I", "UP", "B", "SIM"]
 lint.ignore = ["E203", "E501"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 ignore_missing_imports = true
 strict_optional = true
 warn_unused_ignores = true

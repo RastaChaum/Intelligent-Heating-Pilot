@@ -5,7 +5,11 @@
     "@RastaChaum"
   ],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": [
+    "http",
+    "recorder",
+    "versatile_thermostat"
+  ],
   "documentation": "https://github.com/RastaChaum/Intelligent-Heating-Pilot",
   "integration_type": "service",
   "iot_class": "calculated",

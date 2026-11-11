@@ -43,16 +43,17 @@ repos:
       - id: ruff-format
         types_or: [python, pyi]
 
-  # Python type checking with mypy
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
+  # Python type checking with mypy, run as CI does: in the Poetry environment, where
+  # Home Assistant is installed. An isolated hook environment types it as Any and
+  # reports errors CI does not.
+  - repo: local
     hooks:
       - id: mypy
-        args: [--ignore-missing-imports, --python-version=3.13, --explicit-package-bases, --namespace-packages]
-        additional_dependencies:
-          - types-setuptools
-        files: ^custom_components/intelligent_heating_pilot/
-        exclude: ^tests/
+        name: mypy
+        entry: poetry run mypy custom_components/intelligent_heating_pilot/
+        language: system
+        pass_filenames: false
+        files: ^custom_components/intelligent_heating_pilot/.*\.py$
 
   # Security: Check for common security issues
   - repo: https://github.com/PyCQA/bandit
@@ -65,7 +66,7 @@ repos:
 
 # Configuration for specific hooks
 default_language_version:
-  python: python3.13
+  python: python3.14
 
 # Prevent committing to main branch directly
 fail_fast: false

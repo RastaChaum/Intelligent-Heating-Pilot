@@ -42,7 +42,14 @@ Feature: Outdoor conditions reach the preheating prediction
     When it is 0.0 °C outside
     Then IHP waits instead of starting to heat now
 
-  Scenario: A slow outdoor cooling eventually triggers a recalculation
-    Given IHP monitors the outdoor source "sensor.outdoor_temperature"
-    When the outdoor temperature goes 10.0, 9.7, 9.4, 9.1, 8.9 °C
-    Then only the last step triggers a recalculation
+  Scenario: Outdoor temperature changes do not trigger a recalculation
+    Given the outdoor temperature source is "sensor.outdoor_temperature"
+    And the outdoor humidity source is "sensor.outdoor_humidity"
+    When IHP starts monitoring its outdoor sources
+    Then IHP listens to "sensor.outdoor_humidity"
+    And IHP does not listen to "sensor.outdoor_temperature"
+
+  Scenario: A cooling weather entity does not trigger a recalculation
+    Given IHP monitors the outdoor source "weather.home"
+    When "weather.home" goes from 10.0 °C to 2.0 °C with the same humidity and cloud coverage
+    Then no recalculation is triggered

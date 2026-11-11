@@ -19,11 +19,6 @@ WEATHER_ATTR_TEMPERATURE_UNIT = "temperature_unit"
 WEATHER_ATTR_TEMPERATURE = "temperature"
 WEATHER_ATTR_HUMIDITY = "humidity"
 WEATHER_ATTR_CLOUD_COVERAGE = "cloud_coverage"
-WEATHER_NUMERIC_ATTRIBUTES = (
-    WEATHER_ATTR_TEMPERATURE,
-    WEATHER_ATTR_HUMIDITY,
-    WEATHER_ATTR_CLOUD_COVERAGE,
-)
 
 
 def get_entity_name(hass: HomeAssistant, entity_id: str) -> str:

@@ -32,6 +32,13 @@ class TestComponentStructure(unittest.TestCase):
         # Check domain matches expected
         self.assertEqual(manifest["domain"], "intelligent_heating_pilot")
 
+    def test_manifest_declares_the_integrations_it_uses(self):
+        """http, recorder and Versatile Thermostat must be loaded before the integration sets up (#192, #280)."""
+        with open(os.path.join(self.base_path, "manifest.json")) as f:
+            manifest = json.load(f)
+
+        self.assertEqual(manifest["dependencies"], ["http", "recorder", "versatile_thermostat"])
+
     def test_strings_json_exists_and_valid(self):
         """Test that strings.json exists and is valid."""
         strings_path = os.path.join(self.base_path, "strings.json")
