@@ -139,6 +139,88 @@ class TestHeatingCycleLifecycleManagerCancelExtraction:
         assert heating_cycle_manager_minimal._extraction_queue is None
 
 
+class TestRelearningAfterPruneDoesNotOutliveReset:
+    """A relearning after pruning must not write pre-reset values back (#225).
+
+    The refresh prunes, loads the remaining cycles, then writes the LHS and dead
+    time learned from them over several awaits. A reset landing in between used
+    to be undone once the refresh resumed.
+    """
+
+    @pytest.fixture
+    def manager(
+        self, heating_cycle_manager_with_cache: HeatingCycleLifecycleManager
+    ) -> HeatingCycleLifecycleManager:
+        """A manager whose refresh prunes and finds cycles left to relearn from."""
+        storage = heating_cycle_manager_with_cache._heating_cycle_storage
+        storage.prune_old_cycles = AsyncMock(return_value=True)
+        storage.get_cache_data = AsyncMock(return_value=Mock(cycles=[Mock()]))
+        heating_cycle_manager_with_cache._persist_learned_dead_time = AsyncMock()
+        heating_cycle_manager_with_cache._find_missing_date_ranges = AsyncMock(return_value=[])
+        return heating_cycle_manager_with_cache
+
+    @pytest.mark.asyncio
+    async def test_reset_waits_for_relearning_in_progress(
+        self, manager: HeatingCycleLifecycleManager
+    ) -> None:
+        """The reset clears storage only after the relearning wrote, so the clear wins."""
+        events: list[str] = []
+        cascade_started = asyncio.Event()
+        release_cascade = asyncio.Event()
+
+        async def slow_cascade(_cycles: list) -> None:
+            cascade_started.set()
+            await release_cascade.wait()
+            events.append("relearned")
+
+        async def reset() -> None:
+            async with manager.pause_learning():
+                events.append("cleared")
+
+        manager._trigger_lhs_cascade = slow_cascade
+
+        refresh = asyncio.create_task(manager.refresh_heating_cycle_cache())
+        await cascade_started.wait()
+        reset_task = asyncio.create_task(reset())
+        await asyncio.sleep(0)
+        assert events == []
+
+        release_cascade.set()
+        await asyncio.gather(refresh, reset_task)
+
+        assert events == ["relearned", "cleared"]
+
+    @pytest.mark.asyncio
+    async def test_refresh_during_reset_relearns_after_it(
+        self, manager: HeatingCycleLifecycleManager
+    ) -> None:
+        """A refresh starting mid-reset reads storage only once the reset is done."""
+        events: list[str] = []
+        manager._heating_cycle_storage.prune_old_cycles.side_effect = lambda *_args: (
+            events.append("pruned") or True
+        )
+        manager._trigger_lhs_cascade = AsyncMock()
+
+        async with manager.pause_learning():
+            refresh = asyncio.create_task(manager.refresh_heating_cycle_cache())
+            await asyncio.sleep(0)
+            events.append("cleared")
+        await refresh
+
+        assert events == ["cleared", "pruned"]
+
+    @pytest.mark.asyncio
+    async def test_pause_stops_running_extraction(
+        self, manager: HeatingCycleLifecycleManager
+    ) -> None:
+        """Pausing still stops every extraction, as cancel_extraction() did alone."""
+        running = asyncio.create_task(asyncio.Event().wait())
+        manager._range_tasks.add(running)
+
+        async with manager.pause_learning():
+            assert running.cancelled()
+
+
 @pytest.fixture
 def app_with_stale_caches() -> HeatingApplication:
     """Create a HeatingApplication whose sensor caches hold stale learned values."""
