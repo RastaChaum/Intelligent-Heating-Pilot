@@ -8,9 +8,21 @@ Thank you for wanting to improve IHP. This guide helps you start contributing wi
 
    ```bash
    poetry install
+   poetry run pre-commit install
    poetry run pytest
    poetry run pytest tests/features/
    ```
+
+   The integration tests (`tests/integration/`) start Home Assistant's recorder, which needs:
+
+   - **Python 3.14.4 or later**, the version in `.python-version`. Earlier 3.14 releases fail the recorder tests with `NameError: name 'Recorder' is not defined`: their `unittest.mock` evaluates the annotations of the functions it autospecs, and Home Assistant imports `Recorder` for type checking only.
+   - **SQLite 3.40.1 or later** linked to that Python (`python -c "import sqlite3; print(sqlite3.sqlite_version)"`). Otherwise the recorder refuses to start and the tests fail. Ubuntu 22.04 and its derivatives ship SQLite 3.37.2: install a recent SQLite, then build Python against it, for example with pyenv for a library installed in `/usr/lib`:
+
+     ```bash
+     LIBSQLITE3_LIBS="-L/usr/lib -Wl,-rpath,/usr/lib -lsqlite3" pyenv install -f 3.14.10
+     ```
+
+     Then recreate the virtual environment (`rm -rf .venv && poetry install`).
 
 2. Learn the project structure.
 
