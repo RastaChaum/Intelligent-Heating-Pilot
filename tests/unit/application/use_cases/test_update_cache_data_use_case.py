@@ -6,6 +6,8 @@ IHeatingCycleStorage, ILhsStorage, and LhsLifecycleManager.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
@@ -56,6 +58,17 @@ class TestUpdateCacheDataUseCase:
         manager = Mock()
         manager.invalidate_memory_cache = Mock()
         manager.cancel_extraction = AsyncMock()
+        manager.pause_events = []
+
+        @asynccontextmanager
+        async def pause_learning() -> AsyncIterator[None]:
+            # Mirrors the real pause: extraction is stopped once learning is paused.
+            manager.pause_events.append("pause")
+            await manager.cancel_extraction()
+            yield
+            manager.pause_events.append("resume")
+
+        manager.pause_learning = pause_learning
         return manager
 
     @pytest.fixture
@@ -242,6 +255,26 @@ class TestUpdateCacheDataUseCase:
         await use_case.reset_cache(device_id="climate.test")
 
         assert calls == ["cancel", "clear"]
+
+    @pytest.mark.asyncio
+    async def test_reset_cache_clears_every_store_while_learning_is_paused(
+        self,
+        use_case: UpdateCacheDataUseCase,
+        mock_cycle_storage: Mock,
+        mock_lhs_storage: Mock,
+        mock_heating_cycle_manager: Mock,
+    ) -> None:
+        """A relearning resumed before the last clear would write old values back (#225)."""
+        events = mock_heating_cycle_manager.pause_events
+        mock_cycle_storage.clear_cache.side_effect = lambda _device_id: events.append("cycles")
+        mock_lhs_storage.clear_slope_history.side_effect = lambda: events.append("lhs")
+        mock_lhs_storage.set_learned_dead_time.side_effect = lambda _value: events.append(
+            "dead time"
+        )
+
+        await use_case.reset_cache(device_id="climate.test")
+
+        assert events == ["pause", "cycles", "lhs", "dead time", "resume"]
 
     @pytest.mark.asyncio
     async def test_reset_cache_runs_every_step_when_one_fails(

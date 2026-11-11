@@ -169,12 +169,23 @@ class UpdateCacheDataUseCase:
         )
         _LOGGER.info("Resetting heating cycle cache and LHS for device %s", device_id)
 
-        # Stop extraction first: a running queue would write learned data back
-        # right after the storage below is cleared.
-        await self._heating_cycle_manager.cancel_extraction()
+        # Learning is paused first: a running extraction or a relearning after
+        # pruning would write learned data back right after the clear below.
+        async with self._heating_cycle_manager.pause_learning():
+            failed_steps = await self._run_reset_steps(device_id)
 
-        # Every step runs even if an earlier one failed, so a single storage
-        # error does not leave the other learned data in place.
+        if failed_steps:
+            raise LearningResetError(failed_steps)
+
+        _LOGGER.info("Cache and LHS have been reset for device %s", device_id)
+        _LOGGER.debug("Exiting UpdateCacheDataUseCase.reset_cache()")
+
+    async def _run_reset_steps(self, device_id: str) -> list[str]:
+        """Clear cycles, LHS and learned dead time; return the names of failed steps.
+
+        Every step runs even if an earlier one failed, so a single storage
+        error does not leave the other learned data in place.
+        """
         steps: tuple[tuple[str, Callable[[], Awaitable[None]]], ...] = (
             ("heating cycles", lambda: self._reset_cycles(device_id)),
             ("LHS", self._reset_lhs),
@@ -188,12 +199,7 @@ class UpdateCacheDataUseCase:
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.error("Failed to reset %s for device %s: %s", name, device_id, exc)
                 failed_steps.append(name)
-
-        if failed_steps:
-            raise LearningResetError(failed_steps)
-
-        _LOGGER.info("Cache and LHS have been reset for device %s", device_id)
-        _LOGGER.debug("Exiting UpdateCacheDataUseCase.reset_cache()")
+        return failed_steps
 
     async def _reset_cycles(self, device_id: str) -> None:
         """Clear stored cycles, then the memory cache that would mask the change."""
