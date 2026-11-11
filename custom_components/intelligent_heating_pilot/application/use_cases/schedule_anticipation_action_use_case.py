@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from homeassistant.util import dt as dt_util
 
 from ...const import DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
+from ...domain.constants import SLOT_DAY_RETRY_DELAY_SECONDS
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -30,6 +32,7 @@ class ScheduleAnticipationActionUseCase:
     2. Handling revert logic when anticipated start is postponed significantly
     3. Scheduling preheating timers
     4. Triggering immediate preheating when needed
+    5. Retrying on the slot's day a trigger made the day before without effect (#250)
     """
 
     def __init__(
@@ -70,6 +73,8 @@ class ScheduleAnticipationActionUseCase:
         self._last_scheduled_lhs: float | None = None
         self._anticipation_timer_cancel: Callable[[], None] | None = None
         self._preheating_target_temp: float | None = None  # Temp only (time/active delegated)
+        # (target_time, scheduler) of the retry planned for the slot's day, if any (#250)
+        self._slot_day_retry: tuple[datetime, str] | None = None
         self._anticipation_recalc_tolerance_seconds = anticipation_recalc_tolerance_minutes * 60
 
     def set_on_scheduler_blocked(self, callback: Callable[[str], Awaitable[None]] | None) -> None:
@@ -308,7 +313,13 @@ class ScheduleAnticipationActionUseCase:
         # If anticipated start is in past but target is future, trigger now
         if anticipated_start <= now < target_time:
             blocked_entity: str | None = None
-            if not self._control_preheating.is_preheating_active():
+            if self._is_slot_day_retry_pending(target_time, scheduler_entity_id):
+                _LOGGER.debug(
+                    "Retry of %s already planned on the day of the %s slot - not triggering again",
+                    scheduler_entity_id,
+                    target_time.isoformat(),
+                )
+            elif not self._control_preheating.is_preheating_active():
                 _LOGGER.info(
                     "Anticipated start %s is past, triggering preheating immediately",
                     anticipated_start.isoformat(),
@@ -319,10 +330,9 @@ class ScheduleAnticipationActionUseCase:
                     target_time, target_temp, scheduler_entity_id
                 )
                 if not confirmed:
-                    _LOGGER.warning(
-                        "Scheduler %s confirmed blocked (conditions unmet)", scheduler_entity_id
+                    blocked_entity = await self._handle_unconfirmed_trigger(
+                        now, target_time, target_temp, scheduler_entity_id
                     )
-                    blocked_entity = scheduler_entity_id
             else:
                 _LOGGER.debug(
                     "Already preheating, continuing through target time %s", target_time.isoformat()
@@ -383,6 +393,7 @@ class ScheduleAnticipationActionUseCase:
 
             # Clear timer reference
             self._anticipation_timer_cancel = None
+            self._slot_day_retry = None
 
             # Trigger the action
             blocked_entity = await self._trigger_action(
@@ -444,14 +455,103 @@ class ScheduleAnticipationActionUseCase:
             target_time, target_temp, scheduler_entity_id
         )
         if not confirmed:
-            _LOGGER.warning(
-                "Scheduler %s confirmed blocked (conditions unmet)", scheduler_entity_id
+            return await self._handle_unconfirmed_trigger(
+                dt_util.now(), target_time, target_temp, scheduler_entity_id
             )
-            return scheduler_entity_id
 
         self._preheating_target_temp = target_temp
         _LOGGER.debug("Action triggered successfully")
         return None
+
+    async def _handle_unconfirmed_trigger(
+        self,
+        now: datetime,
+        target_time: datetime,
+        target_temp: float,
+        scheduler_entity_id: str,
+    ) -> str | None:
+        """Decide what a trigger without effect means: blocked, or too early.
+
+        HACS Scheduler's ``run_action`` looks for the timeslot at the given
+        time on the day it is called, not on the slot's day. The day before
+        the slot, a schedule that does not run today (Mon-Fri on a Sunday)
+        finds no timeslot and does nothing, which says nothing about its own
+        conditions: the same scheduler is retried once the slot's day has
+        started (#250). On the slot's day, no effect means its conditions
+        block it, and the caller falls back to the next scheduler.
+
+        Args:
+            now: When the trigger was made
+            target_time: Target schedule time
+            target_temp: Target temperature
+            scheduler_entity_id: Scheduler that was triggered
+
+        Returns:
+            ``scheduler_entity_id`` if the scheduler is confirmed blocked,
+            None if a retry was planned on the slot's day instead.
+        """
+        if await self._retry_on_slot_day(now, target_time, target_temp, scheduler_entity_id):
+            return None
+        _LOGGER.warning("Scheduler %s confirmed blocked (conditions unmet)", scheduler_entity_id)
+        return scheduler_entity_id
+
+    async def _retry_on_slot_day(
+        self,
+        now: datetime,
+        target_time: datetime,
+        target_temp: float,
+        scheduler_entity_id: str,
+    ) -> bool:
+        """Plan a retry just after the slot's local midnight, if the slot is on a later day.
+
+        Days are compared in HA's local time zone, the one scheduler-component
+        uses for "today". The retry never fires after the slot itself.
+
+        Args:
+            now: When the trigger without effect was made
+            target_time: Target schedule time
+            target_temp: Target temperature
+            scheduler_entity_id: Scheduler to retry
+
+        Returns:
+            True if a retry was planned, False if the slot is on today's date.
+        """
+        slot_day = dt_util.as_local(target_time).date()
+        if dt_util.as_local(now).date() >= slot_day:
+            return False
+        retry_at = min(
+            dt_util.start_of_local_day(slot_day) + timedelta(seconds=SLOT_DAY_RETRY_DELAY_SECONDS),
+            target_time,
+        )
+        _LOGGER.info(
+            "Scheduler %s had no timeslot to run the day before its %s slot "
+            "(HACS Scheduler matches the slot time against the current day) - "
+            "retrying at %s instead of falling back to another scheduler",
+            scheduler_entity_id,
+            target_time.isoformat(),
+            retry_at.isoformat(),
+        )
+        await self._schedule_timer(retry_at, target_time, target_temp, scheduler_entity_id)
+        self._slot_day_retry = (target_time, scheduler_entity_id)
+        return True
+
+    def _is_slot_day_retry_pending(self, target_time: datetime, scheduler_entity_id: str) -> bool:
+        """Return True if a retry is already planned on this slot's day for this scheduler.
+
+        Triggering again before midnight would have no effect either, and
+        would wait for the thermostat for nothing on every recalculation.
+
+        Args:
+            target_time: Target schedule time
+            scheduler_entity_id: Scheduler entity
+
+        Returns:
+            True if the pending timer is that retry.
+        """
+        return self._anticipation_timer_cancel is not None and self._slot_day_retry == (
+            target_time,
+            scheduler_entity_id,
+        )
 
     async def _cancel_timer(self) -> None:
         """Cancel any active timer.
@@ -464,6 +564,7 @@ class ScheduleAnticipationActionUseCase:
             self._anticipation_timer_cancel()
             self._anticipation_timer_cancel = None
             # Note: Timer cancelled but target_time preserved (as per review feedback)
+        self._slot_day_retry = None
         _LOGGER.debug("Exiting cancel_timer")
 
     async def _complete_elapsed_preheating(self) -> None:
