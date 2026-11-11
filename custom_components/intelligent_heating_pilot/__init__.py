@@ -143,6 +143,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_delay = _STARTUP_UPDATE_BASE_DELAY_SECONDS + _stable_jitter_seconds(
             f"{entry.entry_id}:update", _STARTUP_UPDATE_JITTER_SECONDS
         )
+        # Timed from HA start too: timed from setup, a slow startup could outlast it and
+        # the update would be dropped, since updates do nothing until HA has started.
+        late_update_delay = _LATE_UPDATE_BASE_DELAY_SECONDS + _stable_jitter_seconds(
+            f"{entry.entry_id}:late_update", _LATE_UPDATE_JITTER_SECONDS
+        )
 
         @callback
         def _run_extraction(_now):
@@ -151,6 +156,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         @callback
         def _run_update(_now):
             coordinator.request_startup_publish()
+
+        @callback
+        def _run_late_update(_now):
+            _LOGGER.debug("[%s] Late update for late attribute population", entry.entry_id)
+            hass.async_create_task(coordinator.async_update())
 
         entry.async_on_unload(
             async_track_point_in_time(
@@ -162,15 +172,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.async_on_unload(
             async_track_point_in_time(
                 hass,
+                _run_late_update,
+                dt_util.now() + dt_util.dt.timedelta(seconds=late_update_delay),
+            )
+        )
+        entry.async_on_unload(
+            async_track_point_in_time(
+                hass,
                 _run_extraction,
                 dt_util.now() + dt_util.dt.timedelta(seconds=extraction_delay),
             )
         )
 
         _LOGGER.info(
-            "[%s] Startup workload staggered: update in %ss, extraction in %ss",
+            "[%s] Startup workload staggered: update in %ss, late update in %ss, "
+            "extraction in %ss",
             entry.entry_id,
             update_delay,
+            late_update_delay,
             extraction_delay,
         )
 
@@ -189,24 +208,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # the entry unloads first, so a reloaded or removed device schedules no work for its
     # old coordinator (#192).
     entry.async_on_unload(async_at_started(hass, _ha_started))
-
-    # Small delayed update for late attribute population
-    @callback
-    def _delayed_update(_now):
-        _LOGGER.debug("[%s] Delayed update", entry.entry_id)
-        hass.async_create_task(coordinator.async_update())
-
-    late_update_delay = _LATE_UPDATE_BASE_DELAY_SECONDS + _stable_jitter_seconds(
-        f"{entry.entry_id}:late_update", _LATE_UPDATE_JITTER_SECONDS
-    )
-
-    entry.async_on_unload(
-        async_track_point_in_time(
-            hass,
-            _delayed_update,
-            dt_util.now() + dt_util.dt.timedelta(seconds=late_update_delay),
-        )
-    )
 
     # Register options update listener
     entry.async_on_unload(entry.add_update_listener(async_update_options))

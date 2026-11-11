@@ -504,14 +504,12 @@ class HeatingApplication:
     def request_startup_publish(self) -> None:
         """Run the first calculation after startup and publish it to the sensors.
 
-        Recalculations requested while Home Assistant was starting were dropped,
-        and the sensors only refresh on the event published by the bridge, which
-        async_update() does not fire.
+        Recalculations requested while Home Assistant was starting were dropped, so
+        this one is forced: an anticipation unchanged since then would otherwise be
+        discarded as a duplicate and the sensors would not refresh.
         """
-        _LOGGER.debug("Entering request_startup_publish for device=%s", self._device_id)
-        if self._event_bridge is not None:
-            self._event_bridge.request_forced_publish()
-        _LOGGER.debug("Exiting request_startup_publish for device=%s", self._device_id)
+        _LOGGER.debug("Requesting startup publish for device=%s", self._device_id)
+        self.hass.async_create_task(self._refresh_caches_and_publish())
 
     async def async_update(self) -> None:
         """Trigger anticipation calculation and cache results for sensors."""
@@ -675,9 +673,9 @@ class HeatingApplication:
         the sensors read the caches held here; without reloading them the sensors
         kept showing the old values (2.0 after a reset) until Home Assistant restarted.
         """
-        self.hass.async_create_task(self._refresh_after_extraction())
+        self.hass.async_create_task(self._refresh_caches_and_publish())
 
-    async def _refresh_after_extraction(self) -> None:
+    async def _refresh_caches_and_publish(self) -> None:
         """Reload the LHS caches, then recalculate and publish so sensors read them."""
         await self.refresh_caches()
         # Forced: an unchanged anticipation would otherwise be dropped as a duplicate

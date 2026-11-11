@@ -52,15 +52,39 @@ async def test_update_runs_once_ha_has_started(app: HeatingApplication) -> None:
     app._orchestrator.calculate_and_schedule_anticipation.assert_awaited_once()
 
 
-def test_startup_publish_goes_through_the_bridge(app: HeatingApplication) -> None:
-    """Only the bridge fires the event the sensors refresh on."""
+def test_startup_publish_refreshes_caches_before_publishing(app: HeatingApplication) -> None:
+    """The startup publish takes the same path as other forced publishes.
+
+    The sensors read the caches held by the application, so they are reloaded before
+    the bridge fires the event the sensors refresh on.
+    """
+    app._refresh_caches_and_publish = Mock(return_value="refresh-and-publish")
+
     app.request_startup_publish()
 
-    app._event_bridge.request_forced_publish.assert_called_once()
+    app.hass.async_create_task.assert_called_once_with("refresh-and-publish")
 
 
-def test_startup_publish_without_a_bridge_does_nothing(app: HeatingApplication) -> None:
+async def test_refresh_and_publish_reloads_caches_then_forces_publish(
+    app: HeatingApplication,
+) -> None:
+    """Caches first, so the event reaches sensors that read up-to-date values."""
+    calls: list[str] = []
+    app.refresh_caches = AsyncMock(side_effect=lambda: calls.append("refresh"))
+    app._event_bridge.request_forced_publish.side_effect = lambda: calls.append("publish")
+
+    await app._refresh_caches_and_publish()
+
+    assert calls == ["refresh", "publish"]
+
+
+async def test_refresh_and_publish_without_a_bridge_only_refreshes(
+    app: HeatingApplication,
+) -> None:
     """The application may be unloaded or not loaded yet when the timer fires."""
+    app.refresh_caches = AsyncMock()
     app._event_bridge = None
 
-    app.request_startup_publish()
+    await app._refresh_caches_and_publish()
+
+    app.refresh_caches.assert_awaited_once()
