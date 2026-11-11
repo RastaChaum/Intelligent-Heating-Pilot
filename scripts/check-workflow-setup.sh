@@ -90,7 +90,6 @@ WORKFLOWS=(
     "integration-pr.yml"
     "prepare-release-candidate.yml"
     "increment-rc-version.yml"
-    "update-prerelease-on-integration-merge.yml"
     "promote-rc-to-release.yml"
     "cleanup-branches.yml"
     "workflow-lint.yml"

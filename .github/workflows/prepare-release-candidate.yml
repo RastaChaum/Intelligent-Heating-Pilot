@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout integration branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1  # zizmor: ignore[artipacked] pushes the RC tag and deletes the dev tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1  # zizmor: ignore[artipacked] pushes the RC tag
         with:
           ref: integration
           fetch-depth: 0
@@ -70,23 +70,6 @@ jobs:
           else
             echo "tag_exists=false" >> $GITHUB_OUTPUT
             echo "release_exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Clean up dev pre-release if exists
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          DEV_TAG="v${VERSION}-dev"
-          # Query GitHub Releases API — source of truth
-          DEV_RELEASE=$(gh release view "$DEV_TAG" --json tagName --jq '.tagName' 2>/dev/null || echo "")
-          if [ -n "$DEV_RELEASE" ]; then
-            echo "🗑️ Deleting dev pre-release $DEV_TAG..."
-            gh release delete "$DEV_TAG" --yes 2>/dev/null || true
-            git push origin ":refs/tags/$DEV_TAG" 2>/dev/null || true
-            echo "✅ Dev pre-release deleted"
-          else
-            echo "ℹ️ No dev pre-release to delete"
           fi
 
       - name: Extract unreleased changes from CHANGELOG
