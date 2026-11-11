@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 
 from custom_components.intelligent_heating_pilot.application import HeatingOrchestrator
 from custom_components.intelligent_heating_pilot.infrastructure.event_bridge import (
@@ -47,6 +47,7 @@ def _make_event(entity_id: str, old_state, new_state) -> Mock:
 def _make_bridge(**kwargs) -> HAEventBridge:
     """Create an HAEventBridge with sensible defaults for unit testing."""
     hass = Mock()
+    hass.state = CoreState.running
     hass.bus = Mock()
     orchestrator = AsyncMock()
     return HAEventBridge(
@@ -521,6 +522,7 @@ class TestRecalculateAndPublishDeduplication:
 
     def _bridge_with_orchestrator(self, anticipation_data) -> HAEventBridge:
         hass = Mock()
+        hass.state = CoreState.running
         hass.bus = Mock()
         orchestrator = AsyncMock()
         orchestrator.calculate_and_schedule_anticipation = AsyncMock(return_value=anticipation_data)

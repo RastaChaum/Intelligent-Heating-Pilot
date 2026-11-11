@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from homeassistant.core import CoreState
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from custom_components.intelligent_heating_pilot.application.heating_cycle_lifecycle_manager import (
@@ -90,6 +91,7 @@ def _new_application(context: dict[str, Any], anticipation_dead_time: float) -> 
             context["announced"].append(event_data["learned_dead_time"])
 
     hass = Mock()
+    hass.state = CoreState.running
     hass.bus.async_fire = Mock(side_effect=record_event)
     app = HeatingApplication(hass, _device_config())
     app._orchestrator = Mock()

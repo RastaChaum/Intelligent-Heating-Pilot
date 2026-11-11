@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .application.heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
@@ -501,6 +501,16 @@ class HeatingApplication:
         except Exception as err:  # pylint: disable=broad-except
             _LOGGER.warning("Error handling retention change: %s", err, exc_info=True)
 
+    def request_startup_publish(self) -> None:
+        """Run the first calculation after startup and publish it to the sensors.
+
+        Recalculations requested while Home Assistant was starting were dropped, so
+        this one is forced: an anticipation unchanged since then would otherwise be
+        discarded as a duplicate and the sensors would not refresh.
+        """
+        _LOGGER.debug("Requesting startup publish for device=%s", self._device_id)
+        self.hass.async_create_task(self._refresh_caches_and_publish())
+
     async def async_update(self) -> None:
         """Trigger anticipation calculation and cache results for sensors."""
         async with self._learning_lock:
@@ -527,6 +537,12 @@ class HeatingApplication:
     async def _async_update_locked(self) -> None:
         """Run async_update while holding the learning lock."""
         if not self._orchestrator:
+            return
+
+        # Options can change while HA starts: the startup publish recalculates once it has
+        # started, so an update before then would only read entities not yet available.
+        if self.hass.state is not CoreState.running:
+            _LOGGER.debug("Home Assistant still starting, deferring update")
             return
 
         # Calculate and schedule via orchestrator (passing IHP enabled state)
@@ -658,9 +674,9 @@ class HeatingApplication:
         the sensors read the caches held here; without reloading them the sensors
         kept showing the old values (2.0 after a reset) until Home Assistant restarted.
         """
-        self.hass.async_create_task(self._refresh_after_extraction())
+        self.hass.async_create_task(self._refresh_caches_and_publish())
 
-    async def _refresh_after_extraction(self) -> None:
+    async def _refresh_caches_and_publish(self) -> None:
         """Reload the LHS caches, then recalculate and publish so sensors read them."""
         await self.refresh_caches()
         # Forced: an unchanged anticipation would otherwise be dropped as a duplicate

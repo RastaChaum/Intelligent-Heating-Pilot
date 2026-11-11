@@ -47,12 +47,18 @@ repos:
         entry: poetry run ruff format
         language: system
         types_or: [python, pyi]
+
+  # Python type checking with mypy, run as CI does: in the Poetry environment, where
+  # Home Assistant is installed. An isolated hook environment types it as Any and
+  # reports errors CI does not.
+  - repo: local
+    hooks:
       - id: mypy
         name: mypy
         entry: poetry run mypy custom_components/intelligent_heating_pilot/
         language: system
         pass_filenames: false
-        files: ^custom_components/intelligent_heating_pilot/
+        files: ^custom_components/intelligent_heating_pilot/.*\.py$
 
   # Security: Check for common security issues
   - repo: https://github.com/PyCQA/bandit

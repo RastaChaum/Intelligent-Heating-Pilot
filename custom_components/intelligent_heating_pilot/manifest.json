@@ -7,7 +7,8 @@
   "config_flow": true,
   "dependencies": [
     "http",
-    "recorder"
+    "recorder",
+    "versatile_thermostat"
   ],
   "documentation": "https://github.com/RastaChaum/Intelligent-Heating-Pilot",
   "integration_type": "service",
