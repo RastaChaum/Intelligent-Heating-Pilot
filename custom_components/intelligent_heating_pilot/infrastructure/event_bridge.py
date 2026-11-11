@@ -11,7 +11,14 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from homeassistant.core import Event, EventStateChangedData, HomeAssistant, State, callback
+from homeassistant.core import (
+    CoreState,
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    State,
+    callback,
+)
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
@@ -429,6 +436,12 @@ class HAEventBridge:
         expressed via None values (never a ``clear_values`` flag) so that all
         sensors share a single, consistent event shape.
         """
+        # Entities appear one by one while Home Assistant starts, and the thermostat
+        # may not be readable yet. The startup update recalculates once it has started.
+        if self._hass.state is not CoreState.running:
+            _LOGGER.debug("Home Assistant still starting, deferring recalculation")
+            return
+
         anticipation_data = await self._orchestrator.calculate_and_schedule_anticipation(
             ihp_enabled=self._get_ihp_enabled()
         )

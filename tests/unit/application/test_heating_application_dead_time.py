@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from homeassistant.core import CoreState
 
 from custom_components.intelligent_heating_pilot.const import EVENT_DEAD_TIME_UPDATED
 from custom_components.intelligent_heating_pilot.domain.interfaces.device_config_reader_interface import (
@@ -65,6 +66,7 @@ def make_app(device_config: DeviceConfig, lhs_storage: Mock) -> HeatingApplicati
     exercised by get_effective_dead_time / get_current_dead_time are needed.
     """
     mock_hass = Mock()
+    mock_hass.state = CoreState.running
     app = HeatingApplication(mock_hass, device_config)
     # Inject mock storage directly — mirrors what async_load() would set
     app._lhs_storage = lhs_storage

@@ -50,6 +50,7 @@
 - ✅ **Check file permissions** - Home Assistant user must read/execute
 - ✅ **Verify folder name** - Must be exactly `intelligent_heating_pilot`
 - ✅ **Check `manifest.json`** - Should be valid JSON, not corrupted
+- ✅ **Install Versatile Thermostat** - IHP cannot load without it. The log then shows `Unable to set up dependencies of 'intelligent_heating_pilot'`
 
 **If still not working:**
 - Share error logs on [GitHub Issues](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues)

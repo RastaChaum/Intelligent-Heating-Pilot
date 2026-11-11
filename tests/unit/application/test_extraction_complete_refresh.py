@@ -53,21 +53,21 @@ def app_after_reset() -> HeatingApplication:
 
 
 class TestRefreshAfterExtraction:
-    """_refresh_after_extraction() must reload the caches before publishing."""
+    """_refresh_caches_and_publish() must reload the caches before publishing."""
 
     @pytest.mark.asyncio
     async def test_global_lhs_sensor_shows_learned_value(
         self, app_after_reset: HeatingApplication
     ) -> None:
         """The global LHS sensor leaves the 2.0 default once the extraction learned a slope."""
-        await app_after_reset._refresh_after_extraction()
+        await app_after_reset._refresh_caches_and_publish()
 
         assert app_after_reset.get_learned_heating_slope() == LEARNED_GLOBAL_LHS
 
     @pytest.mark.asyncio
     async def test_contextual_cache_is_rebuilt(self, app_after_reset: HeatingApplication) -> None:
         """Newly learned hours appear and hours no longer learned drop out."""
-        await app_after_reset._refresh_after_extraction()
+        await app_after_reset._refresh_caches_and_publish()
 
         assert app_after_reset._contextual_lhs_cache == {LEARNED_HOUR: LEARNED_CONTEXTUAL_LHS}
 
@@ -81,7 +81,7 @@ class TestRefreshAfterExtraction:
             lhs_at_publish.append(app_after_reset.get_learned_heating_slope())
         )
 
-        await app_after_reset._refresh_after_extraction()
+        await app_after_reset._refresh_caches_and_publish()
 
         assert lhs_at_publish == [LEARNED_GLOBAL_LHS]
 
@@ -92,7 +92,7 @@ class TestRefreshAfterExtraction:
         """A storage error on the global LHS does not block the rest of the refresh."""
         app_after_reset._lhs_manager.get_global_lhs.side_effect = RuntimeError("storage")
 
-        await app_after_reset._refresh_after_extraction()
+        await app_after_reset._refresh_caches_and_publish()
 
         assert app_after_reset.get_learned_heating_slope() == DEFAULT_LEARNED_SLOPE
         assert app_after_reset._contextual_lhs_cache == {LEARNED_HOUR: LEARNED_CONTEXTUAL_LHS}

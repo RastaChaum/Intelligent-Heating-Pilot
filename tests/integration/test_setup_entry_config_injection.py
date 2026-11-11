@@ -14,12 +14,23 @@ This ensures the complete refactoring works as a cohesive system.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
+from custom_components.intelligent_heating_pilot import (
+    _STARTUP_UPDATE_BASE_DELAY_SECONDS,
+    _STARTUP_UPDATE_JITTER_SECONDS,
+    async_setup_entry,
+)
 from custom_components.intelligent_heating_pilot.const import (
     CONF_AUTO_LEARNING,
     CONF_DEAD_TIME_MINUTES,
@@ -391,3 +402,87 @@ class TestConfigurationUpdateFlow:
         # THEN: New DeviceConfig should reflect updated options
         coordinator = hass.data[DOMAIN][config_entry.entry_id]
         assert coordinator._device_config.lhs_retention_days == 90
+
+
+class TestStartupPublish:
+    """The first publication reaches the sensors only once HA has started."""
+
+    # Later than the longest staggered update delay, whatever the entry id
+    AFTER_STAGGERED_UPDATE = timedelta(
+        seconds=_STARTUP_UPDATE_BASE_DELAY_SECONDS + _STARTUP_UPDATE_JITTER_SECONDS + 1
+    )
+
+    @pytest.fixture
+    def startup_publish(self, suppress_full_lifecycle: None):  # type: ignore
+        """Track the publication, and skip the extraction firing with the same timers."""
+        with (
+            patch(
+                "custom_components.intelligent_heating_pilot.HeatingApplication"
+                ".request_startup_publish"
+            ) as publish,
+            patch(
+                "custom_components.intelligent_heating_pilot.HeatingApplication"
+                ".async_initialize_cycle_extraction",
+                new=AsyncMock(),
+            ),
+        ):
+            yield publish
+
+    async def _advance_past_staggered_update(self, hass: HomeAssistant) -> None:
+        async_fire_time_changed(hass, dt_util.utcnow() + self.AFTER_STAGGERED_UPDATE)
+        await hass.async_block_till_done()
+
+    @pytest.mark.asyncio
+    async def test_publishes_after_the_stagger_when_ha_is_running(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry, startup_publish: Mock
+    ) -> None:
+        """A device added or reloaded on a running HA publishes without waiting for an event."""
+        await async_setup_entry(hass, config_entry)
+
+        await self._advance_past_staggered_update(hass)
+
+        startup_publish.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("state", [CoreState.not_running, CoreState.starting])
+    async def test_waits_for_the_started_event(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+        startup_publish: Mock,
+        state: CoreState,
+    ) -> None:
+        """Set up while HA starts, the stagger only counts from the started event.
+
+        Starting matters: is_running is already true then, and an update firing
+        before HA has started would be dropped with nothing to retry it.
+        """
+        hass.set_state(state)
+        await async_setup_entry(hass, config_entry)
+
+        await self._advance_past_staggered_update(hass)
+        startup_publish.assert_not_called()
+
+        hass.set_state(CoreState.running)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+        await hass.async_block_till_done()
+
+        await self._advance_past_staggered_update(hass)
+        startup_publish.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_unloading_before_ha_has_started_cancels_the_wait(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry, startup_publish: Mock
+    ) -> None:
+        """An entry unloaded during startup must not schedule work when HA starts."""
+        hass.set_state(CoreState.starting)
+        await async_setup_entry(hass, config_entry)
+
+        await config_entry._async_process_on_unload(hass)
+        await hass.async_block_till_done()
+        hass.set_state(CoreState.running)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+        await hass.async_block_till_done()
+
+        await self._advance_past_staggered_update(hass)
+        startup_publish.assert_not_called()
