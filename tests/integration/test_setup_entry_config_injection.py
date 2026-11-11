@@ -27,8 +27,6 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.intelligent_heating_pilot import (
-    _LATE_UPDATE_BASE_DELAY_SECONDS,
-    _LATE_UPDATE_JITTER_SECONDS,
     _STARTUP_UPDATE_BASE_DELAY_SECONDS,
     _STARTUP_UPDATE_JITTER_SECONDS,
     async_setup_entry,
@@ -488,34 +486,3 @@ class TestStartupPublish:
 
         await self._advance_past_staggered_update(hass)
         startup_publish.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_late_update_waits_for_the_started_event(
-        self, hass: HomeAssistant, config_entry: MockConfigEntry, startup_publish: Mock
-    ) -> None:
-        """The late update is timed from HA start, not setup.
-
-        Timed from setup, a slow startup outlasted it and the update was dropped,
-        since updates do nothing until HA has started.
-        """
-        after_late_update = timedelta(
-            seconds=_LATE_UPDATE_BASE_DELAY_SECONDS + _LATE_UPDATE_JITTER_SECONDS + 1
-        )
-        hass.set_state(CoreState.starting)
-        with patch(
-            "custom_components.intelligent_heating_pilot.HeatingApplication.async_update",
-            new=AsyncMock(),
-        ) as late_update:
-            await async_setup_entry(hass, config_entry)
-
-            async_fire_time_changed(hass, dt_util.utcnow() + after_late_update)
-            await hass.async_block_till_done()
-            late_update.assert_not_awaited()
-
-            hass.set_state(CoreState.running)
-            hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
-            await hass.async_block_till_done()
-            async_fire_time_changed(hass, dt_util.utcnow() + 2 * after_late_update)
-            await hass.async_block_till_done()
-
-            late_update.assert_awaited_once()

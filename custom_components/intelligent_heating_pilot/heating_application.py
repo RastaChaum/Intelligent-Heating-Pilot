@@ -539,7 +539,8 @@ class HeatingApplication:
         if not self._orchestrator:
             return
 
-        # The delayed update is timed from setup, so a slow startup can outlast it
+        # Options can change while HA starts: the startup publish recalculates once it has
+        # started, so an update before then would only read entities not yet available.
         if self.hass.state is not CoreState.running:
             _LOGGER.debug("Home Assistant still starting, deferring update")
             return

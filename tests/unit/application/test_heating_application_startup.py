@@ -35,7 +35,7 @@ def app() -> HeatingApplication:
 async def test_update_is_deferred_until_ha_has_started(
     app: HeatingApplication, state: CoreState
 ) -> None:
-    """The delayed update is timed from setup, so a slow startup can outlast it."""
+    """Entities are not all available before then; the startup publish catches up."""
     app.hass.state = state
 
     await app.async_update()
