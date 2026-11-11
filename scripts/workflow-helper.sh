@@ -173,7 +173,7 @@ show_workflow() {
       → Merge the PR (merge commit, no squash!)
       → AUTOMATICALLY:
         - Final release published (vX.Y.Z)
-        - RC and dev pre-releases deleted
+        - RC pre-releases deleted
         - chore/changelog-vX.Y.Z PR opened to stamp the CHANGELOG
           (approve and merge it)
         - HACS detects the version

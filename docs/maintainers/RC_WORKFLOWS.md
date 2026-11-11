@@ -8,7 +8,7 @@ This document describes the GitHub Actions workflows used to prepare, increment,
 
 - Trigger: manual workflow dispatch on `integration`
 - Purpose: create the first RC for a version
-- Main actions: validate the version (and warn when `manifest.json` differs from it), extract release notes from `CHANGELOG.md`, delete the dev pre-release, create the `vX.Y.Z-rc1` tag, and publish the GitHub pre-release
+- Main actions: validate the version (and warn when `manifest.json` differs from it), extract release notes from `CHANGELOG.md`, create the `vX.Y.Z-rc1` tag, and publish the GitHub pre-release
 
 ### increment-rc-version.yml
 
@@ -16,13 +16,6 @@ This document describes the GitHub Actions workflows used to prepare, increment,
 - Purpose: publish the next RC after fixes
 - Main actions: detect the latest RC, increment the suffix, publish the new pre-release with the previous notes plus an "RC N" section, **then** delete the previous RC release (its tag is kept), and update the tracking issue
 - Re-run safety: if a run pushed the new tag but failed before publishing its release, the next run publishes that tag instead of skipping a number
-
-### update-prerelease-on-integration-merge.yml
-
-- Trigger: every PR merged into `integration`
-- Purpose: keep the `vX.Y.Z-dev` pre-release in step with `integration`
-- Main actions: move the dev tag to the `integration` HEAD and refresh its notes from `[Unreleased]`
-- RC phase: when an RC exists for the `manifest.json` version, nothing is changed; RC tags are immutable and their notes describe what they contain
 
 ### integration-pr.yml
 
@@ -34,7 +27,7 @@ This document describes the GitHub Actions workflows used to prepare, increment,
 
 - Trigger: merge from `integration` into `main`
 - Purpose: promote an accepted RC to a stable release
-- Main actions: require an RC for the `manifest.json` version, publish the stable GitHub release and its tag, delete the RC and dev pre-releases, open the `chore/changelog-vX.Y.Z` PR stamping the CHANGELOG on `main`, and merge that stamp into `integration`
+- Main actions: require an RC for the `manifest.json` version, publish the stable GitHub release and its tag, delete the RC pre-releases, open the `chore/changelog-vX.Y.Z` PR stamping the CHANGELOG on `main`, and merge that stamp into `integration`
 
 ## Typical Flow
 

@@ -113,7 +113,7 @@ jobs:
             --latest \
             --target main
 
-      - name: Delete RC and dev pre-releases
+      - name: Delete RC pre-releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -124,7 +124,7 @@ jobs:
                 .[]
                 | select(
                     .isPrerelease == true
-                    and (.tagName | test("^v" + $v + "-(rc[0-9]+|dev)$"))
+                    and (.tagName | test("^v" + $v + "-rc[0-9]+$"))
                   )
                 | .tagName
               ')

@@ -220,7 +220,7 @@ jobs:
           MESSAGE+="\n**After merging:**\n"
           MESSAGE+="- The release is created automatically on GitHub\n"
           MESSAGE+="- A CHANGELOG PR stamps the release date on main (needs an approval)\n"
-          MESSAGE+="- The RC and dev pre-releases are deleted\n"
+          MESSAGE+="- The RC pre-releases are deleted\n"
           MESSAGE+="- HACS detects the new version\n"
 
           echo -e "$MESSAGE" | gh pr comment "$PR_NUMBER" --body-file -
