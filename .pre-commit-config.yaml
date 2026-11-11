@@ -31,16 +31,21 @@ repos:
       - id: check-docstring-first
       - id: debug-statements  # Check for debugger imports and breakpoints
 
-  # Python code formatting with Ruff
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.0
+  # Ruff and mypy run from the Poetry environment, like CI: the versions pinned in
+  # poetry.lock and the configuration in pyproject.toml. A pinned hook repo drifts
+  # (ruff 0.6 classified zoneinfo as a third-party import on Python 3.14, and the
+  # mypy mirror ran without Home Assistant installed, so its types were Any).
+  - repo: local
     hooks:
-      # Run the linter
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+        name: ruff
+        entry: poetry run ruff check --fix --exit-non-zero-on-fix
+        language: system
         types_or: [python, pyi]
-      # Run the formatter
       - id: ruff-format
+        name: ruff-format
+        entry: poetry run ruff format
+        language: system
         types_or: [python, pyi]
 
   # Python type checking with mypy, run as CI does: in the Poetry environment, where

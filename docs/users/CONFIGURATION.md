@@ -43,6 +43,7 @@ This is the only scheduler IHP can start the heating with. At the anticipated st
 
   A slot whose action is anything else (`climate.set_hvac_mode`, a script, a scene, a preset whose temperature the VTherm does not expose) has no target for IHP and is not anticipated.
 - **The schedule must control the VTherm of this IHP device.** IHP does not check which entity the action targets. After triggering the slot, it waits up to 10 seconds for this VTherm to take the slot's temperature; if it does not, IHP treats the scheduler as blocked by its conditions.
+- **A preheat that starts the day before its slot may start at 00:01.** `run_action` looks for the slot on the day it is called. On Sunday 23:00, the Monday 05:00 slot of a Mon–Fri schedule does not exist yet, so nothing heats. IHP retries the same scheduler at 00:01 on the slot's day and treats it as blocked only if that retry has no effect either. The room then starts heating later than anticipated. Schedules that run every day are not affected.
 - **Only the next slot of each scheduler is anticipated.** If the next slot does not need heating (an eco slot, or a room already warm enough), nothing is preheated until that slot has passed, and the slot after it is anticipated then.
 - **A scheduler switched off is ignored.** Switching it back on makes IHP use it again.
 - **Several schedulers can be configured.** IHP anticipates the earliest upcoming slot among them. If that scheduler's conditions block it, IHP tries the next scheduler right away.
