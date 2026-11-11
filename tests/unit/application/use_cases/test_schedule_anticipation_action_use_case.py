@@ -10,8 +10,9 @@ Tests verify complex scheduling logic including:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 from homeassistant.util import dt as dt_util
@@ -823,3 +824,203 @@ class TestScheduleAnticipationActionBlockedPropagation:
             )
 
         assert result == "switch.non_vacation"
+
+
+_PARIS = ZoneInfo("Europe/Paris")
+# Sunday evening before a Monday-only (Mon-Fri) 05:00 slot.
+_SUNDAY_EVENING = datetime(2026, 11, 1, 23, 0, tzinfo=_PARIS)
+_MONDAY_SLOT = datetime(2026, 11, 2, 5, 0, tzinfo=_PARIS)
+_MONDAY_RETRY = datetime(2026, 11, 2, 0, 1, tzinfo=_PARIS)
+
+
+class TestScheduleAnticipationActionCrossMidnight:
+    """A trigger made the day before its slot is retried just after midnight (#250).
+
+    HACS Scheduler's ``run_action`` looks for the timeslot at the given time
+    on the day it is called. Before midnight, a schedule that does not run
+    today (Mon-Fri on a Sunday) finds no timeslot and does nothing: this must
+    not be reported as "blocked by its own conditions". The same scheduler is
+    retried once the slot's day has started; only a retry without effect
+    reports it blocked, so that the next scheduler can take over.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _paris_time_zone(self):
+        """scheduler-component resolves "today" in HA's local time zone."""
+        original = dt_util.DEFAULT_TIME_ZONE
+        dt_util.set_default_time_zone(_PARIS)
+        yield
+        dt_util.set_default_time_zone(original)
+
+    @pytest.fixture
+    def use_case(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        scheduler_reader,
+    ) -> ScheduleAnticipationActionUseCase:
+        """Use case whose scheduler is enabled and whose triggers have no effect."""
+        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+        control = Mock()
+        control.start_preheating = AsyncMock(return_value=False)
+        control.is_preheating_active = Mock(return_value=False)
+        control.get_preheating_target_time = Mock(return_value=None)
+        control.get_active_scheduler_entity = Mock(return_value=None)
+        control.cancel_preheating = AsyncMock()
+        schedule_anticipation_action_use_case._control_preheating = control
+        schedule_anticipation_action_use_case.set_on_scheduler_blocked(AsyncMock())
+        return schedule_anticipation_action_use_case
+
+    @staticmethod
+    async def _schedule_at(
+        use_case: ScheduleAnticipationActionUseCase,
+        now: datetime,
+        target_time: datetime = _MONDAY_SLOT,
+        anticipated_start: datetime | None = None,
+    ) -> str | None:
+        with patch.object(dt_util, "now", return_value=now):
+            return await use_case.schedule_action(
+                anticipated_start=anticipated_start or target_time - timedelta(hours=6),
+                target_time=target_time,
+                target_temp=20.0,
+                scheduler_entity_id="switch.weekdays",
+                lhs=0.5,
+            )
+
+    @staticmethod
+    async def _fire_active_timer(use_case: ScheduleAnticipationActionUseCase) -> None:
+        timer_scheduler = use_case._timer_scheduler
+        ((fire_at, callback),) = timer_scheduler.active_timers()  # type: ignore
+        timer_scheduler.mark_fired((fire_at, callback))  # type: ignore
+        with patch.object(dt_util, "now", return_value=fire_at):
+            await callback()
+
+    @pytest.mark.asyncio
+    async def test_immediate_trigger_on_the_eve_plans_a_retry_after_midnight(
+        self, use_case: ScheduleAnticipationActionUseCase
+    ) -> None:
+        """No effect on the eve of the slot: not blocked, retried at 00:01 on the slot's day."""
+        result = await self._schedule_at(use_case, _SUNDAY_EVENING)
+
+        assert result is None
+        assert [t for t, _ in use_case._timer_scheduler.active_timers()] == [  # type: ignore
+            _MONDAY_RETRY
+        ]
+
+    @pytest.mark.asyncio
+    async def test_timer_fired_trigger_on_the_eve_plans_a_retry_after_midnight(
+        self, use_case: ScheduleAnticipationActionUseCase
+    ) -> None:
+        """An anticipation timer firing on the eve does not report the scheduler blocked."""
+        await self._schedule_at(
+            use_case, _SUNDAY_EVENING - timedelta(hours=1), anticipated_start=_SUNDAY_EVENING
+        )
+
+        await self._fire_active_timer(use_case)
+
+        use_case._on_scheduler_blocked.assert_not_awaited()  # type: ignore[union-attr]
+        assert [t for t, _ in use_case._timer_scheduler.active_timers()] == [  # type: ignore
+            _MONDAY_RETRY
+        ]
+
+    @pytest.mark.asyncio
+    async def test_retry_without_effect_reports_the_scheduler_blocked(
+        self, use_case: ScheduleAnticipationActionUseCase
+    ) -> None:
+        """On the slot's day, no effect means the scheduler's own conditions block it."""
+        await self._schedule_at(use_case, _SUNDAY_EVENING)
+
+        await self._fire_active_timer(use_case)
+
+        use_case._on_scheduler_blocked.assert_awaited_once_with(  # type: ignore[union-attr]
+            "switch.weekdays"
+        )
+        assert use_case._timer_scheduler.active_timers() == []  # type: ignore
+
+    @pytest.mark.asyncio
+    async def test_retry_with_effect_starts_preheating(
+        self, use_case: ScheduleAnticipationActionUseCase
+    ) -> None:
+        """The retry triggers the same slot of the same scheduler, which now applies."""
+        await self._schedule_at(use_case, _SUNDAY_EVENING)
+        use_case._control_preheating.start_preheating = AsyncMock(return_value=True)
+
+        await self._fire_active_timer(use_case)
+
+        use_case._control_preheating.start_preheating.assert_awaited_once_with(
+            _MONDAY_SLOT, 20.0, "switch.weekdays"
+        )
+        use_case._on_scheduler_blocked.assert_not_awaited()  # type: ignore[union-attr]
+        assert use_case._timer_scheduler.active_timers() == []  # type: ignore
+
+    @pytest.mark.asyncio
+    async def test_recalculation_while_the_retry_is_pending_does_not_trigger_again(
+        self, use_case: ScheduleAnticipationActionUseCase
+    ) -> None:
+        """Before midnight, triggering again would only fail again and wait for nothing."""
+        await self._schedule_at(use_case, _SUNDAY_EVENING)
+
+        result = await self._schedule_at(use_case, _SUNDAY_EVENING + timedelta(minutes=30))
+
+        assert result is None
+        use_case._control_preheating.start_preheating.assert_awaited_once()
+        assert [t for t, _ in use_case._timer_scheduler.active_timers()] == [  # type: ignore
+            _MONDAY_RETRY
+        ]
+
+    @pytest.mark.asyncio
+    async def test_recalculation_for_another_slot_cancels_the_pending_retry(
+        self, use_case: ScheduleAnticipationActionUseCase
+    ) -> None:
+        """A retry planned for a slot that is no longer the next one must not fire."""
+        await self._schedule_at(use_case, _SUNDAY_EVENING)
+        later_slot = _MONDAY_SLOT + timedelta(hours=2)
+
+        await self._schedule_at(
+            use_case,
+            _SUNDAY_EVENING + timedelta(minutes=10),
+            target_time=later_slot,
+            anticipated_start=later_slot - timedelta(hours=1),
+        )
+
+        assert [t for t, _ in use_case._timer_scheduler.active_timers()] == [  # type: ignore
+            later_slot - timedelta(hours=1)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_slot_at_midnight_is_retried_at_its_own_time(
+        self, use_case: ScheduleAnticipationActionUseCase
+    ) -> None:
+        """A retry is never planned after the slot itself."""
+        midnight_slot = datetime(2026, 11, 2, 0, 0, tzinfo=_PARIS)
+
+        result = await self._schedule_at(use_case, _SUNDAY_EVENING, target_time=midnight_slot)
+
+        assert result is None
+        assert [t for t, _ in use_case._timer_scheduler.active_timers()] == [  # type: ignore
+            midnight_slot
+        ]
+
+    @pytest.mark.asyncio
+    async def test_slot_day_is_the_local_day_not_the_utc_day(
+        self, use_case: ScheduleAnticipationActionUseCase
+    ) -> None:
+        """22:30 and 23:30 UTC are the same UTC day but Sunday and Monday in Paris."""
+        now = datetime(2026, 11, 1, 22, 30, tzinfo=UTC)
+        target_time = datetime(2026, 11, 1, 23, 30, tzinfo=UTC)
+
+        result = await self._schedule_at(use_case, now, target_time=target_time)
+
+        assert result is None
+        assert [t for t, _ in use_case._timer_scheduler.active_timers()] == [  # type: ignore
+            _MONDAY_RETRY
+        ]
+
+    @pytest.mark.asyncio
+    async def test_trigger_without_effect_on_the_slot_day_is_reported_blocked(
+        self, use_case: ScheduleAnticipationActionUseCase
+    ) -> None:
+        """Just after midnight, a trigger without effect falls back at once (no regression)."""
+        result = await self._schedule_at(use_case, datetime(2026, 11, 2, 0, 30, tzinfo=_PARIS))
+
+        assert result == "switch.weekdays"
+        assert use_case._timer_scheduler.active_timers() == []  # type: ignore
