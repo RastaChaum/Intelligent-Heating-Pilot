@@ -11,14 +11,21 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from homeassistant.core import Event, EventStateChangedData, HomeAssistant, State, callback
+from homeassistant.core import (
+    CoreState,
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    State,
+    callback,
+)
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
 from .adapters.utils import (
-    WEATHER_ATTR_TEMPERATURE,
+    WEATHER_ATTR_CLOUD_COVERAGE,
+    WEATHER_ATTR_HUMIDITY,
     WEATHER_DOMAIN,
-    WEATHER_NUMERIC_ATTRIBUTES,
     read_numeric_state,
 )
 from .vtherm_compat import get_vtherm_room_temperature
@@ -33,10 +40,10 @@ _LOGGER = logging.getLogger(__name__)
 # Minimum change in monitored sensor value (humidity %, cloud coverage %) to
 # trigger a recalculation.  Small fluctuations below this threshold are ignored.
 _MONITORED_ENTITY_CHANGE_THRESHOLD = 3.0
-# Outdoor temperature is in degrees, not percent: a 3-degree step would hide
-# most of an evening's cooling, so it gets its own, finer threshold.
-_MONITORED_TEMPERATURE_CHANGE_THRESHOLD = 1.0
-_TEMPERATURE_DEVICE_CLASS = "temperature"
+# Weather attributes the prediction reads live. The outdoor temperature is left
+# out: the prediction does not use it, so its changes cannot alter the result
+# (#227), even when one weather entity also backs humidity or cloud coverage.
+_MONITORED_WEATHER_ATTRIBUTES = (WEATHER_ATTR_HUMIDITY, WEATHER_ATTR_CLOUD_COVERAGE)
 # Key used for the value of a sensor, whose number is its state.
 _SENSOR_STATE_KEY = "state"
 
@@ -301,7 +308,7 @@ class HAEventBridge:
                 # Value appearing or disappearing is actionable
                 meaningful = meaningful or reference is not new_val
                 continue
-            if abs(new_val - reference) >= self._change_threshold(new_state, key):
+            if abs(new_val - reference) >= _MONITORED_ENTITY_CHANGE_THRESHOLD:
                 meaningful = True
 
         if meaningful:
@@ -316,11 +323,12 @@ class HAEventBridge:
     def _monitored_values(state: State) -> dict[str, float]:
         """Return the numeric values carried by a monitored entity state.
 
-        A weather state is a condition string that IHP does not use, so only its
-        numeric attributes count. A sensor carries its value in the state.
+        A weather state is a condition string that IHP does not use, so only the
+        numeric attributes the prediction reads count. A sensor carries its
+        value in the state.
         """
         if state.domain == WEATHER_DOMAIN:
-            keys: tuple[str, ...] = WEATHER_NUMERIC_ATTRIBUTES
+            keys: tuple[str, ...] = _MONITORED_WEATHER_ATTRIBUTES
         else:
             keys = (_SENSOR_STATE_KEY,)
         values = {}
@@ -329,18 +337,6 @@ class HAEventBridge:
             if value is not None:
                 values[key] = value
         return values
-
-    @staticmethod
-    def _change_threshold(state: State, key: str) -> float:
-        """Return the minimum change worth a recalculation for this value."""
-        is_temperature = (
-            key == WEATHER_ATTR_TEMPERATURE
-            if state.domain == WEATHER_DOMAIN
-            else state.attributes.get("device_class") == _TEMPERATURE_DEVICE_CLASS
-        )
-        if is_temperature:
-            return _MONITORED_TEMPERATURE_CHANGE_THRESHOLD
-        return _MONITORED_ENTITY_CHANGE_THRESHOLD
 
     def _is_meaningful_change_from_last(self, new_data: dict) -> bool:
         """Return True when *new_data* differs meaningfully from the last published event.
@@ -440,6 +436,12 @@ class HAEventBridge:
         expressed via None values (never a ``clear_values`` flag) so that all
         sensors share a single, consistent event shape.
         """
+        # Entities appear one by one while Home Assistant starts, and the thermostat
+        # may not be readable yet. The startup update recalculates once it has started.
+        if self._hass.state is not CoreState.running:
+            _LOGGER.debug("Home Assistant still starting, deferring recalculation")
+            return
+
         anticipation_data = await self._orchestrator.calculate_and_schedule_anticipation(
             ihp_enabled=self._get_ihp_enabled()
         )

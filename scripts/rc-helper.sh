@@ -173,7 +173,7 @@ cmd_promote() {
     echo "  1. Open a pull request: $RELEASE_BRANCH → main"
     echo "  2. Merging it triggers the 'Promote RC to Final Release' workflow, which:"
     echo "     - creates the v${version} tag and the final GitHub release"
-    echo "     - deletes the RC and dev pre-releases"
+    echo "     - deletes the RC pre-releases"
     echo "     - opens the chore/changelog-v${version} PR stamping the CHANGELOG on main"
     echo ""
     success "Use: gh pr create --base main --head $RELEASE_BRANCH"

@@ -5,7 +5,7 @@
   "python.linting.mypyEnabled": true,
   "python.linting.mypyArgs": [
     "--ignore-missing-imports",
-    "--python-version=3.13"
+    "--python-version=3.14"
   ],
   "python.formatting.provider": "none",
   "[python]": {
@@ -22,12 +22,12 @@
   },
   "python.analysis.extraPaths": [
     "${workspaceFolder}/custom_components",
-    "${workspaceFolder}/.venv/lib/python3.13/site-packages",
+    "${workspaceFolder}/.venv/lib/python3.14/site-packages",
     "./custom_components/intelligent_heating_pilot"
   ],
   "python.autoComplete.extraPaths": [
     "${workspaceFolder}/custom_components",
-    "${workspaceFolder}/.venv/lib/python3.13/site-packages"
+    "${workspaceFolder}/.venv/lib/python3.14/site-packages"
   ],
   "python.analysis.typeCheckingMode": "basic",
   "python.testing.pytestArgs": [

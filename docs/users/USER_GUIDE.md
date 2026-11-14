@@ -272,6 +272,7 @@ The switch is useful when you want temporary manual control but want IHP to cont
 - IHP calls `run_action` with `skip_conditions: false`
 - The scheduler respects its own conditions (like `input_boolean.vacation`)
 - If conditions fail, heating won't trigger, and IHP tries the next configured scheduler, if any
+- A preheat starting the day before its slot (e.g. Sunday 23:00 for the Monday 05:00 slot of a Mon–Fri schedule) finds no slot to run that day: IHP retries the same scheduler at 00:01 before trying the next one
 - IHP stays ready but inactive
 
 **How IHP interacts with your system:**

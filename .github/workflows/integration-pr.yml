@@ -147,7 +147,7 @@ jobs:
         if: steps.source.outputs.kind == 'integration'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.13'
+          python-version: '3.14'
 
       - name: Install Poetry
         if: steps.source.outputs.kind == 'integration'
@@ -220,7 +220,7 @@ jobs:
           MESSAGE+="\n**After merging:**\n"
           MESSAGE+="- The release is created automatically on GitHub\n"
           MESSAGE+="- A CHANGELOG PR stamps the release date on main (needs an approval)\n"
-          MESSAGE+="- The RC and dev pre-releases are deleted\n"
+          MESSAGE+="- The RC pre-releases are deleted\n"
           MESSAGE+="- HACS detects the new version\n"
 
           echo -e "$MESSAGE" | gh pr comment "$PR_NUMBER" --body-file -

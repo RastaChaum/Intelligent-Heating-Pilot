@@ -64,3 +64,8 @@ TARGET_TEMP_MATCH_TOLERANCE_C = 0.05
 # returns from run_action before the climate entity has changed (8 ms later in the #256
 # logs); past this delay with no matching target, the scheduler is reported blocked.
 ACTION_EFFECT_TIMEOUT_SECONDS = 10.0
+# HACS Scheduler's run_action looks for the timeslot at the given time on the day it is
+# called. A preheat starting the day before its slot therefore does nothing on a schedule
+# that does not run today (#250): the same scheduler is retried this long after the
+# slot's local midnight, so that the scheduler's "today" is the slot's day.
+SLOT_DAY_RETRY_DELAY_SECONDS = 60

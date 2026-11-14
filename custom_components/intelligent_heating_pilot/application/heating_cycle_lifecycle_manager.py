@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
-from contextlib import suppress
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -117,6 +117,10 @@ class HeatingCycleLifecycleManager:
         # launch for ranges already claimed is skipped: after a learning reset, the
         # deferred startup extraction would otherwise cancel and redo the reset's one.
         self._active_ranges: list[tuple[date, date]] = []
+        # Held while relearning from stored cycles and while a reset clears them,
+        # so neither interleaves with the other. Owned here rather than by
+        # HeatingApplication because this manager outlives a config entry reload.
+        self._relearn_lock = asyncio.Lock()
 
     async def refresh_heating_cycle_cache(self) -> None:
         """Refresh the heating cycle cache and schedule the next 24h timer.
@@ -171,32 +175,10 @@ class HeatingCycleLifecycleManager:
         # so recalculating unconditionally would generate dozens of Store.async_save()
         # calls per device at startup — causing event loop saturation with 8+ devices.
         if self._heating_cycle_storage is not None:
-            now = dt_util.now() if dt_util is not None else datetime.now()
-            pruned = await self._heating_cycle_storage.prune_old_cycles(
-                self._device_config.device_id, now
-            )
-
-            if pruned:
-                _LOGGER.debug("Cycles pruned — recalculating LHS and dead time")
-                self.invalidate_memory_cache()
-                remaining_cycles = await self._load_cached_cycles()
-
-                if remaining_cycles:
-                    await self._trigger_lhs_cascade(remaining_cycles)
-                    await self._persist_learned_dead_time(remaining_cycles)
-                    _LOGGER.debug(
-                        "Recalculated LHS and dead time from %d remaining cycles after pruning",
-                        len(remaining_cycles),
-                    )
-                else:
-                    _LOGGER.debug("All cycles pruned — skipping LHS recalculation")
-            else:
-                _LOGGER.debug(
-                    "No cycles pruned — skipping LHS recalculation (model_storage already up to date)"
-                )
-                # The dead time is still learned: cycles extracted while auto-learning was
-                # off were never learned from (#224). An unchanged value is not saved again.
-                await self._persist_learned_dead_time(await self._load_cached_cycles())
+            # A reset waits for this relearning: once it has cleared storage, a relearning
+            # started from cycles loaded before it would write the old values back (#225).
+            async with self._relearn_lock:
+                await self._prune_and_relearn(self._heating_cycle_storage)
 
         # Step 4: Find missing date ranges vs current (pruned) cache
         missing_ranges = await self._find_missing_date_ranges(start_date, end_date)
@@ -212,6 +194,57 @@ class HeatingCycleLifecycleManager:
             _LOGGER.info("Cache refresh: cache is up to date, no extraction needed")
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.refresh_heating_cycle_cache")
+
+    async def _prune_and_relearn(self, storage: IHeatingCycleStorage) -> None:
+        """Prune cycles outside retention, then relearn LHS and dead time from the rest.
+
+        Must run under ``_relearn_lock``: it reads the stored cycles, then writes
+        what it learned from them over several awaits.
+
+        Args:
+            storage: The persistent cycle storage to prune and read from.
+        """
+        now = dt_util.now() if dt_util is not None else datetime.now()
+        pruned = await storage.prune_old_cycles(self._device_config.device_id, now)
+
+        if not pruned:
+            _LOGGER.debug(
+                "No cycles pruned — skipping LHS recalculation (model_storage already up to date)"
+            )
+            # The dead time is still learned: cycles extracted while auto-learning was
+            # off were never learned from (#224). An unchanged value is not saved again.
+            await self._persist_learned_dead_time(await self._load_cached_cycles())
+            return
+
+        _LOGGER.debug("Cycles pruned — recalculating LHS and dead time")
+        self.invalidate_memory_cache()
+        remaining_cycles = await self._load_cached_cycles()
+        if not remaining_cycles:
+            _LOGGER.debug("All cycles pruned — skipping LHS recalculation")
+            return
+
+        await self._trigger_lhs_cascade(remaining_cycles)
+        await self._persist_learned_dead_time(remaining_cycles)
+        _LOGGER.debug(
+            "Recalculated LHS and dead time from %d remaining cycles after pruning",
+            len(remaining_cycles),
+        )
+
+    @asynccontextmanager
+    async def pause_learning(self) -> AsyncIterator[None]:
+        """Stop all learning from stored cycles while the caller clears learned data.
+
+        Used by the learning reset. It first waits for a relearning in progress to
+        finish, then stops every extraction; neither can start writing again until
+        the block exits. Without this, a relearning that loaded cycles before the
+        reset wrote the old LHS and dead time back once it was done (#225).
+
+        Yields:
+            None, once learning is paused.
+        """
+        async with self._relearn_lock:
+            await self.cancel_extraction()
+            yield
 
     async def on_retention_change(self, new_retention_days: int) -> None:
         """Handle retention configuration changes.

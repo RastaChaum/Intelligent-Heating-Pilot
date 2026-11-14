@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Versatile Thermostat is now a declared dependency.** IHP already only worked with it; without it installed, Home Assistant now refuses to load IHP and says why in the log. (#280)
+
+### Fixed
+
+- **Misleading `-dev` pre-release** – After each release, the next merge into `integration` published a `vX.Y.Z-dev` pre-release named after the version just released, although it contained newer code, and HACS offered it to users who enable beta versions. The release candidates already cover testing, so the `-dev` pre-release is no longer published.
+- **Needless recalculations on outdoor temperature changes** (#227) – Each outdoor temperature change of 1 °C or more reran the anticipation of every device using that source, although the prediction does not use the outdoor temperature. These changes, including the `temperature` attribute of a weather entity that also feeds humidity or cloud coverage, no longer trigger a recalculation. The outdoor temperature is still recorded with each heating cycle.
+- **A preheat starting before midnight did nothing for an after-midnight slot of a schedule that does not run every day** (#250) – HACS Scheduler's `run_action` looks for the slot on the day it is called. On Sunday 23:00, the Monday 05:00 slot of a Mon–Fri schedule was not found: nothing heated, and IHP wrongly treated the scheduler as blocked by its conditions and fell back to another scheduler. IHP now retries the same scheduler at 00:01 on the slot's day, and falls back only if that retry has no effect either. The preheat starts later than anticipated, but it starts. Schedules that run every day are not affected.
+- **A restart no longer fills the log with warnings about missing thermostats.** IHP now loads after Versatile Thermostat and waits for Home Assistant to finish starting before calculating. (#280)
+- **`reset_learning` could be undone by a refresh running at the same time.** When a refresh had just dropped cycles older than the retention window, it could write the old heating slope and dead time back right after the reset. The reset now waits for that refresh to finish, and a refresh started during the reset waits for it. (#225)
+
 ## [0.7.1] - 2026-11-06
 
 This release makes learning match how each room really heats, slow underfloor heating included, and makes preheating hold up when a scheduler is blocked, the recorder is slow or the room sensor is noisy.
@@ -40,6 +52,7 @@ This release makes learning match how each room really heats, slow underfloor he
 ### Setup and options
 
 - **Every setting has a label and help text**, in English and French. The services are translated, and submitting without a thermostat shows a real message. (#193)
+- **Setting up, changing and removing a device is more robust.** A removed or renamed scheduler no longer blocks saving the options: it is listed as *(not found)*. A thermostat can be driven by one IHP device only, and two devices may share a name. A device reloaded or removed while Home Assistant starts no longer runs its first update afterwards, and a failed removal no longer freezes its sensors. The services stay available when no device is set up and return a clear error for a device that is not loaded. (#192)
 - **Home Assistant 2024.11 or later is now declared as the minimum version.** IHP already needed it; HACS no longer offers it to older installations, where it failed to load or to open its options.
 
 ### New

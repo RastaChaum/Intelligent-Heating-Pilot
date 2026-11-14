@@ -13,19 +13,16 @@ from __future__ import annotations
 import hashlib
 import logging
 
-import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
-from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import entity_registry as er
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.start import async_at_started
 from homeassistant.util import dt as dt_util
 
-from .application.use_cases import LearningResetError
-from .const import CONF_IHP_ENABLED, DOMAIN, SERVICE_CALCULATE_ANTICIPATED_START_TIME
+from .const import CONF_IHP_ENABLED, DOMAIN
 from .heating_application import HeatingApplication
+from .services import async_setup_services
 from .utils.config_helpers import as_bool
 from .view import async_register_http_views
 
@@ -37,8 +34,6 @@ _STARTUP_UPDATE_BASE_DELAY_SECONDS = 5
 _STARTUP_UPDATE_JITTER_SECONDS = 55
 _STARTUP_EXTRACTION_BASE_DELAY_SECONDS = 120
 _STARTUP_EXTRACTION_JITTER_SECONDS = 600
-_LATE_UPDATE_BASE_DELAY_SECONDS = 30
-_LATE_UPDATE_JITTER_SECONDS = 90
 
 
 def _stable_jitter_seconds(seed: str, spread_seconds: int) -> int:
@@ -66,6 +61,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
     # Register HTTP views once at the integration level (not per device)
     await async_register_http_views(hass)
+
+    # Services belong to the integration, not to its first device (#192)
+    async_setup_services(hass)
 
     return True
 
@@ -150,7 +148,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         @callback
         def _run_update(_now):
-            hass.async_create_task(coordinator.async_update())
+            coordinator.request_startup_publish()
 
         entry.async_on_unload(
             async_track_point_in_time(
@@ -174,212 +172,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             extraction_delay,
         )
 
-    # Wait for HA to be fully started before initializing cycle extraction and first update
-    # This ensures all entities (especially VTherm and scheduler entities) are available
     @callback
-    def _ha_started(_event):
+    def _ha_started(_hass: HomeAssistant) -> None:
         _LOGGER.info(
             "[%s] HA started, initializing cycle extraction and triggering updates", entry.entry_id
         )
         _schedule_startup_work()
 
-    # Schedule initial tasks asynchronously to avoid blocking config flow
-    # This prevents HA watchdog restart during device creation with scheduler
-    if hass.is_running:
-        _LOGGER.debug("[%s] HA already running, scheduling staggered startup work", entry.entry_id)
-        _schedule_startup_work()
-    else:
-        _LOGGER.debug("[%s] Waiting for HA start event before initialization", entry.entry_id)
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _ha_started)
-
-    # Small delayed update for late attribute population
-    @callback
-    def _delayed_update(_now):
-        _LOGGER.debug("[%s] Delayed update", entry.entry_id)
-        hass.async_create_task(coordinator.async_update())
-
-    late_update_delay = _LATE_UPDATE_BASE_DELAY_SECONDS + _stable_jitter_seconds(
-        f"{entry.entry_id}:late_update", _LATE_UPDATE_JITTER_SECONDS
-    )
-
-    entry.async_on_unload(
-        async_track_point_in_time(
-            hass,
-            _delayed_update,
-            dt_util.now() + dt_util.dt.timedelta(seconds=late_update_delay),
-        )
-    )
+    # Wait for HA to have started before the cycle extraction and first update, so that
+    # entities are available. If it already has, this runs straight away: the work is
+    # still scheduled, not awaited, to avoid blocking the config flow (HA watchdog restart).
+    # An is_running check would not do: it is also true while HA is starting, and the
+    # staggered update would then be dropped with no retry. The listener is cancelled if
+    # the entry unloads first, so a reloaded or removed device schedules no work for its
+    # old coordinator (#192).
+    entry.async_on_unload(async_at_started(hass, _ha_started))
 
     # Register options update listener
     entry.async_on_unload(entry.add_update_listener(async_update_options))
-
-    # Register services (once per integration, not per device)
-    def _resolve_coordinator(entity_id: str) -> HeatingApplication:
-        """Resolve an IHP coordinator from an entity ID.
-
-        Looks up the entity in the entity registry to find its config entry,
-        then returns the corresponding HeatingApplication coordinator.
-
-        Raises:
-            ServiceValidationError: If the entity or its coordinator cannot be found,
-                so callers receive immediate actionable feedback in the HA UI.
-        """
-        entity_reg = er.async_get(hass)
-        entity_entry = entity_reg.async_get(entity_id)
-        if not entity_entry:
-            raise ServiceValidationError(
-                f"Entity '{entity_id}' was not found in the Home Assistant entity registry. "
-                "Please provide a valid IHP sensor entity ID, for example: "
-                "sensor.intelligent_heating_pilot_<device_name>_anticipated_start_time."
-            )
-        coord: HeatingApplication | None = hass.data[DOMAIN].get(entity_entry.config_entry_id)
-        if not isinstance(coord, HeatingApplication):
-            raise ServiceValidationError(
-                f"No IHP device found for entity '{entity_id}' "
-                f"(config_entry_id={entity_entry.config_entry_id}). "
-                "Make sure the IHP integration is properly configured."
-            )
-        return coord
-
-    if not hass.services.has_service(DOMAIN, "reset_learning"):
-
-        async def handle_reset_learning(call: ServiceCall) -> None:
-            """Handle reset_learning service.
-
-            Resolves the target IHP device from the entity_id provided in the service
-            call, then delegates to that device's orchestrator.  This allows callers
-            to choose which device to reset when multiple IHP config entries exist.
-            """
-            _LOGGER.debug("Entering handle_reset_learning")
-
-            coord = _resolve_coordinator(call.data["entity_id"])
-            if coord._orchestrator is None:
-                raise ServiceValidationError("IHP is not initialized yet for this device.")
-            try:
-                await coord.async_reset_learning()
-            except LearningResetError as err:
-                raise HomeAssistantError(
-                    f"Learning reset incomplete for device {coord.get_device_id()}: {err}"
-                ) from err
-            _LOGGER.info(
-                "reset_learning: learning data cleared for device %s", coord.get_device_id()
-            )
-
-        reset_learning_schema = vol.Schema(
-            {
-                vol.Required("entity_id"): cv.entity_id,
-            }
-        )
-
-        hass.services.async_register(
-            DOMAIN,
-            "reset_learning",
-            handle_reset_learning,
-            schema=reset_learning_schema,
-        )
-
-    if not hass.services.has_service(DOMAIN, SERVICE_CALCULATE_ANTICIPATED_START_TIME):
-
-        async def handle_calculate_anticipated_start_time(call: ServiceCall):
-            """Handle calculate_anticipated_start_time service.
-
-            This service calculates the anticipated start time for a given IHP device
-            to reach a target temperature at a specified time.
-
-            Delegates to orchestrator's calculate_anticipation_only() - no business logic here.
-            """
-            _LOGGER.debug("Entering handle_calculate_anticipated_start_time")
-
-            # Extract service call parameters
-            entity_id = call.data["entity_id"]
-            target_time = call.data["target_time"]
-            target_temp = call.data.get("target_temp")
-
-            # Ensure target_time has timezone
-            if target_time.tzinfo is None:
-                target_time = dt_util.as_local(target_time)
-
-            # Resolve the coordinator for this device
-            device_coordinator = _resolve_coordinator(entity_id)
-
-            # Get target_temp from service call or VTherm
-            if target_temp is None:
-                # Try to get target temp from VTherm using public accessor
-                vtherm_entity_id = device_coordinator.get_vtherm_entity()
-                if vtherm_entity_id:
-                    vtherm_state = hass.states.get(vtherm_entity_id)
-                    if vtherm_state:
-                        target_temp = vtherm_state.attributes.get("temperature")
-            if target_temp is not None:
-                target_temp = float(target_temp)
-
-            if device_coordinator._orchestrator is None:
-                raise ServiceValidationError("IHP is not initialized yet for this device.")
-
-            # Delegate to orchestrator (pure routing - no business logic)
-            anticipation_data = await device_coordinator._orchestrator.calculate_anticipation_only(
-                target_time=target_time,
-                target_temp=target_temp,
-            )
-
-            # Extract fields from anticipation_data (which is already structured)
-            anticipated_start_time = anticipation_data.get("anticipated_start_time")
-            response_target_time = anticipation_data.get("next_schedule_time") or target_time
-            response_target_temp = anticipation_data.get("next_target_temperature")
-            if response_target_temp is None:
-                response_target_temp = target_temp
-            if anticipated_start_time is None:
-                _LOGGER.warning("Could not calculate anticipated start time (insufficient data)")
-                # Return structure with None values
-                return {
-                    "anticipated_start_time": None,
-                    "target_time": response_target_time.isoformat(),
-                    "target_temp": response_target_temp,
-                    "current_temp": anticipation_data.get("current_temp"),
-                    "estimated_duration_minutes": None,
-                    "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
-                    "confidence_level": None,
-                }
-
-            _LOGGER.info(
-                "Service calculate_anticipated_start_time: "
-                "anticipated_start=%s, target_time=%s, target_temp=%.1f°C, "
-                "current_temp=%.1f°C, LHS=%.2f°C/h, confidence=%.2f",
-                anticipated_start_time.isoformat(),
-                response_target_time.isoformat(),
-                response_target_temp or 0.0,
-                anticipation_data.get("current_temp") or 0.0,
-                anticipation_data.get("learned_heating_slope") or 0.0,
-                anticipation_data.get("confidence_level") or 0.0,
-            )
-
-            # Return the result as service response data
-            return {
-                "anticipated_start_time": anticipated_start_time.isoformat(),
-                "target_time": response_target_time.isoformat(),
-                "target_temp": response_target_temp,
-                "current_temp": anticipation_data.get("current_temp"),
-                "estimated_duration_minutes": anticipation_data.get("estimated_duration_minutes"),
-                "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
-                "confidence_level": anticipation_data.get("confidence_level"),
-            }
-
-        # Define service schema
-        calculate_anticipated_start_time_schema = vol.Schema(
-            {
-                vol.Required("entity_id"): cv.entity_id,
-                vol.Required("target_time"): cv.datetime,
-                vol.Optional("target_temp"): vol.Coerce(float),
-            }
-        )
-
-        hass.services.async_register(
-            DOMAIN,
-            SERVICE_CALCULATE_ANTICIPATED_START_TIME,
-            handle_calculate_anticipated_start_time,
-            schema=calculate_anticipated_start_time_schema,
-            supports_response=SupportsResponse.ONLY,
-        )
 
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -388,15 +198,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    coordinator = hass.data[DOMAIN].get(entry.entry_id)
+    """Unload a config entry.
+
+    The platforms are unloaded first: if that fails, the entry stays loaded and keeps a
+    working coordinator instead of sensors bound to a cleaned-up one (#192).
+    """
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        return False
+
+    coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)
     if coordinator:
         await coordinator.async_cleanup()
 
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
-
-    return bool(unload_ok)
+    return True
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:

@@ -168,15 +168,29 @@ def schedule_anticipation_action_use_case(
 
         def __init__(self):
             self.scheduled_timers: list[tuple[datetime, object]] = []
+            self._cancelled: set[int] = set()
 
         def schedule_timer(self, target_time: datetime, callback: object) -> object:
             """Schedule a timer and return cancel function."""
+            index = len(self.scheduled_timers)
             self.scheduled_timers.append((target_time, callback))
 
             def cancel() -> None:
-                pass
+                self._cancelled.add(index)
 
             return cancel
+
+        def mark_fired(self, timer: tuple[datetime, object]) -> None:
+            """A fired point-in-time listener is spent, like a cancelled one."""
+            self._cancelled.add(self.scheduled_timers.index(timer))
+
+        def active_timers(self) -> list[tuple[datetime, object]]:
+            """Timers scheduled and not cancelled since."""
+            return [
+                timer
+                for index, timer in enumerate(self.scheduled_timers)
+                if index not in self._cancelled
+            ]
 
     timer_scheduler = FakeTimerScheduler()
     control_preheating = ControlPreheatingUseCase(scheduler_commander)
