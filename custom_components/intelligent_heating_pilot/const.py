@@ -68,6 +68,19 @@ DEFAULT_MAX_CYCLE_DURATION_MINUTES = 300  # Maximum 5 hours
 CONF_SAFETY_SHUTOFF_GRACE_MINUTES = "safety_shutoff_grace_minutes"
 DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES = 10  # 10 minutes tolerance for safety/frost interruptions
 
+# Native schedule (schedule.*) options. A native schedule's blocks carry free "data" with no
+# convention on the keys, so the user says which keys hold a preset or a temperature, and
+# whether IHP may apply the next block itself. Off by default: native schedules stay
+# compute-only unless the user opts in.
+CONF_NATIVE_SCHEDULE_DRIVE = "native_schedule_drive"
+CONF_NATIVE_SCHEDULE_PRESET_KEY = "native_schedule_preset_key"
+CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY = "native_schedule_temperature_key"
+CONF_NATIVE_SCHEDULE_FALLBACK_PRESET = "native_schedule_fallback_preset"
+DEFAULT_NATIVE_SCHEDULE_DRIVE = False
+DEFAULT_NATIVE_SCHEDULE_PRESET_KEY = "preset"
+DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY = "temperature"
+DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET = "comfort"
+
 # Service names
 SERVICE_CALCULATE_ANTICIPATED_START_TIME = "calculate_anticipated_start_time"
 SERVICE_SCHEDULER_RUN_ACTION = "run_action"

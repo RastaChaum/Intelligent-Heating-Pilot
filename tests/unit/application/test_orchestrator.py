@@ -20,6 +20,7 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
     ScheduleAnticipationActionUseCase,
     UpdateCacheDataUseCase,
 )
+from custom_components.intelligent_heating_pilot.domain.value_objects import CancelReason
 
 
 class TestHeatingOrchestrator:
@@ -50,6 +51,7 @@ class TestHeatingOrchestrator:
         uc = Mock(spec=ControlPreheatingUseCase)
         uc.start_preheating = AsyncMock()
         uc.cancel_preheating = AsyncMock()
+        uc.recover_preheating = AsyncMock()
         uc.is_preheating_active = Mock(return_value=False)
         return uc
 
@@ -134,7 +136,9 @@ class TestHeatingOrchestrator:
         await orchestrator.disable_preheating(scheduler_entity_id="schedule.heating")
 
         mock_schedule_anticipation_action.cancel_action.assert_called_once()
-        mock_control_preheating.cancel_preheating.assert_called_once_with("schedule.heating")
+        mock_control_preheating.cancel_preheating.assert_called_once_with(
+            "schedule.heating", CancelReason.IHP_DISABLED
+        )
 
     @pytest.mark.asyncio
     async def test_cancel_pending_anticipation_cancels_timer_only(
@@ -169,7 +173,9 @@ class TestHeatingOrchestrator:
 
         mock_schedule_anticipation_action.cancel_action.assert_called_once()
         # With callee-side validation, cancel_preheating is always called
-        mock_control_preheating.cancel_preheating.assert_called_once_with("schedule.heating")
+        mock_control_preheating.cancel_preheating.assert_called_once_with(
+            "schedule.heating", CancelReason.IHP_DISABLED
+        )
 
     @pytest.mark.asyncio
     async def test_reset_all_learning_data_delegates(
@@ -217,6 +223,7 @@ class TestHeatingOrchestratorSchedulerFallback:
         mock_schedule_anticipation_action: Mock,
     ) -> HeatingOrchestrator:
         control_preheating = Mock(spec=ControlPreheatingUseCase)
+        control_preheating.recover_preheating = AsyncMock()
         update_cache = Mock(spec=UpdateCacheDataUseCase)
         return HeatingOrchestrator(
             calculate_anticipation=mock_calculate_anticipation,
@@ -353,3 +360,53 @@ class TestHeatingOrchestratorSchedulerFallback:
         mock_calculate_anticipation.calculate_anticipation_datas.assert_called_once_with(
             exclude_entity_ids=frozenset({"switch.non_vacation"})
         )
+
+
+class TestPreheatRecovery:
+    """A preheat persisted before a restart is picked up once, at the first recalculation."""
+
+    @staticmethod
+    def _orchestrator(data: dict):
+        calculate = Mock(spec=CalculateAnticipationUseCase)
+        calculate.calculate_anticipation_datas = AsyncMock(return_value=data)
+        control = Mock(spec=ControlPreheatingUseCase)
+        control.recover_preheating = AsyncMock()
+        action = Mock(spec=ScheduleAnticipationActionUseCase)
+        action.handle_anticipation_scheduling = AsyncMock(return_value=None)
+        orchestrator = HeatingOrchestrator(
+            calculate_anticipation=calculate,
+            control_preheating=control,
+            schedule_anticipation_action=action,
+            update_cache=Mock(spec=UpdateCacheDataUseCase),
+        )
+        return orchestrator, control
+
+    @pytest.mark.asyncio
+    async def test_the_next_slot_is_handed_to_the_recovery_once(self) -> None:
+        slot_time = datetime(2025, 2, 10, 7, 0, tzinfo=UTC)
+        orchestrator, control = self._orchestrator(
+            {
+                "next_schedule_time": slot_time,
+                "next_target_temperature": 21.0,
+                "timeslot_id": "slot",
+                "scheduler_entity": "schedule.heating",
+                "next_slot_action": None,
+            }
+        )
+
+        await orchestrator.calculate_and_schedule_anticipation()
+        await orchestrator.calculate_and_schedule_anticipation()
+
+        control.recover_preheating.assert_awaited_once()
+        timeslot = control.recover_preheating.await_args.args[0]
+        assert (timeslot.target_time, timeslot.timeslot_id) == (slot_time, "slot")
+
+    @pytest.mark.asyncio
+    async def test_without_a_next_slot_the_recovery_gets_none(self) -> None:
+        orchestrator, control = self._orchestrator(
+            {"next_schedule_time": None, "timeslot_id": None}
+        )
+
+        await orchestrator.calculate_and_schedule_anticipation()
+
+        control.recover_preheating.assert_awaited_once_with(None)

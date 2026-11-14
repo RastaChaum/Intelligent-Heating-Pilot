@@ -29,6 +29,7 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ActuationResult,
+    CancelReason,
     EnvironmentState,
     PredictionResult,
     ScheduledTimeslot,
@@ -75,6 +76,7 @@ def mock_preheat_actuator():
     mock = Mock()
     mock.start = AsyncMock(return_value=ActuationResult.ATTEMPTED)
     mock.cancel = AsyncMock()
+    mock.recover = AsyncMock(return_value=False)
     return mock
 
 
@@ -710,8 +712,9 @@ def preheating_continues(mock_preheat_actuator):
 
 @then("no cancel action should be triggered")
 def no_cancel_action(mock_preheat_actuator):
-    """THEN: No cancel action was issued at all."""
-    mock_preheat_actuator.cancel.assert_not_called()
+    """THEN: No revert was requested (reaching the slot is only a signal, never a revert)."""
+    reasons = [call.args[1] for call in mock_preheat_actuator.cancel.call_args_list]
+    assert all(reason is CancelReason.SLOT_REACHED for reason in reasons)
 
 
 @then("preheating should be marked as complete")

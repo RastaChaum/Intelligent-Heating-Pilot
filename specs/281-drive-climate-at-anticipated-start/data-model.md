@@ -60,12 +60,14 @@ on restore, on leave, on discard. Never replaced while the slot is the same.
 stopped it, such as a climate that is off: retried silently, DEBUG only), `UNSUPPORTED`
 (nothing sent, by design).
 
-## PreheatStartOutcome (enum, application level)
+## Start result handling (application level)
 
-`STARTED`, `UNSUPPORTED`, `BLOCKED`, `RETRY`. Mapping from `ActuationResult`:
-`ATTEMPTED` is verified by the use case as today and becomes `STARTED` or `BLOCKED`;
-`APPLIED` becomes `STARTED`; `NOT_APPLIED` and `SKIPPED` become `RETRY` (only `NOT_APPLIED` logs at INFO); `UNSUPPORTED` becomes `UNSUPPORTED`
-(treated as today's compute-only success, so existing sensors and completion logic are unchanged).
+No extra enum: `ControlPreheatingUseCase.start_preheating` maps `ActuationResult` as follows.
+`ATTEMPTED` is verified as today (confirmed: active; mismatch: returns `False`, the HACS fallback);
+`APPLIED` and `UNSUPPORTED` mark the preheat active (`UNSUPPORTED` is today's compute-only success,
+so existing sensors and completion logic are unchanged); `NOT_APPLIED` and `SKIPPED` return `True`
+without marking it active, so the next recalculation tries again (only `NOT_APPLIED` logs at INFO,
+once per slot).
 
 ## RestoreDecision (enum)
 

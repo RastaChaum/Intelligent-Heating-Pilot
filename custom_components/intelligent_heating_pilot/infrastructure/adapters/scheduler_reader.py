@@ -8,14 +8,15 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from ...domain.interfaces.scheduler_reader_interface import ISchedulerReader
-from ...domain.value_objects import ScheduledTimeslot
+from ...domain.value_objects import ScheduledTimeslot, SlotAction
 from ..vtherm_compat import get_vtherm_attribute
+from .native_schedule_reader import HANativeScheduleReader, NativeScheduleSettings
 from .utils import get_entity_name
 
 if TYPE_CHECKING:
@@ -26,11 +27,6 @@ _LOGGER = logging.getLogger(__name__)
 # Default temperature used for native HA schedule entities that don't store temperature.
 # The actual temperature is resolved from the VTherm comfort preset when available.
 _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE: float = 20.0
-
-# VTherm preset applied by an ON block of a native HA schedule. While the schedule
-# is off the VTherm holds its off-period setpoint (eco, frost protection...), so the
-# current target temperature cannot describe the upcoming slot.
-_NATIVE_SCHEDULE_PRESET: str = "comfort"
 
 
 class HASchedulerReader(ISchedulerReader):
@@ -49,6 +45,7 @@ class HASchedulerReader(ISchedulerReader):
         hass: HomeAssistant,
         scheduler_entity_ids: list[str],
         vtherm_entity_id: str | None = None,
+        native_settings: NativeScheduleSettings | None = None,
     ) -> None:
         """Initialize the scheduler reader adapter.
 
@@ -58,10 +55,14 @@ class HASchedulerReader(ISchedulerReader):
             vtherm_entity_id: Optional VTherm climate entity ID used to resolve
                 preset temperatures (e.g., when actions use preset modes, or the
                 comfort preset for native HA schedule entities).
+            native_settings: How native ``schedule.*`` blocks are read and used. Defaults to
+                compute-only with the comfort preset standing in for a block's temperature.
         """
         self._hass = hass
         self._scheduler_entity_ids = scheduler_entity_ids
         self._vtherm_entity_id = vtherm_entity_id
+        self._native_settings = native_settings or NativeScheduleSettings()
+        self._native_reader = HANativeScheduleReader(hass, self._native_settings)
 
     async def get_next_timeslot(
         self, exclude_entity_ids: frozenset[str] = frozenset()
@@ -92,6 +93,7 @@ class HASchedulerReader(ISchedulerReader):
         chosen_time: datetime | None = None
         chosen_temp: float | None = None
         chosen_entity: str | None = None
+        chosen_action: SlotAction | None = None
 
         for entity_id in self._scheduler_entity_ids:
             if entity_id in exclude_entity_ids:
@@ -111,7 +113,9 @@ class HASchedulerReader(ISchedulerReader):
                 continue
 
             try:
-                next_time, target_temp = self._read_scheduler_timeslot(entity_id, state)
+                next_time, target_temp, action = await self._read_scheduler_timeslot(
+                    entity_id, state
+                )
             except Exception:  # noqa: BLE001 - one malformed scheduler must not block the others
                 _LOGGER.warning(
                     "[%s] Could not read the next timeslot of this scheduler, skipping it",
@@ -126,6 +130,7 @@ class HASchedulerReader(ISchedulerReader):
                     chosen_time = next_time
                     chosen_temp = target_temp
                     chosen_entity = entity_id
+                    chosen_action = action
             else:
                 _LOGGER.debug(
                     "Skipped scheduler %s: time=%s temp=%s", entity_id, next_time, target_temp
@@ -144,6 +149,7 @@ class HASchedulerReader(ISchedulerReader):
                 target_temp=chosen_temp,
                 timeslot_id=f"{chosen_entity}_{chosen_time.isoformat()}",
                 scheduler_entity=chosen_entity,
+                action=chosen_action,
             )
 
         _LOGGER.debug(
@@ -165,9 +171,9 @@ class HASchedulerReader(ISchedulerReader):
         others = frozenset(self._scheduler_entity_ids) - {scheduler_entity_id}
         return await self.get_next_timeslot(exclude_entity_ids=others)
 
-    def _read_scheduler_timeslot(
+    async def _read_scheduler_timeslot(
         self, entity_id: str, state: State
-    ) -> tuple[datetime | None, float | None]:
+    ) -> tuple[datetime | None, float | None, SlotAction | None]:
         """Read the next timeslot of one scheduler entity.
 
         Kept separate from get_next_timeslot so that an unexpected attribute
@@ -179,20 +185,57 @@ class HASchedulerReader(ISchedulerReader):
             state: Home Assistant state of that scheduler entity
 
         Returns:
-            Tuple of (next_time, target_temp), both None for a disabled scheduler
+            Tuple of (next_time, target_temp, action), all None for a disabled scheduler or one
+            with no next slot. The action is None for every scheduler but a native one that IHP
+            is allowed to drive.
         """
-        # Native HA schedule entities (schedule.*) use next_event and state-aware logic
+        # Native HA schedule entities (schedule.*) are read through their blocks
         if entity_id.startswith("schedule."):
-            return self._extract_native_schedule_data(state)
+            return await self._read_native_timeslot(entity_id)
 
         # Skip disabled HACS schedulers (state is "off")
         if state.state == "off":
             device_name = get_entity_name(self._hass, entity_id)
             _LOGGER.debug("[%s] Scheduler is disabled (state: off), skipping", device_name)
-            return None, None
+            return None, None, None
 
         # Extract next trigger time and target temperature (HACS format)
-        return self._extract_timeslot_data(state)
+        next_time, target_temp = self._extract_timeslot_data(state)
+        return next_time, target_temp, None
+
+    async def _read_native_timeslot(
+        self, entity_id: str
+    ) -> tuple[datetime | None, float | None, SlotAction | None]:
+        """Read the next block of a native schedule and the temperature to anticipate.
+
+        A block's own temperature wins. Otherwise the temperature of its preset is used (the
+        block's, or the fallback preset), and finally a default when the thermostat does not
+        publish it. The current setpoint is never used: outside a block it is the off-period
+        setpoint, which would disable preheating (#188).
+        """
+        slot = await self._native_reader.next_slot(entity_id)
+        if slot is None:
+            _LOGGER.debug(
+                "[%s] Native schedule has no next block", get_entity_name(self._hass, entity_id)
+            )
+            return None, None, None
+        return slot.start, self._native_target_temperature(slot.action), slot.action
+
+    def _native_target_temperature(self, action: SlotAction | None) -> float:
+        if action is not None and action.temperature is not None:
+            return action.temperature
+        preset = action.preset if action is not None and action.preset else None
+        temperature = self._resolve_preset_temperature(
+            preset or self._native_settings.fallback_preset
+        )
+        if temperature is not None:
+            return temperature
+        _LOGGER.debug(
+            "Could not resolve the VTherm preset (entity=%s), using %.1f°C default",
+            self._vtherm_entity_id,
+            _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE,
+        )
+        return _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE
 
     def _extract_timeslot_data(self, state: State) -> tuple[datetime | None, float | None]:
         """Extract next trigger time and target temperature from scheduler state.
@@ -369,98 +412,6 @@ class HASchedulerReader(ISchedulerReader):
             return None
 
         return None
-
-    def _extract_native_schedule_data(self, state: State) -> tuple[datetime | None, float | None]:
-        """Extract next timeslot from a native HA schedule entity.
-
-        Native HA schedule entities (schedule.*) use the next_event attribute,
-        which always points to the NEXT state change:
-        - State = "off" → next_event = next ON time (use for preheating anticipation)
-        - State = "on"  → next_event = next OFF time (skip - already in active period)
-
-        Args:
-            state: Native HA schedule entity state
-
-        Returns:
-            Tuple of (next_time, target_temp), either can be None
-        """
-        # Use the already-available state object to derive a friendly device name
-        device_name = cast(str, state.attributes.get("friendly_name") or state.entity_id)
-
-        if state.state != "off":
-            # Schedule is ON, next_event points to next OFF time - not useful for preheating
-            _LOGGER.debug(
-                "[%s] Native schedule is ON (next_event = next OFF time), skipping for preheating",
-                device_name,
-            )
-            return None, None
-
-        # Schedule is OFF, next_event is the next ON time - use for preheating
-        attrs = state.attributes
-        next_time = self._parse_datetime_value(attrs.get("next_event"))
-        if not next_time:
-            _LOGGER.debug("[%s] Native schedule has no valid next_event attribute", device_name)
-            return None, None
-
-        target_temp = self._get_native_schedule_temperature()
-        _LOGGER.debug(
-            "[%s] Native schedule next ON event at %s (%.1f°C)",
-            device_name,
-            next_time.strftime("%H:%M"),
-            target_temp,
-        )
-        return next_time, target_temp
-
-    def _parse_datetime_value(self, value: object) -> datetime | None:
-        """Parse a datetime value that can be either a datetime object or an ISO string.
-
-        Native HA schedule entities can return next_event as either a datetime
-        object or an ISO format string, so both formats must be handled.
-
-        Args:
-            value: Value to parse (datetime object or string)
-
-        Returns:
-            Parsed datetime with timezone, or None if parsing fails
-        """
-        if value is None:
-            return None
-
-        if isinstance(value, datetime):
-            # Already a datetime - ensure timezone is set
-            if value.tzinfo is None:
-                localized: datetime = dt_util.as_local(value)
-                return localized
-            return value
-
-        # Try string parsing using existing method
-        return self._parse_next_trigger(str(value))
-
-    def _get_native_schedule_temperature(self) -> float:
-        """Get target temperature for native HA schedule entities.
-
-        Native HA schedules only expose when the next ON block starts, not the
-        temperature it applies. The ON block is mapped to the VTherm comfort
-        preset. The current VTherm target is deliberately not used: while the
-        schedule is off it is the off-period setpoint, which would disable
-        preheating (see issue #188). Falls back to
-        _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE when the comfort preset cannot be
-        resolved.
-
-        Returns:
-            Comfort preset temperature in Celsius, or the default value
-        """
-        temp = self._resolve_preset_temperature(_NATIVE_SCHEDULE_PRESET)
-        if temp is not None:
-            _LOGGER.debug("Native schedule temperature resolved from comfort preset: %.1f°C", temp)
-            return temp
-
-        _LOGGER.debug(
-            "Could not resolve the VTherm comfort preset (entity=%s), using %.1f°C default",
-            self._vtherm_entity_id,
-            _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE,
-        )
-        return _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE
 
     async def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
         """Check if a specific scheduler is enabled.

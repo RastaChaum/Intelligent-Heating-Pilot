@@ -20,6 +20,10 @@ from homeassistant.util import dt as dt_util
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     ScheduleAnticipationActionUseCase,
 )
+from custom_components.intelligent_heating_pilot.domain.value_objects import (
+    CancelReason,
+    ScheduledTimeslot,
+)
 
 
 class TestScheduleAnticipationActionHandleAnticipation:
@@ -501,10 +505,20 @@ class TestCancelPreheatingForOtherSlotStability:
         active preheat for a different scheduler (the #64 flap finding)."""
         schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
         scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+        preheated_slot = test_now + timedelta(minutes=30)
+        # The active scheduler still has the preheated slot as ITS next one
+        scheduler_reader.get_next_timeslot_of = AsyncMock(
+            return_value=ScheduledTimeslot(
+                target_time=preheated_slot,
+                target_temp=20.0,
+                timeslot_id="switch.vacation_slot",
+                scheduler_entity="switch.vacation",
+            )
+        )
 
         with patch.object(dt_util, "now", return_value=test_now):
             await control_preheating_use_case.start_preheating(
-                target_time=test_now + timedelta(minutes=30),
+                target_time=preheated_slot,
                 target_temp=20.0,
                 scheduler_entity_id="switch.vacation",
             )
@@ -615,7 +629,9 @@ class TestScheduleAnticipationActionStateTransitions:
             )
 
         assert not control_preheating_use_case.is_preheating_active()
-        control_preheating_use_case._preheat_actuator.cancel.assert_not_awaited()
+        # Completion tells the actuator the slot was reached; it must never ask for a revert
+        cancel = control_preheating_use_case._preheat_actuator.cancel
+        assert [call.args[1] for call in cancel.await_args_list] == [CancelReason.SLOT_REACHED]
         timer_scheduler = schedule_anticipation_action_use_case._timer_scheduler
         assert [t for t, _ in timer_scheduler.scheduled_timers] == [next_start]  # type: ignore
 
@@ -951,7 +967,7 @@ class TestScheduleAnticipationActionCrossMidnight:
         await self._fire_active_timer(use_case)
 
         use_case._control_preheating.start_preheating.assert_awaited_once_with(
-            _MONDAY_SLOT, 20.0, "switch.weekdays"
+            _MONDAY_SLOT, 20.0, "switch.weekdays", action=None
         )
         use_case._on_scheduler_blocked.assert_not_awaited()  # type: ignore[union-attr]
         assert use_case._timer_scheduler.active_timers() == []  # type: ignore

@@ -81,6 +81,7 @@ def mock_adapters_ihp_switch():
     preheat_actuator = Mock()
     preheat_actuator.start = AsyncMock(return_value=ActuationResult.ATTEMPTED)
     preheat_actuator.cancel = AsyncMock()
+    preheat_actuator.recover = AsyncMock(return_value=False)
 
     climate_commander = Mock()
     climate_commander.turn_on_heat = AsyncMock()

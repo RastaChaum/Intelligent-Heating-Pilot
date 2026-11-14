@@ -21,12 +21,16 @@
           "max_cycle_duration_minutes": "Durée maximale de cycle (minutes)",
           "task_range_days": "Période d'extraction Recorder (jours)",
           "anticipation_recalc_tolerance_minutes": "Delta temporel de réversion du préchauffage (minutes)",
-          "safety_shutoff_grace_minutes": "Délai de grâce après coupure de sécurité (minutes)"
+          "safety_shutoff_grace_minutes": "Délai de grâce après coupure de sécurité (minutes)",
+          "native_schedule_drive": "Piloter les plannings natifs",
+          "native_schedule_preset_key": "Clé du preset (planning natif)",
+          "native_schedule_temperature_key": "Clé de la température (planning natif)",
+          "native_schedule_fallback_preset": "Preset par défaut (planning natif)"
         },
         "data_description": {
           "name": "Un nom pour cet appareil IHP, par exemple la pièce qu'il chauffe.",
           "vtherm_entity_id": "Le Versatile Thermostat dont IHP apprend et anticipe la chauffe.",
-          "scheduler_entities": "Les switchs HACS Scheduler qui pilotent ce VTherm. Un planning natif (schedule) obtient seulement une heure de démarrage anticipée : IHP ne démarre pas la chauffe pour lui.",
+          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé plus bas.",
           "humidity_in_entity_id": "Capteur d'humidité de la pièce pour affiner les calculs.",
           "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure. Surveillé, pas encore utilisé dans la prédiction.",
           "temperature_out_entity_id": "Capteur ou entité météo de température extérieure, enregistrée avec chaque cycle de chauffe.",
@@ -40,7 +44,11 @@
           "max_cycle_duration_minutes": "Durée du plus long cycle de chauffe retenu pour l'apprentissage. Filtre les cycles anormalement longs (dysfonctionnements). Par défaut : 300 min.",
           "task_range_days": "Nombre de jours par tâche d'extraction du Recorder. Augmentez-le sur une machine puissante pour réduire le nombre de tâches, diminuez-le sur une machine lente pour alléger chaque requête. Par défaut : 7 jours.",
           "anticipation_recalc_tolerance_minutes": "Report minimal de l'heure de démarrage anticipée qui annule un préchauffage actif et le replanifie. Par défaut : 15 min.",
-          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel, délestage de Versatile Thermostat, fenêtre ouverte) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min."
+          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel, délestage de Versatile Thermostat, fenêtre ouverte) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min.",
+          "native_schedule_drive": "IHP applique lui-même le prochain bloc d'un planning natif au thermostat, à l'heure de démarrage anticipée. Désactivé : IHP calcule seulement l'anticipation des plannings natifs. Les données d'un bloc peuvent contenir un preset ou une température.",
+          "native_schedule_preset_key": "Nom de l'entrée des données du bloc qui contient un preset. Par défaut : preset.",
+          "native_schedule_temperature_key": "Nom de l'entrée des données du bloc qui contient une température cible. Par défaut : temperature.",
+          "native_schedule_fallback_preset": "Preset appliqué quand un bloc n'a aucune de ces entrées. Il remplace aussi la température du bloc quand IHP calcule l'anticipation. Par défaut : comfort."
         }
       }
     },
@@ -72,11 +80,15 @@
           "max_cycle_duration_minutes": "Durée maximale de cycle (minutes)",
           "task_range_days": "Période d'extraction Recorder (jours)",
           "anticipation_recalc_tolerance_minutes": "Delta temporel de réversion du préchauffage (minutes)",
-          "safety_shutoff_grace_minutes": "Délai de grâce après coupure de sécurité (minutes)"
+          "safety_shutoff_grace_minutes": "Délai de grâce après coupure de sécurité (minutes)",
+          "native_schedule_drive": "Piloter les plannings natifs",
+          "native_schedule_preset_key": "Clé du preset (planning natif)",
+          "native_schedule_temperature_key": "Clé de la température (planning natif)",
+          "native_schedule_fallback_preset": "Preset par défaut (planning natif)"
         },
         "data_description": {
           "vtherm_entity_id": "Le Versatile Thermostat dont IHP apprend et anticipe la chauffe.",
-          "scheduler_entities": "Les switchs HACS Scheduler qui pilotent ce VTherm. Un planning natif (schedule) obtient seulement une heure de démarrage anticipée : IHP ne démarre pas la chauffe pour lui.",
+          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé plus bas.",
           "humidity_in_entity_id": "Capteur d'humidité de la pièce pour affiner les calculs.",
           "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure. Surveillé, pas encore utilisé dans la prédiction.",
           "temperature_out_entity_id": "Capteur ou entité météo de température extérieure, enregistrée avec chaque cycle de chauffe.",
@@ -90,7 +102,11 @@
           "max_cycle_duration_minutes": "Durée du plus long cycle de chauffe retenu pour l'apprentissage. Filtre les cycles anormalement longs (dysfonctionnements). Par défaut : 300 min.",
           "task_range_days": "Nombre de jours par tâche d'extraction du Recorder. Augmentez-le sur une machine puissante pour réduire le nombre de tâches, diminuez-le sur une machine lente pour alléger chaque requête. Par défaut : 7 jours.",
           "anticipation_recalc_tolerance_minutes": "Report minimal de l'heure de démarrage anticipée qui annule un préchauffage actif et le replanifie. Par défaut : 15 min.",
-          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel, délestage de Versatile Thermostat, fenêtre ouverte) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min."
+          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel, délestage de Versatile Thermostat, fenêtre ouverte) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min.",
+          "native_schedule_drive": "IHP applique lui-même le prochain bloc d'un planning natif au thermostat, à l'heure de démarrage anticipée. Désactivé : IHP calcule seulement l'anticipation des plannings natifs. Les données d'un bloc peuvent contenir un preset ou une température.",
+          "native_schedule_preset_key": "Nom de l'entrée des données du bloc qui contient un preset. Par défaut : preset.",
+          "native_schedule_temperature_key": "Nom de l'entrée des données du bloc qui contient une température cible. Par défaut : temperature.",
+          "native_schedule_fallback_preset": "Preset appliqué quand un bloc n'a aucune de ces entrées. Il remplace aussi la température du bloc quand IHP calcule l'anticipation. Par défaut : comfort."
         }
       }
     },
