@@ -21,12 +21,16 @@
           "max_cycle_duration_minutes": "Maximum Cycle Duration (minutes)",
           "task_range_days": "Recorder Extraction Period (days)",
           "anticipation_recalc_tolerance_minutes": "Preheating Revert Time Delta (minutes)",
-          "safety_shutoff_grace_minutes": "Safety Shutoff Grace Period (minutes)"
+          "safety_shutoff_grace_minutes": "Safety Shutoff Grace Period (minutes)",
+          "native_schedule_drive": "Drive Native Schedules",
+          "native_schedule_preset_key": "Native Schedule Preset Key",
+          "native_schedule_temperature_key": "Native Schedule Temperature Key",
+          "native_schedule_fallback_preset": "Native Schedule Fallback Preset"
         },
         "data_description": {
           "name": "A friendly name for this IHP device, e.g. the room it heats.",
           "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
-          "scheduler_entities": "HACS Scheduler switches that control this VTherm. A native schedule helper only gets an anticipated start time: IHP does not start the heating for it.",
+          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this VTherm. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on below.",
           "humidity_in_entity_id": "Room humidity sensor to refine calculations.",
           "humidity_out_entity_id": "Outdoor humidity sensor or weather entity. Monitored, not used in the prediction yet.",
           "temperature_out_entity_id": "Outdoor temperature sensor or weather entity, recorded with each heating cycle.",
@@ -40,7 +44,11 @@
           "max_cycle_duration_minutes": "Longest heating cycle kept for learning. Filters out abnormally long cycles (malfunctions). Default: 300 min.",
           "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7 days.",
           "anticipation_recalc_tolerance_minutes": "Minimum postponement of the anticipated start that cancels an active preheating and reschedules it. Default: 15 min.",
-          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode, Versatile Thermostat load shedding, window opened). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min."
+          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode, Versatile Thermostat load shedding, window opened). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min.",
+          "native_schedule_drive": "Let IHP apply the next block of a native schedule to the thermostat at the anticipated start. Off: IHP only computes the anticipation for native schedules. A block's data can hold a preset or a temperature.",
+          "native_schedule_preset_key": "Name of the block data entry that holds a preset. Default: preset.",
+          "native_schedule_temperature_key": "Name of the block data entry that holds a target temperature. Default: temperature.",
+          "native_schedule_fallback_preset": "Preset applied when a block has neither entry. It also stands in for the block's temperature when IHP computes the anticipation. Default: comfort."
         }
       }
     },
@@ -72,11 +80,15 @@
           "max_cycle_duration_minutes": "Maximum Cycle Duration (minutes)",
           "task_range_days": "Recorder Extraction Period (days)",
           "anticipation_recalc_tolerance_minutes": "Preheating Revert Time Delta (minutes)",
-          "safety_shutoff_grace_minutes": "Safety Shutoff Grace Period (minutes)"
+          "safety_shutoff_grace_minutes": "Safety Shutoff Grace Period (minutes)",
+          "native_schedule_drive": "Drive Native Schedules",
+          "native_schedule_preset_key": "Native Schedule Preset Key",
+          "native_schedule_temperature_key": "Native Schedule Temperature Key",
+          "native_schedule_fallback_preset": "Native Schedule Fallback Preset"
         },
         "data_description": {
           "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
-          "scheduler_entities": "HACS Scheduler switches that control this VTherm. A native schedule helper only gets an anticipated start time: IHP does not start the heating for it.",
+          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this VTherm. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on below.",
           "humidity_in_entity_id": "Room humidity sensor to refine calculations.",
           "humidity_out_entity_id": "Outdoor humidity sensor or weather entity. Monitored, not used in the prediction yet.",
           "temperature_out_entity_id": "Outdoor temperature sensor or weather entity, recorded with each heating cycle.",
@@ -90,7 +102,11 @@
           "max_cycle_duration_minutes": "Longest heating cycle kept for learning. Filters out abnormally long cycles (malfunctions). Default: 300 min.",
           "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7 days.",
           "anticipation_recalc_tolerance_minutes": "Minimum postponement of the anticipated start that cancels an active preheating and reschedules it. Default: 15 min.",
-          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode, Versatile Thermostat load shedding, window opened). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min."
+          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode, Versatile Thermostat load shedding, window opened). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min.",
+          "native_schedule_drive": "Let IHP apply the next block of a native schedule to the thermostat at the anticipated start. Off: IHP only computes the anticipation for native schedules. A block's data can hold a preset or a temperature.",
+          "native_schedule_preset_key": "Name of the block data entry that holds a preset. Default: preset.",
+          "native_schedule_temperature_key": "Name of the block data entry that holds a target temperature. Default: temperature.",
+          "native_schedule_fallback_preset": "Preset applied when a block has neither entry. It also stands in for the block's temperature when IHP computes the anticipation. Default: comfort."
         }
       }
     },

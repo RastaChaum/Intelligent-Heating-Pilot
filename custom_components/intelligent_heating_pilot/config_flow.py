@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import voluptuous as vol
@@ -23,6 +24,10 @@ from .const import (
     CONF_MAX_CYCLE_DURATION_MINUTES,
     CONF_MIN_CYCLE_DURATION_MINUTES,
     CONF_NAME,
+    CONF_NATIVE_SCHEDULE_DRIVE,
+    CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
+    CONF_NATIVE_SCHEDULE_PRESET_KEY,
+    CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
     CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
     CONF_SCHEDULER_ENTITIES,
     CONF_TASK_RANGE_DAYS,
@@ -37,6 +42,10 @@ from .const import (
     DEFAULT_MAX_CYCLE_DURATION_MINUTES,
     DEFAULT_MIN_CYCLE_DURATION_MINUTES,
     DEFAULT_NAME,
+    DEFAULT_NATIVE_SCHEDULE_DRIVE,
+    DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET,
+    DEFAULT_NATIVE_SCHEDULE_PRESET_KEY,
+    DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY,
     DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES,
     DEFAULT_TASK_RANGE_DAYS,
     DEFAULT_TEMP_DELTA_THRESHOLD,
@@ -94,6 +103,39 @@ def _is_scheduler(state: State) -> bool:
         or state.attributes.get("next_trigger")
         or state.attributes.get("next_event")
     )
+
+
+def _native_schedule_fields(default_of: Callable[[str, Any], Any]) -> dict[Any, Any]:
+    """Build the native schedule fields shared by the setup and options forms.
+
+    Args:
+        default_of: Gives the default of a field from its key and its built-in default.
+
+    Returns:
+        The schema entries, in display order.
+    """
+    return {
+        vol.Optional(
+            CONF_NATIVE_SCHEDULE_DRIVE,
+            default=default_of(CONF_NATIVE_SCHEDULE_DRIVE, DEFAULT_NATIVE_SCHEDULE_DRIVE),
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_NATIVE_SCHEDULE_PRESET_KEY,
+            default=default_of(CONF_NATIVE_SCHEDULE_PRESET_KEY, DEFAULT_NATIVE_SCHEDULE_PRESET_KEY),
+        ): selector.TextSelector(),
+        vol.Optional(
+            CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
+            default=default_of(
+                CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY, DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY
+            ),
+        ): selector.TextSelector(),
+        vol.Optional(
+            CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
+            default=default_of(
+                CONF_NATIVE_SCHEDULE_FALLBACK_PRESET, DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET
+            ),
+        ): selector.TextSelector(),
+    }
 
 
 def _scheduler_selector(hass: HomeAssistant, configured: list[str]) -> Any:
@@ -314,6 +356,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
+                **_native_schedule_fields(lambda _key, default: default),
             }
         )
 
@@ -619,6 +662,8 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 mode=selector.NumberSelectorMode.BOX,
             )
         )
+
+        schema_dict.update(_native_schedule_fields(_opt_or_data))
 
         data_schema = vol.Schema(schema_dict)
 

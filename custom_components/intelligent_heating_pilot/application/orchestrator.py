@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from ..domain.value_objects import CancelReason, ScheduledTimeslot
 from .use_cases import (
     CalculateAnticipationUseCase,
     ControlPreheatingUseCase,
@@ -56,6 +57,8 @@ class HeatingOrchestrator:
         self._control_preheating = control_preheating
         self._schedule_anticipation_action = schedule_anticipation_action
         self._update_cache = update_cache
+        # A preheat persisted before a restart is picked up once, at the first recalculation
+        self._preheat_recovered = False
 
     async def calculate_anticipation_only(
         self,
@@ -104,7 +107,9 @@ class HeatingOrchestrator:
         await self._schedule_anticipation_action.cancel_action()
 
         # Cancel active preheating if any
-        await self._control_preheating.cancel_preheating(scheduler_entity_id)
+        await self._control_preheating.cancel_preheating(
+            scheduler_entity_id, CancelReason.IHP_DISABLED
+        )
 
         _LOGGER.info("Preheating disabled")
         _LOGGER.debug("Exiting HeatingOrchestrator.disable_preheating()")
@@ -150,6 +155,36 @@ class HeatingOrchestrator:
             confirmed blocked this cycle.
         """
         return await self._run_anticipation_cycle(ihp_enabled, frozenset())
+
+    async def _recover_preheating_once(self, anticipation_data: dict[str, Any]) -> None:
+        """Pick up a preheat persisted before a restart or reload, on the first recalculation.
+
+        The next slot is known only once the anticipation is calculated, and the preheat must be
+        reconciled before anything is scheduled: otherwise a preheat already in progress would be
+        started a second time, or a stale one would never be undone.
+
+        Args:
+            anticipation_data: The first calculated anticipation data.
+        """
+        if self._preheat_recovered:
+            return
+        self._preheat_recovered = True
+        await self._control_preheating.recover_preheating(self._next_timeslot(anticipation_data))
+
+    @staticmethod
+    def _next_timeslot(anticipation_data: dict[str, Any]) -> ScheduledTimeslot | None:
+        """Rebuild the next slot from the anticipation data, if there is one."""
+        target_time = anticipation_data.get("next_schedule_time")
+        timeslot_id = anticipation_data.get("timeslot_id")
+        if target_time is None or not timeslot_id:
+            return None
+        return ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=anticipation_data.get("next_target_temperature") or 0.0,
+            timeslot_id=timeslot_id,
+            scheduler_entity=anticipation_data.get("scheduler_entity") or "",
+            action=anticipation_data.get("next_slot_action"),
+        )
 
     async def retry_anticipation_after_blocked_scheduler(self, blocked_entity_id: str) -> None:
         """Re-enter the anticipation cycle, excluding a scheduler just confirmed blocked.
@@ -200,6 +235,7 @@ class HeatingOrchestrator:
             anticipation_data = await self._calculate_anticipation.calculate_anticipation_datas(
                 exclude_entity_ids=excluded
             )
+            await self._recover_preheating_once(anticipation_data)
 
             # Step 2: Delegate scheduling decisions to use case (respects ihp_enabled)
             blocked_entity = (

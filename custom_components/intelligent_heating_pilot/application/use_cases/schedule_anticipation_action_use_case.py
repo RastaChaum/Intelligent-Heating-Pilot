@@ -15,11 +15,13 @@ from homeassistant.util import dt as dt_util
 
 from ...const import DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
 from ...domain.constants import SLOT_DAY_RETRY_DELAY_SECONDS
+from ...domain.value_objects import CancelReason
 
 if TYPE_CHECKING:
     from datetime import datetime
 
     from ...domain.interfaces import ISchedulerReader, ITimerScheduler
+    from ...domain.value_objects import SlotAction
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -140,7 +142,8 @@ class ScheduleAnticipationActionUseCase:
             _LOGGER.debug("IHP disabled - cancelling preheating if active")
             await self._control_preheating.cancel_preheating(
                 self._control_preheating.get_active_scheduler_entity()
-                or anticipation_data.get("scheduler_entity")
+                or anticipation_data.get("scheduler_entity"),
+                CancelReason.IHP_DISABLED,
             )
             await self.cancel_action()
             return None
@@ -165,24 +168,22 @@ class ScheduleAnticipationActionUseCase:
             target_temp=anticipation_data["next_target_temperature"],
             scheduler_entity_id=scheduler_entity,
             lhs=float(anticipation_data.get("learned_heating_slope") or 0.0),
+            action=anticipation_data.get("next_slot_action"),
         )
 
     async def _cancel_preheating_for_other_slot(self, target_time: datetime) -> None:
-        """Revert an active preheat whose slot is no longer the next one.
+        """Revert an active preheat whose slot its scheduler no longer has as its next one.
 
         The slot was removed or moved, so the scheduler will never apply it and
         _complete_elapsed_preheating() would leave its setpoint on the thermostat.
 
-        Does NOT revert when the active scheduler is still enabled: with the
-        earliest-scheduler-first retry added for #64, a fresh recalculation
-        always recomputes the "next timeslot" starting from the earliest
-        configured scheduler, even while a different scheduler is already
-        correctly, actively preheating after an earlier fallback. Reverting
-        here on every such tick - before even knowing whether this tick's
-        earliest candidate will itself be blocked again - caused a visible
-        comfort/eco flap each recalculation cycle. The active scheduler being
-        enabled is treated as "still legitimate, leave it running"; only a
-        genuinely disabled/removed active scheduler is reverted.
+        The preheated slot is compared with the active scheduler's OWN next slot, not with the
+        earliest slot of all schedulers. A fresh recalculation always recomputes the "next
+        timeslot" starting from the earliest configured scheduler, even while a different
+        scheduler is already correctly, actively preheating after an earlier fallback (#64);
+        reverting on every such tick caused a visible comfort/eco flap each cycle. Looking at
+        the active scheduler alone keeps that preheat running, and still reverts one whose slot
+        was moved or removed (an enabled scheduler is no proof that its slot is still there).
 
         Args:
             target_time: Target time of the next scheduled slot
@@ -193,15 +194,17 @@ class ScheduleAnticipationActionUseCase:
         if preheating_target == target_time:
             return
         active_scheduler = self._control_preheating.get_active_scheduler_entity()
-        if active_scheduler and await self._scheduler_reader.is_scheduler_enabled(active_scheduler):
-            _LOGGER.debug(
-                "Next slot differs (%s vs %s) but active scheduler %s is still "
-                "enabled - keeping it running instead of reverting",
-                preheating_target,
-                target_time.isoformat(),
-                active_scheduler,
-            )
-            return
+        if active_scheduler:
+            own_next = await self._scheduler_reader.get_next_timeslot_of(active_scheduler)
+            if own_next is not None and own_next.target_time == preheating_target:
+                _LOGGER.debug(
+                    "Next slot differs (%s vs %s) but %s still has the preheated slot as its "
+                    "next one - keeping it running instead of reverting",
+                    preheating_target,
+                    target_time.isoformat(),
+                    active_scheduler,
+                )
+                return
         _LOGGER.info(
             "Next slot changed from %s to %s - reverting active preheating",
             preheating_target,
@@ -237,6 +240,7 @@ class ScheduleAnticipationActionUseCase:
         target_temp: float,
         scheduler_entity_id: str,
         lhs: float,
+        action: SlotAction | None = None,
     ) -> str | None:
         """Schedule heating anticipation action.
 
@@ -252,6 +256,7 @@ class ScheduleAnticipationActionUseCase:
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity to trigger
             lhs: Learned heating slope
+            action: What the slot applies, when the scheduler gives one
 
         Returns:
             ``scheduler_entity_id`` if an immediate trigger was confirmed blocked
@@ -300,7 +305,9 @@ class ScheduleAnticipationActionUseCase:
                 )
 
                 # Delegate cancellation to ControlPreheatingUseCase
-                await self._control_preheating.cancel_preheating(scheduler_entity_id)
+                await self._control_preheating.cancel_preheating(
+                    scheduler_entity_id, CancelReason.POSTPONED
+                )
             # An elapsed preheat was already completed by _complete_elapsed_preheating()
 
         # Update tracking
@@ -324,11 +331,11 @@ class ScheduleAnticipationActionUseCase:
                 # A timer left by an earlier calculation would otherwise fire during this preheat
                 await self._cancel_timer()
                 confirmed = await self._control_preheating.start_preheating(
-                    target_time, target_temp, scheduler_entity_id
+                    target_time, target_temp, scheduler_entity_id, action=action
                 )
                 if not confirmed:
                     blocked_entity = await self._handle_unconfirmed_trigger(
-                        now, target_time, target_temp, scheduler_entity_id
+                        now, target_time, target_temp, scheduler_entity_id, action=action
                     )
             else:
                 _LOGGER.debug(
@@ -350,6 +357,7 @@ class ScheduleAnticipationActionUseCase:
                 target_time,
                 target_temp,
                 scheduler_entity_id,
+                action=action,
             )
         _LOGGER.debug("Exiting schedule_action() -> timer scheduled")
         return None
@@ -360,6 +368,7 @@ class ScheduleAnticipationActionUseCase:
         target_time: datetime,
         target_temp: float,
         scheduler_entity_id: str,
+        action: SlotAction | None = None,
     ) -> None:
         """Schedule a timer to trigger preheating at anticipated start time.
 
@@ -368,6 +377,7 @@ class ScheduleAnticipationActionUseCase:
             target_time: Target schedule time
             target_temp: Target temperature
             scheduler_entity_id: Scheduler to trigger
+            action: What the slot applies, when the scheduler gives one
         """
         _LOGGER.debug(
             "Scheduling timer: anticipated_start=%s, scheduler=%s",
@@ -394,7 +404,7 @@ class ScheduleAnticipationActionUseCase:
 
             # Trigger the action
             blocked_entity = await self._trigger_action(
-                target_time, target_temp, scheduler_entity_id
+                target_time, target_temp, scheduler_entity_id, action=action
             )
 
             # The timer fires outside any caller's awaited call stack, so a
@@ -423,6 +433,7 @@ class ScheduleAnticipationActionUseCase:
         target_time: datetime,
         target_temp: float,
         scheduler_entity_id: str,
+        action: SlotAction | None = None,
     ) -> str | None:
         """Trigger the preheating action via scheduler.
 
@@ -430,6 +441,7 @@ class ScheduleAnticipationActionUseCase:
             target_time: Target time
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity
+            action: What the slot applies, when the scheduler gives one
 
         Returns:
             ``scheduler_entity_id`` if the action was confirmed blocked
@@ -449,11 +461,11 @@ class ScheduleAnticipationActionUseCase:
 
         # Delegate to ControlPreheatingUseCase
         confirmed = await self._control_preheating.start_preheating(
-            target_time, target_temp, scheduler_entity_id
+            target_time, target_temp, scheduler_entity_id, action=action
         )
         if not confirmed:
             return await self._handle_unconfirmed_trigger(
-                dt_util.now(), target_time, target_temp, scheduler_entity_id
+                dt_util.now(), target_time, target_temp, scheduler_entity_id, action=action
             )
 
         self._preheating_target_temp = target_temp
@@ -466,6 +478,7 @@ class ScheduleAnticipationActionUseCase:
         target_time: datetime,
         target_temp: float,
         scheduler_entity_id: str,
+        action: SlotAction | None = None,
     ) -> str | None:
         """Decide what a trigger without effect means: blocked, or too early.
 
@@ -482,12 +495,15 @@ class ScheduleAnticipationActionUseCase:
             target_time: Target schedule time
             target_temp: Target temperature
             scheduler_entity_id: Scheduler that was triggered
+            action: What the slot applies, when the scheduler gives one
 
         Returns:
             ``scheduler_entity_id`` if the scheduler is confirmed blocked,
             None if a retry was planned on the slot's day instead.
         """
-        if await self._retry_on_slot_day(now, target_time, target_temp, scheduler_entity_id):
+        if await self._retry_on_slot_day(
+            now, target_time, target_temp, scheduler_entity_id, action=action
+        ):
             return None
         _LOGGER.warning("Scheduler %s confirmed blocked (conditions unmet)", scheduler_entity_id)
         return scheduler_entity_id
@@ -498,6 +514,7 @@ class ScheduleAnticipationActionUseCase:
         target_time: datetime,
         target_temp: float,
         scheduler_entity_id: str,
+        action: SlotAction | None = None,
     ) -> bool:
         """Plan a retry just after the slot's local midnight, if the slot is on a later day.
 
@@ -509,6 +526,7 @@ class ScheduleAnticipationActionUseCase:
             target_time: Target schedule time
             target_temp: Target temperature
             scheduler_entity_id: Scheduler to retry
+            action: What the slot applies, when the scheduler gives one
 
         Returns:
             True if a retry was planned, False if the slot is on today's date.
@@ -528,7 +546,9 @@ class ScheduleAnticipationActionUseCase:
             target_time.isoformat(),
             retry_at.isoformat(),
         )
-        await self._schedule_timer(retry_at, target_time, target_temp, scheduler_entity_id)
+        await self._schedule_timer(
+            retry_at, target_time, target_temp, scheduler_entity_id, action=action
+        )
         self._slot_day_retry = (target_time, scheduler_entity_id)
         return True
 
@@ -576,7 +596,7 @@ class ScheduleAnticipationActionUseCase:
         if preheating_target is None or dt_util.now() < preheating_target:
             return
         _LOGGER.info("Preheating target time %s reached, preheating complete", preheating_target)
-        self._control_preheating.mark_preheating_complete()
+        await self._control_preheating.mark_preheating_complete()
         await self._clear_state()
 
     async def _clear_state(self) -> None:

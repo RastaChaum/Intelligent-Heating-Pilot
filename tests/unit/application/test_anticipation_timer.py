@@ -153,6 +153,7 @@ class TestAnticipationTimer:
             target_time,
             21.0,
             "switch.test_scheduler",
+            action=None,
         )
 
     @pytest.mark.asyncio

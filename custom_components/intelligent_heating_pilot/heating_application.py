@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .application.actuators import RoutingPreheatActuator
+from .application.actuators import DirectPreheatActuator, RoutingPreheatActuator
 from .application.heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
 from .application.heating_cycle_lifecycle_manager_factory import (
     HeatingCycleLifecycleManagerFactory,
@@ -35,19 +35,23 @@ from .domain.services import (
     PredictionService,
 )
 from .domain.services.contextual_hour import contextual_hour
+from .domain.services.preheat_session_policy import PreheatSessionPolicy
 from .domain.value_objects import SchedulerKind
 from .infrastructure.adapters import (
+    HAClimateCommander,
     HAClimateDataReader,
     HAContextReader,
     HacsRunActionActuator,
     HAEnvironmentReader,
     HAHeatingCycleStorage,
     HALhsStorage,
+    HAPreheatRecordStorage,
     HASchedulerOwnershipResolver,
     HASchedulerReader,
     HASunReader,
     HATimerScheduler,
 )
+from .infrastructure.adapters.native_schedule_reader import NativeScheduleSettings
 from .infrastructure.event_bridge import HAEventBridge
 
 _LOGGER = logging.getLogger(__name__)
@@ -145,18 +149,42 @@ class HeatingApplication:
         self._config_entry: ConfigEntry | None = None
         self._options_snapshot: dict[str, Any] | None = None
 
+    def _native_schedule_settings(self) -> NativeScheduleSettings:
+        """Build how native schedule blocks are read and used, from the device configuration."""
+        config = self._device_config
+        return NativeScheduleSettings(
+            drive_enabled=config.native_schedule_drive,
+            preset_key=config.native_schedule_preset_key,
+            temperature_key=config.native_schedule_temperature_key,
+            fallback_preset=config.native_schedule_fallback_preset,
+        )
+
     def _build_preheat_actuator(self) -> RoutingPreheatActuator:
         """Build the actuator that serves each scheduler kind.
 
         This is where the choice of mode lives: HACS Scheduler delegates to its own run-action
-        command; any other kind has no actuator yet and is computed only.
+        command, and a native schedule is driven directly when the user opted in. Any other
+        kind has no actuator and is computed only.
 
         Returns:
             The routing actuator the use cases call.
         """
-        return RoutingPreheatActuator(
-            HASchedulerOwnershipResolver(self.hass),
-            {SchedulerKind.HACS: HacsRunActionActuator(self.hass)},
+        routes: dict[SchedulerKind, Any] = {SchedulerKind.HACS: HacsRunActionActuator(self.hass)}
+        if self._device_config.native_schedule_drive:
+            routes[SchedulerKind.NATIVE] = self._build_direct_actuator()
+        return RoutingPreheatActuator(HASchedulerOwnershipResolver(self.hass), routes)
+
+    def _build_direct_actuator(self) -> DirectPreheatActuator:
+        """Build the actuator that applies a slot's action to the climate entity itself."""
+        climate_reader = self._climate_data_reader
+        if climate_reader is None:
+            raise RuntimeError("The climate data reader must exist before the actuator is built")
+        return DirectPreheatActuator(
+            commander=HAClimateCommander(self.hass, self._vtherm_id),
+            climate_reader=climate_reader,
+            record_store=HAPreheatRecordStorage(self.hass, self._device_id),
+            policy=PreheatSessionPolicy(),
+            now=dt_util.now,
         )
 
     async def async_load(self) -> None:
@@ -182,6 +210,7 @@ class HeatingApplication:
             self.hass,
             self._scheduler_ids,
             vtherm_entity_id=self._vtherm_id,
+            native_settings=self._native_schedule_settings(),
         )
 
         self._preheat_actuator = self._build_preheat_actuator()

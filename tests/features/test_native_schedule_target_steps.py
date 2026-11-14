@@ -28,8 +28,7 @@ from tests.actuator_helpers import build_hacs_router
 
 scenarios("native_schedule_target.feature")
 
-_NEXT_ON_EVENT_DATE = "2024-01-15"
-_TIMEZONE_OFFSET = "+01:00"
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 _COMFORT_TEMP = 21.0
 _MINUTES_UNTIL_SLOT = 30
 _ANTICIPATION_MINUTES = 45
@@ -57,16 +56,16 @@ def _make_state(entity_id: str, state_value: str, attributes: dict) -> Mock:
     parsers.parse('a native schedule "{entity_id}" that is off with its next ON event at {time}')
 )
 def native_schedule_off(schedule_context: dict, entity_id: str, time: str) -> None:
-    """GIVEN: A native schedule outside its active block, next ON at ``time``."""
+    """GIVEN: A native schedule outside its active block, whose blocks start at ``time``.
+
+    The schedule is read through ``schedule.get_schedule``, so every weekday carries the block.
+    """
     schedule_context["schedule_id"] = entity_id
     schedule_context["states"][entity_id] = _make_state(
-        entity_id,
-        "off",
-        {
-            "next_event": f"{_NEXT_ON_EVENT_DATE}T{time}:00{_TIMEZONE_OFFSET}",
-            "friendly_name": "Heating",
-        },
+        entity_id, "off", {"friendly_name": "Heating"}
     )
+    block = {"from": f"{time}:00", "to": "09:00:00"}
+    schedule_context["schedule_response"] = {entity_id: {day: [block] for day in _WEEKDAYS}}
 
 
 @given(parsers.parse('the thermostat "{entity_id}" currently targets {temp:f}°C'))
@@ -103,7 +102,15 @@ def _make_hass(schedule_context: dict) -> Mock:
     hass = Mock()
     hass.is_running = True
     hass.states.get.side_effect = schedule_context["states"].get
-    hass.services.async_call = schedule_context.setdefault("services", AsyncMock())
+    scheduler_services = schedule_context.setdefault("services", AsyncMock())
+
+    async def _async_call(domain: str, service: str, data: dict | None = None, **kwargs):
+        """Answer the schedule helper's get_schedule; any other service is a scheduler call."""
+        if domain == "schedule":
+            return schedule_context["schedule_response"]
+        return await scheduler_services(domain, service, data, **kwargs)
+
+    hass.services.async_call = _async_call
     return hass
 
 
