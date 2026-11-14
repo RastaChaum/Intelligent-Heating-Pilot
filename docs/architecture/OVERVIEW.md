@@ -37,6 +37,23 @@ custom_components/intelligent_heating_pilot/
 3. Domain services calculate heating slope, dead time, and start times.
 4. Infrastructure publishes sensor state and triggers scheduler or climate actions.
 
+## Actuation Principle
+
+**The scheduler decides what happens, when, and whether it happens. IHP decides how early.**
+
+At the anticipated start, IHP applies the next slot's own action (a preset or a temperature) to the climate entity. At the slot time the scheduler applies the same action, which changes nothing. IHP never preheats a slot its scheduler would not run.
+
+Use cases ask one question of one port, `IPreheatActuator`: "start the preheat of this slot". Which integration answers is decided outside the domain:
+
+| Scheduler | Owner found from | Actuation |
+|-----------|------------------|-----------|
+| HACS Scheduler | entity registry platform `scheduler` | delegated: IHP calls its `run_action` (it can evaluate conditions) |
+| Climate Scheduler | platform `climate_scheduler` | direct: IHP applies the node's action to the climate |
+| Native `schedule.*` | entity domain | direct, only when the user opts in |
+| Anything else | | computed only: nothing is sent, nothing fails |
+
+Direct control records the climate's state once per slot, before the first command, and puts it back only if nobody else changed it meanwhile. The rules live in a pure domain service (`PreheatSessionPolicy`); `DirectPreheatActuator` composes ports and that policy, and every Home Assistant call stays in a thin adapter. Each command carries a context that has a parent, so that schedulers watching for manual changes do not take it for one.
+
 ## Key Concepts
 
 - Global LHS: fallback heating slope computed across all valid cycles.

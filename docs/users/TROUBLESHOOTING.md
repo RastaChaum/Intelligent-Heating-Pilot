@@ -128,7 +128,7 @@
 
 **Solution:**
 
-IHP only supports HACS Scheduler switches and native `schedule.*` helpers (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers)). Automations, calendars and other scheduler integrations cannot be selected.
+IHP only supports HACS Scheduler and Climate Scheduler switches and native `schedule.*` helpers (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers)). Automations, calendars and other scheduler integrations cannot be selected.
 
 
 1. Verify HACS Scheduler is installed:
@@ -197,7 +197,7 @@ IHP only supports HACS Scheduler switches and native `schedule.*` helpers (see [
 2. **No cycle learned for this hour** - The Contextual Learned Heating Slope stays `unknown` until a cycle is learned for the next slot's hour (the global slope is used meanwhile)
 3. **No supported scheduler, or no slot IHP can read** - See [Supported Schedulers](CONFIGURATION.md#supported-schedulers)
 4. **Scheduler switched off** - If a HACS Scheduler's state is "off", its slots are ignored (this is normal)
-5. **Native schedule ON** - While a `schedule.*` helper is ON, its next block is not known yet
+5. **Native schedule with no next block** - A `schedule.*` helper with no block starting later has nothing to anticipate
 
 **Solution:**
 
@@ -249,6 +249,15 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
 
 ## 🔥 Heating Not Triggering
 
+### IHP applied a preset or a temperature, then the thermostat went back
+
+**What may be happening:**
+
+1. **Versatile Thermostat's manual override duration is set** and your slot sets a *temperature*: VTherm undoes it after that duration (see [Manual Override Duration](CONFIGURATION.md#when-ihp-applies-a-temperature-the-manual-override-duration)). Use presets in your slots, or leave the option off.
+2. **Your scheduler re-applied its current setting** after a restart or an edit. IHP does not fight it: the slot is reached on time, and the preheat is simply lost.
+3. **You or an automation changed the thermostat during the preheat.** IHP never overwrites a change made by someone else, and restores nothing when the preheat is cancelled.
+4. **The thermostat is off, locked, or in a mode that ignores presets.** IHP logs once per slot that the thermostat did not take the action, then tries again at each recalculation until the slot.
+
 ### Scheduler turns on but IHP never triggers it
 
 **Symptoms:**
@@ -258,7 +267,7 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
 
 **Possible Causes:**
 
-1. **Native `schedule.*` helper** - IHP never starts the heating for it: it only computes the anticipated start (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers))
+1. **Native `schedule.*` helper without direct control** - IHP only computes the anticipated start unless you turn on **Drive Native Schedules** (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers))
 2. **IHP Preheating switch is off** - IHP keeps calculating but does not trigger anything
 3. **Unsupported slot action** - The slot does not use `climate.set_temperature` or `climate.set_preset_mode`, so IHP has no target to anticipate
 4. **Scheduler conditions not met** - The scheduler refused the slot; when every scheduler is blocked, the anticipation sensor lists them in its `blocked_schedulers` attribute

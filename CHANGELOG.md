@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **IHP now starts the heating itself for Climate Scheduler and, on request, native `schedule.*` helpers** (#249, #232) – At the anticipated start, IHP applies the next slot's own action to the thermostat: a preset as a preset, a temperature as a temperature. The scheduler decides what happens and when, IHP only decides how early; at the slot time the scheduler applies the same action, which changes nothing. IHP records the thermostat's state before it acts and puts it back if the preheat is cancelled, unless someone else changed it meanwhile; the record survives a restart. For native schedules, turn on **Drive Native Schedules**: the preset or temperature of each block comes from its data (keys configurable, fallback preset `comfort`). Each room keeps its own anticipation, so one schedule can preheat several thermostats at different times.
+
 ### Changed
 
+- **A moved or removed slot now cancels the preheat in progress, for every scheduler** (#249) – A preheat was kept as long as its scheduler stayed enabled, even if the slot it was heating for had been moved or deleted. It is now kept only while that slot is still its scheduler's next one, so the thermostat is put back. The earlier fix for a comfort/eco flap between two schedulers (#64) is preserved.
+- **Native schedules are anticipated while another block is running** (#249) – IHP now reads the helper's blocks, so a block that starts right when the running one ends is anticipated too, instead of waiting for the running block to finish.
 - **Versatile Thermostat is now a declared dependency.** IHP already only worked with it; without it installed, Home Assistant now refuses to load IHP and says why in the log. (#280)
 
 ### Fixed
 
+- **Climate Scheduler switches no longer raise `ServiceNotFound`** (#249) – They imitate HACS Scheduler's attributes, so IHP sent them `scheduler.run_action` on every start attempt. IHP now identifies a scheduler by the integration that registered it.
 - **Misleading `-dev` pre-release** – After each release, the next merge into `integration` published a `vX.Y.Z-dev` pre-release named after the version just released, although it contained newer code, and HACS offered it to users who enable beta versions. The release candidates already cover testing, so the `-dev` pre-release is no longer published.
 - **Needless recalculations on outdoor temperature changes** (#227) – Each outdoor temperature change of 1 °C or more reran the anticipation of every device using that source, although the prediction does not use the outdoor temperature. These changes, including the `temperature` attribute of a weather entity that also feeds humidity or cloud coverage, no longer trigger a recalculation. The outdoor temperature is still recorded with each heating cycle.
 - **A preheat starting before midnight did nothing for an after-midnight slot of a schedule that does not run every day** (#250) – HACS Scheduler's `run_action` looks for the slot on the day it is called. On Sunday 23:00, the Monday 05:00 slot of a Mon–Fri schedule was not found: nothing heated, and IHP wrongly treated the scheduler as blocked by its conditions and fell back to another scheduler. IHP now retries the same scheduler at 00:01 on the slot's day, and falls back only if that retry has no effect either. The preheat starts later than anticipated, but it starts. Schedules that run every day are not affected.
