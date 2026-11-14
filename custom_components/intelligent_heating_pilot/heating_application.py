@@ -159,20 +159,29 @@ class HeatingApplication:
             fallback_preset=config.native_schedule_fallback_preset,
         )
 
-    def _build_preheat_actuator(self) -> RoutingPreheatActuator:
+    def _build_preheat_actuator(
+        self, ownership_resolver: HASchedulerOwnershipResolver
+    ) -> RoutingPreheatActuator:
         """Build the actuator that serves each scheduler kind.
 
         This is where the choice of mode lives: HACS Scheduler delegates to its own run-action
-        command, and a native schedule is driven directly when the user opted in. Any other
-        kind has no actuator and is computed only.
+        command; Climate Scheduler is driven directly; a native schedule is driven directly only
+        when the user opted in. Any other kind has no actuator and is computed only.
+
+        Args:
+            ownership_resolver: Tells which integration owns a scheduler entity.
 
         Returns:
             The routing actuator the use cases call.
         """
-        routes: dict[SchedulerKind, Any] = {SchedulerKind.HACS: HacsRunActionActuator(self.hass)}
+        direct = self._build_direct_actuator()
+        routes: dict[SchedulerKind, Any] = {
+            SchedulerKind.HACS: HacsRunActionActuator(self.hass),
+            SchedulerKind.CLIMATE_SCHEDULER: direct,
+        }
         if self._device_config.native_schedule_drive:
-            routes[SchedulerKind.NATIVE] = self._build_direct_actuator()
-        return RoutingPreheatActuator(HASchedulerOwnershipResolver(self.hass), routes)
+            routes[SchedulerKind.NATIVE] = direct
+        return RoutingPreheatActuator(ownership_resolver, routes)
 
     def _build_direct_actuator(self) -> DirectPreheatActuator:
         """Build the actuator that applies a slot's action to the climate entity itself."""
@@ -206,14 +215,16 @@ class HeatingApplication:
             self.hass, get_recorder_queue(self.hass), self._vtherm_id
         )
 
+        ownership_resolver = HASchedulerOwnershipResolver(self.hass)
         self._scheduler_reader = HASchedulerReader(
             self.hass,
             self._scheduler_ids,
             vtherm_entity_id=self._vtherm_id,
             native_settings=self._native_schedule_settings(),
+            ownership_resolver=ownership_resolver,
         )
 
-        self._preheat_actuator = self._build_preheat_actuator()
+        self._preheat_actuator = self._build_preheat_actuator(ownership_resolver)
         self._environment_reader = HAEnvironmentReader(
             self.hass,
             self._vtherm_id,

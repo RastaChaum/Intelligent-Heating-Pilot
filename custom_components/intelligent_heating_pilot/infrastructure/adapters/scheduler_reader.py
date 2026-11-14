@@ -13,9 +13,11 @@ from typing import TYPE_CHECKING
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from ...domain.interfaces.scheduler_ownership_resolver_interface import ISchedulerOwnershipResolver
 from ...domain.interfaces.scheduler_reader_interface import ISchedulerReader
-from ...domain.value_objects import ScheduledTimeslot, SlotAction
+from ...domain.value_objects import ScheduledTimeslot, SchedulerKind, SlotAction
 from ..vtherm_compat import get_vtherm_attribute
+from .climate_scheduler_reader import HAClimateSchedulerReader
 from .native_schedule_reader import HANativeScheduleReader, NativeScheduleSettings
 from .utils import get_entity_name
 
@@ -46,6 +48,7 @@ class HASchedulerReader(ISchedulerReader):
         scheduler_entity_ids: list[str],
         vtherm_entity_id: str | None = None,
         native_settings: NativeScheduleSettings | None = None,
+        ownership_resolver: ISchedulerOwnershipResolver | None = None,
     ) -> None:
         """Initialize the scheduler reader adapter.
 
@@ -57,12 +60,17 @@ class HASchedulerReader(ISchedulerReader):
                 comfort preset for native HA schedule entities).
             native_settings: How native ``schedule.*`` blocks are read and used. Defaults to
                 compute-only with the comfort preset standing in for a block's temperature.
+            ownership_resolver: Tells which integration owns a ``switch.*`` scheduler, so that a
+                Climate Scheduler switch (which imitates HACS Scheduler's attributes) is read as
+                its own. Without it, every switch is read as a HACS Scheduler one.
         """
         self._hass = hass
         self._scheduler_entity_ids = scheduler_entity_ids
         self._vtherm_entity_id = vtherm_entity_id
         self._native_settings = native_settings or NativeScheduleSettings()
         self._native_reader = HANativeScheduleReader(hass, self._native_settings)
+        self._climate_scheduler_reader = HAClimateSchedulerReader(vtherm_entity_id or "")
+        self._ownership_resolver = ownership_resolver
 
     async def get_next_timeslot(
         self, exclude_entity_ids: frozenset[str] = frozenset()
@@ -199,9 +207,34 @@ class HASchedulerReader(ISchedulerReader):
             _LOGGER.debug("[%s] Scheduler is disabled (state: off), skipping", device_name)
             return None, None, None
 
+        if self._is_climate_scheduler(entity_id):
+            return self._read_climate_scheduler_timeslot(state)
+
         # Extract next trigger time and target temperature (HACS format)
         next_time, target_temp = self._extract_timeslot_data(state)
         return next_time, target_temp, None
+
+    def _is_climate_scheduler(self, entity_id: str) -> bool:
+        resolver = self._ownership_resolver
+        return (
+            resolver is not None and resolver.resolve(entity_id) is SchedulerKind.CLIMATE_SCHEDULER
+        )
+
+    def _read_climate_scheduler_timeslot(
+        self, state: State
+    ) -> tuple[datetime | None, float | None, SlotAction | None]:
+        """Read the next node of a Climate Scheduler switch and the temperature to anticipate.
+
+        A temperature node gives its temperature; a preset node gives its preset's temperature
+        as the thermostat publishes it. A node with no action gives no slot.
+        """
+        next_time, action = self._climate_scheduler_reader.read(state.attributes)
+        if action is None:
+            return next_time, None, None
+        if action.temperature is not None:
+            return next_time, action.temperature, action
+        preset = action.preset
+        return next_time, self._resolve_preset_temperature(preset) if preset else None, action
 
     async def _read_native_timeslot(
         self, entity_id: str

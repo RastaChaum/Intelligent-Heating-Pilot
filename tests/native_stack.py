@@ -1,4 +1,4 @@
-"""End-to-end test stack for direct control of a native schedule.
+"""End-to-end test stack for direct control of a native schedule or a Climate Scheduler switch.
 
 Real: the native schedule reader, the scheduling and preheating use cases, the orchestrator, the
 routing and direct actuators, the preset policy and the climate commander. Faked: Home Assistant's
@@ -24,6 +24,9 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
     ControlPreheatingUseCase,
     ScheduleAnticipationActionUseCase,
 )
+from custom_components.intelligent_heating_pilot.domain.interfaces import (
+    ISchedulerOwnershipResolver,
+)
 from custom_components.intelligent_heating_pilot.domain.services.preheat_session_policy import (
     PreheatSessionPolicy,
 )
@@ -41,7 +44,6 @@ from custom_components.intelligent_heating_pilot.infrastructure.adapters.native_
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.scheduler_reader import (
     HASchedulerReader,
 )
-from tests.actuator_helpers import PrefixOwnershipResolver
 from tests.unit.application.actuators.fakes import FakeClimate, FakeStore
 
 SCHEDULE_ID = "schedule.heating"
@@ -49,8 +51,21 @@ CLIMATE_ID = "climate.living_room"
 PARIS = ZoneInfo("Europe/Paris")
 MONDAY_NOON = datetime(2026, 11, 16, 12, 0, tzinfo=PARIS)
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+# What VTherm publishes for its presets, so that a preset slot can be anticipated
+PRESET_TEMPERATURES = {"eco_temp": 18.0, "comfort_temp": 21.0, "boost_temp": 23.0}
 DUE_MINUTES = 5  # the anticipated start is always this long past: the preheat is due
 EFFECT_TIMEOUT_SECONDS = 0.05
+
+
+class _KindResolver(ISchedulerOwnershipResolver):
+    """Gives the scheduler under test its kind; any other entity is unknown."""
+
+    def __init__(self, scheduler_id: str, kind: SchedulerKind) -> None:
+        self._scheduler_id = scheduler_id
+        self._kind = kind
+
+    def resolve(self, scheduler_entity_id: str) -> SchedulerKind:
+        return self._kind if scheduler_entity_id == self._scheduler_id else SchedulerKind.UNKNOWN
 
 
 def block(start: str, end: str, data: dict | None = None) -> dict:
@@ -111,8 +126,13 @@ class NativeStack:
         drive: bool = True,
         now: datetime = MONDAY_NOON,
         store: FakeStore | None = None,
+        scheduler_id: str = SCHEDULE_ID,
+        kind: SchedulerKind = SchedulerKind.NATIVE,
     ) -> None:
         self.climate = climate
+        self.scheduler_id = scheduler_id
+        self.kind = kind
+        self.scheduler_attributes: dict = {}
         self.drive = drive
         self.now = now
         self.store = store or FakeStore([])
@@ -125,12 +145,18 @@ class NativeStack:
         """Build new components over the same thermostat, schedule and record."""
         self.hass = self._build_hass()
         settings = NativeScheduleSettings(drive_enabled=self.drive)
+        resolver = _KindResolver(self.scheduler_id, self.kind)
         self.reader = HASchedulerReader(
-            self.hass, [SCHEDULE_ID], vtherm_entity_id=CLIMATE_ID, native_settings=settings
+            self.hass,
+            [self.scheduler_id],
+            vtherm_entity_id=CLIMATE_ID,
+            native_settings=settings,
+            ownership_resolver=resolver,
         )
         routes = {SchedulerKind.HACS: HacsRunActionActuator(self.hass)}
-        if self.drive:
-            routes[SchedulerKind.NATIVE] = DirectPreheatActuator(
+        # A native schedule is driven only on opt-in; Climate Scheduler is always driven
+        if self.drive or self.kind is not SchedulerKind.NATIVE:
+            routes[self.kind] = DirectPreheatActuator(
                 commander=HAClimateCommander(self.hass, CLIMATE_ID),
                 climate_reader=self.climate,  # type: ignore[arg-type]
                 record_store=self.store,
@@ -138,9 +164,7 @@ class NativeStack:
                 now=lambda: self.now,
                 effect_timeout_seconds=EFFECT_TIMEOUT_SECONDS,
             )
-        self.control = ControlPreheatingUseCase(
-            RoutingPreheatActuator(PrefixOwnershipResolver(), routes)
-        )
+        self.control = ControlPreheatingUseCase(RoutingPreheatActuator(resolver, routes))
         timer = Mock()
         timer.schedule_timer = Mock(return_value=lambda: None)
         action = ScheduleAnticipationActionUseCase(
@@ -168,8 +192,16 @@ class NativeStack:
         hass = Mock()
         hass.is_running = True
         states = {
-            SCHEDULE_ID: Mock(entity_id=SCHEDULE_ID, state=self.schedule_state, attributes={}),
-            CLIMATE_ID: Mock(entity_id=CLIMATE_ID, state="heat", attributes={}),
+            self.scheduler_id: Mock(
+                entity_id=self.scheduler_id,
+                state=self.schedule_state,
+                attributes=self.scheduler_attributes,
+            ),
+            CLIMATE_ID: Mock(
+                entity_id=CLIMATE_ID,
+                state="heat",
+                attributes={"preset_temperatures": PRESET_TEMPERATURES},
+            ),
         }
         hass.states.get.side_effect = states.get
 
