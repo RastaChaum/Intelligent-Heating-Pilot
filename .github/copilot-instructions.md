@@ -515,6 +515,8 @@ For each bug-driven test addition, record:
 
 ## Active Technologies
 - YAML (GitHub Actions workflow syntax), Bash (GNU coreutils, awk, diff, git, jq, GitHub CLI `gh`) + `actions/checkout@v6`, `gh` CLI (pre-installed on `ubuntu-latest` runners), `jq` (pre-installed), standard POSIX utilities (001-fix-cicd-workflow)
+- Python 3.14 (virtualenv managed by Poetry) + Home Assistant core (`homeassistant.*` only in infrastructure), existing `BaseHAStorageAdapter`, pytest, pytest-bdd (281-drive-climate-at-anticipated-start)
+- one new Home Assistant `Store` per config entry for the preheat record (same pattern as `HALhsStorage`) (281-drive-climate-at-anticipated-start)
 
 ## Recent Changes
 - 001-fix-cicd-workflow: Added YAML (GitHub Actions workflow syntax), Bash (GNU coreutils, awk, diff, git, jq, GitHub CLI `gh`) + `actions/checkout@v6`, `gh` CLI (pre-installed on `ubuntu-latest` runners), `jq` (pre-installed), standard POSIX utilities
