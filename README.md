@@ -34,10 +34,11 @@ IHP monitors your VTherm, learns how fast your room heats, and triggers your sch
 | Scheduler | Anticipated start | IHP starts the heating |
 | --- | --- | --- |
 | [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) (`switch.schedule_*`) | ✅ | ✅ |
-| Native `schedule.*` helper | ✅ (target = VTherm comfort preset) | ❌ build your own automation |
+| [Climate Scheduler](https://github.com/kneave/climate-scheduler) | ✅ | ✅ |
+| Native `schedule.*` helper | ✅ | ⚙️ if you turn on direct control (or build your own automation) |
 | Other schedulers (automations, calendars, other integrations) | ❌ | ❌ use the `calculate_anticipated_start_time` service |
 
-With HACS Scheduler, each slot's action must be `climate.set_temperature` or `climate.set_preset_mode`, on the VTherm of the IHP device. **[Supported schedulers in detail →](docs/users/CONFIGURATION.md#supported-schedulers)**
+The scheduler decides what happens and when; IHP decides how early, and applies the slot's own action (a preset or a temperature) to your thermostat a little before the slot. With HACS Scheduler, each slot's action must be `climate.set_temperature` or `climate.set_preset_mode`, on the VTherm of the IHP device. **[Supported schedulers in detail →](docs/users/CONFIGURATION.md#supported-schedulers)**
 
 ---
 
@@ -85,7 +86,7 @@ Settings → Devices & Services → + Add Integration
 - ✅ **Configurable Detection Parameters** - Fine-tune cycle detection for your heating system
 - ✅ **Time-Contextual Learning** - Different heating speeds by time of day
 - ✅ **HACS Scheduler Preheating** - Triggers the upcoming slot early, with the scheduler's conditions respected; several schedulers per device
-- ✅ **Native Schedules** - `schedule.*` helpers get an anticipated start sensor to build your own automation (IHP does not start the heating for them)
+- ✅ **Climate Scheduler and Native Schedules** - IHP applies the next node's or block's action to your thermostat itself (native schedules: turn on direct control, the preset or temperature comes from each block's data), and puts it back if the preheat is cancelled and nobody changed it meanwhile
 - ✅ **Calculation Service** - `calculate_anticipated_start_time` for your own automations, with or without a scheduler
 - ✅ **Outdoor Source** - Outdoor sensor or `weather.*` entity, recorded with each heating cycle
 - ✅ **Incremental Cache** - Reduces HA database load for long-term learning
