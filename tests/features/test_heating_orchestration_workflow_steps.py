@@ -32,6 +32,8 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
     CancelReason,
     EnvironmentState,
     PredictionResult,
+    PreheatRecovery,
+    RecoveryOutcome,
     ScheduledTimeslot,
 )
 
@@ -76,7 +78,7 @@ def mock_preheat_actuator():
     mock = Mock()
     mock.start = AsyncMock(return_value=ActuationResult.ATTEMPTED)
     mock.cancel = AsyncMock()
-    mock.recover = AsyncMock(return_value=False)
+    mock.recover = AsyncMock(return_value=PreheatRecovery(RecoveryOutcome.NOTHING))
     return mock
 
 

@@ -54,6 +54,9 @@ Upstream sources were read in local clones: scheduler-component v3.3.9, climate-
 - **Rationale**: a retry or a restart must not record IHP's own state as the previous one.
   The #156 bug class (a stale flag surviving a reload) shows persistence needs an owner.
 - **Rejected**: an in-memory flag (lost at restart).
+- **Review amendment**: a record whose climate was changed by someone else is kept, marked claimed,
+  until its slot, so that a later start for the slot cannot apply it over that change; a record is
+  chained to an earlier one only while the earlier slot is still ahead.
 
 ## D6. A preheat lasts only while its slot is its scheduler's next slot
 

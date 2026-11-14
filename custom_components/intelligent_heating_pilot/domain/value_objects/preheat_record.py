@@ -23,6 +23,8 @@ class PreheatRecord:
         previous: Climate state before IHP acted.
         applied: The action IHP applied.
         recorded_at: When the record was made (timezone-aware).
+        claimed: True once somebody else changed the climate after IHP acted. A claimed record
+            is kept until its slot, so that IHP does not apply the slot again over that change.
     """
 
     timeslot_id: str
@@ -31,6 +33,7 @@ class PreheatRecord:
     previous: ClimateSnapshot
     applied: SlotAction
     recorded_at: datetime
+    claimed: bool = False
 
     def __post_init__(self) -> None:
         """Validate the record.

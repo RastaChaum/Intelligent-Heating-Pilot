@@ -36,6 +36,8 @@ from custom_components.intelligent_heating_pilot.domain.services import (
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ActuationResult,
     EnvironmentState,
+    PreheatRecovery,
+    RecoveryOutcome,
     ScheduledTimeslot,
 )
 
@@ -81,7 +83,7 @@ def mock_adapters_ihp_switch():
     preheat_actuator = Mock()
     preheat_actuator.start = AsyncMock(return_value=ActuationResult.ATTEMPTED)
     preheat_actuator.cancel = AsyncMock()
-    preheat_actuator.recover = AsyncMock(return_value=False)
+    preheat_actuator.recover = AsyncMock(return_value=PreheatRecovery(RecoveryOutcome.NOTHING))
 
     climate_commander = Mock()
     climate_commander.turn_on_heat = AsyncMock()

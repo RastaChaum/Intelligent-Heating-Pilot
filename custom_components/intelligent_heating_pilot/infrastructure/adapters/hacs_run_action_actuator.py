@@ -16,9 +16,10 @@ from datetime import datetime
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from ...domain.interfaces.preheat_actuator_interface import IPreheatActuator
+from ...domain.interfaces.preheat_actuator_interface import IPreheatActuator, NextTimeslotOf
 from ...domain.value_objects.actuation_result import ActuationResult
 from ...domain.value_objects.cancel_reason import CancelReason
+from ...domain.value_objects.preheat_recovery import PreheatRecovery, RecoveryOutcome
 from ...domain.value_objects.scheduled_timeslot import ScheduledTimeslot
 from .utils import get_entity_name
 
@@ -94,16 +95,16 @@ class HacsRunActionActuator(IPreheatActuator):
         )
         await self._run_action(entity_id, dt_util.now())
 
-    async def recover(self, next_timeslot: ScheduledTimeslot | None) -> bool:
+    async def recover(self, next_timeslot_of: NextTimeslotOf) -> PreheatRecovery:
         """Nothing is persisted for a delegated preheat: there is nothing to recover.
 
         Args:
-            next_timeslot: Unused.
+            next_timeslot_of: Unused.
 
         Returns:
-            Always False.
+            Always ``NOTHING``.
         """
-        return False
+        return PreheatRecovery(RecoveryOutcome.NOTHING)
 
     @staticmethod
     def _require_entity(timeslot: ScheduledTimeslot) -> str:

@@ -44,10 +44,12 @@ The climate's requested state at one moment.
 | `previous` | `ClimateSnapshot` | state before IHP acted |
 | `applied` | `SlotAction` | what IHP applied |
 | `recorded_at` | `datetime` | timezone-aware |
+| `claimed` | `bool` | True once someone else changed the climate; kept until the slot so IHP never applies the slot over that change |
 
 One record exists per IHP instance; a new one is saved only after the previous one is cleared.
 Lifecycle: created once before the first command of a slot; removed on completion (slot time),
-on restore, on leave, on discard. Never replaced while the slot is the same.
+on restore and on discard. On leave (someone else changed the climate) it is kept, marked
+claimed, until the slot. It is kept untouched while the climate is unavailable. Never replaced while the slot is the same.
 
 ## SchedulerKind (enum)
 
@@ -97,5 +99,6 @@ cancellation is a completion, because the scheduler is about to apply the same a
   and the setpoint follows the preset once it is back; otherwise the previous temperature.
   The HVAC mode is never restored.
 - `decide_restore(record, snapshot, now)`: `DISCARD` if `slot_time - now` is within the guard
-  window or negative; `LEAVE` if the snapshot differs from `record.applied`; else `RESTORE`.
+  window or negative; `LEAVE` if the climate is unavailable, switched off, or the snapshot differs
+  from `record.applied`; else `RESTORE`.
 - `is_claimed_by_other(record, snapshot)`: the snapshot differs from `record.applied`.

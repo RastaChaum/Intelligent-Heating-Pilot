@@ -256,7 +256,9 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
 1. **Versatile Thermostat's manual override duration is set** and your slot sets a *temperature*: VTherm undoes it after that duration (see [Manual Override Duration](CONFIGURATION.md#when-ihp-applies-a-temperature-the-manual-override-duration)). Use presets in your slots, or leave the option off.
 2. **Your scheduler re-applied its current setting** after a restart or an edit. IHP does not fight it: the slot is reached on time, and the preheat is simply lost.
 3. **You or an automation changed the thermostat during the preheat.** IHP never overwrites a change made by someone else, and restores nothing when the preheat is cancelled.
-4. **The thermostat is off, locked, or in a mode that ignores presets.** IHP logs once per slot that the thermostat did not take the action, then tries again at each recalculation until the slot.
+4. **The thermostat is off.** IHP leaves it off and waits quietly (only visible in the debug log).
+5. **The thermostat is locked, or in a mode that ignores presets.** IHP logs once per slot that the thermostat did not take the action, then tries again at each recalculation until the slot.
+6. **You changed the thermostat during the preheat.** IHP does not apply that slot again, so your change stands until the slot.
 
 ### Scheduler turns on but IHP never triggers it
 

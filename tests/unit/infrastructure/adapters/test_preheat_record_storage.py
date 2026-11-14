@@ -120,3 +120,23 @@ async def test_unreadable_data_is_treated_as_no_record() -> None:
     FakeStore.disk["intelligent_heating_pilot_preheat_record_entry"] = {"record": {"junk": 1}}
 
     assert await HAPreheatRecordStorage(Mock(), "entry").load() is None
+
+
+@pytest.mark.asyncio
+async def test_a_claimed_record_stays_claimed_after_a_restart() -> None:
+    from dataclasses import replace
+
+    await HAPreheatRecordStorage(Mock(), "entry").save(replace(_record(), claimed=True))
+
+    loaded = await HAPreheatRecordStorage(Mock(), "entry").load()
+    assert loaded is not None and loaded.claimed is True
+
+
+@pytest.mark.asyncio
+async def test_a_record_saved_before_the_claimed_flag_existed_is_not_claimed() -> None:
+    storage = HAPreheatRecordStorage(Mock(), "entry")
+    await storage.save(_record())
+    del FakeStore.disk["intelligent_heating_pilot_preheat_record_entry"]["record"]["claimed"]
+
+    loaded = await HAPreheatRecordStorage(Mock(), "entry").load()
+    assert loaded is not None and loaded.claimed is False

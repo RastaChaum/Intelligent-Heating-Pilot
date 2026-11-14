@@ -10,19 +10,21 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime
 from time import monotonic
 
 from ...domain.constants import ACTION_EFFECT_TIMEOUT_SECONDS
 from ...domain.interfaces.climate_commander_interface import IClimateCommander
 from ...domain.interfaces.climate_data_reader_interface import IClimateDataReader
-from ...domain.interfaces.preheat_actuator_interface import IPreheatActuator
+from ...domain.interfaces.preheat_actuator_interface import IPreheatActuator, NextTimeslotOf
 from ...domain.interfaces.preheat_record_store_interface import IPreheatRecordStore
 from ...domain.services.preheat_session_policy import ApplyDecision, PreheatSessionPolicy
 from ...domain.value_objects.actuation_result import ActuationResult
 from ...domain.value_objects.cancel_reason import CancelReason
 from ...domain.value_objects.climate_snapshot import ClimateSnapshot
 from ...domain.value_objects.preheat_record import PreheatRecord
+from ...domain.value_objects.preheat_recovery import PreheatRecovery, RecoveryOutcome
 from ...domain.value_objects.restore_decision import RestoreDecision
 from ...domain.value_objects.scheduled_timeslot import ScheduledTimeslot
 from ...domain.value_objects.slot_action import SlotAction
@@ -85,6 +87,9 @@ class DirectPreheatActuator(IPreheatActuator):
         if action is None:
             return ActuationResult.UNSUPPORTED
         async with self._lock:
+            if await self._is_claimed(timeslot):
+                _LOGGER.debug("Preheat of %s skipped: someone else took over", timeslot.timeslot_id)
+                return ActuationResult.SKIPPED
             snapshot = self._reader.read_climate_snapshot()
             if snapshot is None:
                 _LOGGER.debug("Climate unavailable, preheat of %s skipped", timeslot.timeslot_id)
@@ -112,29 +117,53 @@ class DirectPreheatActuator(IPreheatActuator):
             _LOGGER.debug("Cancelling preheat of %s (%s)", timeslot.timeslot_id, reason.value)
             await self._release(record)
 
-    async def recover(self, next_timeslot: ScheduledTimeslot | None) -> bool:
+    async def recover(self, next_timeslot_of: NextTimeslotOf) -> PreheatRecovery:
         """Reconcile a record persisted before a restart or reload.
 
+        The recorded slot is compared with the next slot of its OWN scheduler, not with the
+        earliest slot of all schedulers (another scheduler may be next). When that scheduler
+        cannot answer, the record is kept and the result asks to try again: a missing answer
+        proves nothing, and undoing a preheat that is still valid would flap the thermostat.
+
         Args:
-            next_timeslot: The slot that is next now, if any.
+            next_timeslot_of: Gives the next timeslot of a scheduler entity.
 
         Returns:
-            True when the record belongs to ``next_timeslot`` and its slot is still ahead:
-            the preheat resumes, with no new record and no command.
+            ``RESUMED`` (with the slot) when the recorded slot is still its scheduler's next
+            one and nobody took over, so no new record and no command are needed; ``RELEASED``
+            when a stale preheat was undone or discarded; ``DEFERRED`` when the scheduler
+            could not answer; ``NOTHING`` otherwise.
         """
         async with self._lock:
             record = await self._store.load()
             if record is None:
-                return False
-            if self._is_resumable(record, next_timeslot):
-                return True
+                return PreheatRecovery(RecoveryOutcome.NOTHING)
+            if record.slot_time <= self._now():
+                await self._release(record)
+                return PreheatRecovery(RecoveryOutcome.RELEASED)
+            own_next = await next_timeslot_of(record.scheduler_entity)
+            if own_next is None:
+                _LOGGER.debug("Cannot tell yet if %s is still planned", record.timeslot_id)
+                return PreheatRecovery(RecoveryOutcome.DEFERRED)
+            if own_next.timeslot_id == record.timeslot_id:
+                return self._resumed(record, own_next)
             await self._release(record)
-            return False
+            return PreheatRecovery(RecoveryOutcome.RELEASED)
 
-    def _is_resumable(self, record: PreheatRecord, next_timeslot: ScheduledTimeslot | None) -> bool:
+    @staticmethod
+    def _resumed(record: PreheatRecord, own_next: ScheduledTimeslot) -> PreheatRecovery:
+        """A claimed record resumes nothing: someone else took over, but the slot stays ours to skip."""
+        if record.claimed:
+            return PreheatRecovery(RecoveryOutcome.NOTHING)
+        return PreheatRecovery(RecoveryOutcome.RESUMED, own_next)
+
+    async def _is_claimed(self, timeslot: ScheduledTimeslot) -> bool:
+        """Tell whether somebody else took over the climate for this slot, until the slot."""
+        record = await self._store.load()
         return (
-            next_timeslot is not None
-            and record.timeslot_id == next_timeslot.timeslot_id
+            record is not None
+            and record.claimed
+            and record.timeslot_id == timeslot.timeslot_id
             and record.slot_time > self._now()
         )
 
@@ -161,10 +190,16 @@ class DirectPreheatActuator(IPreheatActuator):
     ) -> ClimateSnapshot:
         """Return the state to go back to when a record for an earlier slot is being replaced.
 
-        While the climate is still as IHP left it for the earlier slot, the true original is
-        that record's previous state; once somebody else changed it, it is the current one.
+        While the climate is still as IHP left it for the earlier slot, and that slot is still
+        ahead, the true original is that record's previous state. Once somebody else changed it,
+        or the earlier slot has passed (the scheduler legitimately applied it), the current state
+        is the one to go back to.
         """
-        if existing is not None and not self._policy.is_claimed_by_other(existing, snapshot):
+        if (
+            existing is not None
+            and existing.slot_time > self._now()
+            and not self._policy.is_claimed_by_other(existing, snapshot)
+        ):
             return existing.previous
         return snapshot
 
@@ -183,8 +218,14 @@ class DirectPreheatActuator(IPreheatActuator):
     async def _release(self, record: PreheatRecord) -> None:
         """Restore, leave or discard according to the policy, then forget the record."""
         snapshot = self._reader.read_climate_snapshot()
+        if snapshot is None and record.slot_time > self._now():
+            _LOGGER.debug("Climate unavailable: the record of %s is kept", record.timeslot_id)
+            return
         decision = self._policy.decide_restore(record, snapshot, self._now())
         _LOGGER.debug("Preheat of %s released: %s", record.timeslot_id, decision.value)
         if decision is RestoreDecision.RESTORE:
             await self._commander.restore(self._policy.restore_fields(record))
+        if decision is RestoreDecision.LEAVE and record.slot_time > self._now():
+            await self._store.save(replace(record, claimed=True))
+            return
         await self._store.clear()

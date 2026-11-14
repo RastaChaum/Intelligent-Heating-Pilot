@@ -9,6 +9,7 @@ import pytest
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ActuationResult,
     CancelReason,
+    RecoveryOutcome,
     ScheduledTimeslot,
 )
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.hacs_run_action_actuator import (
@@ -145,4 +146,7 @@ async def test_cancel_on_a_native_schedule_calls_no_service(actuator, mock_hass)
 
 @pytest.mark.asyncio
 async def test_recover_has_nothing_to_recover(actuator) -> None:
-    assert await actuator.recover(_slot(datetime(2024, 1, 15, 7, 30))) is False
+    async def next_of(_entity_id: str):
+        return None
+
+    assert (await actuator.recover(next_of)).outcome is RecoveryOutcome.NOTHING

@@ -62,11 +62,6 @@ class TestNextNode:
 
         assert action == SlotAction(preset="comfort")
 
-    def test_a_nodes_hvac_mode_is_ignored(self) -> None:
-        _, action = _read(_attrs([_temp(CLIMATE, 21.0, hvac_mode="heat")], 0))
-
-        assert action == SlotAction(temperature=21.0)
-
 
 class TestGroups:
     def test_the_entry_of_our_climate_is_picked_among_a_groups_entries(self) -> None:
@@ -112,22 +107,27 @@ class TestGroups:
 
 
 class TestNoAction:
-    def test_a_no_change_node_gives_no_action(self) -> None:
-        """A node that keeps the setpoint (null temperature) applies nothing to anticipate."""
+    def test_an_off_node_gives_no_action_whatever_temperature_it_carries(self) -> None:
+        """Climate Scheduler publishes an "off" node with its temperature: heating towards it
+        just before the scheduler switches the heating off would be wrong."""
+        _, action = _read(_attrs([_temp(CLIMATE, 20.0, hvac_mode="off")], 0))
+
+        assert action is None
+
+    def test_an_off_node_is_recognised_whatever_its_case(self) -> None:
+        _, action = _read(_attrs([_temp(CLIMATE, 20.0, hvac_mode="OFF")], 0))
+
+        assert action is None
+
+    def test_a_null_temperature_node_gives_no_action(self) -> None:
         _, action = _read(_attrs([_temp(CLIMATE, None)], 0))
 
         assert action is None
 
-    def test_a_node_that_only_changes_the_hvac_mode_gives_no_action(self) -> None:
-        node = {
-            "entity_id": CLIMATE,
-            "service": "climate.set_temperature",
-            "data": {"temperature": None, "hvac_mode": "off"},
-        }
+    def test_a_node_that_heats_is_applied(self) -> None:
+        _, action = _read(_attrs([_temp(CLIMATE, 21.0, hvac_mode="heat")], 0))
 
-        _, action = _read(_attrs([node], 0))
-
-        assert action is None
+        assert action == SlotAction(temperature=21.0)
 
     @pytest.mark.parametrize("next_slot", [None, "1", -1, 5])
     def test_an_unusable_next_slot_gives_no_action(self, next_slot) -> None:

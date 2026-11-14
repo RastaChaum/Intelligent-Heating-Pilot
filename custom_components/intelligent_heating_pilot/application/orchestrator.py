@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from ..domain.value_objects import CancelReason, ScheduledTimeslot
+from ..domain.value_objects import CancelReason, RecoveryOutcome
 from .use_cases import (
     CalculateAnticipationUseCase,
     ControlPreheatingUseCase,
@@ -156,35 +156,21 @@ class HeatingOrchestrator:
         """
         return await self._run_anticipation_cycle(ihp_enabled, frozenset())
 
-    async def _recover_preheating_once(self, anticipation_data: dict[str, Any]) -> None:
+    async def _recover_preheating_once(self) -> None:
         """Pick up a preheat persisted before a restart or reload, on the first recalculation.
 
         The next slot is known only once the anticipation is calculated, and the preheat must be
         reconciled before anything is scheduled: otherwise a preheat already in progress would be
         started a second time, or a stale one would never be undone.
 
-        Args:
-            anticipation_data: The first calculated anticipation data.
         """
         if self._preheat_recovered:
             return
-        self._preheat_recovered = True
-        await self._control_preheating.recover_preheating(self._next_timeslot(anticipation_data))
-
-    @staticmethod
-    def _next_timeslot(anticipation_data: dict[str, Any]) -> ScheduledTimeslot | None:
-        """Rebuild the next slot from the anticipation data, if there is one."""
-        target_time = anticipation_data.get("next_schedule_time")
-        timeslot_id = anticipation_data.get("timeslot_id")
-        if target_time is None or not timeslot_id:
-            return None
-        return ScheduledTimeslot(
-            target_time=target_time,
-            target_temp=anticipation_data.get("next_target_temperature") or 0.0,
-            timeslot_id=timeslot_id,
-            scheduler_entity=anticipation_data.get("scheduler_entity") or "",
-            action=anticipation_data.get("next_slot_action"),
+        outcome = await self._control_preheating.recover_preheating(
+            self._schedule_anticipation_action.next_timeslot_of
         )
+        # A scheduler that cannot answer yet defers the decision: ask again at the next cycle
+        self._preheat_recovered = outcome is not RecoveryOutcome.DEFERRED
 
     async def retry_anticipation_after_blocked_scheduler(self, blocked_entity_id: str) -> None:
         """Re-enter the anticipation cycle, excluding a scheduler just confirmed blocked.
@@ -225,6 +211,8 @@ class HeatingOrchestrator:
             seed_excluded,
         )
 
+        await self._recover_preheating_once()
+
         excluded = seed_excluded
         blocked: list[str] = list(seed_excluded)
 
@@ -235,7 +223,6 @@ class HeatingOrchestrator:
             anticipation_data = await self._calculate_anticipation.calculate_anticipation_datas(
                 exclude_entity_ids=excluded
             )
-            await self._recover_preheating_once(anticipation_data)
 
             # Step 2: Delegate scheduling decisions to use case (respects ihp_enabled)
             blocked_entity = (

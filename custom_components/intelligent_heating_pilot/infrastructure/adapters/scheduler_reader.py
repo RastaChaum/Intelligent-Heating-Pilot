@@ -75,6 +75,15 @@ class HASchedulerReader(ISchedulerReader):
     async def get_next_timeslot(
         self, exclude_entity_ids: frozenset[str] = frozenset()
     ) -> ScheduledTimeslot | None:
+        """Retrieve the next scheduled heating timeslot, announcing it in the log.
+
+        See ``_find_next_timeslot`` for what is read and returned.
+        """
+        return await self._find_next_timeslot(exclude_entity_ids, announce=True)
+
+    async def _find_next_timeslot(
+        self, exclude_entity_ids: frozenset[str], announce: bool
+    ) -> ScheduledTimeslot | None:
         """Retrieve the next scheduled heating timeslot.
 
         Scans all configured scheduler entities except those listed in
@@ -146,7 +155,8 @@ class HASchedulerReader(ISchedulerReader):
 
         if chosen_time and chosen_temp is not None and chosen_entity:
             device_name = get_entity_name(self._hass, chosen_entity)
-            _LOGGER.info(
+            _LOGGER.log(
+                logging.INFO if announce else logging.DEBUG,
                 "[%s] Next timeslot at %s (%.1f°C)",
                 device_name,
                 chosen_time.strftime("%H:%M"),
@@ -177,7 +187,8 @@ class HASchedulerReader(ISchedulerReader):
         if scheduler_entity_id not in self._scheduler_entity_ids:
             return None
         others = frozenset(self._scheduler_entity_ids) - {scheduler_entity_id}
-        return await self.get_next_timeslot(exclude_entity_ids=others)
+        # A check of one scheduler's own slot runs at every recalculation: it is not announced
+        return await self._find_next_timeslot(others, announce=False)
 
     async def _read_scheduler_timeslot(
         self, entity_id: str, state: State

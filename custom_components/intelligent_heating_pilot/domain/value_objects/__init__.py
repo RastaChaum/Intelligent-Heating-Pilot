@@ -16,6 +16,7 @@ from .heating_cycle_cache_data import HeatingCycleCacheData
 from .historical_data import HistoricalDataKey, HistoricalDataSet, HistoricalMeasurement
 from .prediction_result import PredictionResult
 from .preheat_record import PreheatRecord
+from .preheat_recovery import PreheatRecovery, RecoveryOutcome
 from .recording_extraction_task import ExtractionTaskState, RecordingExtractionTask
 from .restore_decision import RestoreDecision
 from .restore_fields import RestoreFields
@@ -33,6 +34,8 @@ __all__ = [
     "CancelReason",
     "ClimateSnapshot",
     "PreheatRecord",
+    "PreheatRecovery",
+    "RecoveryOutcome",
     "RestoreDecision",
     "RestoreFields",
     "SchedulerKind",
