@@ -1025,3 +1025,123 @@ async def test_get_next_timeslot_mixed_native_and_hacs(mock_hass: Mock) -> None:
     # Should pick the earlier native schedule timeslot
     assert result is not None
     assert result.scheduler_entity == "schedule.native_schedule"
+
+
+# ── Climate Scheduler (switch.* owned by climate_scheduler) tests ─────────────
+
+CS_ID = "switch.living_room_plan"
+
+
+class _Owner:
+    """Resolves every entity to a fixed kind, so tests need no entity registry."""
+
+    def __init__(self, kind) -> None:
+        self._kind = kind
+
+    def resolve(self, _entity_id: str):
+        return self._kind
+
+
+def _cs_state(state: str, actions: list, next_slot: int) -> Mock:
+    return Mock(
+        entity_id=CS_ID,
+        state=state,
+        attributes={
+            "next_trigger": "2024-01-15T18:00:00+01:00",
+            "next_slot": next_slot,
+            "actions": actions,
+        },
+    )
+
+
+def _cs_reader(mock_hass: Mock, state: Mock, vtherm_attributes: dict | None = None):
+    from custom_components.intelligent_heating_pilot.domain.value_objects import SchedulerKind
+
+    states = {CS_ID: state, "climate.vtherm": _make_vtherm_state(vtherm_attributes or {})}
+    mock_hass.states.get.side_effect = states.get
+    mock_hass.is_running = True
+    return HASchedulerReader(
+        mock_hass,
+        [CS_ID],
+        vtherm_entity_id="climate.vtherm",
+        ownership_resolver=_Owner(SchedulerKind.CLIMATE_SCHEDULER),
+    )
+
+
+def _cs_temp(entity: str, value: float) -> dict:
+    return {
+        "entity_id": entity,
+        "service": "climate.set_temperature",
+        "data": {"temperature": value},
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_climate_scheduler_switch_gives_its_nodes_temperature_and_action(
+    mock_hass: Mock,
+) -> None:
+    actions = [_cs_temp("climate.other", 16.0), _cs_temp("climate.vtherm", 17.0)]
+    reader = _cs_reader(mock_hass, _cs_state("on", actions, 0))
+
+    result = await reader.get_next_timeslot()
+
+    assert result is not None
+    assert result.target_temp == 17.0  # our climate's entry, not the other room's
+    assert result.action == SlotAction(temperature=17.0)
+    assert result.scheduler_entity == CS_ID
+
+
+@pytest.mark.asyncio
+async def test_a_climate_scheduler_preset_node_gives_the_preset_temperature(
+    mock_hass: Mock,
+) -> None:
+    node = {
+        "entity_id": "climate.vtherm",
+        "service": "climate.set_preset_mode",
+        "data": {"preset_mode": "boost"},
+    }
+    reader = _cs_reader(
+        mock_hass,
+        _cs_state("on", [node], 0),
+        {"preset_temperatures": {"boost_temp": 23.0}},
+    )
+
+    result = await reader.get_next_timeslot()
+
+    assert result is not None
+    assert result.action == SlotAction(preset="boost")
+    assert result.target_temp == 23.0
+
+
+@pytest.mark.asyncio
+async def test_a_disabled_climate_scheduler_switch_is_skipped(mock_hass: Mock) -> None:
+    reader = _cs_reader(mock_hass, _cs_state("off", [_cs_temp("climate.vtherm", 21.0)], 0))
+
+    assert await reader.get_next_timeslot() is None
+
+
+@pytest.mark.asyncio
+async def test_a_climate_scheduler_node_without_an_action_gives_no_slot(mock_hass: Mock) -> None:
+    node = {
+        "entity_id": "climate.vtherm",
+        "service": "climate.set_temperature",
+        "data": {"temperature": None},
+    }
+    reader = _cs_reader(mock_hass, _cs_state("on", [node], 0))
+
+    assert await reader.get_next_timeslot() is None
+
+
+@pytest.mark.asyncio
+async def test_without_a_resolver_a_switch_is_read_as_a_hacs_scheduler(mock_hass: Mock) -> None:
+    """Unchanged for existing setups: the HACS reading has no action and trusts actions[next_slot]."""
+    states = {CS_ID: _cs_state("on", [_cs_temp("climate.other", 16.0)], 0)}
+    mock_hass.states.get.side_effect = states.get
+    mock_hass.is_running = True
+    reader = HASchedulerReader(mock_hass, [CS_ID])
+
+    result = await reader.get_next_timeslot()
+
+    assert result is not None
+    assert result.target_temp == 16.0
+    assert result.action is None
