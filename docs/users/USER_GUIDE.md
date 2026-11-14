@@ -10,7 +10,7 @@ Instead of manually deciding when to turn on heating, IHP:
 
 - ✅ **Learns** how fast your room heats
 - ✅ **Calculates** the optimal start time
-- ✅ **Triggers** heating automatically, through HACS Scheduler
+- ✅ **Starts** the heating early, through HACS Scheduler or by applying the slot's action to your thermostat
 - ✅ **Improves** predictions with each cycle
 
 ### What IHP Doesn't Do (Yet)
@@ -129,7 +129,7 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 
 ### ✅ Do This
 
-- ✅ Use a [supported scheduler](CONFIGURATION.md#supported-schedulers): HACS Scheduler, with slots that set a temperature or a preset
+- ✅ Use a [supported scheduler](CONFIGURATION.md#supported-schedulers): HACS Scheduler, Climate Scheduler, or a native `schedule.*` helper, with slots that set a temperature or a preset
 - ✅ Let IHP run a few days before judging accuracy
 - ✅ Monitor the "Global Learned Heating Slope" sensor (should stabilize)
 - ✅ Check logs if behavior seems strange
@@ -197,14 +197,15 @@ See [Configuration Guide](CONFIGURATION.md#heating-cycle-detection-parameters) f
 
 ### Q: Can I use IHP with multiple thermostats?
 
-**A:** Yes! Create one IHP device per thermostat, each with its own name. Each learns independently. Do not create two IHP devices for the same thermostat: both would trigger its schedulers.
+**A:** Yes! Create one IHP device per thermostat, each with its own name. Each learns independently, and each preheats only its own thermostat, with its own anticipation. Do not create two IHP devices for the same thermostat: both would trigger its schedulers.
 
 ### Q: Which schedulers does IHP support?
 
-**A:** Only two kinds, see [Supported Schedulers](CONFIGURATION.md#supported-schedulers):
+**A:** Three kinds, see [Supported Schedulers](CONFIGURATION.md#supported-schedulers):
 
 - **HACS Scheduler** (`switch.schedule_*`): IHP computes the anticipated start **and** starts the heating. Each slot's action must be `climate.set_temperature` or `climate.set_preset_mode`, and the schedule must control this VTherm.
-- **Native `schedule.*` helpers**: IHP only computes the anticipated start, with the VTherm comfort preset as target. It does not start the heating.
+- **Climate Scheduler** switches: IHP computes the anticipated start **and** applies the next node's action to your thermostat.
+- **Native `schedule.*` helpers**: IHP computes the anticipated start. It starts the heating only if you turn on **Drive Native Schedules**, using the preset or temperature in each block's data.
 
 Other schedulers (automations, calendars, other scheduler integrations) are not read. Use the `calculate_anticipated_start_time` service with them.
 
@@ -242,7 +243,7 @@ The service returns when to start heating, estimated duration, learned slope, an
 
 ### Q: Is IHP making my heating worse?
 
-**A:** Unlikely. IHP only triggers your existing scheduler at calculated times. Your thermostat still controls the actual heating. If problems occur, disable IHP (uninstall integration) and check thermostat works normally.
+**A:** Unlikely. IHP only applies, a little early, the action your scheduler was going to apply anyway, and puts the thermostat back if the preheat is cancelled and nobody changed it meanwhile. Your thermostat still controls the actual heating. If problems occur, disable IHP (uninstall integration) and check thermostat works normally.
 
 ### Q: Can I manually override IHP?
 
@@ -260,7 +261,7 @@ The switch is useful when you want temporary manual control but want IHP to cont
 
 ### Q: What happens when I go on vacation? Does IHP stop automatically?
 
-**A:** With HACS Scheduler, yes: IHP stops when you switch the scheduler off or when its conditions aren't met. A native `schedule.*` helper cannot be switched off, but IHP never starts the heating for it anyway. Here's how it works with HACS Scheduler:
+**A:** With HACS Scheduler or Climate Scheduler, yes: IHP stops when you switch the scheduler off, and with HACS Scheduler also when its conditions aren't met. A native `schedule.*` helper cannot be switched off: IHP keeps anticipating it if you turned on direct control, so leave that option off while you are away. Here's how it works with HACS Scheduler:
 
 **When the scheduler is switched off (state = "off"):**
 - IHP detects no upcoming timeslots

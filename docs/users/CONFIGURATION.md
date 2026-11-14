@@ -27,15 +27,18 @@ IHP does not work with every scheduler. What it can do depends on the scheduler 
 
 | Scheduler | Anticipated start computed | Heating started by IHP |
 |-----------|---------------------------|------------------------|
-| [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) switch (`switch.schedule_*`) | ✅ Yes | ✅ Yes |
-| Native Home Assistant `schedule.*` helper | ✅ Yes, with the VTherm comfort preset as target | ❌ No |
+| [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) switch (`switch.schedule_*`) | ✅ Yes | ✅ Yes, through the scheduler's own `run_action` |
+| [Climate Scheduler](https://github.com/kneave/climate-scheduler) switch | ✅ Yes | ✅ Yes, IHP applies the node's action to the thermostat |
+| Native Home Assistant `schedule.*` helper | ✅ Yes | ⚙️ Only if you turn on [direct control](#native-schedule-helpers) |
 | Anything else (automations, calendars, `input_datetime`, other scheduler integrations) | ❌ No | ❌ No |
+
+**The principle:** the scheduler decides what happens, when, and whether it happens. IHP only decides how early: at the anticipated start it applies the next slot's own action to the thermostat, and at the slot time the scheduler applies the same action, which changes nothing.
 
 Without a supported scheduler, use the [`calculate_anticipated_start_time` service](#using-ihp-without-a-scheduler) in your own automations.
 
 #### HACS Scheduler
 
-This is the only scheduler IHP can start the heating with. At the anticipated start, IHP calls `scheduler.run_action` so that the scheduler applies the upcoming slot early, with the scheduler's own conditions still checked. Restrictions:
+IHP calls `scheduler.run_action` at the anticipated start so that the scheduler applies the upcoming slot early, with the scheduler's own conditions still checked. Restrictions:
 
 - **The slot action must set a temperature.** IHP reads the target temperature from the slot's action, and only understands two actions:
   - `climate.set_temperature` with a `temperature`
@@ -48,14 +51,42 @@ This is the only scheduler IHP can start the heating with. At the anticipated st
 - **A scheduler switched off is ignored.** Switching it back on makes IHP use it again.
 - **Several schedulers can be configured.** IHP anticipates the earliest upcoming slot among them. If that scheduler's conditions block it, IHP tries the next scheduler right away.
 
+#### Climate Scheduler
+
+IHP recognises a Climate Scheduler switch by the integration that registered it, not by its look (it imitates the HACS Scheduler attributes). At the anticipated start IHP applies the **next node's action to this device's thermostat itself**, with no extra automation:
+
+- A node that sets a **temperature** is applied as a temperature; a node that selects a **preset** is applied as a preset.
+- A node that keeps the setpoint ("no change") or only changes the HVAC mode has nothing to anticipate and is ignored.
+- A schedule that covers several thermostats gives each IHP device its own node action: only the thermostat of this device is touched.
+- A switch that is off is ignored.
+- Climate Scheduler applies a node when it starts, and again after a restart or an edit. If it undoes a preheat that way, IHP does not fight it: the slot is simply reached on time.
+- **Limit:** just after midnight, Climate Scheduler announces the first node of *today's* schedule, which is wrong in its 5/2 and individual modes. IHP follows what the switch announces.
+
 #### Native `schedule.*` Helpers
 
-A native schedule only tells IHP when its next ON block starts. It does not hold a temperature and has no service to apply a block early. So:
+A native schedule does not say what its blocks mean: each block may carry free **data** that you filled in. IHP reads the **next block start** through the helper, even while another block is running, so adjacent blocks are anticipated too.
 
-- IHP computes the anticipated start for the next ON block, with the VTherm **comfort** preset temperature as target (20 °C if the comfort preset cannot be read).
-- IHP does **not** start the heating. To preheat, build an automation on the **Anticipated Start Time** sensor, or use a HACS Scheduler.
-- Nothing is anticipated while the schedule is ON: the next block is only known once the current one has ended.
-- A native schedule cannot be switched off: IHP keeps computing its anticipated start, during a vacation too.
+By default IHP only **computes** the anticipated start, with the VTherm **comfort** preset temperature as target (20 °C if the comfort preset cannot be read), and does not start the heating.
+
+To let IHP start the heating, turn on **Drive Native Schedules** in the device's **Configure** form. IHP then applies the next block's action to the thermostat at the anticipated start, read from the block's data:
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| Drive Native Schedules | off | IHP applies the next block itself |
+| Native Schedule Preset Key | `preset` | Data entry that holds a preset name |
+| Native Schedule Temperature Key | `temperature` | Data entry that holds a target temperature |
+| Native Schedule Fallback Preset | `comfort` | Preset applied when a block has neither entry |
+
+A block with the data `preset: comfort` is applied as the comfort preset; with `temperature: 21`, as 21 °C. When a block holds both, the **preset is applied** and the temperature only feeds the anticipation. Without the opt-in, block data is not read and nothing changes for you.
+
+- **A native schedule applies nothing by itself.** After a block ends, nothing puts the thermostat back to eco unless you have an automation for it.
+- A native schedule cannot be switched off: IHP keeps anticipating it, during a vacation too.
+
+#### When IHP Applies a Temperature: the Manual Override Duration
+
+Versatile Thermostat has an optional **manual override duration** (advanced configuration, off by default). When it is set, VTherm treats any `set_temperature` call as a temporary manual change: it keeps that temperature for that many minutes, then goes back to the preset it had before.
+
+IHP cannot tell VTherm that its call is not a manual change, so with this option on, a slot that sets a **temperature** can be undone by VTherm after the configured duration: before the slot if the preheat is longer, or in the middle of the slot otherwise. Slots that select a **preset** are not affected. If your schedules use temperatures, either leave the option off, or use presets in your slots.
 
 ### Step 3: (Optional) Add Environmental Sensors
 
@@ -98,7 +129,7 @@ Once configured, IHP operates automatically:
 1. **Monitors** your schedulers for the next slot
 2. **Learns** how your heating system performs
 3. **Calculates** when to start heating to reach the target temperature exactly on time
-4. **Triggers** the slot early through HACS Scheduler (a native schedule only gets the calculation)
+4. **Applies** the slot early: through HACS Scheduler's own `run_action`, or by applying the slot's action to your thermostat (Climate Scheduler, and native schedules when you turn on direct control)
 
 **You don't need to do anything—IHP works in the background!**
 
@@ -106,7 +137,7 @@ Once configured, IHP operates automatically:
 
 ## Using IHP Without a Scheduler
 
-IHP can be used without a scheduler, or with a scheduler it cannot start (native `schedule.*`). This is useful for:
+IHP can be used without a scheduler, or with a scheduler it does not start (a native `schedule.*` helper without direct control). This is useful for:
 
 - 🤖 **Dynamic scheduling** based on external triggers (e.g., smartphone alarm, calendar events)
 - 🔧 **Custom automations** that calculate start times programmatically
