@@ -10,9 +10,11 @@ from .climate_commander import HAClimateCommander
 from .climate_data_reader import HAClimateDataReader
 from .context_reader import HAContextReader
 from .environment_reader import HAEnvironmentReader
+from .hacs_run_action_actuator import HacsRunActionActuator
 from .heating_cycle_storage import HAHeatingCycleStorage
 from .lhs_storage import HALhsStorage
-from .scheduler_commander import HASchedulerCommander
+from .preheat_record_storage import HAPreheatRecordStorage
+from .scheduler_ownership_resolver import HASchedulerOwnershipResolver
 from .scheduler_reader import HASchedulerReader
 from .sensor_data_reader import HASensorDataReader
 from .sun_reader import HASunReader
@@ -25,7 +27,9 @@ __all__ = [
     "HAEnvironmentReader",
     "HAContextReader",
     "HALhsStorage",
-    "HASchedulerCommander",
+    "HAPreheatRecordStorage",
+    "HASchedulerOwnershipResolver",
+    "HacsRunActionActuator",
     "HASchedulerReader",
     "HAHeatingCycleStorage",
     "HATimerScheduler",

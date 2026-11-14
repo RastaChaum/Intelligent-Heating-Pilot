@@ -28,7 +28,7 @@ class IClimateCommander(ABC):
     async def apply(self, action: SlotAction) -> None: ...
 
     @abstractmethod
-    async def restore(self, snapshot: ClimateSnapshot, fields: RestoreFields) -> None:
+    async def restore(self, fields: RestoreFields) -> None:
         """Restore only the given fields; the HVAC mode is never written."""
 
 
@@ -56,7 +56,8 @@ class ISchedulerReader(ABC):
     async def get_next_timeslot_of(self, scheduler_entity_id: str) -> ScheduledTimeslot | None: ...
 ```
 
-`CancelReason` (enum): `SLOT_CHANGED`, `SCHEDULER_DISABLED`, `IHP_DISABLED`, `POSTPONED`.
+`CancelReason` (enum): `SLOT_CHANGED`, `SCHEDULER_DISABLED`, `IHP_DISABLED`, `POSTPONED`,
+`SLOT_REACHED`.
 
 Behavior contracts:
 

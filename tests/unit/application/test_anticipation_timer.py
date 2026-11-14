@@ -31,15 +31,6 @@ def mock_scheduler_reader() -> Mock:
 
 
 @pytest.fixture
-def mock_scheduler_commander() -> Mock:
-    """Create a mock scheduler commander."""
-    commander = Mock()
-    commander.run_action = AsyncMock()
-    commander.cancel_action = AsyncMock()
-    return commander
-
-
-@pytest.fixture
 def mock_timer_scheduler() -> Mock:
     """Create a mock timer scheduler."""
     scheduler = Mock()
@@ -62,14 +53,12 @@ def mock_control_preheating() -> Mock:
 @pytest.fixture
 def use_case(
     mock_scheduler_reader: Mock,
-    mock_scheduler_commander: Mock,
     mock_timer_scheduler: Mock,
     mock_control_preheating: Mock,
 ) -> ScheduleAnticipationActionUseCase:
     """Create ScheduleAnticipationActionUseCase with mocked dependencies."""
     return ScheduleAnticipationActionUseCase(
         scheduler_reader=mock_scheduler_reader,
-        scheduler_commander=mock_scheduler_commander,
         timer_scheduler=mock_timer_scheduler,
         control_preheating_use_case=mock_control_preheating,
     )
@@ -82,8 +71,8 @@ class TestAnticipationTimer:
     async def test_timer_scheduled_for_future_anticipation(
         self,
         use_case: ScheduleAnticipationActionUseCase,
-        mock_scheduler_commander: Mock,
         mock_timer_scheduler: Mock,
+        mock_control_preheating: Mock,
     ) -> None:
         """Test that a timer is scheduled when anticipated start is in the future."""
         now = make_aware(datetime(2025, 1, 15, 4, 0, 0))
@@ -100,7 +89,7 @@ class TestAnticipationTimer:
             )
 
         assert mock_timer_scheduler.schedule_timer.called
-        mock_scheduler_commander.run_action.assert_not_called()
+        mock_control_preheating.start_preheating.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_timer_rescheduled_when_anticipated_start_updates(

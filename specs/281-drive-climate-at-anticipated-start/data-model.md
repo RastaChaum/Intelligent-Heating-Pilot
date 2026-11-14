@@ -71,6 +71,16 @@ stopped it, such as a climate that is off: retried silently, DEBUG only), `UNSUP
 
 `RESTORE`, `LEAVE`, `DISCARD`.
 
+## CancelReason (enum)
+
+`SLOT_CHANGED`, `SCHEDULER_DISABLED`, `IHP_DISABLED`, `POSTPONED`, `SLOT_REACHED` (the slot
+time arrived: the record is discarded, nothing is restored, and a delegated preheat sends nothing).
+
+## RestoreFields
+
+Frozen value `preset | None`, `temperature | None`, with `is_empty`. It carries only what IHP
+writes back to the climate.
+
 ## Constants
 
 `PREHEAT_RESTORE_GUARD_MINUTES = 5` (domain constants): within this delay of the slot, a
@@ -80,8 +90,10 @@ cancellation is a completion, because the scheduler is about to apply the same a
 
 - `decide_apply(snapshot, action)`: skip when `hvac_mode == "off"`; skip when a preset is
   requested and not in `available_presets`; skip when the snapshot already equals the action.
-- `restore_fields(record)`: the fields IHP changed (the preset when `applied_kind` is `PRESET`,
-  else the temperature); the HVAC mode is never restored.
+- `restore_fields(record)`: the previous preset when there was a real one (not absent, not
+  `none`), whatever IHP applied, because a temperature slot takes a thermostat off its preset
+  and the setpoint follows the preset once it is back; otherwise the previous temperature.
+  The HVAC mode is never restored.
 - `decide_restore(record, snapshot, now)`: `DISCARD` if `slot_time - now` is within the guard
   window or negative; `LEAVE` if the snapshot differs from `record.applied`; else `RESTORE`.
 - `is_claimed_by_other(record, snapshot)`: the snapshot differs from `record.applied`.

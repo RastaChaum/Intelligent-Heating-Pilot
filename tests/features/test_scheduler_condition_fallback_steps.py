@@ -33,12 +33,12 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
 )
 from custom_components.intelligent_heating_pilot.infrastructure.adapters import (
     HAClimateDataReader,
-    HASchedulerCommander,
     HASchedulerReader,
 )
 from custom_components.intelligent_heating_pilot.infrastructure.recorder_queue import (
     RecorderAccessQueue,
 )
+from tests.actuator_helpers import build_hacs_router
 
 scenarios("scheduler_condition_fallback.feature")
 
@@ -194,12 +194,12 @@ class _FakeCalculateAnticipation:
 
 def _build_orchestrator(fallback_context: dict) -> HeatingOrchestrator:
     hass = _make_hass(fallback_context)
-    scheduler_commander = HASchedulerCommander(hass)
+    preheat_actuator = build_hacs_router(hass)
     climate_data_reader = HAClimateDataReader(
         hass, RecorderAccessQueue(), fallback_context["vtherm_id"]
     )
     control_preheating = ControlPreheatingUseCase(
-        scheduler_commander,
+        preheat_actuator,
         climate_data_reader=climate_data_reader,
         action_effect_timeout_seconds=_ACTION_EFFECT_TIMEOUT_SECONDS,
     )
@@ -208,7 +208,6 @@ def _build_orchestrator(fallback_context: dict) -> HeatingOrchestrator:
     timer_scheduler.schedule_timer = Mock(return_value=lambda: None)
     schedule_anticipation_action = ScheduleAnticipationActionUseCase(
         scheduler_reader=scheduler_reader,
-        scheduler_commander=scheduler_commander,
         timer_scheduler=timer_scheduler,
         control_preheating_use_case=control_preheating,
     )

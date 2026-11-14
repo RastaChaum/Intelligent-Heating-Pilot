@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from .application.actuators import RoutingPreheatActuator
 from .application.heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
 from .application.heating_cycle_lifecycle_manager_factory import (
     HeatingCycleLifecycleManagerFactory,
@@ -34,14 +35,15 @@ from .domain.services import (
     PredictionService,
 )
 from .domain.services.contextual_hour import contextual_hour
+from .domain.value_objects import SchedulerKind
 from .infrastructure.adapters import (
-    HAClimateCommander,
     HAClimateDataReader,
     HAContextReader,
+    HacsRunActionActuator,
     HAEnvironmentReader,
     HAHeatingCycleStorage,
     HALhsStorage,
-    HASchedulerCommander,
+    HASchedulerOwnershipResolver,
     HASchedulerReader,
     HASunReader,
     HATimerScheduler,
@@ -118,8 +120,7 @@ class HeatingApplication:
         self._lhs_storage: HALhsStorage | None = None
         self._cycle_storage: HAHeatingCycleStorage | None = None
         self._scheduler_reader: HASchedulerReader | None = None
-        self._scheduler_commander: HASchedulerCommander | None = None
-        self._climate_commander: HAClimateCommander | None = None
+        self._preheat_actuator: RoutingPreheatActuator | None = None
         self._environment_reader: HAEnvironmentReader | None = None
         self._context_reader: HAContextReader | None = None
         self._climate_data_reader: HAClimateDataReader | None = None
@@ -143,6 +144,20 @@ class HeatingApplication:
         # Config entry for options updates (set later via setup_config_entry_access)
         self._config_entry: ConfigEntry | None = None
         self._options_snapshot: dict[str, Any] | None = None
+
+    def _build_preheat_actuator(self) -> RoutingPreheatActuator:
+        """Build the actuator that serves each scheduler kind.
+
+        This is where the choice of mode lives: HACS Scheduler delegates to its own run-action
+        command; any other kind has no actuator yet and is computed only.
+
+        Returns:
+            The routing actuator the use cases call.
+        """
+        return RoutingPreheatActuator(
+            HASchedulerOwnershipResolver(self.hass),
+            {SchedulerKind.HACS: HacsRunActionActuator(self.hass)},
+        )
 
     async def async_load(self) -> None:
         """Load and initialize all components."""
@@ -169,9 +184,7 @@ class HeatingApplication:
             vtherm_entity_id=self._vtherm_id,
         )
 
-        self._scheduler_commander = HASchedulerCommander(self.hass)
-
-        self._climate_commander = HAClimateCommander(self.hass, self._vtherm_id)
+        self._preheat_actuator = self._build_preheat_actuator()
         self._environment_reader = HAEnvironmentReader(
             self.hass,
             self._vtherm_id,
@@ -247,13 +260,12 @@ class HeatingApplication:
         )
 
         control_preheating = ControlPreheatingUseCase(
-            scheduler_commander=self._scheduler_commander,
+            preheat_actuator=self._preheat_actuator,
             climate_data_reader=self._climate_data_reader,
         )
 
         schedule_anticipation_action = ScheduleAnticipationActionUseCase(
             scheduler_reader=self._scheduler_reader,
-            scheduler_commander=self._scheduler_commander,
             timer_scheduler=self._timer_scheduler,
             control_preheating_use_case=control_preheating,  # Delegate state management
             anticipation_recalc_tolerance_minutes=self._device_config.anticipation_recalc_tolerance_minutes,
