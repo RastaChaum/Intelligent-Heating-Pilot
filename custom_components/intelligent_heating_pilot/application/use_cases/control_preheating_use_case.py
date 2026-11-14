@@ -10,12 +10,19 @@ from time import monotonic
 from typing import TYPE_CHECKING
 
 from ...domain.constants import ACTION_EFFECT_TIMEOUT_SECONDS, TARGET_TEMP_MATCH_TOLERANCE_C
-from ...domain.value_objects import ActuationResult, CancelReason, ScheduledTimeslot, SlotAction
+from ...domain.value_objects import (
+    ActuationResult,
+    CancelReason,
+    RecoveryOutcome,
+    ScheduledTimeslot,
+    SlotAction,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
 
     from ...domain.interfaces import IClimateDataReader, IPreheatActuator
+    from ...domain.interfaces.preheat_actuator_interface import NextTimeslotOf
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -116,21 +123,27 @@ class ControlPreheatingUseCase:
             await self._preheat_actuator.cancel(self._active_timeslot, CancelReason.SLOT_REACHED)
         self._is_preheating_active = False
 
-    async def recover_preheating(self, next_timeslot: ScheduledTimeslot | None) -> None:
+    async def recover_preheating(self, next_timeslot_of: NextTimeslotOf) -> RecoveryOutcome:
         """Pick up a preheat that was in progress before a restart or a reload.
 
         Args:
-            next_timeslot: The slot that is next now, if any. When the actuator holds a
-                preheat for it, the preheat is marked active again, so that it is neither
-                started a second time nor left unreported.
+            next_timeslot_of: Gives the next timeslot of a scheduler entity. When the actuator
+                holds a preheat whose slot is still its scheduler's next one, the preheat is
+                marked active again, so that it is neither started a second time nor left
+                unreported.
+
+        Returns:
+            What the reconciliation found; ``DEFERRED`` means a scheduler could not answer yet
+            and the caller should ask again at its next cycle.
         """
-        in_progress = await self._preheat_actuator.recover(next_timeslot)
-        if in_progress and next_timeslot is not None:
-            _LOGGER.info("Resuming the preheat in progress for %s", next_timeslot.timeslot_id)
+        recovery = await self._preheat_actuator.recover(next_timeslot_of)
+        if recovery.outcome is RecoveryOutcome.RESUMED and recovery.timeslot is not None:
+            _LOGGER.info("Resuming the preheat in progress for %s", recovery.timeslot.timeslot_id)
             self._is_preheating_active = True
-            self._preheating_target_time = next_timeslot.target_time
-            self._active_scheduler_entity = next_timeslot.scheduler_entity
-            self._active_timeslot = next_timeslot
+            self._preheating_target_time = recovery.timeslot.target_time
+            self._active_scheduler_entity = recovery.timeslot.scheduler_entity
+            self._active_timeslot = recovery.timeslot
+        return recovery.outcome
 
     async def start_preheating(
         self,
@@ -209,9 +222,9 @@ class ControlPreheatingUseCase:
             return
         self._last_unapplied_slot = timeslot.timeslot_id
         _LOGGER.info(
-            "[%s] The climate did not take the action of slot %s: IHP tries again at the next recalculation",
-            timeslot.scheduler_entity,
-            timeslot.timeslot_id,
+            "The climate did not take the action of the slot starting at %s: IHP tries again at "
+            "the next recalculation",
+            timeslot.target_time.isoformat(),
         )
 
     @staticmethod
@@ -244,10 +257,10 @@ class ControlPreheatingUseCase:
             True when the preheat may proceed; False when the effect was disproved.
         """
         if result is ActuationResult.ATTEMPTED:
-            return await self._verify_action_effect(True, target_temp)
+            return await self._verify_action_effect(target_temp)
         return result in (ActuationResult.APPLIED, ActuationResult.UNSUPPORTED)
 
-    async def _verify_action_effect(self, attempted: bool, target_temp: float) -> bool:
+    async def _verify_action_effect(self, target_temp: float) -> bool:
         """Verify whether a triggered action actually applied ``target_temp``.
 
         scheduler-component returns from ``run_action`` before the VTherm has
@@ -256,18 +269,16 @@ class ControlPreheatingUseCase:
         timeout, each VTherm state change is read again.
 
         Args:
-            attempted: Whether an actuation attempt was made (False for a
-                native schedule, which is never actuated).
             target_temp: The temperature the action was expected to apply.
 
         Returns:
-            True when there is nothing to disprove (no attempt, no reader
+            True when there is nothing to disprove (no reader
             configured, or the VTherm state is unreadable) or the resulting
             target temperature matches within tolerance. False only when it
             still does not match at the timeout.
         """
         reader = self._climate_data_reader
-        if not attempted or reader is None:
+        if reader is None:
             return True
 
         deadline = monotonic() + self._action_effect_timeout_seconds

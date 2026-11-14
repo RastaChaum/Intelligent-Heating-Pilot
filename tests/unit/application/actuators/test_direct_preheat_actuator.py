@@ -17,6 +17,7 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ActuationResult,
     CancelReason,
     PreheatRecord,
+    RecoveryOutcome,
     RestoreFields,
     SlotAction,
 )
@@ -222,7 +223,8 @@ class TestCancel:
         await h.actuator.cancel(slot, CancelReason.SLOT_CHANGED)
 
         assert h.commander.restored == []
-        assert h.store.record is None
+        # Kept, marked as taken over: IHP must not apply this slot again over that change
+        assert h.store.record is not None and h.store.record.claimed
 
     @pytest.mark.asyncio
     async def test_a_cancellation_inside_the_guard_window_restores_nothing(
@@ -272,6 +274,17 @@ class TestCancel:
         assert all(not hasattr(fields, "hvac_mode") for fields in h.commander.restored)
 
 
+def _own_next(slot=None, calls=None):
+    """Build a next_timeslot_of that answers for the slot's scheduler (None: cannot answer)."""
+
+    async def next_timeslot_of(entity_id: str):
+        if calls is not None:
+            calls.append(entity_id)
+        return slot
+
+    return next_timeslot_of
+
+
 class TestRecover:
     def _record(self, **overrides) -> PreheatRecord:
         values = {
@@ -286,53 +299,184 @@ class TestRecover:
         return PreheatRecord(**values)
 
     @pytest.mark.asyncio
-    async def test_without_a_record_nothing_is_in_progress(self, h: Harness) -> None:
-        assert await h.actuator.recover(make_timeslot()) is False
+    async def test_without_a_record_there_is_nothing_to_recover(self, h: Harness) -> None:
+        recovery = await h.actuator.recover(_own_next(make_timeslot()))
+
+        assert recovery.outcome is RecoveryOutcome.NOTHING
 
     @pytest.mark.asyncio
-    async def test_a_record_for_the_next_slot_resumes_without_recording_again(
-        self, h: Harness
-    ) -> None:
+    async def test_a_record_for_the_slot_its_scheduler_still_has_resumes(self, h: Harness) -> None:
         h.store.record = self._record()
         h.climate.snapshot = make_snapshot(preset="comfort")
 
-        assert await h.actuator.recover(make_timeslot()) is True
+        recovery = await h.actuator.recover(_own_next(make_timeslot()))
+
+        assert recovery.outcome is RecoveryOutcome.RESUMED
+        assert recovery.timeslot == make_timeslot()
         assert h.store.saves == 0 and h.commander.restored == []
 
     @pytest.mark.asyncio
-    async def test_a_record_for_another_slot_is_reconciled_and_restored(self, h: Harness) -> None:
+    async def test_the_scheduler_of_the_record_is_the_one_asked(self, h: Harness) -> None:
+        """Another scheduler may be next: only the record's own scheduler tells if its slot stands."""
+        h.store.record = self._record()
+        asked: list[str] = []
+
+        await h.actuator.recover(_own_next(make_timeslot(), asked))
+
+        assert asked == ["switch.plan"]
+
+    @pytest.mark.asyncio
+    async def test_a_record_for_another_slot_of_its_scheduler_is_restored(self, h: Harness) -> None:
         h.store.record = self._record(timeslot_id="old_slot")
         h.climate.snapshot = make_snapshot(preset="comfort")
 
-        assert await h.actuator.recover(make_timeslot(slot_id="new_slot")) is False
+        recovery = await h.actuator.recover(_own_next(make_timeslot(slot_id="new_slot")))
+
+        assert recovery.outcome is RecoveryOutcome.RELEASED
         assert h.commander.restored == [RestoreFields(preset="eco")]
         assert h.store.record is None
 
     @pytest.mark.asyncio
-    async def test_a_record_for_a_slot_already_reached_is_discarded(self, h: Harness) -> None:
+    async def test_a_scheduler_that_cannot_answer_defers_and_keeps_the_record(
+        self, h: Harness
+    ) -> None:
+        """No restore on a missing answer: the preheat may still be valid (a read error is not a removal)."""
+        h.store.record = self._record()
+        h.climate.snapshot = make_snapshot(preset="comfort")
+
+        recovery = await h.actuator.recover(_own_next(None))
+
+        assert recovery.outcome is RecoveryOutcome.DEFERRED
+        assert h.commander.restored == []
+        assert h.store.record is not None
+
+    @pytest.mark.asyncio
+    async def test_a_record_for_a_slot_already_reached_is_discarded_without_asking(
+        self, h: Harness
+    ) -> None:
         h.store.record = self._record()
         h.now = SLOT_TIME + timedelta(minutes=30)
         h.climate.snapshot = make_snapshot(preset="comfort")
+        asked: list[str] = []
 
-        assert await h.actuator.recover(None) is False
-        assert h.commander.restored == []
-        assert h.store.record is None
+        recovery = await h.actuator.recover(_own_next(None, asked))
+
+        assert recovery.outcome is RecoveryOutcome.RELEASED
+        assert h.commander.restored == [] and h.store.record is None
+        assert asked == []
 
     @pytest.mark.asyncio
-    async def test_a_record_with_nobody_next_is_restored_when_still_ours(self, h: Harness) -> None:
-        h.store.record = self._record()
-        h.climate.snapshot = make_snapshot(preset="comfort")
+    async def test_a_claimed_record_resumes_nothing_but_stays(self, h: Harness) -> None:
+        h.store.record = self._record(claimed=True)
 
-        assert await h.actuator.recover(None) is False
-        assert h.commander.restored == [RestoreFields(preset="eco")]
+        recovery = await h.actuator.recover(_own_next(make_timeslot()))
+
+        assert recovery.outcome is RecoveryOutcome.NOTHING
+        assert h.store.record is not None and h.store.record.claimed
 
     @pytest.mark.asyncio
     async def test_recover_is_idempotent(self, h: Harness) -> None:
         h.store.record = self._record()
         h.climate.snapshot = make_snapshot(preset="comfort")
 
-        first = await h.actuator.recover(make_timeslot())
-        second = await h.actuator.recover(make_timeslot())
+        first = await h.actuator.recover(_own_next(make_timeslot()))
+        second = await h.actuator.recover(_own_next(make_timeslot()))
 
-        assert first is second is True
+        assert first.outcome is second.outcome is RecoveryOutcome.RESUMED
         assert h.store.saves == 0
+
+
+class TestTakeover:
+    """A change by someone else is final for the slot: IHP never applies the slot over it (M1)."""
+
+    @pytest.mark.asyncio
+    async def test_after_a_manual_change_a_later_start_for_the_same_slot_writes_nothing(
+        self, h: Harness
+    ) -> None:
+        slot = make_timeslot()
+        await h.actuator.start(slot)
+        h.climate.snapshot = make_snapshot(preset="none", temperature=19.0)  # the user's choice
+        await h.actuator.cancel(slot, CancelReason.POSTPONED)  # IHP's anticipation moved
+        h.commander.applied.clear()
+
+        result = await h.actuator.start(slot)  # the timer fires again
+
+        assert result is ActuationResult.SKIPPED
+        assert h.commander.applied == []
+        assert h.climate.snapshot is not None and h.climate.snapshot.temperature == 19.0
+
+    @pytest.mark.asyncio
+    async def test_the_takeover_is_kept_across_a_restart(self, h: Harness) -> None:
+        slot = make_timeslot()
+        await h.actuator.start(slot)
+        h.climate.snapshot = make_snapshot(preset="boost")
+        await h.actuator.cancel(slot, CancelReason.POSTPONED)
+
+        assert h.store.record is not None and h.store.record.claimed
+
+    @pytest.mark.asyncio
+    async def test_a_takeover_does_not_block_the_next_slot(self, h: Harness) -> None:
+        await h.actuator.start(make_timeslot(slot_id="slot_a"))
+        h.climate.snapshot = make_snapshot(preset="boost")
+        await h.actuator.cancel(make_timeslot(slot_id="slot_a"), CancelReason.POSTPONED)
+        h.climate.snapshot = make_snapshot(preset="eco")
+
+        result = await h.actuator.start(make_timeslot(slot_id="slot_b"))
+
+        assert result is ActuationResult.APPLIED
+
+    @pytest.mark.asyncio
+    async def test_reaching_the_slot_clears_a_takeover(self, h: Harness) -> None:
+        slot = make_timeslot()
+        await h.actuator.start(slot)
+        h.climate.snapshot = make_snapshot(preset="boost")
+        await h.actuator.cancel(slot, CancelReason.POSTPONED)
+        h.now = SLOT_TIME
+
+        await h.actuator.cancel(slot, CancelReason.SLOT_REACHED)
+
+        assert h.store.record is None
+
+    @pytest.mark.asyncio
+    async def test_an_unavailable_climate_keeps_the_record_untouched(self, h: Harness) -> None:
+        slot = make_timeslot()
+        await h.actuator.start(slot)
+        h.climate.snapshot = None
+
+        await h.actuator.cancel(slot, CancelReason.SLOT_CHANGED)
+
+        assert h.store.record is not None and not h.store.record.claimed
+        assert h.commander.restored == []
+
+    @pytest.mark.asyncio
+    async def test_a_switched_off_climate_is_left_alone_and_claimed(self, h: Harness) -> None:
+        slot = make_timeslot()
+        await h.actuator.start(slot)
+        h.climate.snapshot = make_snapshot(hvac_mode="off", preset="comfort")
+
+        await h.actuator.cancel(slot, CancelReason.SLOT_CHANGED)
+
+        assert h.commander.restored == []
+        assert h.store.record is not None and h.store.record.claimed
+
+
+class TestChaining:
+    @pytest.mark.asyncio
+    async def test_a_slot_already_passed_is_not_chained_to_the_next_one(self, h: Harness) -> None:
+        """M4: slot A was applied by its scheduler; going back to the state before A would undo it."""
+        await h.actuator.start(make_timeslot(slot_id="slot_a"))
+        h.now = SLOT_TIME + timedelta(hours=1)  # slot A passed and its record survived
+        h.climate.snapshot = make_snapshot(
+            preset="comfort"
+        )  # still A's action, applied by the scheduler
+
+        await h.actuator.start(
+            make_timeslot(
+                SlotAction(preset="boost"),
+                slot_id="slot_b",
+                slot_time=SLOT_TIME + timedelta(hours=5),
+            )
+        )
+
+        assert h.store.record is not None
+        assert h.store.record.previous.preset == "comfort"

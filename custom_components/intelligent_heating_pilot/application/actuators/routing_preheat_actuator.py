@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 
-from ...domain.interfaces.preheat_actuator_interface import IPreheatActuator
+from ...domain.interfaces.preheat_actuator_interface import IPreheatActuator, NextTimeslotOf
 from ...domain.interfaces.scheduler_ownership_resolver_interface import ISchedulerOwnershipResolver
 from ...domain.value_objects.actuation_result import ActuationResult
 from ...domain.value_objects.cancel_reason import CancelReason
+from ...domain.value_objects.preheat_recovery import PreheatRecovery, RecoveryOutcome
 from ...domain.value_objects.scheduled_timeslot import ScheduledTimeslot
 from ...domain.value_objects.scheduler_kind import SchedulerKind
 
@@ -66,21 +67,24 @@ class RoutingPreheatActuator(IPreheatActuator):
         if actuator is not None:
             await actuator.cancel(timeslot, reason)
 
-    async def recover(self, next_timeslot: ScheduledTimeslot | None) -> bool:
-        """Recover with every distinct actuator; the next slot goes to its owner only.
+    async def recover(self, next_timeslot_of: NextTimeslotOf) -> PreheatRecovery:
+        """Recover with every distinct actuator and combine what they found.
 
         Args:
-            next_timeslot: The slot that is next now, if any.
+            next_timeslot_of: Gives the next timeslot of a scheduler entity.
 
         Returns:
-            True when an actuator has a preheat in progress for ``next_timeslot``.
+            The most telling result: a resumed preheat first, then a deferral (some scheduler
+            could not answer: ask again), then a release.
         """
-        owner = self._actuator_for(next_timeslot) if next_timeslot is not None else None
-        in_progress = False
-        for actuator in self._distinct_actuators():
-            slot = next_timeslot if actuator is owner else None
-            in_progress = await actuator.recover(slot) or in_progress
-        return in_progress
+        results = [
+            await actuator.recover(next_timeslot_of) for actuator in self._distinct_actuators()
+        ]
+        for wanted in (RecoveryOutcome.RESUMED, RecoveryOutcome.DEFERRED, RecoveryOutcome.RELEASED):
+            found = next((result for result in results if result.outcome is wanted), None)
+            if found is not None:
+                return found
+        return PreheatRecovery(RecoveryOutcome.NOTHING)
 
     def _actuator_for(self, timeslot: ScheduledTimeslot) -> IPreheatActuator | None:
         kind = self._resolver.resolve(timeslot.scheduler_entity)

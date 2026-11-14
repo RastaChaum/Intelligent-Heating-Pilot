@@ -80,6 +80,7 @@ class HAPreheatRecordStorage(BaseHAStorageAdapter[dict[str, Any]], IPreheatRecor
                 "available_presets": list(record.previous.available_presets),
             },
             "applied": {"preset": record.applied.preset, "temperature": record.applied.temperature},
+            "claimed": record.claimed,
         }
 
     def _deserialize(self, raw: dict[str, Any]) -> PreheatRecord:
@@ -99,4 +100,5 @@ class HAPreheatRecordStorage(BaseHAStorageAdapter[dict[str, Any]], IPreheatRecor
             applied=SlotAction(
                 preset=applied.get("preset"), temperature=applied.get("temperature")
             ),
+            claimed=bool(raw.get("claimed", False)),
         )

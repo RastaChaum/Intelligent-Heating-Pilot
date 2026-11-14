@@ -83,6 +83,7 @@ class HANativeScheduleReader:
         """
         self._hass = hass
         self._settings = settings
+        self._legacy_warned = False
 
     async def next_slot(self, entity_id: str) -> NativeSlot | None:
         """Return the next block start of a native schedule.
@@ -96,6 +97,8 @@ class HANativeScheduleReader:
         Returns:
             The next block, or None when there is none or the schedule cannot be read.
         """
+        if not self._hass.services.has_service(SCHEDULE_DOMAIN, SERVICE_GET_SCHEDULE):
+            return self._next_slot_from_attributes(entity_id)
         schedule = await self._fetch(entity_id)
         if not schedule:
             return None
@@ -105,6 +108,44 @@ class HANativeScheduleReader:
             return None
         start, data = found
         return NativeSlot(start=start, action=self._action_from(data))
+
+    def _next_slot_from_attributes(self, entity_id: str) -> NativeSlot | None:
+        """Read the next ON block from the entity's ``next_event`` attribute.
+
+        Home Assistant only offers ``schedule.get_schedule`` from 2025.3. Before that, the
+        helper tells only when its next event happens: the next ON time while it is off, the
+        next OFF time while it is on. So nothing is anticipated while a block runs, a block's
+        data cannot be read, and a driven schedule gets the fallback preset.
+        """
+        if not self._legacy_warned:
+            self._legacy_warned = True
+            _LOGGER.warning(
+                "Home Assistant has no schedule.get_schedule service (it needs 2025.3): native "
+                "schedules are read from their next event only, so block data is not available"
+            )
+        state = self._hass.states.get(entity_id)
+        if state is None or state.state != "off":
+            return None
+        start = self._parse_event(state.attributes.get("next_event"))
+        if start is None:
+            return None
+        action = (
+            SlotAction(preset=self._settings.fallback_preset)
+            if self._settings.drive_enabled
+            else None
+        )
+        return NativeSlot(start=start, action=action)
+
+    @staticmethod
+    def _parse_event(value: Any) -> datetime | None:
+        parsed = (
+            value
+            if isinstance(value, datetime)
+            else (dt_util.parse_datetime(str(value)) if value else None)
+        )
+        if parsed is None:
+            return None
+        return parsed if parsed.tzinfo is not None else dt_util.as_local(parsed)
 
     async def _fetch(self, entity_id: str) -> dict[str, Any] | None:
         try:

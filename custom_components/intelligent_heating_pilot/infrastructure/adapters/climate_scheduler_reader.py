@@ -28,6 +28,12 @@ SERVICE_SET_TEMPERATURE = "climate.set_temperature"
 UNKNOWN_ENTITY = "unknown"
 
 
+def _turns_off(data: dict[str, Any]) -> bool:
+    """Tell whether a node switches the climate off: it carries a temperature but heats nothing."""
+    hvac_mode = data.get("hvac_mode")
+    return isinstance(hvac_mode, str) and hvac_mode.lower() == "off"
+
+
 class HAClimateSchedulerReader:
     """Reads the next node of a Climate Scheduler switch for one climate entity."""
 
@@ -42,8 +48,9 @@ class HAClimateSchedulerReader:
     def read(self, attributes: Mapping[str, Any]) -> tuple[datetime | None, SlotAction | None]:
         """Read the next node's start and action from a switch's attributes.
 
-        A node that keeps the current setpoint ("no change") or only changes the HVAC mode
-        applies nothing to anticipate, so it gives no action.
+        A node that switches the climate off applies nothing to heat towards, whatever
+        temperature it carries, so it gives no action. A "no change" node cannot be told apart:
+        Climate Scheduler publishes it with the temperature it keeps, which IHP then anticipates.
 
         Args:
             attributes: The state attributes of the Climate Scheduler switch.
@@ -99,6 +106,8 @@ class HAClimateSchedulerReader:
                 else None
             )
         if service == SERVICE_SET_TEMPERATURE:
+            if _turns_off(data):
+                return None
             temperature = data.get("temperature")
             if isinstance(temperature, bool) or not isinstance(temperature, int | float):
                 return None

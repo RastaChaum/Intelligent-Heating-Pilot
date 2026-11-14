@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **A moved or removed slot now cancels the preheat in progress, for every scheduler** (#249) – A preheat was kept as long as its scheduler stayed enabled, even if the slot it was heating for had been moved or deleted. It is now kept only while that slot is still its scheduler's next one, so the thermostat is put back. The earlier fix for a comfort/eco flap between two schedulers (#64) is preserved.
-- **Native schedules are anticipated while another block is running** (#249) – IHP now reads the helper's blocks, so a block that starts right when the running one ends is anticipated too, instead of waiting for the running block to finish.
+- **Native schedules are anticipated while another block is running** (#249) – IHP now reads the helper's blocks (Home Assistant 2025.3 or later; before that it reads the next event as before, with one warning). The next block start is known whatever the schedule's state, so a block that starts right when the running one ends is anticipated, and the anticipation sensors show the next slot during a running block, where they used to show nothing. With several schedulers this can change which one is the earliest.
+- **A switch IHP cannot attribute to an integration is no longer sent `scheduler.run_action`** (#249) – IHP tells HACS Scheduler and Climate Scheduler apart through the entity registry. A switch with no registry entry is only computed, and a warning names it once.
 - **Versatile Thermostat is now a declared dependency.** IHP already only worked with it; without it installed, Home Assistant now refuses to load IHP and says why in the log. (#280)
 
 ### Fixed

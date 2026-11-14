@@ -173,6 +173,14 @@ class TestDecideRestore:
             is RestoreDecision.DISCARD
         )
 
+    def test_a_climate_switched_off_meanwhile_is_left_alone(self, policy) -> None:
+        """Writing a preset to a thermostat somebody turned off would be overriding them."""
+        decision = policy.decide_restore(
+            _record(), _snapshot(hvac_mode="off", preset="comfort"), NOW
+        )
+
+        assert decision is RestoreDecision.LEAVE
+
     def test_an_unavailable_climate_is_left_alone(self, policy) -> None:
         assert policy.decide_restore(_record(), None, NOW) is RestoreDecision.LEAVE
 

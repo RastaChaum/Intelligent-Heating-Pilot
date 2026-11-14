@@ -14,6 +14,8 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ActuationResult,
     CancelReason,
+    PreheatRecovery,
+    RecoveryOutcome,
     ScheduledTimeslot,
     SlotAction,
 )
@@ -29,7 +31,7 @@ def _use_case(result: ActuationResult) -> tuple[ControlPreheatingUseCase, Mock]:
     actuator = Mock()
     actuator.start = AsyncMock(return_value=result)
     actuator.cancel = AsyncMock()
-    actuator.recover = AsyncMock(return_value=False)
+    actuator.recover = AsyncMock(return_value=PreheatRecovery(RecoveryOutcome.NOTHING))
     return ControlPreheatingUseCase(actuator), actuator
 
 
@@ -130,6 +132,10 @@ class TestCompletion:
         actuator.cancel.assert_not_awaited()
 
 
+async def _no_answer(_entity_id: str):
+    return None
+
+
 class TestRecover:
     SLOT_OBJECT = ScheduledTimeslot(
         target_time=SLOT, target_temp=21.0, timeslot_id="slot", scheduler_entity=ENTITY
@@ -138,27 +144,46 @@ class TestRecover:
     @pytest.mark.asyncio
     async def test_a_preheat_in_progress_is_marked_active_again(self) -> None:
         use_case, actuator = _use_case(ActuationResult.APPLIED)
-        actuator.recover = AsyncMock(return_value=True)
+        actuator.recover = AsyncMock(
+            return_value=PreheatRecovery(RecoveryOutcome.RESUMED, self.SLOT_OBJECT)
+        )
 
-        await use_case.recover_preheating(self.SLOT_OBJECT)
+        outcome = await use_case.recover_preheating(_no_answer)
 
+        assert outcome is RecoveryOutcome.RESUMED
         assert use_case.is_preheating_active() is True
         assert use_case.get_preheating_target_time() == SLOT
         assert use_case.get_active_scheduler_entity() == ENTITY
 
     @pytest.mark.asyncio
-    async def test_nothing_in_progress_leaves_the_preheat_inactive(self) -> None:
-        use_case, _ = _use_case(ActuationResult.APPLIED)
+    @pytest.mark.parametrize(
+        "outcome",
+        [RecoveryOutcome.NOTHING, RecoveryOutcome.RELEASED, RecoveryOutcome.DEFERRED],
+    )
+    async def test_any_other_outcome_leaves_the_preheat_inactive_and_is_reported(
+        self, outcome
+    ) -> None:
+        use_case, actuator = _use_case(ActuationResult.APPLIED)
+        actuator.recover = AsyncMock(return_value=PreheatRecovery(outcome))
 
-        await use_case.recover_preheating(self.SLOT_OBJECT)
-
+        assert await use_case.recover_preheating(_no_answer) is outcome
         assert use_case.is_preheating_active() is False
+
+    @pytest.mark.asyncio
+    async def test_the_scheduler_lookup_is_handed_to_the_actuator(self) -> None:
+        use_case, actuator = _use_case(ActuationResult.APPLIED)
+
+        await use_case.recover_preheating(_no_answer)
+
+        actuator.recover.assert_awaited_once_with(_no_answer)
 
     @pytest.mark.asyncio
     async def test_a_recovered_preheat_can_later_be_cancelled(self) -> None:
         use_case, actuator = _use_case(ActuationResult.APPLIED)
-        actuator.recover = AsyncMock(return_value=True)
-        await use_case.recover_preheating(self.SLOT_OBJECT)
+        actuator.recover = AsyncMock(
+            return_value=PreheatRecovery(RecoveryOutcome.RESUMED, self.SLOT_OBJECT)
+        )
+        await use_case.recover_preheating(_no_answer)
 
         await use_case.cancel_preheating()
 

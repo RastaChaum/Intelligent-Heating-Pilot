@@ -56,15 +56,16 @@ IHP calls `scheduler.run_action` at the anticipated start so that the scheduler 
 IHP recognises a Climate Scheduler switch by the integration that registered it, not by its look (it imitates the HACS Scheduler attributes). At the anticipated start IHP applies the **next node's action to this device's thermostat itself**, with no extra automation:
 
 - A node that sets a **temperature** is applied as a temperature; a node that selects a **preset** is applied as a preset.
-- A node that keeps the setpoint ("no change") or only changes the HVAC mode has nothing to anticipate and is ignored.
+- A node that switches the thermostat **off** is ignored, whatever temperature it carries. A "no change" node cannot be told apart from another: Climate Scheduler publishes it with the temperature it keeps, so IHP anticipates that temperature.
 - A schedule that covers several thermostats gives each IHP device its own node action: only the thermostat of this device is touched.
 - A switch that is off is ignored.
 - Climate Scheduler applies a node when it starts, and again after a restart or an edit. If it undoes a preheat that way, IHP does not fight it: the slot is simply reached on time.
-- **Limit:** just after midnight, Climate Scheduler announces the first node of *today's* schedule, which is wrong in its 5/2 and individual modes. IHP follows what the switch announces.
+- A schedule that does not name its thermostats is taken as this device's thermostat.
+- **Limit:** between the last node of the day and midnight, Climate Scheduler announces the first node of *today's* schedule instead of tomorrow's, which is wrong in its 5/2 and individual modes (after midnight it is right). IHP follows what the switch announces.
 
 #### Native `schedule.*` Helpers
 
-A native schedule does not say what its blocks mean: each block may carry free **data** that you filled in. IHP reads the **next block start** through the helper, even while another block is running, so adjacent blocks are anticipated too.
+A native schedule does not say what its blocks mean: each block may carry free **data** that you filled in. IHP reads the **next block start** through the helper (Home Assistant 2025.3 or later), even while another block is running, so adjacent blocks are anticipated too. On an older Home Assistant, IHP reads only the helper's next event: nothing is anticipated while a block runs, block data is not available, and a driven schedule gets the fallback preset. A warning says so once.
 
 By default IHP only **computes** the anticipated start, with the VTherm **comfort** preset temperature as target (20 °C if the comfort preset cannot be read), and does not start the heating.
 
@@ -81,6 +82,15 @@ A block with the data `preset: comfort` is applied as the comfort preset; with `
 
 - **A native schedule applies nothing by itself.** After a block ends, nothing puts the thermostat back to eco unless you have an automation for it.
 - A native schedule cannot be switched off: IHP keeps anticipating it, during a vacation too.
+
+#### What IHP Leaves Alone
+
+When IHP drives your thermostat it first records its state, and it only puts that state back if nobody touched the thermostat meanwhile:
+
+- If you or an automation change the preset or temperature during the preheat, IHP never overwrites it, restores nothing, and **does not apply that slot again**: your change stands until the slot.
+- A thermostat you switch off is left off, and nothing is written to it.
+- A cancellation a few minutes before the slot restores nothing, because the scheduler is about to apply the same action.
+- After a Home Assistant restart IHP picks up the preheat in progress; if its scheduler cannot answer yet, it waits and asks again.
 
 #### When IHP Applies a Temperature: the Manual Override Duration
 

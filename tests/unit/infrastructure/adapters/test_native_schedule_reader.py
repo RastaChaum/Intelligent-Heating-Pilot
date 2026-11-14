@@ -296,3 +296,68 @@ class TestSlotAction:
         for field in ("preset_key", "temperature_key", "fallback_preset"):
             with pytest.raises(ValueError, match=field):
                 NativeScheduleSettings(**{field: ""})
+
+
+class TestWithoutGetScheduleService:
+    """Home Assistant before 2025.3 has no schedule.get_schedule: next_event is the only source."""
+
+    @staticmethod
+    def _legacy(state: str, next_event, settings: NativeScheduleSettings | None = None):
+        hass = Mock()
+        hass.services.has_service = Mock(return_value=False)
+        hass.services.async_call = AsyncMock()
+        hass.states.get = Mock(
+            return_value=Mock(state=state, attributes={"next_event": next_event})
+        )
+        return HANativeScheduleReader(hass, settings or NativeScheduleSettings()), hass
+
+    @pytest.mark.asyncio
+    async def test_the_next_event_of_an_off_schedule_is_the_next_start(self) -> None:
+        reader, hass = self._legacy("off", "2026-11-16T18:00:00+01:00")
+
+        slot = await _next(reader)
+
+        assert slot is not None and slot.start == datetime(2026, 11, 16, 18, 0, tzinfo=TZ)
+        hass.services.async_call.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_running_schedule_has_no_known_next_start(self) -> None:
+        """Its next_event is the end of the block: nothing to anticipate yet."""
+        reader, _ = self._legacy("on", "2026-11-16T22:00:00+01:00")
+
+        assert await _next(reader) is None
+
+    @pytest.mark.asyncio
+    async def test_a_datetime_next_event_is_accepted(self) -> None:
+        reader, _ = self._legacy("off", datetime(2026, 11, 16, 18, 0, tzinfo=TZ))
+
+        slot = await _next(reader)
+
+        assert slot is not None and slot.start.hour == 18
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("next_event", [None, "", "not a date"])
+    async def test_a_missing_or_bad_next_event_gives_no_slot(self, next_event) -> None:
+        reader, _ = self._legacy("off", next_event)
+
+        assert await _next(reader) is None
+
+    @pytest.mark.asyncio
+    async def test_a_driven_schedule_gets_the_fallback_preset_as_data_is_unavailable(self) -> None:
+        reader, _ = self._legacy(
+            "off", "2026-11-16T18:00:00+01:00", NativeScheduleSettings(drive_enabled=True)
+        )
+
+        slot = await _next(reader)
+
+        assert slot is not None and slot.action == SlotAction(preset="comfort")
+
+    @pytest.mark.asyncio
+    async def test_the_missing_service_is_reported_once(self, caplog) -> None:
+        reader, _ = self._legacy("off", "2026-11-16T18:00:00+01:00")
+
+        with caplog.at_level("WARNING", logger=MODULE):
+            await _next(reader)
+            await _next(reader)
+
+        assert len([r for r in caplog.records if "2025.3" in r.getMessage()]) == 1

@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 
 from ..value_objects.actuation_result import ActuationResult
 from ..value_objects.cancel_reason import CancelReason
+from ..value_objects.preheat_recovery import PreheatRecovery
 from ..value_objects.scheduled_timeslot import ScheduledTimeslot
+
+# Gives the next timeslot of one scheduler, or None when it has none or cannot be read
+NextTimeslotOf = Callable[[str], Awaitable[ScheduledTimeslot | None]]
 
 
 class IPreheatActuator(ABC):
@@ -41,15 +46,17 @@ class IPreheatActuator(ABC):
         """
 
     @abstractmethod
-    async def recover(self, next_timeslot: ScheduledTimeslot | None) -> bool:
+    async def recover(self, next_timeslot_of: NextTimeslotOf) -> PreheatRecovery:
         """Reconcile a preheat persisted before a restart or reload.
 
-        Idempotent. A preheat for the next slot resumes; one for another or a passed slot is
-        cancelled or discarded.
+        Idempotent. The recorded slot is compared with the next slot of ITS OWN scheduler: a
+        slot that is still next resumes the preheat; another slot, or a slot already reached,
+        releases it. When the scheduler cannot answer, nothing is decided and the result says to
+        ask again: deciding on a missing answer could undo a preheat that is still valid.
 
         Args:
-            next_timeslot: The slot that is next now, if any.
+            next_timeslot_of: Gives the next timeslot of a scheduler entity.
 
         Returns:
-            True when a preheat is in progress for ``next_timeslot``.
+            What the reconciliation found.
         """

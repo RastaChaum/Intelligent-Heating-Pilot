@@ -13,16 +13,25 @@ from custom_components.intelligent_heating_pilot.domain.interfaces import IPrehe
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
     ActuationResult,
     CancelReason,
+    PreheatRecovery,
+    RecoveryOutcome,
     SchedulerKind,
 )
 from tests.unit.application.actuators.fakes import make_timeslot
 
 
-def _actuator(result: ActuationResult = ActuationResult.APPLIED, recovers: bool = False) -> Mock:
+def _actuator(
+    result: ActuationResult = ActuationResult.APPLIED,
+    outcome: RecoveryOutcome = RecoveryOutcome.NOTHING,
+) -> Mock:
     actuator = Mock(spec=IPreheatActuator)
     actuator.start = AsyncMock(return_value=result)
     actuator.cancel = AsyncMock()
-    actuator.recover = AsyncMock(return_value=recovers)
+    actuator.recover = AsyncMock(
+        return_value=PreheatRecovery(
+            outcome, make_timeslot() if outcome is RecoveryOutcome.RESUMED else None
+        )
+    )
     return actuator
 
 
@@ -70,26 +79,51 @@ async def test_a_cancellation_for_an_unsupported_kind_does_nothing() -> None:
     await router.cancel(make_timeslot(), CancelReason.SLOT_CHANGED)  # must not raise
 
 
+async def _next_of(_entity_id: str):
+    return None
+
+
 @pytest.mark.asyncio
-async def test_recover_asks_every_actuator_once_and_gives_the_slot_to_its_owner() -> None:
-    hacs, direct = _actuator(), _actuator(recovers=True)
+async def test_recover_asks_every_distinct_actuator_once() -> None:
+    hacs, direct = _actuator(), _actuator()
     routes = {
         SchedulerKind.HACS: hacs,
         SchedulerKind.NATIVE: direct,
         SchedulerKind.CLIMATE_SCHEDULER: direct,
     }
     router = _router(SchedulerKind.NATIVE, routes)
-    slot = make_timeslot()
 
-    assert await router.recover(slot) is True
-    direct.recover.assert_awaited_once_with(slot)
-    hacs.recover.assert_awaited_once_with(None)
+    await router.recover(_next_of)
+
+    direct.recover.assert_awaited_once_with(_next_of)
+    hacs.recover.assert_awaited_once_with(_next_of)
 
 
 @pytest.mark.asyncio
-async def test_recover_without_a_next_slot_asks_everyone_with_none() -> None:
-    direct = _actuator()
-    router = _router(SchedulerKind.NATIVE, {SchedulerKind.NATIVE: direct})
+@pytest.mark.parametrize(
+    ("outcomes", "expected"),
+    [
+        ([RecoveryOutcome.NOTHING, RecoveryOutcome.NOTHING], RecoveryOutcome.NOTHING),
+        ([RecoveryOutcome.RELEASED, RecoveryOutcome.NOTHING], RecoveryOutcome.RELEASED),
+        ([RecoveryOutcome.RELEASED, RecoveryOutcome.DEFERRED], RecoveryOutcome.DEFERRED),
+        ([RecoveryOutcome.DEFERRED, RecoveryOutcome.RESUMED], RecoveryOutcome.RESUMED),
+    ],
+)
+async def test_recover_combines_the_most_telling_outcome(outcomes, expected) -> None:
+    first, second = _actuator(outcome=outcomes[0]), _actuator(outcome=outcomes[1])
+    router = _router(
+        SchedulerKind.NATIVE, {SchedulerKind.HACS: first, SchedulerKind.NATIVE: second}
+    )
 
-    assert await router.recover(None) is False
-    direct.recover.assert_awaited_once_with(None)
+    assert (await router.recover(_next_of)).outcome is expected
+
+
+@pytest.mark.asyncio
+async def test_a_resumed_recovery_carries_its_slot() -> None:
+    router = _router(
+        SchedulerKind.NATIVE, {SchedulerKind.NATIVE: _actuator(outcome=RecoveryOutcome.RESUMED)}
+    )
+
+    recovery = await router.recover(_next_of)
+
+    assert recovery.timeslot == make_timeslot()

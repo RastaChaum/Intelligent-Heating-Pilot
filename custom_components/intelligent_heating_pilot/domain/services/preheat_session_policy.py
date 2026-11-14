@@ -104,13 +104,18 @@ class PreheatSessionPolicy:
 
         Returns:
             ``DISCARD`` inside the guard window or after the slot, ``LEAVE`` when the climate
-            is unavailable or someone else changed it, ``RESTORE`` otherwise.
+            is unavailable, was switched off, or someone else changed it, ``RESTORE`` otherwise.
         """
         if record.slot_time - now <= self._restore_guard:
             return RestoreDecision.DISCARD
-        if snapshot is None or self.is_claimed_by_other(record, snapshot):
+        if snapshot is None or self._is_off(snapshot) or self.is_claimed_by_other(record, snapshot):
             return RestoreDecision.LEAVE
         return RestoreDecision.RESTORE
+
+    @staticmethod
+    def _is_off(snapshot: ClimateSnapshot) -> bool:
+        """A climate switched off is somebody's choice: nothing is written to it."""
+        return snapshot.hvac_mode.lower() == OFF_HVAC_MODE
 
     def is_claimed_by_other(self, record: PreheatRecord, snapshot: ClimateSnapshot | None) -> bool:
         """Tell whether someone else changed the climate after IHP acted.

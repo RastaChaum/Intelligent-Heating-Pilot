@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from ...domain.interfaces import ISchedulerReader, ITimerScheduler
-    from ...domain.value_objects import SlotAction
+    from ...domain.value_objects import ScheduledTimeslot, SlotAction
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,6 +75,17 @@ class ScheduleAnticipationActionUseCase:
         # (target_time, scheduler) of the retry planned for the slot's day, if any (#250)
         self._slot_day_retry: tuple[datetime, str] | None = None
         self._anticipation_recalc_tolerance_seconds = anticipation_recalc_tolerance_minutes * 60
+
+    async def next_timeslot_of(self, scheduler_entity_id: str) -> ScheduledTimeslot | None:
+        """Give the next timeslot of one scheduler, to reconcile a preheat after a restart.
+
+        Args:
+            scheduler_entity_id: The scheduler entity.
+
+        Returns:
+            Its next timeslot, or None when it has none or cannot be read.
+        """
+        return await self._scheduler_reader.get_next_timeslot_of(scheduler_entity_id)
 
     def set_on_scheduler_blocked(self, callback: Callable[[str], Awaitable[None]] | None) -> None:
         """Set the callback invoked when a timer-fired trigger is confirmed blocked.
