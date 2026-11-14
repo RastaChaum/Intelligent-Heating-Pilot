@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from ..value_objects.climate_snapshot import ClimateSnapshot
+
 
 class IClimateDataReader(ABC):
     """Contract for reading climate data from a VTherm entity.
@@ -86,4 +88,16 @@ class IClimateDataReader(ABC):
         Returns:
             ``True`` when the VTherm state changed before the timeout,
             ``False`` when the timeout elapsed first.
+        """
+
+    @abstractmethod
+    def read_climate_snapshot(self) -> ClimateSnapshot | None:
+        """Read the climate's requested state now.
+
+        Reads the live state of the climate entity; implementations must not cache.
+        Where the entity publishes its requested state (hvac mode, target, preset), that is
+        what is returned, not the values altered by safety, window or load shedding.
+
+        Returns:
+            The snapshot, or ``None`` when the climate entity is unavailable.
         """

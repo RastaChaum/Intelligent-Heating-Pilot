@@ -151,6 +151,20 @@ class HASchedulerReader(ISchedulerReader):
         )
         return None
 
+    async def get_next_timeslot_of(self, scheduler_entity_id: str) -> ScheduledTimeslot | None:
+        """Retrieve the next timeslot of one scheduler, ignoring the others.
+
+        Args:
+            scheduler_entity_id: The scheduler entity ID to read.
+
+        Returns:
+            Its next timeslot, or None if it has none, is disabled or is not configured.
+        """
+        if scheduler_entity_id not in self._scheduler_entity_ids:
+            return None
+        others = frozenset(self._scheduler_entity_ids) - {scheduler_entity_id}
+        return await self.get_next_timeslot(exclude_entity_ids=others)
+
     def _read_scheduler_timeslot(
         self, entity_id: str, state: State
     ) -> tuple[datetime | None, float | None]:

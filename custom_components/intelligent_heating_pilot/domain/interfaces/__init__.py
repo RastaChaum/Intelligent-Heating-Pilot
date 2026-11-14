@@ -6,6 +6,7 @@ the outside world without coupling to specific implementations.
 
 from __future__ import annotations
 
+from .climate_commander_interface import IClimateCommander
 from .climate_data_reader_interface import IClimateDataReader
 from .context_reader_interface import IContextReader
 from .decision_strategy_interface import IDecisionStrategy
@@ -15,18 +16,23 @@ from .heating_cycle_service_interface import IHeatingCycleService
 from .heating_cycle_storage_interface import IHeatingCycleStorage
 from .historical_data_adapter_interface import IHistoricalDataAdapter
 from .lhs_storage_interface import ILhsStorage
-from .scheduler_commander_interface import ISchedulerCommander
+from .preheat_actuator_interface import IPreheatActuator
+from .preheat_record_store_interface import IPreheatRecordStore
+from .scheduler_ownership_resolver_interface import ISchedulerOwnershipResolver
 from .scheduler_reader_interface import ISchedulerReader
 from .sun_reader_interface import ISunReader
 from .timer_scheduler import ITimerScheduler
 
 __all__ = [
+    "IClimateCommander",
     "IClimateDataReader",
+    "IPreheatActuator",
+    "IPreheatRecordStore",
+    "ISchedulerOwnershipResolver",
     "ISchedulerReader",
     "IEnvironmentReader",
     "IContextReader",
     "ILhsStorage",
-    "ISchedulerCommander",
     "IDecisionStrategy",
     "IHeatingCycleService",
     "IHeatingCycleStorage",

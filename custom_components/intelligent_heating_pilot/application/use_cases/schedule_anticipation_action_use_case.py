@@ -19,7 +19,7 @@ from ...domain.constants import SLOT_DAY_RETRY_DELAY_SECONDS
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ...domain.interfaces import ISchedulerCommander, ISchedulerReader, ITimerScheduler
+    from ...domain.interfaces import ISchedulerReader, ITimerScheduler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,7 +38,6 @@ class ScheduleAnticipationActionUseCase:
     def __init__(
         self,
         scheduler_reader: ISchedulerReader,
-        scheduler_commander: ISchedulerCommander,
         timer_scheduler: ITimerScheduler,
         control_preheating_use_case,  # ControlPreheatingUseCase (avoid circular import)
         anticipation_recalc_tolerance_minutes: int = DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
@@ -48,7 +47,6 @@ class ScheduleAnticipationActionUseCase:
 
         Args:
             scheduler_reader: Reads scheduler state
-            scheduler_commander: Triggers scheduler actions
             timer_scheduler: Schedules timer callbacks
             control_preheating_use_case: Use case for managing preheating state
             anticipation_recalc_tolerance_minutes: Min absolute delta in anticipated
@@ -63,7 +61,6 @@ class ScheduleAnticipationActionUseCase:
         """
         _LOGGER.debug("Initializing ScheduleAnticipationActionUseCase")
         self._scheduler_reader = scheduler_reader
-        self._scheduler_commander = scheduler_commander
         self._timer_scheduler = timer_scheduler
         self._control_preheating = control_preheating_use_case
         self._on_scheduler_blocked = on_scheduler_blocked

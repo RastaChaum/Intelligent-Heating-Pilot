@@ -10,11 +10,12 @@ from time import monotonic
 from typing import TYPE_CHECKING
 
 from ...domain.constants import ACTION_EFFECT_TIMEOUT_SECONDS, TARGET_TEMP_MATCH_TOLERANCE_C
+from ...domain.value_objects import ActuationResult, CancelReason, ScheduledTimeslot
 
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ...domain.interfaces import IClimateDataReader, ISchedulerCommander
+    from ...domain.interfaces import IClimateDataReader, IPreheatActuator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,14 +31,14 @@ class ControlPreheatingUseCase:
 
     def __init__(
         self,
-        scheduler_commander: ISchedulerCommander,
+        preheat_actuator: IPreheatActuator,
         climate_data_reader: IClimateDataReader | None = None,
         action_effect_timeout_seconds: float = ACTION_EFFECT_TIMEOUT_SECONDS,
     ) -> None:
         """Initialize the use case.
 
         Args:
-            scheduler_commander: Commands scheduler actions
+            preheat_actuator: Starts and cancels the preheat of a slot
             climate_data_reader: Reads the VTherm's resulting target temperature
                 to verify a triggered action's effect. Optional: when omitted,
                 verification is skipped and every trigger is treated as
@@ -47,12 +48,13 @@ class ControlPreheatingUseCase:
                 blocked (#256).
         """
         _LOGGER.debug("Initializing ControlPreheatingUseCase")
-        self._scheduler_commander = scheduler_commander
+        self._preheat_actuator = preheat_actuator
         self._climate_data_reader = climate_data_reader
         self._action_effect_timeout_seconds = action_effect_timeout_seconds
         self._is_preheating_active = False
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None
+        self._active_timeslot: ScheduledTimeslot | None = None
 
     async def cancel_preheating(self, scheduler_entity_id: str | None = None) -> None:
         """Cancel active preheating and revert to current scheduled state.
@@ -69,7 +71,8 @@ class ControlPreheatingUseCase:
         effective_scheduler = scheduler_entity_id or self._active_scheduler_entity
 
         if self._is_preheating_active:
-            if not effective_scheduler:
+            timeslot = self._active_timeslot
+            if not effective_scheduler or timeslot is None:
                 _LOGGER.warning("Cannot cancel preheating: no scheduler entity available")
                 _LOGGER.debug("Exiting ControlPreheatingUseCase.cancel_preheating() -> no-op")
                 return
@@ -77,9 +80,8 @@ class ControlPreheatingUseCase:
                 "Canceling preheating for scheduler %s - reverting to current scheduled state",
                 effective_scheduler,
             )
-            # Call cancel_action to revert thermostat to current time's preset/temperature
-            # Validation is handled by scheduler_commander
-            await self._scheduler_commander.cancel_action(effective_scheduler)
+            # The actuator reverts the thermostat to the current time's preset/temperature
+            await self._preheat_actuator.cancel(timeslot, CancelReason.SLOT_CHANGED)
         else:
             _LOGGER.debug("No active preheating to cancel")
 
@@ -133,15 +135,16 @@ class ControlPreheatingUseCase:
             target_temp,
         )
 
-        # Use scheduler's run_action to trigger the action
-        attempted = await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
+        timeslot = self._build_timeslot(target_time, target_temp, scheduler_entity_id)
+        result = await self._preheat_actuator.start(timeslot)
 
-        confirmed = await self._verify_action_effect(attempted, target_temp)
+        confirmed = await self._confirm_start(result, target_temp)
 
         if confirmed:
             self._is_preheating_active = True
             self._preheating_target_time = target_time
             self._active_scheduler_entity = scheduler_entity_id
+            self._active_timeslot = timeslot
         else:
             _LOGGER.warning(
                 "Scheduler action for %s had no effect (conditions likely unmet) - "
@@ -151,6 +154,35 @@ class ControlPreheatingUseCase:
 
         _LOGGER.debug("Exiting ControlPreheatingUseCase.start_preheating() -> %s", confirmed)
         return confirmed
+
+    @staticmethod
+    def _build_timeslot(
+        target_time: datetime, target_temp: float, scheduler_entity_id: str
+    ) -> ScheduledTimeslot:
+        """Rebuild the slot the readers described, with the identity they gave it."""
+        return ScheduledTimeslot(
+            target_time=target_time,
+            target_temp=target_temp,
+            timeslot_id=f"{scheduler_entity_id}_{target_time.isoformat()}",
+            scheduler_entity=scheduler_entity_id,
+        )
+
+    async def _confirm_start(self, result: ActuationResult, target_temp: float) -> bool:
+        """Turn the actuator's result into "may the preheat proceed?".
+
+        ``ATTEMPTED`` (a delegated command) is verified on the thermostat's target; a command
+        the actuator confirmed itself, or one never sent by design, needs no verification.
+
+        Args:
+            result: What the actuator reported.
+            target_temp: The temperature a delegated action was expected to apply.
+
+        Returns:
+            True when the preheat may proceed; False when the effect was disproved.
+        """
+        if result is ActuationResult.ATTEMPTED:
+            return await self._verify_action_effect(True, target_temp)
+        return result in (ActuationResult.APPLIED, ActuationResult.UNSUPPORTED)
 
     async def _verify_action_effect(self, attempted: bool, target_temp: float) -> bool:
         """Verify whether a triggered action actually applied ``target_temp``.

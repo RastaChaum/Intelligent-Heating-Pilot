@@ -69,3 +69,7 @@ ACTION_EFFECT_TIMEOUT_SECONDS = 10.0
 # that does not run today (#250): the same scheduler is retried this long after the
 # slot's local midnight, so that the scheduler's "today" is the slot's day.
 SLOT_DAY_RETRY_DELAY_SECONDS = 60
+# Within this delay of a slot, cancelling a preheat is a completion, not a cancellation: the
+# scheduler is about to apply the very same action, so restoring the earlier state would undo it
+# for a moment, or for good when the scheduler skips an action that already has its effect.
+PREHEAT_RESTORE_GUARD_MINUTES = 5

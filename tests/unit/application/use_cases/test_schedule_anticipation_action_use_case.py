@@ -508,7 +508,7 @@ class TestCancelPreheatingForOtherSlotStability:
                 target_temp=20.0,
                 scheduler_entity_id="switch.vacation",
             )
-            control_preheating_use_case._scheduler_commander.cancel_action = AsyncMock()
+            control_preheating_use_case._preheat_actuator.cancel = AsyncMock()
 
             await schedule_anticipation_action_use_case.handle_anticipation_scheduling(
                 anticipation_data={
@@ -523,7 +523,7 @@ class TestCancelPreheatingForOtherSlotStability:
                 ihp_enabled=True,
             )
 
-        control_preheating_use_case._scheduler_commander.cancel_action.assert_not_awaited()
+        control_preheating_use_case._preheat_actuator.cancel.assert_not_awaited()
         assert control_preheating_use_case.is_preheating_active() is True
         assert control_preheating_use_case.get_active_scheduler_entity() == "switch.vacation"
 
@@ -546,7 +546,7 @@ class TestCancelPreheatingForOtherSlotStability:
                 target_temp=20.0,
                 scheduler_entity_id="switch.vacation",
             )
-            control_preheating_use_case._scheduler_commander.cancel_action = AsyncMock()
+            control_preheating_use_case._preheat_actuator.cancel = AsyncMock()
             scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=False)
 
             await schedule_anticipation_action_use_case.handle_anticipation_scheduling(
@@ -562,8 +562,10 @@ class TestCancelPreheatingForOtherSlotStability:
                 ihp_enabled=True,
             )
 
-        control_preheating_use_case._scheduler_commander.cancel_action.assert_awaited_once_with(
-            "switch.vacation"
+        control_preheating_use_case._preheat_actuator.cancel.assert_awaited_once()
+        assert (
+            control_preheating_use_case._preheat_actuator.cancel.await_args.args[0].scheduler_entity
+            == "switch.vacation"
         )
         assert control_preheating_use_case.is_preheating_active() is False
 
@@ -598,7 +600,7 @@ class TestScheduleAnticipationActionStateTransitions:
                 target_temp=19.0,
                 scheduler_entity_id="schedule.heating",
             )
-            control_preheating_use_case._scheduler_commander.cancel_action = AsyncMock()
+            control_preheating_use_case._preheat_actuator.cancel = AsyncMock()
 
             await schedule_anticipation_action_use_case.handle_anticipation_scheduling(
                 anticipation_data={
@@ -613,7 +615,7 @@ class TestScheduleAnticipationActionStateTransitions:
             )
 
         assert not control_preheating_use_case.is_preheating_active()
-        control_preheating_use_case._scheduler_commander.cancel_action.assert_not_awaited()
+        control_preheating_use_case._preheat_actuator.cancel.assert_not_awaited()
         timer_scheduler = schedule_anticipation_action_use_case._timer_scheduler
         assert [t for t, _ in timer_scheduler.scheduled_timers] == [next_start]  # type: ignore
 
@@ -663,7 +665,7 @@ class TestScheduleAnticipationActionStateTransitions:
                 target_temp=21.0,
                 scheduler_entity_id="schedule.heating",
             )
-            control_preheating_use_case._scheduler_commander.cancel_action = AsyncMock()
+            control_preheating_use_case._preheat_actuator.cancel = AsyncMock()
 
             await schedule_anticipation_action_use_case.handle_anticipation_scheduling(
                 anticipation_data={
@@ -678,8 +680,10 @@ class TestScheduleAnticipationActionStateTransitions:
             )
 
         assert not control_preheating_use_case.is_preheating_active()
-        control_preheating_use_case._scheduler_commander.cancel_action.assert_awaited_once_with(
-            "schedule.heating"
+        control_preheating_use_case._preheat_actuator.cancel.assert_awaited_once()
+        assert (
+            control_preheating_use_case._preheat_actuator.cancel.await_args.args[0].scheduler_entity
+            == "schedule.heating"
         )
 
     @pytest.mark.asyncio

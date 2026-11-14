@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from custom_components.intelligent_heating_pilot.application.actuators import RoutingPreheatActuator
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     ControlPreheatingUseCase,
     ScheduleAnticipationActionUseCase,
@@ -22,9 +23,9 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
 from custom_components.intelligent_heating_pilot.infrastructure.adapters import (
     HAClimateDataReader,
     HAEnvironmentReader,
-    HASchedulerCommander,
     HASchedulerReader,
 )
+from tests.actuator_helpers import build_hacs_router
 
 # ============================================================================
 # Home Assistant Mock
@@ -127,11 +128,9 @@ def scheduler_reader(mock_hass: Mock) -> HASchedulerReader:
 
 
 @pytest.fixture
-def scheduler_commander(mock_hass: Mock) -> HASchedulerCommander:
-    """Create HASchedulerCommander with mock HA."""
-    return HASchedulerCommander(
-        hass=mock_hass,
-    )
+def preheat_actuator(mock_hass: Mock) -> RoutingPreheatActuator:
+    """Create the production-shaped router over the HACS actuator with mock HA."""
+    return build_hacs_router(mock_hass)
 
 
 @pytest.fixture
@@ -150,16 +149,16 @@ def climate_data_reader(mock_hass: Mock) -> HAClimateDataReader:
 
 @pytest.fixture
 def control_preheating_use_case(
-    scheduler_commander: HASchedulerCommander,
+    preheat_actuator: RoutingPreheatActuator,
 ) -> ControlPreheatingUseCase:
     """Create ControlPreheatingUseCase with real adapters."""
-    return ControlPreheatingUseCase(scheduler_commander)
+    return ControlPreheatingUseCase(preheat_actuator)
 
 
 @pytest.fixture
 def schedule_anticipation_action_use_case(
     scheduler_reader: HASchedulerReader,
-    scheduler_commander: HASchedulerCommander,
+    preheat_actuator: RoutingPreheatActuator,
 ) -> ScheduleAnticipationActionUseCase:
     """Create ScheduleAnticipationActionUseCase with real adapters."""
 
@@ -193,11 +192,10 @@ def schedule_anticipation_action_use_case(
             ]
 
     timer_scheduler = FakeTimerScheduler()
-    control_preheating = ControlPreheatingUseCase(scheduler_commander)
+    control_preheating = ControlPreheatingUseCase(preheat_actuator)
 
     return ScheduleAnticipationActionUseCase(
         scheduler_reader=scheduler_reader,
-        scheduler_commander=scheduler_commander,
         timer_scheduler=timer_scheduler,
         control_preheating_use_case=control_preheating,
     )

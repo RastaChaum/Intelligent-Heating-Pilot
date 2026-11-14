@@ -22,6 +22,7 @@ from ...domain.value_objects import (
     HistoricalDataSet,
     HistoricalMeasurement,
 )
+from ...domain.value_objects.climate_snapshot import ClimateSnapshot
 from ...domain.value_objects.entity_attribute_mapping import AttributeConcept
 from ..vtherm_compat import get_vtherm_attribute
 from .entity_attribute_mapper_registry import EntityAttributeMapperRegistry
@@ -58,6 +59,11 @@ _RECORDED_ATTRIBUTE_KEYS: tuple[str, ...] = (
     "target_temperature",
     "humidity",
 )
+
+
+# VTherm's requested-state attribute (what a user or scheduler asked for, not the visible state)
+ATTR_REQUESTED_STATE = "requested_state"
+_UNAVAILABLE_STATES = frozenset({"unavailable", "unknown"})
 
 
 class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
@@ -176,6 +182,36 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
             return float(target_temp)
         except (ValueError, TypeError):
             return None
+
+    def read_climate_snapshot(self) -> ClimateSnapshot | None:
+        """Read the climate's requested state now.
+
+        Versatile Thermostat publishes the state that was *requested* (by a user or a
+        scheduler) apart from the visible one, which safety, load shedding, window or presence
+        handling can alter. Where that attribute exists it is used; any other climate falls
+        back to the standard attributes.
+
+        Returns:
+            The snapshot, or ``None`` when the climate entity is unavailable.
+        """
+        state = self._hass.states.get(self._vtherm_entity_id)
+        if state is None or state.state in _UNAVAILABLE_STATES:
+            return None
+        requested = get_vtherm_attribute(state, ATTR_REQUESTED_STATE)
+        if isinstance(requested, dict):
+            hvac_mode = str(requested.get("hvac_mode") or state.state)
+            preset = requested.get("preset")
+            temperature = self._safe_float(requested.get("target_temperature"))
+        else:
+            hvac_mode = state.state
+            preset = state.attributes.get("preset_mode")
+            temperature = self._safe_float(state.attributes.get("temperature"))
+        return ClimateSnapshot(
+            hvac_mode=hvac_mode,
+            preset=str(preset) if preset is not None else None,
+            temperature=temperature,
+            available_presets=tuple(str(p) for p in state.attributes.get("preset_modes") or ()),
+        )
 
     async def wait_for_state_change(self, timeout_seconds: float) -> bool:
         """Wait for the next state change of the VTherm entity.

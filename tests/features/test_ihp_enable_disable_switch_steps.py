@@ -34,6 +34,7 @@ from custom_components.intelligent_heating_pilot.domain.services import (
     PredictionService,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
+    ActuationResult,
     EnvironmentState,
     ScheduledTimeslot,
 )
@@ -77,9 +78,9 @@ def mock_adapters_ihp_switch():
     model_storage.get_cached_contextual_lhs = AsyncMock(return_value=None)
     model_storage.set_cached_contextual_lhs = AsyncMock()
 
-    scheduler_commander = Mock()
-    scheduler_commander.run_action = AsyncMock()
-    scheduler_commander.cancel_action = AsyncMock()
+    preheat_actuator = Mock()
+    preheat_actuator.start = AsyncMock(return_value=ActuationResult.ATTEMPTED)
+    preheat_actuator.cancel = AsyncMock()
 
     climate_commander = Mock()
     climate_commander.turn_on_heat = AsyncMock()
@@ -122,7 +123,7 @@ def mock_adapters_ihp_switch():
     return {
         "scheduler_reader": scheduler_reader,
         "model_storage": model_storage,
-        "scheduler_commander": scheduler_commander,
+        "preheat_actuator": preheat_actuator,
         "climate_commander": climate_commander,
         "environment_reader": environment_reader,
         "climate_data_reader": climate_data_reader,
@@ -149,12 +150,11 @@ def orchestrator_ihp_switch(mock_adapters_ihp_switch):
     )
 
     control_preheating = ControlPreheatingUseCase(
-        scheduler_commander=mock_adapters_ihp_switch["scheduler_commander"],
+        preheat_actuator=mock_adapters_ihp_switch["preheat_actuator"],
     )
 
     schedule_anticipation_action = ScheduleAnticipationActionUseCase(
         scheduler_reader=mock_adapters_ihp_switch["scheduler_reader"],
-        scheduler_commander=mock_adapters_ihp_switch["scheduler_commander"],
         timer_scheduler=mock_adapters_ihp_switch["timer_scheduler"],
         control_preheating_use_case=control_preheating,
     )
@@ -560,7 +560,7 @@ def vtherm_setpoint_remains_scheduled(ihp_switch_context, mock_adapters_ihp_swit
 def no_preheating_triggered_before(ihp_switch_context, mock_adapters_ihp_switch, hour):
     """THEN: Verify preheating was not triggered."""
     # run_action should NOT have been called
-    mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
+    mock_adapters_ihp_switch["preheat_actuator"].start.assert_not_called()
 
 
 @then(parsers.parse("the VTherm temperature should still be {temp:d}°C at {hour:d}:30"))
@@ -598,7 +598,7 @@ def vtherm_setpoint_raised(ihp_switch_context, mock_adapters_ihp_switch, temp, h
     A start still in the future is armed as a timer; firing it stands for the clock
     reaching the anticipated start.
     """
-    run_action = mock_adapters_ihp_switch["scheduler_commander"].run_action
+    run_action = mock_adapters_ihp_switch["preheat_actuator"].start
     if not run_action.called:
         schedule_timer = mock_adapters_ihp_switch["timer_scheduler"].schedule_timer
         assert schedule_timer.called, "Preheating should be triggered or scheduled"
@@ -731,7 +731,7 @@ def no_preheating_after_restart(ihp_switch_context, mock_adapters_ihp_switch):
         # Verify no preheating triggered
         assert result is not None  # Calculation runs
         # But run_action should not have been called
-        mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
+        mock_adapters_ihp_switch["preheat_actuator"].start.assert_not_called()
 
 
 @then("none of the events should trigger preheating")
@@ -745,9 +745,9 @@ def no_events_trigger_preheating(ihp_switch_context, mock_adapters_ihp_switch):
     This tests the observable behavior: no temperature changes occur
     before scheduled times even though calculations are performed.
     """
-    # PRIMARY ASSERTION: scheduler_commander.run_action was NEVER called
+    # PRIMARY ASSERTION: preheat_actuator.start was NEVER called
     # This is the observable behavior - no preheating actually happens
-    mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
+    mock_adapters_ihp_switch["preheat_actuator"].start.assert_not_called()
 
     # Additionally verify calculations were performed (system still works)
     event_results = ihp_switch_context.get("event_results", [])
@@ -776,7 +776,7 @@ def events_occur_at_scheduled_times(ihp_switch_context, mock_adapters_ihp_switch
     assert ihp_switch_context["ihp_enabled"] is False
 
     # Verify run_action was never called (no anticipation actions)
-    mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
+    mock_adapters_ihp_switch["preheat_actuator"].start.assert_not_called()
 
     # Verify each event was processed (calculations performed)
     event_results = ihp_switch_context.get("event_results", [])
@@ -799,7 +799,7 @@ def temperature_changes_only_at_scheduled(ihp_switch_context, mock_adapters_ihp_
 
     # PRIMARY CHECK: run_action was never called
     # This means no premature temperature changes occurred
-    mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_not_called()
+    mock_adapters_ihp_switch["preheat_actuator"].start.assert_not_called()
 
     # Verify each processed event shows calculations ran
     event_results = ihp_switch_context.get("event_results", [])

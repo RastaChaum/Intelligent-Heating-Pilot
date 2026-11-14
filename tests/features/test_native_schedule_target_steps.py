@@ -21,12 +21,10 @@ from custom_components.intelligent_heating_pilot.application.use_cases.control_p
 from custom_components.intelligent_heating_pilot.application.use_cases.schedule_anticipation_action_use_case import (
     ScheduleAnticipationActionUseCase,
 )
-from custom_components.intelligent_heating_pilot.infrastructure.adapters.scheduler_commander import (
-    HASchedulerCommander,
-)
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.scheduler_reader import (
     HASchedulerReader,
 )
+from tests.actuator_helpers import build_hacs_router
 
 scenarios("native_schedule_target.feature")
 
@@ -119,7 +117,7 @@ def _make_reader(schedule_context: dict) -> HASchedulerReader:
 
 def _make_action_use_case(schedule_context: dict) -> ScheduleAnticipationActionUseCase:
     """Wire the real anticipation use cases with the real HA scheduler adapters."""
-    control = ControlPreheatingUseCase(HASchedulerCommander(_make_hass(schedule_context)))
+    control = ControlPreheatingUseCase(build_hacs_router(_make_hass(schedule_context)))
     schedule_context["control"] = control
     timer_scheduler = Mock()
     timer_scheduler.schedule_timer.side_effect = lambda _when, callback: schedule_context.update(
@@ -127,7 +125,6 @@ def _make_action_use_case(schedule_context: dict) -> ScheduleAnticipationActionU
     )
     return ScheduleAnticipationActionUseCase(
         scheduler_reader=_make_reader(schedule_context),
-        scheduler_commander=HASchedulerCommander(_make_hass(schedule_context)),
         timer_scheduler=timer_scheduler,
         control_preheating_use_case=control,
     )

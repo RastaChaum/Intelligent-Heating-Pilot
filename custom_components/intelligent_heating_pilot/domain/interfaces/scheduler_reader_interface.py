@@ -49,3 +49,18 @@ class ISchedulerReader(ABC):
             True if the scheduler is enabled (state != "off"), False otherwise
         """
         pass
+
+    @abstractmethod
+    async def get_next_timeslot_of(self, scheduler_entity_id: str) -> ScheduledTimeslot | None:
+        """Retrieve the next timeslot of one scheduler.
+
+        Unlike ``get_next_timeslot``, this ignores the other schedulers: it tells whether a
+        given slot is still the next one *of its own scheduler*.
+
+        Args:
+            scheduler_entity_id: The scheduler entity ID to read.
+
+        Returns:
+            Its next timeslot, or None if it has none or is disabled.
+        """
+        pass
