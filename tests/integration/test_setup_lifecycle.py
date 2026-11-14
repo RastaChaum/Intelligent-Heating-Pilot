@@ -83,7 +83,9 @@ def starting(hass: HomeAssistant) -> Generator[None]:
     hass.set_state(CoreState.running)
 
 
-@pytest.mark.usefixtures("recorder_mock", "enable_custom_integrations", "cleanup")
+@pytest.mark.usefixtures(
+    "recorder_mock", "enable_custom_integrations", "mock_vtherm_integration", "cleanup"
+)
 class TestStartupWork:
     """The startup work is tied to the entry that asked for it."""
 
@@ -157,7 +159,7 @@ class TestUnload:
         assert entry.entry_id not in hass.data[DOMAIN]
 
 
-@pytest.mark.usefixtures("recorder_mock", "enable_custom_integrations")
+@pytest.mark.usefixtures("recorder_mock", "enable_custom_integrations", "mock_vtherm_integration")
 class TestServices:
     """Services belong to the integration, not to its first device."""
 
