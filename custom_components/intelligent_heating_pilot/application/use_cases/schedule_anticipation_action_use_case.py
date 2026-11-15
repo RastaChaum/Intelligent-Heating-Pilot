@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from homeassistant.util import dt as dt_util
 
 from ...const import DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
-from ...domain.constants import SLOT_DAY_RETRY_DELAY_SECONDS
+from ...domain.constants import DEADLINE_RECALC_DELAY_SECONDS, SLOT_DAY_RETRY_DELAY_SECONDS
 from ...domain.value_objects import CancelReason, ScheduledTimeslot
 
 if TYPE_CHECKING:
@@ -79,6 +79,11 @@ class ScheduleAnticipationActionUseCase:
         self._hold_slot: ScheduledTimeslot | None = None
         self._hold_timer_cancel: Callable[[], None] | None = None
         self._control_preheating.set_on_hold_recovered(self._arm_hold_timer)
+        # A wake-up source may not change at its deadline: a timer asks for the recalculation
+        # that completes the preheat and starts its hold
+        self._on_deadline: Callable[[], Awaitable[None]] | None = None
+        self._deadline_timer_cancel: Callable[[], None] | None = None
+        self._deadline_timer_for: datetime | None = None
 
     async def next_timeslot_of(self, scheduler_entity_id: str) -> ScheduledTimeslot | None:
         """Give the next timeslot of one scheduler, to reconcile a preheat after a restart.
@@ -115,7 +120,63 @@ class ScheduleAnticipationActionUseCase:
         _LOGGER.debug("Setting preheating target temp: %.1f", target_temp or 0.0)
         self._preheating_target_temp = target_temp
 
+    def set_on_deadline(self, callback: Callable[[], Awaitable[None]] | None) -> None:
+        """Set the callback that recalculates when a wake-up preheat reaches its deadline.
+
+        Args:
+            callback: Async callback, or None to clear it.
+        """
+        self._on_deadline = callback
+
     async def handle_anticipation_scheduling(
+        self,
+        anticipation_data: dict,
+        ihp_enabled: bool,
+    ) -> str | None:
+        """Handle the scheduling workflow, then make sure a wake-up deadline will be noticed.
+
+        See ``_handle_anticipation_scheduling`` for the workflow and what is returned.
+        """
+        blocked = await self._handle_anticipation_scheduling(anticipation_data, ihp_enabled)
+        self._ensure_deadline_timer()
+        return blocked
+
+    def _ensure_deadline_timer(self) -> None:
+        """Arm one timer at the deadline of an active wake-up preheat, none otherwise."""
+        slot = self._control_preheating.get_active_timeslot()
+        target = (
+            self._control_preheating.get_preheating_target_time()
+            if self._control_preheating.is_preheating_active()
+            else None
+        )
+        wanted = (
+            target
+            if slot is not None
+            and target is not None
+            and self._on_deadline is not None
+            and self._scheduler_reader.is_wake_up_source(slot.scheduler_entity)
+            else None
+        )
+        if wanted == self._deadline_timer_for:
+            return
+        if self._deadline_timer_cancel is not None:
+            self._deadline_timer_cancel()
+            self._deadline_timer_cancel = None
+        self._deadline_timer_for = wanted
+        if wanted is None or self._on_deadline is None:
+            return
+        callback = self._on_deadline
+
+        async def _deadline_callback() -> None:
+            self._deadline_timer_cancel = None
+            self._deadline_timer_for = None
+            await callback()
+
+        self._deadline_timer_cancel = self._timer_scheduler.schedule_timer(
+            wanted + timedelta(seconds=DEADLINE_RECALC_DELAY_SECONDS), _deadline_callback
+        )
+
+    async def _handle_anticipation_scheduling(
         self,
         anticipation_data: dict,
         ihp_enabled: bool,
@@ -758,6 +819,10 @@ class ScheduleAnticipationActionUseCase:
         The record stays: the reloaded instance finds the hold again and re-arms its timer.
         """
         self._cancel_hold_timer()
+        if self._deadline_timer_cancel is not None:
+            self._deadline_timer_cancel()
+            self._deadline_timer_cancel = None
+            self._deadline_timer_for = None
 
     async def _clear_state(self) -> None:
         """Clear all tracking state."""

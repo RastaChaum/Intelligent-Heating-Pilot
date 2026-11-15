@@ -216,8 +216,8 @@ class DirectPreheatActuator(IPreheatActuator):
             record = await self._store.load()
             if record is None or record.timeslot_id != timeslot.timeslot_id:
                 return
-            if record.hold_until is None:
-                return
+            if record.hold_until is None or record.hold_until > self._now():
+                return  # no hold, or a later one than the timer that fired: not over yet
             await self._finish_hold(record)
 
     async def _recover_hold(self, record: PreheatRecord) -> PreheatRecovery:
@@ -310,7 +310,15 @@ class DirectPreheatActuator(IPreheatActuator):
             and record.timeslot_id == timeslot.timeslot_id
             and record.slot_time != timeslot.target_time
         ):
-            await self._store.save(replace(record, slot_time=timeslot.target_time))
+            # The wake-up moved: a hold that was running belonged to the earlier time and is over
+            await self._store.save(
+                replace(
+                    record,
+                    slot_time=timeslot.target_time,
+                    hold_until=None,
+                    hold_handoff=False,
+                )
+            )
 
     async def _is_claimed(self, timeslot: ScheduledTimeslot) -> bool:
         """Tell whether somebody else took over the climate for this slot, until the slot."""

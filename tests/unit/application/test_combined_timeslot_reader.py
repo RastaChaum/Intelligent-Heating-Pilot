@@ -257,3 +257,18 @@ async def test_a_scheduler_is_enabled_as_its_reader_says() -> None:
     scheduler.is_scheduler_enabled = AsyncMock(return_value=False)
 
     assert await reader.is_scheduler_enabled("switch.plan") is False
+
+
+@pytest.mark.asyncio
+async def test_a_source_without_a_usable_target_is_warned_about_once(caplog) -> None:
+    import logging
+
+    source = WakeUpSourceConfig(ALARM, target_from_schedule=True)
+    reader, _ = _build({ALARM: WakeUpReading(value=NOW + timedelta(hours=5))}, sources=[source])
+
+    with caplog.at_level(logging.WARNING):
+        for _ in range(3):
+            assert await reader.get_next_timeslot() is None
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and ALARM in warnings[0].getMessage()

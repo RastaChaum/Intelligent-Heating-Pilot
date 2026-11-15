@@ -178,3 +178,52 @@ async def test_a_new_hold_replaces_the_timer_of_the_previous_one() -> None:
 
     cancels[0].assert_called_once()
     assert len(callbacks) == 2
+
+
+def _control_with_active_source(active: bool = True):
+    use_case, control, callbacks, cancels = _build()
+    control.is_preheating_active = Mock(return_value=active)
+    use_case._scheduler_reader.is_wake_up_source = Mock(side_effect=lambda e: e == ALARM)
+    use_case._on_deadline = AsyncMock()
+    return use_case, control, callbacks, cancels
+
+
+def test_a_deadline_timer_is_armed_for_an_active_wake_up_preheat() -> None:
+    use_case, _, callbacks, _ = _control_with_active_source()
+
+    use_case._ensure_deadline_timer()
+    use_case._ensure_deadline_timer()  # idempotent
+
+    assert [when for when, _ in callbacks] == [NOW + timedelta(seconds=1)]
+
+
+@pytest.mark.asyncio
+async def test_the_deadline_timer_asks_for_a_recalculation() -> None:
+    use_case, _, callbacks, _ = _control_with_active_source()
+    use_case._ensure_deadline_timer()
+
+    await callbacks[0][1]()
+
+    use_case._on_deadline.assert_awaited_once()
+
+
+def test_no_deadline_timer_without_an_active_preheat_or_for_a_scheduler() -> None:
+    use_case, control, callbacks, _ = _control_with_active_source(active=False)
+    use_case._ensure_deadline_timer()
+    assert callbacks == []
+
+    control.is_preheating_active = Mock(return_value=True)
+    use_case._scheduler_reader.is_wake_up_source = Mock(return_value=False)
+    use_case._ensure_deadline_timer()
+    assert callbacks == []
+
+
+def test_the_deadline_timer_is_replaced_when_the_deadline_moves() -> None:
+    use_case, control, callbacks, cancels = _control_with_active_source()
+    use_case._ensure_deadline_timer()
+
+    control.get_preheating_target_time = Mock(return_value=NOW + timedelta(minutes=10))
+    use_case._ensure_deadline_timer()
+
+    cancels[0].assert_called_once()
+    assert len(callbacks) == 2

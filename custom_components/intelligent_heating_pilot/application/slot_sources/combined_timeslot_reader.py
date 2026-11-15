@@ -77,6 +77,7 @@ class CombinedTimeslotReader(ISchedulerReader):
         self._records = record_store
         self._target_policy = target_policy or WakeUpTargetPolicy()
         self._announced: str | None = None
+        self._ignored_warned: set[str] = set()
 
     async def get_next_timeslot(
         self, exclude_entity_ids: frozenset[str] = frozenset()
@@ -164,8 +165,9 @@ class CombinedTimeslotReader(ISchedulerReader):
         slot_id = f"{entity_id}_{deadline.astimezone(now.tzinfo).date().isoformat()}"
         action = await self._target_of(config, deadline, slot_id)
         if action is None:
-            _LOGGER.debug("Wake-up source %s has no usable target, ignored", entity_id)
+            self._warn_ignored_once(entity_id, slot_id)
             return None
+        self._ignored_warned.discard(entity_id)
         return ScheduledTimeslot(
             target_time=deadline,
             target_temp=self._temperature_of(action),
@@ -205,6 +207,17 @@ class CombinedTimeslotReader(ISchedulerReader):
             return action.temperature
         resolved = self._preset_resolver.resolve(action.preset) if action.preset else None
         return resolved if resolved is not None else DEFAULT_PRESET_TEMPERATURE_C
+
+    def _warn_ignored_once(self, entity_id: str, slot_id: str) -> None:
+        """Say once per wake-up why a source with a deadline is ignored."""
+        if slot_id in self._ignored_warned:
+            return
+        self._ignored_warned.add(slot_id)
+        _LOGGER.warning(
+            "Wake-up source %s is ignored: it has a deadline but no usable target (the schedule "
+            "cannot tell and no fixed preset or temperature is set)",
+            entity_id,
+        )
 
     def _announce(self, slot: ScheduledTimeslot) -> None:
         """Say once per wake-up that a source drives the next deadline."""

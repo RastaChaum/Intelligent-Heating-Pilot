@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -105,3 +106,21 @@ def test_a_valid_value_clears_the_memory_of_the_issue(caplog: pytest.LogCaptureF
         reader._hass.states.get.return_value = Mock(state="later", attributes={})
         reader.read(entity)
     assert len([r for r in caplog.records if r.levelno == logging.WARNING]) == 2
+
+
+def test_a_utc_value_is_read_on_the_clock_of_the_home() -> None:
+    """Phones publish UTC; schedule weekdays and learning hours are the home's."""
+    from homeassistant.util import dt as dt_util
+
+    previous = dt_util.DEFAULT_TIME_ZONE
+    dt_util.set_default_time_zone(ZoneInfo("Europe/Paris"))
+    try:
+        reader, entity = _reader("sensor.alarm", "2026-11-16T05:30:00+00:00")
+        value = reader.read(entity).value
+    finally:
+        dt_util.set_default_time_zone(previous)
+
+    assert value is not None
+    assert value == datetime(2026, 11, 16, 5, 30, tzinfo=UTC)
+    assert (value.hour, value.minute) == (6, 30)
+    assert value.utcoffset() == timedelta(hours=1)

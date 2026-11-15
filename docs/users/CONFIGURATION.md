@@ -157,7 +157,7 @@ A **wake-up source** is an entity that holds a point in time: your phone's next 
 | Field | What it does |
 |-------|--------------|
 | **Entity holding the time** | A `sensor` with the *timestamp* device class (such as the phone's next-alarm sensor), a `datetime` entity, or an `input_datetime` with both date and time. A date alone or a time alone is refused: it does not say when. |
-| **Target preset** / **Target temperature** | What to apply and reach. A preset wins when both are given. |
+| **Target preset** / **Target temperature** | What to apply and reach. When both are given, the preset is applied and the temperature is the one IHP heads for in its calculation. |
 | **Take the target from the schedule** | Only offered when the device has a scheduler. See below. |
 | **Ignore times further than (hours)** | Default 24. A time further away is ignored, so a distant alarm never starts a preheat by accident. |
 | **Keep the target after the time (minutes)** | Optional. After this long, IHP puts the thermostat back in its earlier state. 0 leaves the thermostat as it is. |
@@ -192,7 +192,7 @@ When only one slot is known, IHP uses it only if its temperature is **higher** t
 ### What Happens Around the Wake-up Time
 
 - The target is applied at the anticipated start, as a preset when you chose a preset, as a temperature otherwise. IHP never changes the thermostat's heating mode, and does nothing if it is switched off.
-- A **snooze** or an edited alarm moves the deadline; the thermostat does not go back and forth. A **closer** alarm takes over a preheat for a later slot without putting the thermostat back in between.
+- A **snooze** or an edited alarm that moves the deadline by less than the **Preheating Revert Time Delta** (15 minutes by default) is followed without putting the thermostat back in between; a larger move cancels the preheat and starts it again for the new time. A **closer** alarm takes over a preheat for a later slot without putting the thermostat back in between.
 - If you change the thermostat yourself, IHP does not apply the target again over your change.
 - If the alarm is **removed or dismissed** before its time, the preheat is cancelled and the thermostat is put back as it was, unless you changed it.
 - With a **hold**, the earlier state is put back that long after the wake-up time, unless you changed it or a schedule slot of the same device comes first: the schedule then owns the setting and IHP restores nothing.

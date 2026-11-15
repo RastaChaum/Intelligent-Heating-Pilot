@@ -86,6 +86,7 @@ async def test_a_change_during_the_hold_is_kept() -> None:
     await h.preheat_until_deadline()
     await h.actuator.begin_hold(_alarm(), SLOT_TIME + HOLD, handoff=False)
     h.climate.snapshot = make_snapshot(preset="boost")
+    h.now = SLOT_TIME + HOLD
 
     await h.actuator.end_hold(_alarm())
 
@@ -98,6 +99,7 @@ async def test_a_scheduler_handoff_ends_the_hold_without_a_restore() -> None:
     h = Harness()
     await h.preheat_until_deadline()
     await h.actuator.begin_hold(_alarm(), SLOT_TIME + timedelta(minutes=30), handoff=True)
+    h.now = SLOT_TIME + timedelta(minutes=30)
 
     await h.actuator.end_hold(_alarm())
 
@@ -234,3 +236,38 @@ async def test_a_new_preheat_during_a_hold_keeps_the_true_original_state() -> No
 
     assert h.store.record is not None
     assert h.store.record.previous.preset == "eco"
+
+
+@pytest.mark.asyncio
+async def test_a_second_alarm_on_the_same_date_ends_the_old_hold_and_its_timer_changes_nothing() -> (
+    None
+):
+    """The sensor moves from 05:30 (hold until 07:00) to 07:30 the same day: the old timer must not
+    restore in the middle of the new preheat."""
+    h = Harness()
+    await h.preheat_until_deadline()
+    await h.actuator.begin_hold(_alarm(), SLOT_TIME + HOLD, handoff=False)
+    h.now = SLOT_TIME + timedelta(minutes=20)
+    later = replace(_alarm(), target_time=SLOT_TIME + timedelta(hours=2))
+
+    await h.actuator.start(later)  # same id, a later time: the hold belonged to the earlier time
+
+    assert h.store.record is not None and h.store.record.hold_until is None
+    h.now = SLOT_TIME + HOLD  # the old hold timer fires
+    await h.actuator.end_hold(_alarm())
+
+    assert h.commander.restored == []
+    assert h.store.record is not None
+
+
+@pytest.mark.asyncio
+async def test_a_timer_that_fires_before_the_recorded_end_changes_nothing() -> None:
+    h = Harness()
+    await h.preheat_until_deadline()
+    await h.actuator.begin_hold(_alarm(), SLOT_TIME + HOLD, handoff=False)
+    h.now = SLOT_TIME + timedelta(minutes=30)
+
+    await h.actuator.end_hold(_alarm())
+
+    assert h.commander.restored == []
+    assert h.store.record is not None

@@ -80,7 +80,9 @@ class HAWakeUpSourceReader(IWakeUpSourceReader):
         parsed = dt_util.parse_datetime(raw)
         if parsed is None:
             return ReadingIssue.UNPARSABLE, None
-        return None, parsed if parsed.tzinfo is not None else dt_util.as_local(parsed)
+        # Phones and datetime entities publish UTC: every consumer (the weekday and blocks of a
+        # schedule, the contextual hour of the learning) reads the clock of the user's home
+        return None, dt_util.as_local(parsed)
 
     def _report_once(self, entity_id: str, issue: ReadingIssue, raw: str) -> None:
         """Log an issue once per entity until its state changes."""

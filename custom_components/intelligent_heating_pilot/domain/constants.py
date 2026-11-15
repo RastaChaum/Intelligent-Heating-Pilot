@@ -77,3 +77,7 @@ PREHEAT_RESTORE_GUARD_MINUTES = 5
 # Temperature that feeds the anticipation when a slot only names a preset and the thermostat
 # does not publish that preset's temperature (the same stand-in native schedules use).
 DEFAULT_PRESET_TEMPERATURE_C = 20.0
+
+# A wake-up source does not necessarily change at its deadline: the recalculation that completes
+# the preheat and starts its hold is requested this long after it, once the deadline has passed.
+DEADLINE_RECALC_DELAY_SECONDS = 1

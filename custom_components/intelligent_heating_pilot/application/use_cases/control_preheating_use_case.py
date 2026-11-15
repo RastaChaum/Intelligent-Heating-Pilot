@@ -157,7 +157,10 @@ class ControlPreheatingUseCase:
             timeslot.target_time.isoformat(),
             result.value,
         )
-        return result in (ActuationResult.APPLIED, ActuationResult.SKIPPED)
+        confirmed = result in (ActuationResult.APPLIED, ActuationResult.SKIPPED)
+        # Like a start: a command that did not take leaves the preheat inactive, to be retried
+        self._is_preheating_active = confirmed
+        return confirmed
 
     async def end_hold(self, timeslot: ScheduledTimeslot) -> None:
         """End the hold of a slot: the actuator puts the earlier state back where that is safe.

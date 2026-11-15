@@ -403,6 +403,7 @@ class HeatingApplication:
         schedule_anticipation_action.set_on_scheduler_blocked(
             self._retry_anticipation_after_blocked_scheduler_locked
         )
+        schedule_anticipation_action.set_on_deadline(self.async_update)
         _LOGGER.debug("Orchestrator created successfully")
 
         # Create event bridge

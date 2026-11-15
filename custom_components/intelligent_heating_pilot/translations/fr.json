@@ -155,7 +155,7 @@
         "data_description": {
           "entity_id": "Un capteur d'horodatage (comme la prochaine alarme d'un téléphone), une entité date-heure, ou un assistant date-heure avec date et heure.",
           "target_preset": "Preset à appliquer et à atteindre. Laissez vide pour donner une température.",
-          "target_temperature": "Température à appliquer et à atteindre. Ignorée si un preset est défini.",
+          "target_temperature": "Température à appliquer et à atteindre. Si un preset est aussi défini, le preset est appliqué et cette température est celle visée par IHP.",
           "target_from_schedule": "Utilise la cible du créneau du planning qui suit cette heure, jamais plus basse que le créneau déjà en cours. Le preset ou la température ci-dessus sert de repli quand le planning ne peut pas répondre.",
           "horizon_hours": "Une heure plus lointaine que cette durée est ignorée, pour qu'une alarme éloignée ne déclenche jamais un préchauffage par accident. Par défaut : 24 heures.",
           "hold_minutes": "Après cette heure, IHP remet le thermostat dans son état précédent, sauf si quelqu'un l'a modifié ou si un planning a pris la main. 0 laisse le thermostat tel quel."

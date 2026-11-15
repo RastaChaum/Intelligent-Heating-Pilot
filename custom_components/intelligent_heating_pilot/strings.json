@@ -155,7 +155,7 @@
         "data_description": {
           "entity_id": "A timestamp sensor (such as a phone's next alarm), a date-time entity, or a date-time helper with both date and time.",
           "target_preset": "Preset to apply and reach. Leave empty to give a temperature.",
-          "target_temperature": "Temperature to apply and reach. Ignored when a preset is set.",
+          "target_temperature": "Temperature to apply and reach. When a preset is also set, the preset is applied and this temperature is the one IHP heads for.",
           "target_from_schedule": "Use the target of the schedule slot that follows this time, never lower than the slot already in effect. The preset or temperature above is the fallback when the schedule cannot tell.",
           "horizon_hours": "A time further away than this is ignored, so that a distant alarm never starts a preheat by accident. Default: 24 hours.",
           "hold_minutes": "After this time, IHP puts the thermostat back in its earlier state, unless someone changed it or a schedule took over. 0 leaves the thermostat as it is."
