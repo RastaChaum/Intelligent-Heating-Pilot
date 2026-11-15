@@ -68,6 +68,20 @@ class RoutingPreheatActuator(IPreheatActuator):
         if actuator is not None:
             await actuator.cancel(timeslot, reason)
 
+    async def hand_over(self, timeslot: ScheduledTimeslot) -> ActuationResult:
+        """Hand the preheat over with the actuator of the slot's scheduler kind.
+
+        Args:
+            timeslot: The slot the preheat now heads for.
+
+        Returns:
+            The actuator's result, or ``UNSUPPORTED`` when the kind has none.
+        """
+        actuator = self._actuator_for(timeslot)
+        if actuator is None:
+            return ActuationResult.UNSUPPORTED
+        return await actuator.hand_over(timeslot)
+
     async def begin_hold(
         self, timeslot: ScheduledTimeslot, hold_until: datetime, handoff: bool
     ) -> None:

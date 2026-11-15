@@ -88,25 +88,49 @@ class DirectPreheatActuator(IPreheatActuator):
             ``APPLIED`` once the climate holds the action, ``NOT_APPLIED`` when it does not
             take it, ``SKIPPED`` when a guard stops it, ``UNSUPPORTED`` for a slot with no action.
         """
-        action = timeslot.action
-        if action is None:
+        if timeslot.action is None:
             return ActuationResult.UNSUPPORTED
         async with self._lock:
-            await self._follow_slot_time(timeslot)
-            if await self._is_claimed(timeslot):
-                _LOGGER.debug("Preheat of %s skipped: someone else took over", timeslot.timeslot_id)
-                return ActuationResult.SKIPPED
-            snapshot = self._reader.read_climate_snapshot()
-            if snapshot is None:
-                _LOGGER.debug("Climate unavailable, preheat of %s skipped", timeslot.timeslot_id)
-                return ActuationResult.SKIPPED
-            decision = self._policy.decide_apply(snapshot, action)
-            if decision is not ApplyDecision.APPLY:
-                _LOGGER.debug("Preheat of %s not applied: %s", timeslot.timeslot_id, decision.value)
-                return _APPLY_DECISION_TO_RESULT[decision]
-            await self._record_once(timeslot, snapshot, action)
-            await self._commander.apply(action)
-            return await self._confirm(action)
+            return await self._start_locked(timeslot, timeslot.action)
+
+    async def hand_over(self, timeslot: ScheduledTimeslot) -> ActuationResult:
+        """Carry the preheat in progress over to another slot, without restoring in between.
+
+        The record is re-keyed to the new slot, keeping its earlier state and any claim, so the
+        climate is neither restored in between nor written over somebody else's change, and the
+        new slot can undo the preheat later.
+
+        Args:
+            timeslot: The slot the preheat now heads for.
+
+        Returns:
+            As ``start``.
+        """
+        if timeslot.action is None:
+            return ActuationResult.UNSUPPORTED
+        async with self._lock:
+            await self._claim_if_changed(timeslot)
+            await self._rekey(timeslot, timeslot.action)
+            return await self._start_locked(timeslot, timeslot.action)
+
+    async def _start_locked(
+        self, timeslot: ScheduledTimeslot, action: SlotAction
+    ) -> ActuationResult:
+        await self._follow_slot_time(timeslot)
+        if await self._is_claimed(timeslot):
+            _LOGGER.debug("Preheat of %s skipped: someone else took over", timeslot.timeslot_id)
+            return ActuationResult.SKIPPED
+        snapshot = self._reader.read_climate_snapshot()
+        if snapshot is None:
+            _LOGGER.debug("Climate unavailable, preheat of %s skipped", timeslot.timeslot_id)
+            return ActuationResult.SKIPPED
+        decision = self._policy.decide_apply(snapshot, action)
+        if decision is not ApplyDecision.APPLY:
+            _LOGGER.debug("Preheat of %s not applied: %s", timeslot.timeslot_id, decision.value)
+            return _APPLY_DECISION_TO_RESULT[decision]
+        await self._record_once(timeslot, snapshot, action)
+        await self._commander.apply(action)
+        return await self._confirm(action)
 
     async def cancel(self, timeslot: ScheduledTimeslot, reason: CancelReason) -> None:
         """Undo the preheat of a slot where that is safe, and forget it.
@@ -237,6 +261,42 @@ class DirectPreheatActuator(IPreheatActuator):
         if record.claimed:
             return PreheatRecovery(RecoveryOutcome.NOTHING)
         return PreheatRecovery(RecoveryOutcome.RESUMED, own_next)
+
+    async def _claim_if_changed(self, timeslot: ScheduledTimeslot) -> None:
+        """Mark the slot's record as somebody else's when the climate no longer holds IHP's action.
+
+        A deadline that moves while the preheat runs must not apply its target again over a
+        change the user made meanwhile. Only a hand-over looks: a plain start is also a retry of
+        a command that did not take, which must go on.
+        """
+        record = await self._store.load()
+        if record is None or record.timeslot_id != timeslot.timeslot_id or record.claimed:
+            return
+        if self._policy.is_claimed_by_other(record, self._reader.read_climate_snapshot()):
+            await self._store.save(replace(record, claimed=True))
+
+    async def _rekey(self, timeslot: ScheduledTimeslot, action: SlotAction) -> None:
+        """Make the record, if there is one, belong to the slot taking the preheat over."""
+        record = await self._store.load()
+        if record is None or record.timeslot_id == timeslot.timeslot_id:
+            return
+        if not (self._still_ours(record) or (record.claimed and record.slot_time > self._now())):
+            return
+        claimed = record.claimed or self._policy.is_claimed_by_other(
+            record, self._reader.read_climate_snapshot()
+        )
+        await self._store.save(
+            replace(
+                record,
+                timeslot_id=timeslot.timeslot_id,
+                scheduler_entity=timeslot.scheduler_entity,
+                slot_time=timeslot.target_time,
+                applied=record.applied if claimed else action,
+                claimed=claimed,
+                hold_until=None,
+                hold_handoff=False,
+            )
+        )
 
     async def _follow_slot_time(self, timeslot: ScheduledTimeslot) -> None:
         """Move the record's slot time when the same slot has moved (a snoozed alarm).

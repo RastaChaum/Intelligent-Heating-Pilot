@@ -106,6 +106,10 @@ class HacsRunActionActuator(IPreheatActuator):
         """
         return PreheatRecovery(RecoveryOutcome.NOTHING)
 
+    async def hand_over(self, timeslot: ScheduledTimeslot) -> ActuationResult:
+        """Start the slot: a delegated preheat has no record to carry over."""
+        return await self.start(timeslot)
+
     async def begin_hold(
         self, timeslot: ScheduledTimeslot, hold_until: datetime, handoff: bool
     ) -> None:

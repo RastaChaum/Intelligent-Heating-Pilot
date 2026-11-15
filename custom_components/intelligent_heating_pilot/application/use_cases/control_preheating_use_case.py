@@ -134,6 +134,31 @@ class ControlPreheatingUseCase:
         """
         return self._active_timeslot
 
+    async def hand_over(self, timeslot: ScheduledTimeslot) -> bool:
+        """Carry the preheat in progress over to another slot, without restoring in between.
+
+        The thermostat stays as IHP left it and the actuator takes the new slot over the
+        record it holds, so the earlier state and anybody else's change are both kept.
+
+        Args:
+            timeslot: The slot the preheat now heads for.
+
+        Returns:
+            True when the actuator took the slot over or the climate already holds its action.
+        """
+        self._active_timeslot = timeslot
+        self._active_scheduler_entity = timeslot.scheduler_entity
+        self._preheating_target_time = timeslot.target_time
+        self._is_preheating_active = True
+        result = await self._preheat_actuator.hand_over(timeslot)
+        _LOGGER.info(
+            "Preheat handed over to %s at %s (%s)",
+            timeslot.scheduler_entity,
+            timeslot.target_time.isoformat(),
+            result.value,
+        )
+        return result in (ActuationResult.APPLIED, ActuationResult.SKIPPED)
+
     async def end_hold(self, timeslot: ScheduledTimeslot) -> None:
         """End the hold of a slot: the actuator puts the earlier state back where that is safe.
 

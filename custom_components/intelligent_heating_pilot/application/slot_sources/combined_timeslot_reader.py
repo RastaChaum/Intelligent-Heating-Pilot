@@ -104,6 +104,17 @@ class CombinedTimeslotReader(ISchedulerReader):
         self._announce(earliest_source)
         return earliest_source
 
+    def is_wake_up_source(self, entity_id: str) -> bool:
+        """Tell whether an entity is one of this IHP's wake-up sources.
+
+        Args:
+            entity_id: The entity that owns a slot.
+
+        Returns:
+            True for a configured source.
+        """
+        return entity_id in self._sources
+
     async def get_next_scheduler_timeslot(
         self, exclude_entity_ids: frozenset[str] = frozenset()
     ) -> ScheduledTimeslot | None:

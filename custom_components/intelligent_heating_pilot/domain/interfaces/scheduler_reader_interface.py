@@ -54,6 +54,20 @@ class ISchedulerReader(ABC):
         """
         return await self.get_next_timeslot(exclude_entity_ids)
 
+    def is_wake_up_source(self, entity_id: str) -> bool:
+        """Tell whether an entity is a wake-up source rather than a scheduler.
+
+        A wake-up deadline can move, appear or vanish at any moment, so a preheat for it is
+        handed over to another deadline instead of being undone and started again.
+
+        Args:
+            entity_id: The entity that owns a slot.
+
+        Returns:
+            True for a wake-up source; a reader that only knows schedulers answers False.
+        """
+        return False
+
     @abstractmethod
     async def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
         """Check if a specific scheduler is enabled.

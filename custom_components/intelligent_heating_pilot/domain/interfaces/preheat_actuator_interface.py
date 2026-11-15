@@ -86,3 +86,18 @@ class IPreheatActuator(ABC):
         Args:
             timeslot: The slot whose hold ends.
         """
+
+    @abstractmethod
+    async def hand_over(self, timeslot: ScheduledTimeslot) -> ActuationResult:
+        """Carry the preheat in progress over to another slot, without restoring in between.
+
+        The earlier state and any change somebody else made are kept: the new slot takes the
+        preheat over instead of starting a new one. Without a preheat in progress it is a plain
+        start.
+
+        Args:
+            timeslot: The slot the preheat now heads for.
+
+        Returns:
+            What happened: see ``ActuationResult``.
+        """

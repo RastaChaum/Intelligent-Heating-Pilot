@@ -181,3 +181,25 @@ def no_deadline(context: dict) -> None:
 @then("no command is sent to the thermostat")
 def no_command(context: dict) -> None:
     assert context["stack"].service_calls == []
+
+
+@when(parsers.parse("the source changes to {hhmm} tomorrow"))
+def source_changes(context: dict, hhmm: str) -> None:
+    stack = context["stack"]
+    value = _tomorrow_at(hhmm)
+    context["values"][context["source"]] = value
+    stack.set_source(context["source"], value)
+    context["result"] = stack.recalculate()
+
+
+@when("the source shows no alarm")
+def source_shows_nothing(context: dict) -> None:
+    stack = context["stack"]
+    stack.set_source(context["source"], None)
+    context["result"] = stack.recalculate()
+
+
+@then("no further preset command was sent")
+def no_further_preset_command(context: dict) -> None:
+    commands = context["stack"].commands("set_preset_mode")
+    assert len(commands) == 1, commands

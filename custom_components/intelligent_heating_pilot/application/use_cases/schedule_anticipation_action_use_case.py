@@ -164,7 +164,9 @@ class ScheduleAnticipationActionUseCase:
             await self.cancel_action()
             return None
 
-        await self._cancel_preheating_for_other_slot(anticipation_data["next_schedule_time"])
+        await self._cancel_preheating_for_other_slot(
+            anticipation_data["next_schedule_time"], self._slot_of(anticipation_data)
+        )
 
         # Decision 3: No heating time needed (anticipation_minutes == 0)
         if anticipation_data.get("anticipation_minutes") == 0:
@@ -194,7 +196,9 @@ class ScheduleAnticipationActionUseCase:
         slot = anticipation_data.get("next_slot")
         return slot if isinstance(slot, ScheduledTimeslot) else None
 
-    async def _cancel_preheating_for_other_slot(self, target_time: datetime) -> None:
+    async def _cancel_preheating_for_other_slot(
+        self, target_time: datetime, new_slot: ScheduledTimeslot | None = None
+    ) -> None:
         """Revert an active preheat whose slot its scheduler no longer has as its next one.
 
         The slot was removed or moved, so the scheduler will never apply it and
@@ -208,8 +212,13 @@ class ScheduleAnticipationActionUseCase:
         the active scheduler alone keeps that preheat running, and still reverts one whose slot
         was moved or removed (an enabled scheduler is no proof that its slot is still there).
 
+        A preheat that involves a wake-up source is the exception: its deadline moves (a snooze),
+        a closer one appears, or it vanishes. The first two are handed over, with no restore in
+        between; a vanished one is reverted like any removed slot.
+
         Args:
             target_time: Target time of the next scheduled slot
+            new_slot: The next slot as the reader described it, when it did
         """
         if not self._control_preheating.is_preheating_active():
             return
@@ -217,6 +226,10 @@ class ScheduleAnticipationActionUseCase:
         if preheating_target == target_time:
             return
         active_scheduler = self._control_preheating.get_active_scheduler_entity()
+        # A wake-up deadline hands the preheat over before the #64 rule can keep the old one
+        # running: that rule would leave a closer deadline's own target unapplied.
+        if await self._try_hand_over(preheating_target, active_scheduler, new_slot):
+            return
         if active_scheduler:
             own_next = await self._scheduler_reader.get_next_timeslot_of(active_scheduler)
             if own_next is not None and own_next.target_time == preheating_target:
@@ -235,6 +248,46 @@ class ScheduleAnticipationActionUseCase:
         )
         await self._control_preheating.cancel_preheating()
         await self._clear_state()
+
+    async def _try_hand_over(
+        self,
+        preheating_target: datetime | None,
+        active_scheduler: str | None,
+        new_slot: ScheduledTimeslot | None,
+    ) -> bool:
+        """Carry a preheat over to another deadline when a wake-up source is involved.
+
+        A closer deadline always takes over; the same source moved later does too, as long as
+        it moves by less than the revert tolerance (a snooze), which is the same line the
+        postponed-start revert already draws. A source that no longer has a deadline does not:
+        its preheat is for nothing and is reverted.
+
+        Returns:
+            True when the preheat was handed over and must not be reverted.
+        """
+        if new_slot is None or preheating_target is None:
+            return False
+        reader = self._scheduler_reader
+        new_is_source = reader.is_wake_up_source(new_slot.scheduler_entity)
+        active_is_source = bool(active_scheduler) and reader.is_wake_up_source(
+            active_scheduler or ""
+        )
+        if not (new_is_source or active_is_source):
+            return False
+        if active_is_source and await reader.get_next_timeslot_of(active_scheduler or "") is None:
+            return False
+        shift = (new_slot.target_time - preheating_target).total_seconds()
+        same_source = new_is_source and active_scheduler == new_slot.scheduler_entity
+        if shift >= 0 and not (same_source and shift < self._anticipation_recalc_tolerance_seconds):
+            return False
+        _LOGGER.info(
+            "Wake-up deadline moved from %s to %s - handing the preheat over instead of reverting",
+            preheating_target.isoformat(),
+            new_slot.target_time.isoformat(),
+        )
+        await self._control_preheating.hand_over(new_slot)
+        await self._clear_state()
+        return True
 
     async def _handle_no_heating_needed(self, anticipation_data: dict) -> None:
         """Handle a recalculation that reports zero minutes of anticipation.
