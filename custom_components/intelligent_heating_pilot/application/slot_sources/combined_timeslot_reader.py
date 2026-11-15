@@ -21,6 +21,7 @@ from ...domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from ...domain.interfaces.wake_up_source_reader_interface import IWakeUpSourceReader
 from ...domain.services.wake_up_deadline_policy import WakeUpDeadlinePolicy
 from ...domain.services.wake_up_target_policy import WakeUpTargetPolicy
+from ...domain.value_objects.climate_snapshot import ClimateSnapshot
 from ...domain.value_objects.scheduled_timeslot import ScheduledTimeslot
 from ...domain.value_objects.slot_action import SlotAction
 from ...domain.value_objects.wake_up_source_config import WakeUpSourceConfig
@@ -197,9 +198,19 @@ class CombinedTimeslotReader(ISchedulerReader):
         if self._records is not None:
             record = await self._records.load()
             if record is not None and record.timeslot_id == slot_id:
-                return record.previous.temperature
+                return self._temperature_held_by(record.previous)
         snapshot = self._climate.read_climate_snapshot() if self._climate is not None else None
-        return snapshot.temperature if snapshot is not None else None
+        return self._temperature_held_by(snapshot) if snapshot is not None else None
+
+    def _temperature_held_by(self, snapshot: ClimateSnapshot) -> float | None:
+        """Give the target a climate state stands for, through its preset when it has no target.
+
+        Some thermostats (Versatile Thermostat) publish no requested target while a preset is
+        selected: the preset's temperature is then what the room is aiming for.
+        """
+        if snapshot.temperature is not None:
+            return snapshot.temperature
+        return self._preset_resolver.resolve(snapshot.preset) if snapshot.preset else None
 
     def _temperature_of(self, action: SlotAction) -> float:
         """Give the temperature the anticipation heads for, whatever the action names."""

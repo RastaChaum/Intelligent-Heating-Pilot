@@ -48,6 +48,7 @@ def _slot(preset: str, hours: float = 8) -> ScheduledTimeslot:
 def _build(
     slots: SlotsAround,
     current_target: float | None = 17.0,
+    current_preset: str = "eco",
     record: PreheatRecord | None = None,
     config: WakeUpSourceConfig | None = None,
     with_lookup: bool = True,
@@ -62,7 +63,7 @@ def _build(
     lookup.get_slots_around = AsyncMock(return_value=slots)
     climate = Mock(spec=IClimateDataReader)
     climate.read_climate_snapshot = Mock(
-        return_value=ClimateSnapshot("heat", "eco", current_target, PRESETS)
+        return_value=ClimateSnapshot("heat", current_preset, current_target, PRESETS)
     )
     store = Mock(spec=IPreheatRecordStore)
     store.load = AsyncMock(return_value=record)
@@ -104,6 +105,62 @@ async def test_a_schedule_target_not_higher_than_the_current_one_falls_back_to_t
     slot = await reader.get_next_timeslot()
 
     assert slot is not None and slot.action == SlotAction(preset="eco")
+
+
+@pytest.mark.asyncio
+async def test_a_thermostat_in_a_preset_is_compared_through_the_temperature_of_that_preset() -> (
+    None
+):
+    """Versatile Thermostat publishes no requested target while a preset is selected."""
+    reader, _ = _build(SlotsAround(following=_slot("comfort")), current_target=None)
+
+    slot = await reader.get_next_timeslot()
+
+    assert slot is not None and slot.action == SlotAction(preset="comfort")
+
+
+@pytest.mark.asyncio
+async def test_a_preset_as_warm_as_the_schedule_target_falls_back_to_the_fixed_one() -> None:
+    reader, _ = _build(
+        SlotsAround(following=_slot("comfort")), current_target=None, current_preset="comfort"
+    )
+
+    slot = await reader.get_next_timeslot()
+
+    assert slot is not None and slot.action == SlotAction(preset="eco")
+
+
+@pytest.mark.asyncio
+async def test_a_preset_whose_temperature_is_unknown_gives_no_reference() -> None:
+    reader, _ = _build(
+        SlotsAround(following=_slot("comfort")), current_target=None, current_preset="away"
+    )
+
+    slot = await reader.get_next_timeslot()
+
+    assert slot is not None and slot.action == SlotAction(preset="eco")
+
+
+@pytest.mark.asyncio
+async def test_the_recorded_earlier_state_in_a_preset_is_compared_through_its_temperature() -> None:
+    record = PreheatRecord(
+        timeslot_id=f"{ALARM}_2026-11-16",
+        scheduler_entity=ALARM,
+        slot_time=DEADLINE,
+        previous=ClimateSnapshot("heat", "eco", None, PRESETS),
+        applied=SlotAction(preset="comfort"),
+        recorded_at=NOW,
+    )
+    reader, _ = _build(
+        SlotsAround(following=_slot("comfort")),
+        current_target=None,
+        current_preset="comfort",
+        record=record,
+    )
+
+    slot = await reader.get_next_timeslot()
+
+    assert slot is not None and slot.action == SlotAction(preset="comfort")
 
 
 @pytest.mark.asyncio
