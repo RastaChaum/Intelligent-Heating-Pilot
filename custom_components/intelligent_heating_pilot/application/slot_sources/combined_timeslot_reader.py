@@ -13,10 +13,14 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 
 from ...domain.constants import DEFAULT_PRESET_TEMPERATURE_C
+from ...domain.interfaces.climate_data_reader_interface import IClimateDataReader
+from ...domain.interfaces.preheat_record_store_interface import IPreheatRecordStore
 from ...domain.interfaces.preset_temperature_resolver_interface import IPresetTemperatureResolver
+from ...domain.interfaces.schedule_slot_lookup_interface import IScheduleSlotLookup
 from ...domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from ...domain.interfaces.wake_up_source_reader_interface import IWakeUpSourceReader
 from ...domain.services.wake_up_deadline_policy import WakeUpDeadlinePolicy
+from ...domain.services.wake_up_target_policy import WakeUpTargetPolicy
 from ...domain.value_objects.scheduled_timeslot import ScheduledTimeslot
 from ...domain.value_objects.slot_action import SlotAction
 from ...domain.value_objects.wake_up_source_config import WakeUpSourceConfig
@@ -40,6 +44,10 @@ class CombinedTimeslotReader(ISchedulerReader):
         preset_resolver: IPresetTemperatureResolver,
         now: Callable[[], datetime],
         deadline_policy: WakeUpDeadlinePolicy | None = None,
+        slot_lookup: IScheduleSlotLookup | None = None,
+        climate_reader: IClimateDataReader | None = None,
+        record_store: IPreheatRecordStore | None = None,
+        target_policy: WakeUpTargetPolicy | None = None,
     ) -> None:
         """Initialize the reader.
 
@@ -50,6 +58,13 @@ class CombinedTimeslotReader(ISchedulerReader):
             preset_resolver: Tells the temperature a preset stands for.
             now: Current time, timezone-aware.
             deadline_policy: Judges whether a reading is a usable deadline.
+            slot_lookup: Tells the schedule slots around a moment, for a source whose target
+                comes from the schedule. Without it every target is the fixed one.
+            climate_reader: Gives the thermostat's current target, the reference the schedule's
+                target is compared with.
+            record_store: Gives the record of a running preheat, whose earlier target is that
+                reference while the preheat runs: the current one is then IHP's own.
+            target_policy: Chooses between the fixed target and the schedule's.
         """
         self._schedulers = scheduler_reader
         self._source_reader = source_reader
@@ -57,6 +72,10 @@ class CombinedTimeslotReader(ISchedulerReader):
         self._preset_resolver = preset_resolver
         self._now = now
         self._policy = deadline_policy or WakeUpDeadlinePolicy()
+        self._lookup = slot_lookup
+        self._climate = climate_reader
+        self._records = record_store
+        self._target_policy = target_policy or WakeUpTargetPolicy()
         self._announced: str | None = None
 
     async def get_next_timeslot(
@@ -131,22 +150,43 @@ class CombinedTimeslotReader(ISchedulerReader):
         deadline = self._policy.judge(self._source_reader.read(entity_id), now, config.horizon)
         if deadline is None:
             return None
-        action = await self._target_of(config, deadline)
+        slot_id = f"{entity_id}_{deadline.astimezone(now.tzinfo).date().isoformat()}"
+        action = await self._target_of(config, deadline, slot_id)
         if action is None:
             _LOGGER.debug("Wake-up source %s has no usable target, ignored", entity_id)
             return None
         return ScheduledTimeslot(
             target_time=deadline,
             target_temp=self._temperature_of(action),
-            timeslot_id=f"{entity_id}_{deadline.astimezone(now.tzinfo).date().isoformat()}",
+            timeslot_id=slot_id,
             scheduler_entity=entity_id,
             action=action,
             hold=config.hold,
         )
 
-    async def _target_of(self, config: WakeUpSourceConfig, deadline: datetime) -> SlotAction | None:
-        """Choose the target of a source: its fixed one, until the schedule rules are added."""
-        return config.fixed_target
+    async def _target_of(
+        self, config: WakeUpSourceConfig, deadline: datetime, slot_id: str
+    ) -> SlotAction | None:
+        """Choose the target of a source: its fixed one, or the schedule's when asked to."""
+        if not config.target_from_schedule or self._lookup is None:
+            return config.fixed_target
+        slots = await self._lookup.get_slots_around(deadline)
+        reference = await self._reference_target(config.entity_id, slot_id)
+        return self._target_policy.resolve(config, slots, reference)
+
+    async def _reference_target(self, entity_id: str, slot_id: str) -> float | None:
+        """Give the target the schedule's is compared with: the one before IHP acted.
+
+        While a preheat runs for this wake-up, the thermostat's current target is the one IHP
+        set: comparing with it would flip the choice mid-preheat. The recorded earlier target
+        is what the room would have without IHP.
+        """
+        if self._records is not None:
+            record = await self._records.load()
+            if record is not None and record.timeslot_id == slot_id:
+                return record.previous.temperature
+        snapshot = self._climate.read_climate_snapshot() if self._climate is not None else None
+        return snapshot.temperature if snapshot is not None else None
 
     def _temperature_of(self, action: SlotAction) -> float:
         """Give the temperature the anticipation heads for, whatever the action names."""

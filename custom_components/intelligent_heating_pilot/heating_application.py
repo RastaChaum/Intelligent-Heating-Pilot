@@ -53,8 +53,13 @@ from .infrastructure.adapters import (
     HASunReader,
     HATimerScheduler,
 )
-from .infrastructure.adapters.native_schedule_reader import NativeScheduleSettings
+from .infrastructure.adapters.climate_scheduler_reader import HAClimateSchedulerReader
+from .infrastructure.adapters.native_schedule_reader import (
+    HANativeScheduleReader,
+    NativeScheduleSettings,
+)
 from .infrastructure.adapters.preset_temperature_resolver import HAPresetTemperatureResolver
+from .infrastructure.adapters.schedule_slot_lookup import HAScheduleSlotLookup
 from .infrastructure.adapters.wake_up_source_reader import HAWakeUpSourceReader
 from .infrastructure.event_bridge import HAEventBridge
 
@@ -214,12 +219,37 @@ class HeatingApplication:
         )
         if not self._wake_up_sources:
             return schedulers
+        presets = HAPresetTemperatureResolver(self.hass, self._vtherm_id)
         return CombinedTimeslotReader(
             scheduler_reader=schedulers,
             source_reader=HAWakeUpSourceReader(self.hass),
             sources=self._wake_up_sources,
-            preset_resolver=HAPresetTemperatureResolver(self.hass, self._vtherm_id),
+            preset_resolver=presets,
             now=dt_util.now,
+            slot_lookup=self._build_slot_lookup(ownership_resolver, presets),
+            climate_reader=self._climate_data_reader,
+            record_store=self._record_store,
+        )
+
+    def _build_slot_lookup(
+        self, ownership_resolver: HASchedulerOwnershipResolver, presets: HAPresetTemperatureResolver
+    ) -> HAScheduleSlotLookup | None:
+        """Build the lookup that tells the schedule slots around a wake-up time.
+
+        Only built when a source takes its target from the schedule and there is a scheduler:
+        otherwise no source would ever ask for it.
+        """
+        if not self._scheduler_ids or not any(
+            source.target_from_schedule for source in self._wake_up_sources
+        ):
+            return None
+        return HAScheduleSlotLookup(
+            self.hass,
+            self._scheduler_ids,
+            ownership_resolver,
+            HANativeScheduleReader(self.hass, self._native_schedule_settings()),
+            HAClimateSchedulerReader(self._vtherm_id),
+            presets,
         )
 
     def _build_direct_actuator(self) -> DirectPreheatActuator:
@@ -230,7 +260,7 @@ class HeatingApplication:
         return DirectPreheatActuator(
             commander=HAClimateCommander(self.hass, self._vtherm_id),
             climate_reader=climate_reader,
-            record_store=HAPreheatRecordStorage(self.hass, self._device_id),
+            record_store=self._record_store,
             policy=PreheatSessionPolicy(),
             now=dt_util.now,
             configured_entities=lambda: frozenset(
@@ -257,6 +287,7 @@ class HeatingApplication:
             self.hass, get_recorder_queue(self.hass), self._vtherm_id
         )
 
+        self._record_store = HAPreheatRecordStorage(self.hass, self._device_id)
         ownership_resolver = HASchedulerOwnershipResolver(
             self.hass, wake_up_source_ids=frozenset(self._wake_up_source_ids)
         )

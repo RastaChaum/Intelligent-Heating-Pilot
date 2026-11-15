@@ -28,6 +28,7 @@ SERVICE_GET_SCHEDULE = "get_schedule"
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 # Today plus the seven following days: the same weekday next week must be reachable.
 DAYS_TO_SCAN = 8
+END_OF_DAY = "24:00"
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,14 @@ class NativeSlot(NamedTuple):
     action: SlotAction | None
 
 
+class NativeBlock(NamedTuple):
+    """One block of a native schedule on a given day: when it runs and what it carries."""
+
+    start: datetime
+    end: datetime
+    data: dict[str, Any]
+
+
 class HANativeScheduleReader:
     """Reads the next block of a native schedule helper."""
 
@@ -108,6 +117,78 @@ class HANativeScheduleReader:
             return None
         start, data = found
         return NativeSlot(start=start, action=self._action_from(data))
+
+    async def blocks_around(
+        self, entity_id: str, moment: datetime
+    ) -> tuple[NativeBlock | None, NativeBlock | None]:
+        """Return the block in effect at a moment and the first block starting after it.
+
+        Needs ``schedule.get_schedule`` (Home Assistant 2025.3): the helper's attributes say
+        nothing about a block that is not running. Without it, nothing is known.
+
+        Args:
+            entity_id: The ``schedule.*`` entity id.
+            moment: The moment, timezone-aware.
+
+        Returns:
+            Tuple of (block in effect, block that follows); either is None when there is none
+            or the schedule cannot be read.
+        """
+        if not self._hass.services.has_service(SCHEDULE_DOMAIN, SERVICE_GET_SCHEDULE):
+            return None, None
+        schedule = await self._fetch(entity_id)
+        if not schedule:
+            return None, None
+        blocks = self._blocks_over(schedule, moment)
+        in_effect = [block for block in blocks if block.start <= moment < block.end]
+        following = [block for block in blocks if block.start > moment]
+        return (
+            max(in_effect, key=lambda block: block.start, default=None),
+            min(following, key=lambda block: block.start, default=None),
+        )
+
+    def _blocks_over(self, schedule: dict[str, Any], moment: datetime) -> list[NativeBlock]:
+        """List the blocks of the days around a moment, one entry per day they run."""
+        blocks: list[NativeBlock] = []
+        for offset in range(-1, DAYS_TO_SCAN):
+            day = moment.date() + timedelta(days=offset)
+            for raw in schedule.get(WEEKDAYS[day.weekday()]) or []:
+                block = self._block_on(raw, day, moment.tzinfo)
+                if block is not None:
+                    blocks.append(block)
+        return blocks
+
+    @staticmethod
+    def _block_on(raw: Any, day: date, tz: tzinfo | None) -> NativeBlock | None:
+        parsed = HANativeScheduleReader._parse_block(raw, day, tz)
+        if parsed is None or not isinstance(raw, dict):
+            return None
+        end = HANativeScheduleReader._end_of(raw.get("to"), day, tz)
+        if end is None:
+            return None
+        if end <= parsed[0]:  # a block that ends at midnight ends the next day
+            end += timedelta(days=1)
+        return NativeBlock(parsed[0], end, parsed[1])
+
+    @staticmethod
+    def _end_of(value: Any, day: date, tz: tzinfo | None) -> datetime | None:
+        """Read a block's end; "24:00:00" is the end of the day, which is no valid time."""
+        if isinstance(value, str) and value.startswith(END_OF_DAY):
+            return datetime.combine(day + timedelta(days=1), time(0), tzinfo=tz)
+        end_time = _as_time(value)
+        return datetime.combine(day, end_time, tzinfo=tz) if end_time is not None else None
+
+    def block_action(self, data: dict[str, Any]) -> SlotAction | None:
+        """Turn a block's data into an action, whether or not IHP drives native schedules.
+
+        A block that carries neither key gives no action: unlike a driven schedule, there is no
+        fallback preset to stand in, since the action would be used as a target.
+        """
+        preset = _as_preset(data.get(self._settings.preset_key))
+        temperature = _as_temperature(data.get(self._settings.temperature_key))
+        if preset is None and temperature is None:
+            return None
+        return SlotAction(preset=preset, temperature=temperature)
 
     def _next_slot_from_attributes(self, entity_id: str) -> NativeSlot | None:
         """Read the next ON block from the entity's ``next_event`` attribute.

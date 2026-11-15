@@ -38,8 +38,15 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
     WakeUpSourceConfig,
 )
 from custom_components.intelligent_heating_pilot.infrastructure.adapters import HAClimateCommander
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.climate_scheduler_reader import (
+    HAClimateSchedulerReader,
+)
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.native_schedule_reader import (
+    HANativeScheduleReader,
     NativeScheduleSettings,
+)
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.schedule_slot_lookup import (
+    HAScheduleSlotLookup,
 )
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.scheduler_reader import (
     HASchedulerReader,
@@ -140,6 +147,16 @@ class WakeUpStack(NativeStack):
             sources=self.sources,
             preset_resolver=_Presets(),
             now=lambda: self.now,
+            slot_lookup=HAScheduleSlotLookup(
+                self.hass,
+                schedulers,
+                resolver,
+                HANativeScheduleReader(self.hass, NativeScheduleSettings(drive_enabled=False)),
+                HAClimateSchedulerReader(CLIMATE_ID),
+                _Presets(),
+            ),
+            climate_reader=self.climate,  # type: ignore[arg-type]
+            record_store=self.store,
         )
         direct = DirectPreheatActuator(
             commander=HAClimateCommander(self.hass, CLIMATE_ID),

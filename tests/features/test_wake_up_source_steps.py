@@ -57,6 +57,40 @@ def source_with_hold(context: dict, entity: str, preset: str, minutes: int) -> N
     context["source"] = entity
 
 
+@given(parsers.parse('a wake-up source "{entity}" taking its target from the schedule'))
+def source_from_schedule(context: dict, entity: str) -> None:
+    context["sources"].append(WakeUpSourceConfig(entity, target_from_schedule=True))
+    context["source"] = entity
+    context["with_schedule"] = True
+
+
+@given(
+    parsers.parse(
+        'a wake-up source "{entity}" taking its target from the schedule with the fallback preset "{preset}"'
+    )
+)
+def source_from_schedule_with_fallback(context: dict, entity: str, preset: str) -> None:
+    context["sources"].append(
+        WakeUpSourceConfig(entity, SlotAction(preset=preset), target_from_schedule=True)
+    )
+    context["source"] = entity
+    context["with_schedule"] = True
+
+
+@given(
+    parsers.parse('the schedule has a block from {start} to {end} with the data preset "{preset}"')
+)
+def schedule_block_between(context: dict, start: str, end: str, preset: str) -> None:
+    context["with_schedule"] = True
+    context["blocks"].append(block(start, end, {"preset": preset}))
+
+
+@given("the schedule has no block")
+def schedule_without_block(context: dict) -> None:
+    context["with_schedule"] = True
+    context["blocks"] = []
+
+
 @given(parsers.parse('the schedule has a block at {start} with the data preset "{preset}"'))
 def schedule_block(context: dict, start: str, preset: str) -> None:
     context["with_schedule"] = True
@@ -137,3 +171,13 @@ def never_restored(context: dict) -> None:
         if data and data.get("preset_mode") == "eco"
     ]
     assert restored == []
+
+
+@then("there is no next deadline")
+def no_deadline(context: dict) -> None:
+    assert context["result"]["next_schedule_time"] is None
+
+
+@then("no command is sent to the thermostat")
+def no_command(context: dict) -> None:
+    assert context["stack"].service_calls == []

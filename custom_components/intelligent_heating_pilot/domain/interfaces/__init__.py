@@ -19,6 +19,7 @@ from .lhs_storage_interface import ILhsStorage
 from .preheat_actuator_interface import IPreheatActuator
 from .preheat_record_store_interface import IPreheatRecordStore
 from .preset_temperature_resolver_interface import IPresetTemperatureResolver
+from .schedule_slot_lookup_interface import IScheduleSlotLookup
 from .scheduler_ownership_resolver_interface import ISchedulerOwnershipResolver
 from .scheduler_reader_interface import ISchedulerReader
 from .sun_reader_interface import ISunReader
@@ -32,6 +33,7 @@ __all__ = [
     "IPresetTemperatureResolver",
     "IWakeUpSourceReader",
     "IPreheatRecordStore",
+    "IScheduleSlotLookup",
     "ISchedulerOwnershipResolver",
     "ISchedulerReader",
     "IEnvironmentReader",

@@ -70,3 +70,33 @@ Feature: Preheat for a wake-up time given by an entity
     And the hold ends
     Then the thermostat preset is still "comfort"
     And the thermostat was never restored
+
+  Scenario: The wake-up target is read from the schedule
+    Given a wake-up source "sensor.phone_next_alarm" taking its target from the schedule
+    And the schedule has a block at 07:00 with the data preset "boost"
+    And the source is set to 05:30 tomorrow
+    When the anticipated start is reached
+    Then the next deadline is at 05:30 tomorrow
+    And the thermostat preset becomes "boost"
+
+  Scenario: The wake-up target is never lower than the slot already in effect
+    Given a wake-up source "sensor.phone_next_alarm" taking its target from the schedule
+    And the schedule has a block from 06:00 to 09:00 with the data preset "comfort"
+    And the schedule has a block from 09:00 to 22:00 with the data preset "eco"
+    And the source is set to 08:00 tomorrow
+    When the anticipated start is reached
+    Then the thermostat preset becomes "comfort"
+
+  Scenario: The fixed target is the fallback when the schedule cannot tell
+    Given a wake-up source "sensor.phone_next_alarm" taking its target from the schedule with the fallback preset "comfort"
+    And the source is set to 05:30 tomorrow
+    When the anticipated start is reached
+    Then the thermostat preset becomes "comfort"
+
+  Scenario: A source with no usable target is ignored
+    Given a wake-up source "sensor.phone_next_alarm" taking its target from the schedule
+    And the schedule has no block
+    And the source is set to 05:30 tomorrow
+    When the anticipated start is reached
+    Then there is no next deadline
+    And no command is sent to the thermostat
