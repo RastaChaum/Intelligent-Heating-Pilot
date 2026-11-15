@@ -12,7 +12,7 @@ from custom_components.intelligent_heating_pilot.const import (
     CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
     CONF_NATIVE_SCHEDULE_PRESET_KEY,
 )
-from tests.integration.real_components.home import BOOST_C, ROOM_SENSOR, Block, Home
+from tests.integration.real_components.home import BOOST_C, Block, Home
 from tests.integration.real_components.schedulers import (
     ClimateScheduler,
     HacsScheduler,
@@ -43,7 +43,7 @@ class TestNativeSchedule:
     @pytest.mark.usefixtures("real_components")
     async def test_the_fallback_preset_is_the_one_the_user_chose(self, home: Home) -> None:
         # Boost is 23°C: from a 20°C room it is the same 3°C of heating as the comfort preset
-        home.hass.states.async_set(ROOM_SENSOR, "20.0")
+        home.set_room_temperature(20.0)
         scheduler = NativeSchedule(**{CONF_NATIVE_SCHEDULE_FALLBACK_PRESET: "boost"})
         await _preheat_for(home, scheduler, Block(LATE_MORNING))
 

@@ -52,6 +52,18 @@ async def test_removing_the_block_restores_the_earlier_state(home: Home) -> None
 
 
 @pytest.mark.usefixtures("real_components")
+async def test_moving_the_block_later_cancels_the_preheat_in_progress(home: Home) -> None:
+    await _preheat_in_progress(home, scheduler := NativeSchedule())
+
+    await scheduler.replace(home, [Block("09:00", preset="comfort")])
+    await home.advance(RECALCULATION)
+
+    assert home.preset == "eco"
+    anticipated = home.anticipated_start
+    assert anticipated is not None and anticipated > home.at(MORNING)
+
+
+@pytest.mark.usefixtures("real_components")
 async def test_a_manual_change_during_the_preheat_is_never_overwritten(home: Home) -> None:
     await _preheat_in_progress(home, scheduler := NativeSchedule())
     await home.user_selects_preset("boost")
