@@ -1,0 +1,17 @@
+{
+  "scheduler": {
+    "repository": "nielsfaber/scheduler-component",
+    "tag": "v3.3.9",
+    "sha256": "6dc3fec716c03e44f924fb9a6fdffbd72dd9bbce90215172378dbf081532903e"
+  },
+  "climate_scheduler": {
+    "repository": "kneave/climate-scheduler",
+    "tag": "v1.15.1",
+    "sha256": "91b15ebbcec9c5d31045c11c39e102d3307b46aa9ea3b43f95c23a17d5ef2d45"
+  },
+  "versatile_thermostat": {
+    "repository": "jmcollin78/versatile_thermostat",
+    "tag": "10.6.5",
+    "sha256": "c06bffa3754d53aa70341bb6bd43cab064f8d94acdedef14dc90781f6e013b3e"
+  }
+}
