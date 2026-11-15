@@ -17,7 +17,16 @@ permissions:
   issues: write
 
 jobs:
+  e2e:
+    name: End-to-end on the integration branch
+    permissions:
+      contents: read
+    uses: ./.github/workflows/e2e-release-candidate.yml
+    with:
+      ref: integration
+
   increment-rc:
+    needs: e2e
     runs-on: ubuntu-latest
     steps:
       - name: Checkout integration branch

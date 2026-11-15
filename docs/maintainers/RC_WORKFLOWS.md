@@ -8,14 +8,22 @@ This document describes the GitHub Actions workflows used to prepare, increment,
 
 - Trigger: manual workflow dispatch on `integration`
 - Purpose: create the first RC for a version
-- Main actions: validate the version (and warn when `manifest.json` differs from it), extract release notes from `CHANGELOG.md`, create the `vX.Y.Z-rc1` tag, and publish the GitHub pre-release
+- Main actions: run the [end-to-end tests](#e2e-release-candidateyml) first (a failure stops the RC), validate the version (and warn when `manifest.json` differs from it), extract release notes from `CHANGELOG.md`, create the `vX.Y.Z-rc1` tag, and publish the GitHub pre-release
 
 ### increment-rc-version.yml
 
 - Trigger: manual workflow dispatch on `integration`
 - Purpose: publish the next RC after fixes
-- Main actions: detect the latest RC, increment the suffix, publish the new pre-release with the previous notes plus an "RC N" section, **then** delete the previous RC release (its tag is kept), and update the tracking issue
+- Main actions: run the [end-to-end tests](#e2e-release-candidateyml) first (a failure stops the RC), detect the latest RC, increment the suffix, publish the new pre-release with the previous notes plus an "RC N" section, **then** delete the previous RC release (its tag is kept), and update the tracking issue
 - Re-run safety: if a run pushed the new tag but failed before publishing its release, the next run publishes that tag instead of skipping a number
+
+### e2e-release-candidate.yml
+
+- Trigger: called by `prepare-release-candidate.yml` and `increment-rc-version.yml`; also manual workflow dispatch, with an optional `ref` and Home Assistant `ha_image` to try another Home Assistant version
+- Purpose: check a release candidate in a real Home Assistant before it is published, without touching a production instance
+- Main actions: start the official Home Assistant image with IHP, Versatile Thermostat, HACS Scheduler and Climate Scheduler, then check that every integration loads, that IHP puts each of three rooms (native schedule, HACS Scheduler, Climate Scheduler) in the slot's preset before the slot starts, that the log holds no unexpected error, and that everything loads again after a restart
+- Duration: about 15 minutes, in real time; the Home Assistant log is kept as the `home-assistant-e2e-log` artifact
+- Run it locally with Docker: `IHP_E2E=1 poetry run pytest tests/e2e -v` (see `tests/e2e/README.md`)
 
 ### integration-pr.yml
 
@@ -33,7 +41,7 @@ This document describes the GitHub Actions workflows used to prepare, increment,
 
 1. Update `CHANGELOG.md` on `integration` and bump `manifest.json` and `hacs.json` to the release version.
 2. Run `prepare-release-candidate.yml`.
-3. Test the RC in production-like conditions.
+3. The end-to-end tests run before the RC is published; then test the RC in production-like conditions.
 4. Apply fixes and run `increment-rc-version.yml` if needed.
 5. Merge `integration` into `main` when the RC is accepted.
 6. Let `promote-rc-to-release.yml` publish the stable release.

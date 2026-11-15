@@ -83,6 +83,28 @@ SENSOR_JITTER_C = 0.1
 MAX_START_REALIGNMENTS = 5
 
 
+def vtherm_entry_data(
+    name: str, room_sensor: str, outdoor_sensor: str, heater: str
+) -> dict[str, Any]:
+    """The configuration of a Versatile Thermostat over one switch, TPI-regulated."""
+    return {
+        CONF_NAME: name,
+        CONF_THERMOSTAT_TYPE: CONF_THERMOSTAT_SWITCH,
+        CONF_TEMP_SENSOR: room_sensor,
+        CONF_EXTERNAL_TEMP_SENSOR: outdoor_sensor,
+        CONF_CYCLE_MIN: CYCLE_MINUTES,
+        CONF_DEVICE_POWER: 1,
+        CONF_USE_MAIN_CENTRAL_CONFIG: False,
+        CONF_UNDERLYING_LIST: [heater],
+        CONF_PROP_FUNCTION: PROPORTIONAL_FUNCTION_TPI,
+        CONF_TPI_COEF_INT: TPI_COEF_INT,
+        CONF_TPI_COEF_EXT: TPI_COEF_EXT,
+        CONF_TEMP_MIN: THERMOSTAT_MIN_C,
+        CONF_TEMP_MAX: THERMOSTAT_MAX_C,
+        CONF_STEP_TEMPERATURE: THERMOSTAT_STEP_C,
+    }
+
+
 @dataclass(frozen=True)
 class Block:
     """One slot of a heating plan: from ``time`` on, the thermostat takes this action."""
@@ -182,22 +204,7 @@ class Home:
         entry = MockConfigEntry(
             domain="versatile_thermostat",
             title="Room",
-            data={
-                CONF_NAME: "Room",
-                CONF_THERMOSTAT_TYPE: CONF_THERMOSTAT_SWITCH,
-                CONF_TEMP_SENSOR: ROOM_SENSOR,
-                CONF_EXTERNAL_TEMP_SENSOR: OUTDOOR_SENSOR,
-                CONF_CYCLE_MIN: CYCLE_MINUTES,
-                CONF_DEVICE_POWER: 1,
-                CONF_USE_MAIN_CENTRAL_CONFIG: False,
-                CONF_UNDERLYING_LIST: [HEATER_SWITCH],
-                CONF_PROP_FUNCTION: PROPORTIONAL_FUNCTION_TPI,
-                CONF_TPI_COEF_INT: TPI_COEF_INT,
-                CONF_TPI_COEF_EXT: TPI_COEF_EXT,
-                CONF_TEMP_MIN: THERMOSTAT_MIN_C,
-                CONF_TEMP_MAX: THERMOSTAT_MAX_C,
-                CONF_STEP_TEMPERATURE: THERMOSTAT_STEP_C,
-            },
+            data=vtherm_entry_data("Room", ROOM_SENSOR, OUTDOOR_SENSOR, HEATER_SWITCH),
         )
         entry.add_to_hass(hass)
         assert await hass.config_entries.async_setup(entry.entry_id)
