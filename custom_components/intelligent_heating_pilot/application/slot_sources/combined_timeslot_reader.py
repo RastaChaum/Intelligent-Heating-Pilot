@@ -85,6 +85,19 @@ class CombinedTimeslotReader(ISchedulerReader):
         self._announce(earliest_source)
         return earliest_source
 
+    async def get_next_scheduler_timeslot(
+        self, exclude_entity_ids: frozenset[str] = frozenset()
+    ) -> ScheduledTimeslot | None:
+        """Retrieve the next timeslot of the schedulers alone, wake-up sources left out.
+
+        Args:
+            exclude_entity_ids: Scheduler entity ids to skip for this call.
+
+        Returns:
+            The next scheduler timeslot, or None when there is none.
+        """
+        return await self._schedulers.get_next_timeslot(exclude_entity_ids)
+
     async def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
         """Tell whether a scheduler is enabled, or a source currently gives a deadline.
 

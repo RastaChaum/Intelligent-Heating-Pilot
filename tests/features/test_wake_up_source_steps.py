@@ -45,6 +45,18 @@ def source_with_preset(context: dict, entity: str, preset: str) -> None:
     context["source"] = entity
 
 
+@given(
+    parsers.parse(
+        'a wake-up source "{entity}" with the target preset "{preset}" and a hold of {minutes:d} minutes'
+    )
+)
+def source_with_hold(context: dict, entity: str, preset: str, minutes: int) -> None:
+    context["sources"].append(
+        WakeUpSourceConfig(entity, SlotAction(preset=preset), hold=timedelta(minutes=minutes))
+    )
+    context["source"] = entity
+
+
 @given(parsers.parse('the schedule has a block at {start} with the data preset "{preset}"'))
 def schedule_block(context: dict, start: str, preset: str) -> None:
     context["with_schedule"] = True
@@ -83,3 +95,45 @@ def next_deadline(context: dict, hhmm: str) -> None:
 def preset_becomes(context: dict, preset: str) -> None:
     assert context["climate"].snapshot.preset == preset
     assert context["stack"].commands("set_preset_mode")
+
+
+@when("the wake-up time has passed")
+def wake_up_time_passed(context: dict) -> None:
+    stack = context["stack"]
+    deadline = context["values"][context["source"]]
+    stack.advance(deadline - stack.now + timedelta(seconds=5))
+    stack.set_source(context["source"], None)  # the phone shows no alarm any more
+    stack.recalculate()
+
+
+@when("the hold ends")
+def hold_ends(context: dict) -> None:
+    stack = context["stack"]
+    source = next(s for s in context["sources"] if s.entity_id == context["source"])
+    deadline = context["values"][context["source"]]
+    hold_end = deadline + (source.hold or timedelta(0))
+    # A scheduler slot that comes before bounds the hold: the timer is at that slot
+    ends = [when for when, _callback in stack.timers if when > stack.now]
+    stack.advance(max([hold_end, *ends[:0]]) - stack.now if not ends else min(ends) - stack.now)
+    stack.fire_due_timers()
+
+
+@when(parsers.parse('somebody sets the thermostat to the "{preset}" preset'))
+def somebody_sets_the_thermostat(context: dict, preset: str) -> None:
+    context["climate"].snapshot = make_snapshot(preset=preset, temperature=23.0)
+
+
+@then(parsers.parse('the thermostat preset is still "{preset}"'))
+def preset_still(context: dict, preset: str) -> None:
+    assert context["climate"].snapshot.preset == preset
+
+
+@then("the thermostat was never restored")
+def never_restored(context: dict) -> None:
+    stack = context["stack"]
+    restored = [
+        data
+        for data in stack.commands("set_preset_mode")
+        if data and data.get("preset_mode") == "eco"
+    ]
+    assert restored == []

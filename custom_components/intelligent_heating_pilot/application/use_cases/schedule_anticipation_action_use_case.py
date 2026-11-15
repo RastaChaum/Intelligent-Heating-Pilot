@@ -15,13 +15,13 @@ from homeassistant.util import dt as dt_util
 
 from ...const import DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
 from ...domain.constants import SLOT_DAY_RETRY_DELAY_SECONDS
-from ...domain.value_objects import CancelReason
+from ...domain.value_objects import CancelReason, ScheduledTimeslot
 
 if TYPE_CHECKING:
     from datetime import datetime
 
     from ...domain.interfaces import ISchedulerReader, ITimerScheduler
-    from ...domain.value_objects import ScheduledTimeslot, SlotAction
+    from ...domain.value_objects import SlotAction
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,6 +75,10 @@ class ScheduleAnticipationActionUseCase:
         # (target_time, scheduler) of the retry planned for the slot's day, if any (#250)
         self._slot_day_retry: tuple[datetime, str] | None = None
         self._anticipation_recalc_tolerance_seconds = anticipation_recalc_tolerance_minutes * 60
+        # The hold of a reached wake-up slot: the slot and the cancel of the timer that ends it
+        self._hold_slot: ScheduledTimeslot | None = None
+        self._hold_timer_cancel: Callable[[], None] | None = None
+        self._control_preheating.set_on_hold_recovered(self._arm_hold_timer)
 
     async def next_timeslot_of(self, scheduler_entity_id: str) -> ScheduledTimeslot | None:
         """Give the next timeslot of one scheduler, to reconcile a preheat after a restart.
@@ -156,6 +160,7 @@ class ScheduleAnticipationActionUseCase:
                 or anticipation_data.get("scheduler_entity"),
                 CancelReason.IHP_DISABLED,
             )
+            await self.end_pending_hold()
             await self.cancel_action()
             return None
 
@@ -180,7 +185,14 @@ class ScheduleAnticipationActionUseCase:
             scheduler_entity_id=scheduler_entity,
             lhs=float(anticipation_data.get("learned_heating_slope") or 0.0),
             action=anticipation_data.get("next_slot_action"),
+            slot=self._slot_of(anticipation_data),
         )
+
+    @staticmethod
+    def _slot_of(anticipation_data: dict) -> ScheduledTimeslot | None:
+        """Give the slot the reader described, so that its identity and hold are kept."""
+        slot = anticipation_data.get("next_slot")
+        return slot if isinstance(slot, ScheduledTimeslot) else None
 
     async def _cancel_preheating_for_other_slot(self, target_time: datetime) -> None:
         """Revert an active preheat whose slot its scheduler no longer has as its next one.
@@ -252,6 +264,7 @@ class ScheduleAnticipationActionUseCase:
         scheduler_entity_id: str,
         lhs: float,
         action: SlotAction | None = None,
+        slot: ScheduledTimeslot | None = None,
     ) -> str | None:
         """Schedule heating anticipation action.
 
@@ -268,6 +281,8 @@ class ScheduleAnticipationActionUseCase:
             scheduler_entity_id: Scheduler entity to trigger
             lhs: Learned heating slope
             action: What the slot applies, when the scheduler gives one
+            slot: The slot as the reader described it, with its identity and hold; rebuilt from
+                the other arguments when absent
 
         Returns:
             ``scheduler_entity_id`` if an immediate trigger was confirmed blocked
@@ -342,11 +357,11 @@ class ScheduleAnticipationActionUseCase:
                 # A timer left by an earlier calculation would otherwise fire during this preheat
                 await self._cancel_timer()
                 confirmed = await self._control_preheating.start_preheating(
-                    target_time, target_temp, scheduler_entity_id, action=action
+                    target_time, target_temp, scheduler_entity_id, action=action, slot=slot
                 )
                 if not confirmed:
                     blocked_entity = await self._handle_unconfirmed_trigger(
-                        now, target_time, target_temp, scheduler_entity_id, action=action
+                        now, target_time, target_temp, scheduler_entity_id, action=action, slot=slot
                     )
             else:
                 _LOGGER.debug(
@@ -369,6 +384,7 @@ class ScheduleAnticipationActionUseCase:
                 target_temp,
                 scheduler_entity_id,
                 action=action,
+                slot=slot,
             )
         _LOGGER.debug("Exiting schedule_action() -> timer scheduled")
         return None
@@ -380,6 +396,7 @@ class ScheduleAnticipationActionUseCase:
         target_temp: float,
         scheduler_entity_id: str,
         action: SlotAction | None = None,
+        slot: ScheduledTimeslot | None = None,
     ) -> None:
         """Schedule a timer to trigger preheating at anticipated start time.
 
@@ -389,6 +406,8 @@ class ScheduleAnticipationActionUseCase:
             target_temp: Target temperature
             scheduler_entity_id: Scheduler to trigger
             action: What the slot applies, when the scheduler gives one
+            slot: The slot as the reader described it, with its identity and hold; rebuilt from
+                the other arguments when absent
         """
         _LOGGER.debug(
             "Scheduling timer: anticipated_start=%s, scheduler=%s",
@@ -415,7 +434,7 @@ class ScheduleAnticipationActionUseCase:
 
             # Trigger the action
             blocked_entity = await self._trigger_action(
-                target_time, target_temp, scheduler_entity_id, action=action
+                target_time, target_temp, scheduler_entity_id, action=action, slot=slot
             )
 
             # The timer fires outside any caller's awaited call stack, so a
@@ -445,6 +464,7 @@ class ScheduleAnticipationActionUseCase:
         target_temp: float,
         scheduler_entity_id: str,
         action: SlotAction | None = None,
+        slot: ScheduledTimeslot | None = None,
     ) -> str | None:
         """Trigger the preheating action via scheduler.
 
@@ -453,6 +473,8 @@ class ScheduleAnticipationActionUseCase:
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity
             action: What the slot applies, when the scheduler gives one
+            slot: The slot as the reader described it, with its identity and hold; rebuilt from
+                the other arguments when absent
 
         Returns:
             ``scheduler_entity_id`` if the action was confirmed blocked
@@ -472,11 +494,16 @@ class ScheduleAnticipationActionUseCase:
 
         # Delegate to ControlPreheatingUseCase
         confirmed = await self._control_preheating.start_preheating(
-            target_time, target_temp, scheduler_entity_id, action=action
+            target_time, target_temp, scheduler_entity_id, action=action, slot=slot
         )
         if not confirmed:
             return await self._handle_unconfirmed_trigger(
-                dt_util.now(), target_time, target_temp, scheduler_entity_id, action=action
+                dt_util.now(),
+                target_time,
+                target_temp,
+                scheduler_entity_id,
+                action=action,
+                slot=slot,
             )
 
         self._preheating_target_temp = target_temp
@@ -490,6 +517,7 @@ class ScheduleAnticipationActionUseCase:
         target_temp: float,
         scheduler_entity_id: str,
         action: SlotAction | None = None,
+        slot: ScheduledTimeslot | None = None,
     ) -> str | None:
         """Decide what a trigger without effect means: blocked, or too early.
 
@@ -507,13 +535,15 @@ class ScheduleAnticipationActionUseCase:
             target_temp: Target temperature
             scheduler_entity_id: Scheduler that was triggered
             action: What the slot applies, when the scheduler gives one
+            slot: The slot as the reader described it, with its identity and hold; rebuilt from
+                the other arguments when absent
 
         Returns:
             ``scheduler_entity_id`` if the scheduler is confirmed blocked,
             None if a retry was planned on the slot's day instead.
         """
         if await self._retry_on_slot_day(
-            now, target_time, target_temp, scheduler_entity_id, action=action
+            now, target_time, target_temp, scheduler_entity_id, action=action, slot=slot
         ):
             return None
         _LOGGER.warning("Scheduler %s confirmed blocked (conditions unmet)", scheduler_entity_id)
@@ -526,6 +556,7 @@ class ScheduleAnticipationActionUseCase:
         target_temp: float,
         scheduler_entity_id: str,
         action: SlotAction | None = None,
+        slot: ScheduledTimeslot | None = None,
     ) -> bool:
         """Plan a retry just after the slot's local midnight, if the slot is on a later day.
 
@@ -538,6 +569,8 @@ class ScheduleAnticipationActionUseCase:
             target_temp: Target temperature
             scheduler_entity_id: Scheduler to retry
             action: What the slot applies, when the scheduler gives one
+            slot: The slot as the reader described it, with its identity and hold; rebuilt from
+                the other arguments when absent
 
         Returns:
             True if a retry was planned, False if the slot is on today's date.
@@ -558,7 +591,7 @@ class ScheduleAnticipationActionUseCase:
             retry_at.isoformat(),
         )
         await self._schedule_timer(
-            retry_at, target_time, target_temp, scheduler_entity_id, action=action
+            retry_at, target_time, target_temp, scheduler_entity_id, action=action, slot=slot
         )
         self._slot_day_retry = (target_time, scheduler_entity_id)
         return True
@@ -607,8 +640,71 @@ class ScheduleAnticipationActionUseCase:
         if preheating_target is None or dt_util.now() < preheating_target:
             return
         _LOGGER.info("Preheating target time %s reached, preheating complete", preheating_target)
-        await self._control_preheating.mark_preheating_complete()
+        timeslot = self._control_preheating.get_active_timeslot()
+        if timeslot is not None and timeslot.hold is not None:
+            await self._complete_into_hold(timeslot)
+        else:
+            await self._control_preheating.mark_preheating_complete()
         await self._clear_state()
+
+    async def _complete_into_hold(self, timeslot: ScheduledTimeslot) -> None:
+        """Complete the preheat of a wake-up slot and keep its record until its hold ends.
+
+        The hold lasts as long as the source says, but a scheduler of the same IHP that is
+        due before then owns the setting from its slot on: the hold stops there and nothing is
+        restored, even if that scheduler applies the very action IHP applied.
+        """
+        assert timeslot.hold is not None
+        nominal_end = timeslot.target_time + timeslot.hold
+        scheduler_slot = await self._scheduler_reader.get_next_scheduler_timeslot()
+        handoff = scheduler_slot is not None and scheduler_slot.target_time <= nominal_end
+        hold_until = scheduler_slot.target_time if handoff and scheduler_slot else nominal_end
+        await self._control_preheating.mark_preheating_complete(hold_until, handoff)
+        await self._arm_hold_timer(timeslot, hold_until)
+
+    async def _arm_hold_timer(self, timeslot: ScheduledTimeslot, hold_until: datetime) -> None:
+        """End a hold at its time: at once when that time has already come."""
+        self._cancel_hold_timer()
+        if hold_until <= dt_util.now():
+            await self._control_preheating.end_hold(timeslot)
+            return
+        self._hold_slot = timeslot
+
+        async def _hold_timer_callback() -> None:
+            self._hold_timer_cancel = None
+            self._hold_slot = None
+            _LOGGER.info("Hold of %s ended", timeslot.timeslot_id)
+            await self._control_preheating.end_hold(timeslot)
+
+        self._hold_timer_cancel = self._timer_scheduler.schedule_timer(
+            hold_until, _hold_timer_callback
+        )
+        _LOGGER.info(
+            "Hold of %s keeps the target until %s",
+            timeslot.timeslot_id,
+            hold_until.isoformat(),
+        )
+
+    def _cancel_hold_timer(self) -> None:
+        if self._hold_timer_cancel is not None:
+            self._hold_timer_cancel()
+            self._hold_timer_cancel = None
+        self._hold_slot = None
+
+    async def end_pending_hold(self) -> None:
+        """End a running hold now, as a cancellation: the earlier state is put back where safe."""
+        slot = self._hold_slot
+        self._cancel_hold_timer()
+        if slot is not None:
+            _LOGGER.info("Hold of %s ended early", slot.timeslot_id)
+            await self._control_preheating.end_hold(slot)
+
+    def cancel_pending_timers(self) -> None:
+        """Drop the hold timer without touching the thermostat (unload or reload).
+
+        The record stays: the reloaded instance finds the hold again and re-arms its timer.
+        """
+        self._cancel_hold_timer()
 
     async def _clear_state(self) -> None:
         """Clear all tracking state."""

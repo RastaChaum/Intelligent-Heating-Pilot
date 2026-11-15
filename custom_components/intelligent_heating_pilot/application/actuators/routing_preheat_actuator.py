@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from datetime import datetime
 
 from ...domain.interfaces.preheat_actuator_interface import IPreheatActuator, NextTimeslotOf
 from ...domain.interfaces.scheduler_ownership_resolver_interface import ISchedulerOwnershipResolver
@@ -67,6 +68,30 @@ class RoutingPreheatActuator(IPreheatActuator):
         if actuator is not None:
             await actuator.cancel(timeslot, reason)
 
+    async def begin_hold(
+        self, timeslot: ScheduledTimeslot, hold_until: datetime, handoff: bool
+    ) -> None:
+        """Start the hold of a slot with the actuator of the slot's scheduler kind.
+
+        Args:
+            timeslot: The slot that was reached.
+            hold_until: When the hold ends.
+            handoff: True when a scheduler slot bounds the hold.
+        """
+        actuator = self._actuator_for(timeslot)
+        if actuator is not None:
+            await actuator.begin_hold(timeslot, hold_until, handoff)
+
+    async def end_hold(self, timeslot: ScheduledTimeslot) -> None:
+        """End the hold of a slot with the actuator of the slot's scheduler kind.
+
+        Args:
+            timeslot: The slot whose hold ends.
+        """
+        actuator = self._actuator_for(timeslot)
+        if actuator is not None:
+            await actuator.end_hold(timeslot)
+
     async def recover(self, next_timeslot_of: NextTimeslotOf) -> PreheatRecovery:
         """Recover with every distinct actuator and combine what they found.
 
@@ -74,13 +99,18 @@ class RoutingPreheatActuator(IPreheatActuator):
             next_timeslot_of: Gives the next timeslot of a scheduler entity.
 
         Returns:
-            The most telling result: a resumed preheat first, then a deferral (some scheduler
-            could not answer: ask again), then a release.
+            The most telling result: a resumed preheat first, then a running hold, then a
+            deferral (some scheduler could not answer: ask again), then a release.
         """
         results = [
             await actuator.recover(next_timeslot_of) for actuator in self._distinct_actuators()
         ]
-        for wanted in (RecoveryOutcome.RESUMED, RecoveryOutcome.DEFERRED, RecoveryOutcome.RELEASED):
+        for wanted in (
+            RecoveryOutcome.RESUMED,
+            RecoveryOutcome.HOLDING,
+            RecoveryOutcome.DEFERRED,
+            RecoveryOutcome.RELEASED,
+        ):
             found = next((result for result in results if result.outcome is wanted), None)
             if found is not None:
                 return found

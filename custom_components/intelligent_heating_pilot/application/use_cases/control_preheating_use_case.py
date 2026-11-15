@@ -19,6 +19,7 @@ from ...domain.value_objects import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from datetime import datetime
 
     from ...domain.interfaces import IClimateDataReader, IPreheatActuator
@@ -68,6 +69,10 @@ class ControlPreheatingUseCase:
         self._active_timeslot: ScheduledTimeslot | None = None
         # The slot a no-effect command was last reported for: the report is made once per slot
         self._last_unapplied_slot: str | None = None
+        # Told when a recovery finds a wake-up hold still running, so its timer can be re-armed
+        self._on_hold_recovered: Callable[[ScheduledTimeslot, datetime], Awaitable[None]] | None = (
+            None
+        )
 
     async def cancel_preheating(
         self,
@@ -111,16 +116,55 @@ class ControlPreheatingUseCase:
 
         _LOGGER.debug("Exiting ControlPreheatingUseCase.cancel_preheating()")
 
-    async def mark_preheating_complete(self) -> None:
+    def set_on_hold_recovered(
+        self, callback: Callable[[ScheduledTimeslot, datetime], Awaitable[None]] | None
+    ) -> None:
+        """Set the callback told when a recovery finds a hold still running.
+
+        Args:
+            callback: Async callback receiving the slot and when its hold ends, or None.
+        """
+        self._on_hold_recovered = callback
+
+    def get_active_timeslot(self) -> ScheduledTimeslot | None:
+        """Get the slot of the active preheating.
+
+        Returns:
+            The slot, or None when no preheating was started.
+        """
+        return self._active_timeslot
+
+    async def end_hold(self, timeslot: ScheduledTimeslot) -> None:
+        """End the hold of a slot: the actuator puts the earlier state back where that is safe.
+
+        Args:
+            timeslot: The slot whose hold ends.
+        """
+        await self._preheat_actuator.end_hold(timeslot)
+
+    async def mark_preheating_complete(
+        self, hold_until: datetime | None = None, handoff: bool = False
+    ) -> None:
         """Mark preheating as finished without reverting anything.
 
         Used once the target slot has fired: the scheduler already applied the
         slot's setpoint, so reverting would undo it. The actuator is told so that it can
         forget what it recorded for the slot. Clearing the flag lets the next slot be anticipated.
+
+        A wake-up slot with a hold is the exception: nothing applies the setting at its time, so
+        the actuator keeps what it recorded until the hold ends.
+
+        Args:
+            hold_until: When the hold of a wake-up slot ends; None when there is no hold.
+            handoff: True when a scheduler slot bounds the hold.
         """
         _LOGGER.debug("Marking preheating complete (target=%s)", self._preheating_target_time)
-        if self._is_preheating_active and self._active_timeslot is not None:
-            await self._preheat_actuator.cancel(self._active_timeslot, CancelReason.SLOT_REACHED)
+        timeslot = self._active_timeslot
+        if self._is_preheating_active and timeslot is not None:
+            if hold_until is not None and timeslot.hold is not None:
+                await self._preheat_actuator.begin_hold(timeslot, hold_until, handoff)
+            else:
+                await self._preheat_actuator.cancel(timeslot, CancelReason.SLOT_REACHED)
         self._is_preheating_active = False
 
     async def recover_preheating(self, next_timeslot_of: NextTimeslotOf) -> RecoveryOutcome:
@@ -143,6 +187,14 @@ class ControlPreheatingUseCase:
             self._preheating_target_time = recovery.timeslot.target_time
             self._active_scheduler_entity = recovery.timeslot.scheduler_entity
             self._active_timeslot = recovery.timeslot
+        elif (
+            recovery.outcome is RecoveryOutcome.HOLDING
+            and recovery.timeslot is not None
+            and recovery.hold_until is not None
+            and self._on_hold_recovered is not None
+        ):
+            _LOGGER.info("Resuming the hold of %s", recovery.timeslot.timeslot_id)
+            await self._on_hold_recovered(recovery.timeslot, recovery.hold_until)
         return recovery.outcome
 
     async def start_preheating(
@@ -151,6 +203,7 @@ class ControlPreheatingUseCase:
         target_temp: float,
         scheduler_entity_id: str,
         action: SlotAction | None = None,
+        slot: ScheduledTimeslot | None = None,
     ) -> bool:
         """Start preheating by triggering scheduler action and verifying its effect.
 
@@ -159,6 +212,8 @@ class ControlPreheatingUseCase:
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity to trigger
             action: What the slot applies, when the scheduler gives one
+            slot: The slot as the reader described it, with its identity and hold; rebuilt from
+                the other arguments when absent
 
         Returns:
             True when there is nothing to fall back on: the action's effect was
@@ -182,7 +237,9 @@ class ControlPreheatingUseCase:
             target_temp,
         )
 
-        timeslot = self._build_timeslot(target_time, target_temp, scheduler_entity_id, action)
+        timeslot = slot or self._build_timeslot(
+            target_time, target_temp, scheduler_entity_id, action
+        )
         result = await self._preheat_actuator.start(timeslot)
 
         if result in _RETRY_RESULTS:

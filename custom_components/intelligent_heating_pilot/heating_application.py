@@ -233,6 +233,9 @@ class HeatingApplication:
             record_store=HAPreheatRecordStorage(self.hass, self._device_id),
             policy=PreheatSessionPolicy(),
             now=dt_util.now,
+            configured_entities=lambda: frozenset(
+                [*self._scheduler_ids, *self._wake_up_source_ids]
+            ),
         )
 
     async def async_load(self) -> None:

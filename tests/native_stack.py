@@ -96,6 +96,7 @@ class _FakeCalculateAnticipation:
             "timeslot_id",
             "scheduler_entity",
             "next_slot_action",
+            "next_slot",
             "dead_time",
             "humidity",
             "cloud_coverage",
@@ -113,6 +114,7 @@ class _FakeCalculateAnticipation:
             timeslot_id=timeslot.timeslot_id,
             scheduler_entity=timeslot.scheduler_entity,
             next_slot_action=timeslot.action,
+            next_slot=timeslot,
         )
         return data
 

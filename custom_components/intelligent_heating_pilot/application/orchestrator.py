@@ -94,6 +94,7 @@ class HeatingOrchestrator:
         """
         _LOGGER.debug("Entering HeatingOrchestrator.cancel_pending_anticipation()")
         await self._schedule_anticipation_action.cancel_action()
+        self._schedule_anticipation_action.cancel_pending_timers()
 
     async def disable_preheating(self, scheduler_entity_id: str) -> None:
         """Disable preheating (cancel timer and active preheating).
@@ -110,6 +111,7 @@ class HeatingOrchestrator:
         await self._control_preheating.cancel_preheating(
             scheduler_entity_id, CancelReason.IHP_DISABLED
         )
+        await self._schedule_anticipation_action.end_pending_hold()
 
         _LOGGER.info("Preheating disabled")
         _LOGGER.debug("Exiting HeatingOrchestrator.disable_preheating()")

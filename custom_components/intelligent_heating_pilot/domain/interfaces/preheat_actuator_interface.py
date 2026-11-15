@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 
 from ..value_objects.actuation_result import ActuationResult
 from ..value_objects.cancel_reason import CancelReason
@@ -59,4 +60,29 @@ class IPreheatActuator(ABC):
 
         Returns:
             What the reconciliation found.
+        """
+
+    @abstractmethod
+    async def begin_hold(
+        self, timeslot: ScheduledTimeslot, hold_until: datetime, handoff: bool
+    ) -> None:
+        """Keep the record of a slot whose time has come, so that a hold can end it later.
+
+        Called instead of the completing cancellation for a wake-up slot that has a hold.
+
+        Args:
+            timeslot: The slot that was reached.
+            hold_until: When the hold ends (timezone-aware).
+            handoff: True when a scheduler slot bounds the hold: the scheduler then owns the
+                setting and nothing is restored when the hold ends.
+        """
+
+    @abstractmethod
+    async def end_hold(self, timeslot: ScheduledTimeslot) -> None:
+        """End the hold of a slot: put the earlier state back where that is safe, and forget it.
+
+        Does nothing when no hold is recorded for the slot.
+
+        Args:
+            timeslot: The slot whose hold ends.
         """

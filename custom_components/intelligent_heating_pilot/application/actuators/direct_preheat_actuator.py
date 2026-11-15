@@ -14,7 +14,7 @@ from dataclasses import replace
 from datetime import datetime
 from time import monotonic
 
-from ...domain.constants import ACTION_EFFECT_TIMEOUT_SECONDS
+from ...domain.constants import ACTION_EFFECT_TIMEOUT_SECONDS, DEFAULT_PRESET_TEMPERATURE_C
 from ...domain.interfaces.climate_commander_interface import IClimateCommander
 from ...domain.interfaces.climate_data_reader_interface import IClimateDataReader
 from ...domain.interfaces.preheat_actuator_interface import IPreheatActuator, NextTimeslotOf
@@ -54,6 +54,7 @@ class DirectPreheatActuator(IPreheatActuator):
         policy: PreheatSessionPolicy,
         now: Callable[[], datetime],
         effect_timeout_seconds: float = ACTION_EFFECT_TIMEOUT_SECONDS,
+        configured_entities: Callable[[], frozenset[str]] | None = None,
     ) -> None:
         """Initialize the actuator.
 
@@ -64,6 +65,9 @@ class DirectPreheatActuator(IPreheatActuator):
             policy: The pure rules for applying and restoring.
             now: Current time, timezone-aware.
             effect_timeout_seconds: Longest wait for the climate to take a command.
+            configured_entities: Gives the scheduler and wake-up source entities that are
+                configured now. A record owned by another entity (a source removed from the
+                options) is released when it is recovered. None skips that check.
         """
         self._commander = commander
         self._reader = climate_reader
@@ -71,6 +75,7 @@ class DirectPreheatActuator(IPreheatActuator):
         self._policy = policy
         self._now = now
         self._effect_timeout = effect_timeout_seconds
+        self._configured = configured_entities
         self._lock = asyncio.Lock()
 
     async def start(self, timeslot: ScheduledTimeslot) -> ActuationResult:
@@ -139,6 +144,15 @@ class DirectPreheatActuator(IPreheatActuator):
             record = await self._store.load()
             if record is None:
                 return PreheatRecovery(RecoveryOutcome.NOTHING)
+            if self._configured is not None and record.scheduler_entity not in self._configured():
+                _LOGGER.info(
+                    "Releasing the preheat of %s: it is no longer configured",
+                    record.scheduler_entity,
+                )
+                await self._release_orphan(record)
+                return PreheatRecovery(RecoveryOutcome.RELEASED)
+            if record.hold_until is not None:
+                return await self._recover_hold(record)
             if record.slot_time <= self._now():
                 await self._release(record)
                 return PreheatRecovery(RecoveryOutcome.RELEASED)
@@ -150,6 +164,72 @@ class DirectPreheatActuator(IPreheatActuator):
                 return self._resumed(record, own_next)
             await self._release(record)
             return PreheatRecovery(RecoveryOutcome.RELEASED)
+
+    async def begin_hold(
+        self, timeslot: ScheduledTimeslot, hold_until: datetime, handoff: bool
+    ) -> None:
+        """Keep the record of a reached wake-up slot until its hold ends.
+
+        Args:
+            timeslot: The slot that was reached; a record for another slot is left alone.
+            hold_until: When the hold ends (timezone-aware).
+            handoff: True when a scheduler slot bounds the hold: nothing is restored then.
+        """
+        async with self._lock:
+            record = await self._store.load()
+            if record is None or record.timeslot_id != timeslot.timeslot_id:
+                _LOGGER.debug("No preheat record for %s to hold", timeslot.timeslot_id)
+                return
+            await self._store.save(replace(record, hold_until=hold_until, hold_handoff=handoff))
+
+    async def end_hold(self, timeslot: ScheduledTimeslot) -> None:
+        """End the hold of a slot: restore where that is safe, then forget the record.
+
+        Args:
+            timeslot: The slot whose hold ends; nothing happens when no hold is recorded for it.
+        """
+        async with self._lock:
+            record = await self._store.load()
+            if record is None or record.timeslot_id != timeslot.timeslot_id:
+                return
+            if record.hold_until is None:
+                return
+            await self._finish_hold(record)
+
+    async def _recover_hold(self, record: PreheatRecord) -> PreheatRecovery:
+        """Resume a hold that survived a restart, or end it when its time has passed."""
+        assert record.hold_until is not None
+        if record.hold_until <= self._now():
+            await self._finish_hold(record)
+            return PreheatRecovery(RecoveryOutcome.RELEASED)
+        slot = ScheduledTimeslot(
+            target_time=record.slot_time,
+            target_temp=(
+                record.applied.temperature
+                if record.applied.temperature is not None
+                else DEFAULT_PRESET_TEMPERATURE_C
+            ),
+            timeslot_id=record.timeslot_id,
+            scheduler_entity=record.scheduler_entity,
+            action=record.applied,
+        )
+        return PreheatRecovery(RecoveryOutcome.HOLDING, slot, record.hold_until)
+
+    async def _finish_hold(self, record: PreheatRecord) -> None:
+        """Apply the end-of-hold rule to the climate, then forget the record."""
+        snapshot = self._reader.read_climate_snapshot()
+        decision = self._policy.decide_hold_end(record, snapshot)
+        _LOGGER.debug("Hold of %s ended: %s", record.timeslot_id, decision.value)
+        if decision is RestoreDecision.RESTORE:
+            await self._commander.restore(self._policy.restore_fields(record))
+        await self._store.clear()
+
+    async def _release_orphan(self, record: PreheatRecord) -> None:
+        """Undo what a no longer configured entity left: its hold, or its preheat."""
+        if record.hold_until is not None:
+            await self._finish_hold(replace(record, hold_handoff=False))
+            return
+        await self._release(record)
 
     @staticmethod
     def _resumed(record: PreheatRecord, own_next: ScheduledTimeslot) -> PreheatRecovery:
@@ -212,11 +292,21 @@ class DirectPreheatActuator(IPreheatActuator):
         """
         if (
             existing is not None
-            and existing.slot_time > self._now()
+            and self._still_ours(existing)
             and not self._policy.is_claimed_by_other(existing, snapshot)
         ):
             return existing.previous
         return snapshot
+
+    def _still_ours(self, record: PreheatRecord) -> bool:
+        """Tell whether IHP's own change is still in place: its slot ahead, or its hold running.
+
+        A hold that a scheduler bounds is not: the scheduler is about to own the setting.
+        """
+        now = self._now()
+        if record.slot_time > now:
+            return True
+        return record.hold_until is not None and record.hold_until > now and not record.hold_handoff
 
     async def _confirm(self, action: SlotAction) -> ActuationResult:
         """Wait, up to the timeout, for the climate to hold the action."""

@@ -967,7 +967,7 @@ class TestScheduleAnticipationActionCrossMidnight:
         await self._fire_active_timer(use_case)
 
         use_case._control_preheating.start_preheating.assert_awaited_once_with(
-            _MONDAY_SLOT, 20.0, "switch.weekdays", action=None
+            _MONDAY_SLOT, 20.0, "switch.weekdays", action=None, slot=None
         )
         use_case._on_scheduler_blocked.assert_not_awaited()  # type: ignore[union-attr]
         assert use_case._timer_scheduler.active_timers() == []  # type: ignore

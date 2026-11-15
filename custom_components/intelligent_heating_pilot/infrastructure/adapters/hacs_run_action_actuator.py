@@ -106,6 +106,14 @@ class HacsRunActionActuator(IPreheatActuator):
         """
         return PreheatRecovery(RecoveryOutcome.NOTHING)
 
+    async def begin_hold(
+        self, timeslot: ScheduledTimeslot, hold_until: datetime, handoff: bool
+    ) -> None:
+        """Do nothing: a hold only exists for wake-up slots, which this actuator never serves."""
+
+    async def end_hold(self, timeslot: ScheduledTimeslot) -> None:
+        """Do nothing: a hold only exists for wake-up slots, which this actuator never serves."""
+
     @staticmethod
     def _require_entity(timeslot: ScheduledTimeslot) -> str:
         if not timeslot.scheduler_entity:

@@ -112,6 +112,29 @@ class PreheatSessionPolicy:
             return RestoreDecision.LEAVE
         return RestoreDecision.RESTORE
 
+    def decide_hold_end(
+        self, record: PreheatRecord, snapshot: ClimateSnapshot | None
+    ) -> RestoreDecision:
+        """Decide what to do with the climate when the hold after a wake-up deadline ends.
+
+        The guard window of ``decide_restore`` does not apply: the deadline has passed on
+        purpose and the earlier state is put back unless somebody else owns the setting.
+
+        Args:
+            record: The record of the preheat whose hold ends.
+            snapshot: Current requested state, or None when the climate is unavailable.
+
+        Returns:
+            ``DISCARD`` when a scheduler slot bounded the hold (the scheduler owns the setting,
+            even if it applied the same action as IHP), ``LEAVE`` when the climate is
+            unavailable, switched off or changed by someone else, ``RESTORE`` otherwise.
+        """
+        if record.hold_handoff:
+            return RestoreDecision.DISCARD
+        if snapshot is None or self._is_off(snapshot) or self.is_claimed_by_other(record, snapshot):
+            return RestoreDecision.LEAVE
+        return RestoreDecision.RESTORE
+
     @staticmethod
     def _is_off(snapshot: ClimateSnapshot) -> bool:
         """A climate switched off is somebody's choice: nothing is written to it."""

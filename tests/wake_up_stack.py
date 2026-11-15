@@ -114,6 +114,14 @@ class WakeUpStack(NativeStack):
         """Move the clock forward."""
         self.now = self.now + delta
 
+    def fire_due_timers(self) -> None:
+        """Run the timers that are due at the stack's current time (the end of a hold)."""
+        due = [timer for timer in self.timers if timer[0] <= self.now]
+        self.timers = [timer for timer in self.timers if timer not in due]
+        with patch("homeassistant.util.dt.now", return_value=self.now):
+            for _when, callback in due:
+                asyncio.run(callback())  # type: ignore[operator]
+
     def restart(self) -> None:
         """Build new components over the same thermostat, schedule, sources and record."""
         self.hass = self._build_hass()
