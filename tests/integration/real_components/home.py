@@ -1,14 +1,19 @@
-"""Build a small real home: a Versatile Thermostat, its sensors and IHP, in the test ``hass``.
+"""Build a small real home: a Versatile Thermostat, a scheduler and IHP, in the test ``hass``.
 
-Only the physical devices are simulated (room and outdoor sensors, the heater switch). The
-thermostat, the schedulers and IHP are the real integrations, so a scenario exercises the
-service calls, entity attributes and timers exactly as they behave in a live Home Assistant.
+Only the physical devices (room and outdoor sensors, the heater switch) are simulated. The
+thermostat, the schedulers and IHP are the real integrations, so a scenario exercises service
+calls, entity attributes and timers exactly as they behave in a live Home Assistant.
+
+A scenario reads like the user story: build a ``Home``, ``install`` a scheduler with blocks,
+``start_ihp``, then move the clock and look at the thermostat.
 """
 
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any
 
 from custom_components.versatile_thermostat.const import (
@@ -30,7 +35,8 @@ from custom_components.versatile_thermostat.const import (
     PROPORTIONAL_FUNCTION_TPI,
 )
 from freezegun.api import FrozenDateTimeFactory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
@@ -43,96 +49,57 @@ from custom_components.intelligent_heating_pilot.const import (
     DOMAIN,
 )
 
+PARIS = "Europe/Paris"
+# Half a second past the hour on purpose: HACS Scheduler only accepts a manual run of a slot when
+# "now" is strictly after its start, which the live clock's microseconds always satisfy but a
+# clock on a round second does not. The test clock then only ever moves by whole seconds.
+MONDAY_5AM = "2026-11-16 05:00:00.500000+01:00"
 ROOM_SENSOR = "sensor.room_temperature"
 OUTDOOR_SENSOR = "sensor.outdoor_temperature"
 HEATER_SWITCH = "switch.heater"
 THERMOSTAT = "climate.room"
 PRESET_NUMBER = "number.room_preset_{preset}_temp"
+ANTICIPATED_START = "sensor.intelligent_heating_pilot_anticipated_start_time"
+IHP_SWITCH = "switch.intelligent_heating_pilot_ihp_preheating"
 THERMOSTAT_MIN_C = 15
 THERMOSTAT_MAX_C = 30
 THERMOSTAT_STEP_C = 0.5
 TPI_COEF_INT = 0.3
 TPI_COEF_EXT = 0.1
 CYCLE_MINUTES = 5
+ECO_C = 17.0
+COMFORT_C = 21.0
+BOOST_C = 23.0
+COLD_ROOM_C = 18.0
 YIELDS_PER_STEP = 50
+CLOCK_STEP = timedelta(seconds=3)
+STARTUP_SETTLE = timedelta(minutes=2)
+PAST_DUE = timedelta(minutes=1)
 
 
-async def add_thermostat(hass: HomeAssistant, room_c: float, outdoor_c: float) -> None:
-    """Set up a real Versatile Thermostat (over a switch) driven by simulated sensors."""
-    hass.states.async_set(ROOM_SENSOR, str(room_c))
-    hass.states.async_set(OUTDOOR_SENSOR, str(outdoor_c))
-    hass.states.async_set(HEATER_SWITCH, "off")
-    async_mock_service(hass, "switch", "turn_on")
-    async_mock_service(hass, "switch", "turn_off")
-    entry = MockConfigEntry(
-        domain="versatile_thermostat",
-        title="Room",
-        data={
-            CONF_NAME: "Room",
-            CONF_THERMOSTAT_TYPE: CONF_THERMOSTAT_SWITCH,
-            CONF_TEMP_SENSOR: ROOM_SENSOR,
-            CONF_EXTERNAL_TEMP_SENSOR: OUTDOOR_SENSOR,
-            CONF_CYCLE_MIN: CYCLE_MINUTES,
-            CONF_DEVICE_POWER: 1,
-            CONF_USE_MAIN_CENTRAL_CONFIG: False,
-            CONF_UNDERLYING_LIST: [HEATER_SWITCH],
-            CONF_PROP_FUNCTION: PROPORTIONAL_FUNCTION_TPI,
-            CONF_TPI_COEF_INT: TPI_COEF_INT,
-            CONF_TPI_COEF_EXT: TPI_COEF_EXT,
-            CONF_TEMP_MIN: THERMOSTAT_MIN_C,
-            CONF_TEMP_MAX: THERMOSTAT_MAX_C,
-            CONF_STEP_TEMPERATURE: THERMOSTAT_STEP_C,
-        },
-    )
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+@dataclass(frozen=True)
+class Block:
+    """One slot of a heating plan: from ``time`` on, the thermostat takes this action."""
+
+    time: str
+    preset: str | None = None
+    temperature: float | None = None
+    data: Mapping[str, Any] | None = field(default=None, compare=False)
 
 
-async def set_preset_temperatures(hass: HomeAssistant, **celsius_by_preset: float) -> None:
-    """Give the thermostat presets their temperature, the way a user does in the UI."""
-    for preset, celsius in celsius_by_preset.items():
-        await hass.services.async_call(
-            "number",
-            "set_value",
-            {"entity_id": PRESET_NUMBER.format(preset=preset), "value": celsius},
-            blocking=True,
-        )
+@dataclass(frozen=True)
+class Command:
+    """A ``climate`` service call seen on the bus, whoever sent it."""
 
-
-async def add_ihp(
-    hass: HomeAssistant, scheduler_entities: list[str], options: dict[str, Any] | None = None
-) -> MockConfigEntry:
-    """Set up IHP on the thermostat, watching the given scheduler entities."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        title="IHP",
-        data={CONF_VTHERM_ENTITY: THERMOSTAT, CONF_SCHEDULER_ENTITIES: scheduler_entities},
-        options=options or {},
-    )
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
-
-
-async def start_cold_room_in_eco(hass: HomeAssistant, room_c: float = 18.0) -> None:
-    """A heating thermostat resting in its eco preset, with a comfort preset to reach."""
-    await add_thermostat(hass, room_c=room_c, outdoor_c=5.0)
-    await set_preset_temperatures(hass, comfort=21.0, eco=17.0)
-    await hass.services.async_call(
-        "climate", "set_hvac_mode", {"entity_id": THERMOSTAT, "hvac_mode": "heat"}, blocking=True
-    )
-    await hass.services.async_call(
-        "climate", "set_preset_mode", {"entity_id": THERMOSTAT, "preset_mode": "eco"}, blocking=True
-    )
+    service: str
+    data: Mapping[str, Any]
 
 
 async def advance(
     hass: HomeAssistant,
     clock: FrozenDateTimeFactory,
     by: timedelta,
-    step: timedelta = timedelta(seconds=3),
+    step: timedelta = CLOCK_STEP,
 ) -> None:
     """Move the frozen clock forward in short steps, letting what is due run at each one.
 
@@ -147,3 +114,197 @@ async def advance(
         async_fire_time_changed(hass)
         for _ in range(YIELDS_PER_STEP):
             await asyncio.sleep(0)
+
+
+class Home:
+    """A home with one cold room heated by a real Versatile Thermostat."""
+
+    def __init__(self, hass: HomeAssistant, clock: FrozenDateTimeFactory) -> None:
+        self.hass = hass
+        self.clock = clock
+        self.commands: list[Command] = []
+        self.ihp_entry: MockConfigEntry | None = None
+        self._ihp_entities: list[str] = []
+        self._ihp_options: dict[str, Any] = {}
+
+    @classmethod
+    async def build(
+        cls,
+        hass: HomeAssistant,
+        clock: FrozenDateTimeFactory,
+        room_c: float = COLD_ROOM_C,
+        outdoor_c: float = 5.0,
+    ) -> Home:
+        """A Monday at 05:00 in Paris, the room cold and resting in its eco preset."""
+        await hass.config.async_set_time_zone(PARIS)
+        clock.move_to(MONDAY_5AM)
+        home = cls(hass, clock)
+        await home._add_thermostat(room_c, outdoor_c)
+        await home.set_preset_temperatures(comfort=COMFORT_C, eco=ECO_C, boost=BOOST_C)
+        await home.user_selects_hvac_mode("heat")
+        await home.user_selects_preset("eco")
+        home._record_commands()
+        return home
+
+    # --- the room -----------------------------------------------------------------------
+
+    async def _add_thermostat(self, room_c: float, outdoor_c: float) -> None:
+        hass = self.hass
+        hass.states.async_set(ROOM_SENSOR, str(room_c))
+        hass.states.async_set(OUTDOOR_SENSOR, str(outdoor_c))
+        hass.states.async_set(HEATER_SWITCH, "off")
+        async_mock_service(hass, "switch", "turn_on")
+        async_mock_service(hass, "switch", "turn_off")
+        entry = MockConfigEntry(
+            domain="versatile_thermostat",
+            title="Room",
+            data={
+                CONF_NAME: "Room",
+                CONF_THERMOSTAT_TYPE: CONF_THERMOSTAT_SWITCH,
+                CONF_TEMP_SENSOR: ROOM_SENSOR,
+                CONF_EXTERNAL_TEMP_SENSOR: OUTDOOR_SENSOR,
+                CONF_CYCLE_MIN: CYCLE_MINUTES,
+                CONF_DEVICE_POWER: 1,
+                CONF_USE_MAIN_CENTRAL_CONFIG: False,
+                CONF_UNDERLYING_LIST: [HEATER_SWITCH],
+                CONF_PROP_FUNCTION: PROPORTIONAL_FUNCTION_TPI,
+                CONF_TPI_COEF_INT: TPI_COEF_INT,
+                CONF_TPI_COEF_EXT: TPI_COEF_EXT,
+                CONF_TEMP_MIN: THERMOSTAT_MIN_C,
+                CONF_TEMP_MAX: THERMOSTAT_MAX_C,
+                CONF_STEP_TEMPERATURE: THERMOSTAT_STEP_C,
+            },
+        )
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    async def set_preset_temperatures(self, **celsius_by_preset: float) -> None:
+        """Give the thermostat presets their temperature, the way a user does in the UI."""
+        for preset, celsius in celsius_by_preset.items():
+            await self.hass.services.async_call(
+                "number",
+                "set_value",
+                {"entity_id": PRESET_NUMBER.format(preset=preset), "value": celsius},
+                blocking=True,
+            )
+
+    def _record_commands(self) -> None:
+        def _on_call(event: Event) -> None:
+            if event.data["domain"] == "climate":
+                self.commands.append(Command(event.data["service"], event.data["service_data"]))
+
+        self.hass.bus.async_listen("call_service", _on_call)
+
+    def forget_commands(self) -> None:
+        """Start counting commands from here."""
+        self.commands.clear()
+
+    def commands_to_thermostat(self) -> list[Command]:
+        """The ``climate`` commands that targeted the thermostat since the last reset."""
+        return [c for c in self.commands if _targets(c, THERMOSTAT)]
+
+    @property
+    def preset(self) -> str:
+        return str(self.hass.states.get(THERMOSTAT).attributes["preset_mode"])
+
+    @property
+    def target(self) -> float:
+        return float(self.hass.states.get(THERMOSTAT).attributes["temperature"])
+
+    async def user_selects_preset(self, preset: str) -> None:
+        """Somebody picks a preset on the thermostat (no parent context: a real manual change)."""
+        await self.hass.services.async_call(
+            "climate",
+            "set_preset_mode",
+            {"entity_id": THERMOSTAT, "preset_mode": preset},
+            blocking=True,
+        )
+
+    async def user_sets_temperature(self, celsius: float) -> None:
+        """Somebody sets a target by hand, which leaves any preset."""
+        await self.hass.services.async_call(
+            "climate",
+            "set_temperature",
+            {"entity_id": THERMOSTAT, "temperature": celsius},
+            blocking=True,
+        )
+
+    async def user_selects_hvac_mode(self, mode: str) -> None:
+        await self.hass.services.async_call(
+            "climate", "set_hvac_mode", {"entity_id": THERMOSTAT, "hvac_mode": mode}, blocking=True
+        )
+
+    # --- IHP ----------------------------------------------------------------------------
+
+    async def start_ihp(
+        self, scheduler_entities: list[str] | None = None, **options: Any
+    ) -> MockConfigEntry:
+        """Set up IHP on the thermostat, watching the given scheduler entities."""
+        self._ihp_entities = list(scheduler_entities or [])
+        self._ihp_options = dict(options)
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="IHP",
+            data={CONF_VTHERM_ENTITY: THERMOSTAT, CONF_SCHEDULER_ENTITIES: self._ihp_entities},
+            options=self._ihp_options,
+        )
+        entry.add_to_hass(self.hass)
+        assert await self.hass.config_entries.async_setup(entry.entry_id)
+        await self.hass.async_block_till_done()
+        self.ihp_entry = entry
+        return entry
+
+    async def restart_ihp(self) -> None:
+        """Unload and set IHP up again: what Home Assistant does on a restart."""
+        assert self.ihp_entry is not None
+        await self.hass.config_entries.async_unload(self.ihp_entry.entry_id)
+        assert await self.hass.config_entries.async_setup(self.ihp_entry.entry_id)
+        await self.hass.async_block_till_done()
+
+    async def turn_ihp_off(self) -> None:
+        """Flip IHP's own preheating switch."""
+        await self.hass.services.async_call(
+            "switch", "turn_off", {"entity_id": IHP_SWITCH}, blocking=True
+        )
+
+    # --- time ---------------------------------------------------------------------------
+
+    @property
+    def now(self) -> datetime:
+        return dt_util.now()
+
+    def at(self, clock_time: str, day_offset: int = 0) -> datetime:
+        """A local time of the current day (or another), such as ``"07:00"``."""
+        hour, minute = (int(part) for part in clock_time.split(":"))
+        day = self.now + timedelta(days=day_offset)
+        return day.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+    async def advance(self, by: timedelta) -> None:
+        await advance(self.hass, self.clock, by)
+
+    async def advance_to(self, when: datetime) -> None:
+        """Move the clock to a point in time, which must not be in the past."""
+        await self.advance(when - self.now)
+
+    async def settle(self) -> None:
+        """Let IHP run its first recalculation after a start."""
+        await self.advance(STARTUP_SETTLE)
+
+    @property
+    def anticipated_start(self) -> datetime | None:
+        state = self.hass.states.get(ANTICIPATED_START)
+        parsed = dt_util.parse_datetime(state.state) if state is not None else None
+        return dt_util.as_local(parsed) if parsed is not None else None
+
+    async def reach_anticipated_start(self) -> datetime:
+        """Move just past the anticipated start and return it."""
+        anticipated = self.anticipated_start
+        assert anticipated is not None, "IHP has not anticipated any start"
+        await self.advance_to(anticipated + PAST_DUE)
+        return anticipated
+
+
+def _targets(command: Command, entity_id: str) -> bool:
+    target = command.data.get("entity_id")
+    return target == entity_id or (isinstance(target, list) and entity_id in target)

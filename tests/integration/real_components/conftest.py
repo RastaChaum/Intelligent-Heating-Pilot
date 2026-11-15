@@ -9,6 +9,7 @@ import pytest
 from freezegun import freeze_time
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.components.recorder import Recorder
+from homeassistant.core import HomeAssistant
 
 from tests.integration.real_components.fetch import ComponentFetchError, fetch_components
 
@@ -59,3 +60,18 @@ def clock() -> Iterator[FrozenDateTimeFactory]:
     """
     with freeze_time(real_asyncio=True) as frozen:
         yield frozen
+
+
+@pytest.fixture
+def expected_lingering_timers() -> bool:
+    """Home Assistant's schedule helper and Climate Scheduler keep a timer after the test."""
+    return True
+
+
+@pytest.fixture
+async def home(real_components: None, clock: FrozenDateTimeFactory, hass: HomeAssistant):
+    """A cold room on a Monday at 05:00, heated by a real Versatile Thermostat."""
+    # Imported here: the module needs the fetched components on ``sys.path`` first
+    from tests.integration.real_components.home import Home
+
+    return await Home.build(hass, clock)
