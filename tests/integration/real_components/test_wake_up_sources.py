@@ -162,15 +162,6 @@ async def test_a_schedule_slot_reached_during_the_hold_ends_it_without_a_restore
     assert "eco" not in _preset_commands(home)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Found with the real Versatile Thermostat: while a preset is selected it publishes "
-        "requested_state.target_temperature = None, so IHP has no current target to compare the "
-        "only readable slot with (FR-005) and ignores the source. Remove this mark once the "
-        "reference falls back to the preset's temperature."
-    ),
-)
 @pytest.mark.usefixtures("real_components")
 async def test_the_wake_up_target_is_read_from_the_schedule(home: Home) -> None:
     home.set_room_temperature(WARM_ROOM_C)
