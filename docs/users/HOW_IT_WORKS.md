@@ -216,6 +216,10 @@ If the new anticipated start is already past, IHP keeps current preheating activ
 If the room reaches its target early, IHP keeps preheating active until the slot: the thermostat regulates on the target setpoint.
 If the slot being preheated is removed or moved, IHP reverts the preheating.
 
+### Where the Target Time Comes From
+
+IHP anticipates the **earliest valid deadline**: the next slot of your schedulers, or the time held by a [wake-up source](CONFIGURATION.md#wake-up-sources-alarm-date-time-entity) such as your phone's next alarm. The calculation below is the same for both; only the deadline and its target differ.
+
 ### The Calculation
 
 ```

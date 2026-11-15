@@ -89,6 +89,7 @@ Paramètres → Appareils et services → + Ajouter une intégration
 - ✅ **Apprentissage selon l'heure** - Des vitesses de chauffe différentes selon le moment de la journée
 - ✅ **Préchauffage via HACS Scheduler** - Déclenche le prochain créneau en avance, en respectant les conditions du planificateur ; plusieurs planificateurs par appareil
 - ✅ **Climate Scheduler et plannings natifs** - IHP applique lui-même l'action du prochain nœud ou bloc à votre thermostat (plannings natifs : activez le pilotage direct, le preset ou la température vient des données de chaque bloc), et le remet comme avant si le préchauffage est annulé et que personne n'y a touché entre-temps
+- ✅ **Sources de réveil** - Donnez à un appareil la prochaine alarme de votre téléphone (ou toute entité date-heure) : IHP préchauffe pour que la pièce soit prête à cette heure, peut prendre la cible dans votre planning, et peut remettre le thermostat comme avant ensuite
 - ✅ **Service de calcul** - `calculate_anticipated_start_time` pour vos propres automatisations, avec ou sans planificateur
 - ✅ **Source extérieure** - Capteur extérieur ou entité `weather.*`, enregistrée avec chaque cycle de chauffe
 - ✅ **Cache incrémental** - Réduit la charge de la base de données de HA pour l'apprentissage à long terme

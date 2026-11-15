@@ -207,7 +207,7 @@ See [Configuration Guide](CONFIGURATION.md#heating-cycle-detection-parameters) f
 - **Climate Scheduler** switches: IHP computes the anticipated start **and** applies the next node's action to your thermostat.
 - **Native `schedule.*` helpers**: IHP computes the anticipated start. It starts the heating only if you turn on **Drive Native Schedules**, using the preset or temperature in each block's data.
 
-Other schedulers (automations, calendars, other scheduler integrations) are not read. Use the `calculate_anticipated_start_time` service with them.
+Other schedulers (automations, calendars, other scheduler integrations) are not read. Use the `calculate_anticipated_start_time` service with them, or a [wake-up source](CONFIGURATION.md#wake-up-sources-alarm-date-time-entity) when what you have is a point in time.
 
 ### Q: Can I use IHP without a scheduler?
 
@@ -218,7 +218,7 @@ Other schedulers (automations, calendars, other scheduler integrations) are not 
 - ⚠️ Anticipation sensors show **"unknown"** (no scheduled events)
 - ⚠️ IHP does **not auto-trigger** heating
 
-**Use case**: Call the `calculate_anticipated_start_time` service in your own automations for dynamic scheduling (e.g., based on phone alarm, voice commands, calendar events).
+**Use case**: add a [wake-up source](CONFIGURATION.md#wake-up-sources-alarm-date-time-entity) (your phone's next alarm, a date-time helper): IHP preheats for that time and drives the thermostat itself. For other triggers (voice commands, calendar events), call the `calculate_anticipated_start_time` service in your own automations.
 
 See [Configuration Guide - Using IHP Without a Scheduler](CONFIGURATION.md#using-ihp-without-a-scheduler) for examples.
 

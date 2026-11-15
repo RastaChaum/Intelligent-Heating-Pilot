@@ -145,11 +145,66 @@ Once configured, IHP operates automatically:
 
 ---
 
+## Wake-up Sources (Alarm, Date-Time Entity)
+
+A **wake-up source** is an entity that holds a point in time: your phone's next alarm, a date-time helper, a date-time entity. IHP preheats so that the room reaches the target temperature **at that time**, using the heating speed it learned, and applies the target to your thermostat itself. You do not need a scheduler or an automation.
+
+### Setting One Up
+
+1. Open the device's **Configure** screen and tick **Manage wake-up sources after saving**, then save.
+2. In the menu, choose **Add a source** and fill in:
+
+| Field | What it does |
+|-------|--------------|
+| **Entity holding the time** | A `sensor` with the *timestamp* device class (such as the phone's next-alarm sensor), a `datetime` entity, or an `input_datetime` with both date and time. A date alone or a time alone is refused: it does not say when. |
+| **Target preset** / **Target temperature** | What to apply and reach. A preset wins when both are given. |
+| **Take the target from the schedule** | Only offered when the device has a scheduler. See below. |
+| **Ignore times further than (hours)** | Default 24. A time further away is ignored, so a distant alarm never starts a preheat by accident. |
+| **Keep the target after the time (minutes)** | Optional. After this long, IHP puts the thermostat back in its earlier state. 0 leaves the thermostat as it is. |
+
+3. **Save and close**. A device can have several sources; each source belongs to one device.
+
+### How the Deadlines Combine
+
+IHP picks the **earliest valid deadline** among your schedulers and your wake-up sources. There is no priority setting:
+
+- An alarm **earlier** than the next schedule slot becomes the next deadline; once it has passed, IHP goes back to the schedule.
+- An alarm **later** than the next schedule slot changes nothing: the schedule slot is still the next deadline.
+- If a schedule slot and an alarm fall at the same minute, the schedule wins, so a single target applies.
+
+> **IHP cannot stop a scheduler.** A scheduler applies its own slots whatever IHP does. To keep the room cold for a late alarm, either **disable or add a condition to the schedule** on those days, or use **only a wake-up source and no scheduler** on that device. IHP then drives the thermostat by itself.
+
+### Where the Target Comes From
+
+- **Fixed target** (the default): the preset or temperature you gave.
+- **From the schedule**: IHP takes the target of the schedule slot that **follows** the wake-up time (an alarm at 05:30 before a 07:00 comfort slot heads for the comfort target), but **never lower than the slot already in effect** at that time (an alarm at 08:00 during a comfort block that ends at 09:00 keeps the comfort target). Your fixed target is the fallback when the schedule cannot tell.
+
+What the schedule can tell depends on the scheduler:
+
+| Scheduler | Slot in effect | Slot that follows |
+|-----------|----------------|-------------------|
+| Native `schedule.*` (Home Assistant 2025.3+) | ✅ | ✅ |
+| HACS Scheduler | ❌ | ✅, once no other slot lies between now and the wake-up time |
+| Climate Scheduler | ❌ | ✅, once no other slot lies between now and the wake-up time |
+
+When only one slot is known, IHP uses it only if its temperature is **higher** than your thermostat's current target; otherwise it falls back to the fixed target. With HACS Scheduler and Climate Scheduler, giving a fixed target as well is therefore recommended.
+
+### What Happens Around the Wake-up Time
+
+- The target is applied at the anticipated start, as a preset when you chose a preset, as a temperature otherwise. IHP never changes the thermostat's heating mode, and does nothing if it is switched off.
+- A **snooze** or an edited alarm moves the deadline; the thermostat does not go back and forth. A **closer** alarm takes over a preheat for a later slot without putting the thermostat back in between.
+- If you change the thermostat yourself, IHP does not apply the target again over your change.
+- If the alarm is **removed or dismissed** before its time, the preheat is cancelled and the thermostat is put back as it was, unless you changed it.
+- With a **hold**, the earlier state is put back that long after the wake-up time, unless you changed it or a schedule slot of the same device comes first: the schedule then owns the setting and IHP restores nothing.
+- Preheats driven by a wake-up source are learned from like any other.
+
+---
+
 ## Using IHP Without a Scheduler
 
 IHP can be used without a scheduler, or with a scheduler it does not start (a native `schedule.*` helper without direct control). This is useful for:
 
-- 🤖 **Dynamic scheduling** based on external triggers (e.g., smartphone alarm, calendar events)
+- 🤖 **Dynamic scheduling** based on external triggers (e.g., calendar events) — for a smartphone alarm or any date-time entity, see [Wake-up Sources](#wake-up-sources-alarm-date-time-entity)
 - 🔧 **Custom automations** that calculate start times programmatically
 - 📱 **Voice-controlled** heating schedules
 - 🧪 **Testing** IHP's prediction capabilities
@@ -167,7 +222,7 @@ When no scheduler is configured:
 
 Without a scheduler, you can use the **`calculate_anticipated_start_time`** service in your own automations:
 
-**Example: Wake-up heating based on phone alarm**
+**Example: Wake-up heating based on phone alarm** (for the alarm alone, a [wake-up source](#wake-up-sources-alarm-date-time-entity) needs no automation)
 
 ```yaml
 alias: "Dynamic Wake-up Heating"

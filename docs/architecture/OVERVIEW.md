@@ -54,6 +54,20 @@ Use cases ask one question of one port, `IPreheatActuator`: "start the preheat o
 
 Direct control records the climate's state once per slot, before the first command, and puts it back only if nobody else changed it meanwhile. The rules live in a pure domain service (`PreheatSessionPolicy`); `DirectPreheatActuator` composes ports and that policy, and every Home Assistant call stays in a thin adapter. Each command carries a context that has a parent, so that schedulers watching for manual changes do not take it for one.
 
+## Deadline Sources
+
+The next deadline IHP anticipates comes from one question on one port, `ISchedulerReader.get_next_timeslot`. `CombinedTimeslotReader` (application layer) answers it from two kinds of candidates: the schedulers' slots, and the **wake-up sources** an IHP lists in its options (entities holding a point in time). The earliest valid one wins; the scheduler's slot wins a tie. No consumer of the port knows that sources exist.
+
+| Piece | Layer | Role |
+|-------|-------|------|
+| `WakeUpDeadlinePolicy` | domain service | Is a source's value a deadline: not unknown, not past, within the horizon |
+| `WakeUpTargetPolicy` | domain service | The fixed target, or the schedule's (never lower than the slot in effect), with fallbacks |
+| `IWakeUpSourceReader`, `IScheduleSlotLookup`, `IPresetTemperatureResolver` | domain ports | Read a source, read the schedule slots around a moment, tell a preset's temperature |
+| `SchedulerKind.TIMESTAMP` | domain | A source's slots are routed to the direct actuator |
+| `HAWakeUpSourceReader`, `HAScheduleSlotLookup` | infrastructure | Translate states and schedule attributes; no rule |
+
+A source slot's identity is its entity and the local date of its deadline, not the time, so a snooze keeps the record and any claim made by someone else. A deadline that moves, or a closer one, is handed over (`IPreheatActuator.hand_over`) with no restore in between. An optional hold keeps the record after the deadline (`begin_hold`, `end_hold`) until a timer ends it, unless a scheduler slot comes first.
+
 ## Key Concepts
 
 - Global LHS: fallback heating slope computed across all valid cycles.

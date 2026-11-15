@@ -87,6 +87,7 @@ Settings → Devices & Services → + Add Integration
 - ✅ **Time-Contextual Learning** - Different heating speeds by time of day
 - ✅ **HACS Scheduler Preheating** - Triggers the upcoming slot early, with the scheduler's conditions respected; several schedulers per device
 - ✅ **Climate Scheduler and Native Schedules** - IHP applies the next node's or block's action to your thermostat itself (native schedules: turn on direct control, the preset or temperature comes from each block's data), and puts it back if the preheat is cancelled and nobody changed it meanwhile
+- ✅ **Wake-up Sources** - Give a device your phone's next alarm (or any date-time entity): IHP preheats so the room is ready at that time, takes the target from your schedule if you want, and can put the thermostat back after it
 - ✅ **Calculation Service** - `calculate_anticipated_start_time` for your own automations, with or without a scheduler
 - ✅ **Outdoor Source** - Outdoor sensor or `weather.*` entity, recorded with each heating cycle
 - ✅ **Incremental Cache** - Reduces HA database load for long-term learning
