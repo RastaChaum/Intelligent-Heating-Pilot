@@ -6,9 +6,10 @@ from enum import Enum
 
 
 class SchedulerKind(Enum):
-    """The scheduler integrations IHP tells apart."""
+    """The scheduler integrations IHP tells apart, plus the wake-up sources that are not one."""
 
     HACS = "hacs"
     NATIVE = "native"
     CLIMATE_SCHEDULER = "climate_scheduler"
+    TIMESTAMP = "timestamp"
     UNKNOWN = "unknown"

@@ -115,3 +115,17 @@ SCHEDULER_ATTR_NEXT_ACTION = "next_action"
 # Storage
 STORAGE_KEY = "intelligent_heating_pilot_storage"
 STORAGE_VERSION = 1
+
+# Wake-up sources (#66): entities holding a point in time that IHP anticipates like a slot.
+# Stored as a list of objects in the entry options, per IHP; absent means none.
+CONF_WAKE_UP_SOURCES = "wake_up_sources"
+CONF_WAKE_UP_ENTITY = "entity_id"
+CONF_WAKE_UP_FROM_SCHEDULE = "target_from_schedule"
+CONF_WAKE_UP_PRESET = "target_preset"
+CONF_WAKE_UP_TEMPERATURE = "target_temperature"
+CONF_WAKE_UP_HORIZON_HOURS = "horizon_hours"
+CONF_WAKE_UP_HOLD_MINUTES = "hold_minutes"
+DEFAULT_WAKE_UP_HORIZON_HOURS = 24
+MIN_WAKE_UP_HORIZON_HOURS = 1
+MAX_WAKE_UP_HORIZON_HOURS = 72
+MAX_WAKE_UP_HOLD_MINUTES = 720

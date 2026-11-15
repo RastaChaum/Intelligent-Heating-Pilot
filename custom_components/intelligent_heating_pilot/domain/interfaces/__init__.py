@@ -18,15 +18,19 @@ from .historical_data_adapter_interface import IHistoricalDataAdapter
 from .lhs_storage_interface import ILhsStorage
 from .preheat_actuator_interface import IPreheatActuator
 from .preheat_record_store_interface import IPreheatRecordStore
+from .preset_temperature_resolver_interface import IPresetTemperatureResolver
 from .scheduler_ownership_resolver_interface import ISchedulerOwnershipResolver
 from .scheduler_reader_interface import ISchedulerReader
 from .sun_reader_interface import ISunReader
 from .timer_scheduler import ITimerScheduler
+from .wake_up_source_reader_interface import IWakeUpSourceReader
 
 __all__ = [
     "IClimateCommander",
     "IClimateDataReader",
     "IPreheatActuator",
+    "IPresetTemperatureResolver",
+    "IWakeUpSourceReader",
     "IPreheatRecordStore",
     "ISchedulerOwnershipResolver",
     "ISchedulerReader",

@@ -25,6 +25,10 @@ class PreheatRecord:
         recorded_at: When the record was made (timezone-aware).
         claimed: True once somebody else changed the climate after IHP acted. A claimed record
             is kept until its slot, so that IHP does not apply the slot again over that change.
+        hold_until: For a wake-up slot with a hold, when the hold ends and the earlier state is
+            put back; None when there is no hold.
+        hold_handoff: True when a scheduler slot bounds the hold: the scheduler then owns the
+            setting and nothing is restored.
     """
 
     timeslot_id: str
@@ -34,6 +38,8 @@ class PreheatRecord:
     applied: SlotAction
     recorded_at: datetime
     claimed: bool = False
+    hold_until: datetime | None = None
+    hold_handoff: bool = False
 
     def __post_init__(self) -> None:
         """Validate the record.
@@ -46,4 +52,6 @@ class PreheatRecord:
         if not self.scheduler_entity:
             raise ValueError("A preheat record needs a scheduler_entity")
         if self.slot_time.tzinfo is None or self.recorded_at.tzinfo is None:
+            raise ValueError("Preheat record datetimes must carry a timezone")
+        if self.hold_until is not None and self.hold_until.tzinfo is None:
             raise ValueError("Preheat record datetimes must carry a timezone")

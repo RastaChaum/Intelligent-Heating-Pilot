@@ -28,6 +28,7 @@ from ...const import (
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_TEMPERATURE_OUT_ENTITY,
     CONF_VTHERM_ENTITY,
+    CONF_WAKE_UP_SOURCES,
     DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
@@ -44,6 +45,7 @@ from ...const import (
 )
 from ...domain.interfaces.device_config_reader_interface import DeviceConfig, IDeviceConfigReader
 from ...utils.config_helpers import as_bool
+from .wake_up_sources_config import parse_wake_up_sources
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -210,6 +212,10 @@ class HADeviceConfigReader(IDeviceConfigReader):
             native_schedule_preset_key=native_preset_key,
             native_schedule_temperature_key=native_temperature_key,
             native_schedule_fallback_preset=native_fallback_preset,
+            wake_up_sources=parse_wake_up_sources(
+                self._get_config_value(config, options, CONF_WAKE_UP_SOURCES),
+                has_scheduler=bool(scheduler_entities),
+            ),
         )
 
         _LOGGER.debug("Retrieved device configuration: %s", device_config)

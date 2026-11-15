@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .slot_action import SlotAction
 
@@ -23,6 +23,8 @@ class ScheduledTimeslot:
         scheduler_entity: The scheduler entity ID that provided this timeslot
         action: What the slot applies, when the scheduler gives a usable action. None for a
             slot without one (HACS delegation, unsupported scheduler, "no change" node).
+        hold: For a wake-up source slot, how long after the deadline IHP puts the thermostat
+            back in its earlier state. None for every other slot.
     """
 
     target_time: datetime
@@ -30,6 +32,7 @@ class ScheduledTimeslot:
     timeslot_id: str
     scheduler_entity: str = ""
     action: SlotAction | None = None
+    hold: timedelta | None = None
 
     def __post_init__(self) -> None:
         """Validate the schedule timeslot data."""

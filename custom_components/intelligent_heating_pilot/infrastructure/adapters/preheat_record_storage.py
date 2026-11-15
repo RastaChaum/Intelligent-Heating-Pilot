@@ -81,6 +81,10 @@ class HAPreheatRecordStorage(BaseHAStorageAdapter[dict[str, Any]], IPreheatRecor
             },
             "applied": {"preset": record.applied.preset, "temperature": record.applied.temperature},
             "claimed": record.claimed,
+            "hold_until": (
+                self._serialize_datetime(record.hold_until) if record.hold_until else None
+            ),
+            "hold_handoff": record.hold_handoff,
         }
 
     def _deserialize(self, raw: dict[str, Any]) -> PreheatRecord:
@@ -101,4 +105,6 @@ class HAPreheatRecordStorage(BaseHAStorageAdapter[dict[str, Any]], IPreheatRecor
                 preset=applied.get("preset"), temperature=applied.get("temperature")
             ),
             claimed=bool(raw.get("claimed", False)),
+            hold_until=(self._parse_datetime(raw["hold_until"]) if raw.get("hold_until") else None),
+            hold_handoff=bool(raw.get("hold_handoff", False)),
         )

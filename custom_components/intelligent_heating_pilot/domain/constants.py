@@ -73,3 +73,7 @@ SLOT_DAY_RETRY_DELAY_SECONDS = 60
 # scheduler is about to apply the very same action, so restoring the earlier state would undo it
 # for a moment, or for good when the scheduler skips an action that already has its effect.
 PREHEAT_RESTORE_GUARD_MINUTES = 5
+
+# Temperature that feeds the anticipation when a slot only names a preset and the thermostat
+# does not publish that preset's temperature (the same stand-in native schedules use).
+DEFAULT_PRESET_TEMPERATURE_C = 20.0

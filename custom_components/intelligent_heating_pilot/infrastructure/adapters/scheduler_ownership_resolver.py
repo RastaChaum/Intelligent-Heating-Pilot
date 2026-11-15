@@ -28,13 +28,19 @@ PLATFORM_TO_KIND: dict[str, SchedulerKind] = {
 class HASchedulerOwnershipResolver(ISchedulerOwnershipResolver):
     """Tells which scheduler integration owns an entity, from the entity registry."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(
+        self, hass: HomeAssistant, wake_up_source_ids: frozenset[str] = frozenset()
+    ) -> None:
         """Initialize the resolver.
 
         Args:
             hass: Home Assistant instance.
+            wake_up_source_ids: The wake-up sources of this IHP. A source is not a scheduler: a
+                phone's alarm sensor belongs to the companion app, which the registry cannot
+                tell apart from an unknown scheduler, so the configuration is what says so.
         """
         self._hass = hass
+        self._wake_up_source_ids = wake_up_source_ids
         self._warned: set[str] = set()
 
     def resolve(self, scheduler_entity_id: str) -> SchedulerKind:
@@ -50,6 +56,8 @@ class HASchedulerOwnershipResolver(ISchedulerOwnershipResolver):
         Returns:
             The kind, ``UNKNOWN`` when the owner cannot be established.
         """
+        if scheduler_entity_id in self._wake_up_source_ids:
+            return SchedulerKind.TIMESTAMP
         if scheduler_entity_id.startswith(NATIVE_SCHEDULE_DOMAIN_PREFIX):
             return SchedulerKind.NATIVE
         entry = er.async_get(self._hass).async_get(scheduler_entity_id)

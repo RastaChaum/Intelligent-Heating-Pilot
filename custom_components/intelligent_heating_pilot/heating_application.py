@@ -18,6 +18,7 @@ from .application.heating_cycle_lifecycle_manager_factory import (
 from .application.lhs_lifecycle_manager import LhsLifecycleManager
 from .application.lhs_lifecycle_manager_factory import LhsLifecycleManagerFactory
 from .application.orchestrator import HeatingOrchestrator
+from .application.slot_sources import CombinedTimeslotReader
 from .application.use_cases import (
     CalculateAnticipationUseCase,
     ControlPreheatingUseCase,
@@ -27,6 +28,7 @@ from .application.use_cases import (
 from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN, EVENT_DEAD_TIME_UPDATED
 from .domain.constants import DEFAULT_LEARNED_SLOPE
 from .domain.interfaces.device_config_reader_interface import DeviceConfig
+from .domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from .domain.services import (
     ContextualLHSCalculatorService,
     DeadTimeCalculationService,
@@ -52,6 +54,8 @@ from .infrastructure.adapters import (
     HATimerScheduler,
 )
 from .infrastructure.adapters.native_schedule_reader import NativeScheduleSettings
+from .infrastructure.adapters.preset_temperature_resolver import HAPresetTemperatureResolver
+from .infrastructure.adapters.wake_up_source_reader import HAWakeUpSourceReader
 from .infrastructure.event_bridge import HAEventBridge
 
 _LOGGER = logging.getLogger(__name__)
@@ -97,6 +101,8 @@ class HeatingApplication:
         # This is the key change: we read from the injected value object
         self._vtherm_id = device_config.vtherm_entity_id
         self._scheduler_ids = device_config.scheduler_entities
+        self._wake_up_sources = device_config.wake_up_sources
+        self._wake_up_source_ids = [source.entity_id for source in self._wake_up_sources]
         self._humidity_in_id = device_config.humidity_in_entity_id
         self._humidity_out_id = device_config.humidity_out_entity_id
         self._temperature_out_id = device_config.temperature_out_entity_id
@@ -123,7 +129,7 @@ class HeatingApplication:
         # Infrastructure adapters
         self._lhs_storage: HALhsStorage | None = None
         self._cycle_storage: HAHeatingCycleStorage | None = None
-        self._scheduler_reader: HASchedulerReader | None = None
+        self._scheduler_reader: ISchedulerReader | None = None
         self._preheat_actuator: RoutingPreheatActuator | None = None
         self._environment_reader: HAEnvironmentReader | None = None
         self._context_reader: HAContextReader | None = None
@@ -181,7 +187,40 @@ class HeatingApplication:
         }
         if self._device_config.native_schedule_drive:
             routes[SchedulerKind.NATIVE] = direct
+        if self._wake_up_sources:
+            routes[SchedulerKind.TIMESTAMP] = direct
         return RoutingPreheatActuator(ownership_resolver, routes)
+
+    def _build_timeslot_reader(
+        self, ownership_resolver: HASchedulerOwnershipResolver
+    ) -> ISchedulerReader:
+        """Build the reader that gives the next deadline: schedulers and wake-up sources as one.
+
+        Without a wake-up source the schedulers' reader is returned as it is, so an IHP that
+        does not use the feature runs exactly the code it ran before.
+
+        Args:
+            ownership_resolver: Tells which integration owns a scheduler entity.
+
+        Returns:
+            The reader every consumer of the next slot uses.
+        """
+        schedulers = HASchedulerReader(
+            self.hass,
+            self._scheduler_ids,
+            vtherm_entity_id=self._vtherm_id,
+            native_settings=self._native_schedule_settings(),
+            ownership_resolver=ownership_resolver,
+        )
+        if not self._wake_up_sources:
+            return schedulers
+        return CombinedTimeslotReader(
+            scheduler_reader=schedulers,
+            source_reader=HAWakeUpSourceReader(self.hass),
+            sources=self._wake_up_sources,
+            preset_resolver=HAPresetTemperatureResolver(self.hass, self._vtherm_id),
+            now=dt_util.now,
+        )
 
     def _build_direct_actuator(self) -> DirectPreheatActuator:
         """Build the actuator that applies a slot's action to the climate entity itself."""
@@ -215,14 +254,10 @@ class HeatingApplication:
             self.hass, get_recorder_queue(self.hass), self._vtherm_id
         )
 
-        ownership_resolver = HASchedulerOwnershipResolver(self.hass)
-        self._scheduler_reader = HASchedulerReader(
-            self.hass,
-            self._scheduler_ids,
-            vtherm_entity_id=self._vtherm_id,
-            native_settings=self._native_schedule_settings(),
-            ownership_resolver=ownership_resolver,
+        ownership_resolver = HASchedulerOwnershipResolver(
+            self.hass, wake_up_source_ids=frozenset(self._wake_up_source_ids)
         )
+        self._scheduler_reader = self._build_timeslot_reader(ownership_resolver)
 
         self._preheat_actuator = self._build_preheat_actuator(ownership_resolver)
         self._environment_reader = HAEnvironmentReader(
@@ -341,7 +376,7 @@ class HeatingApplication:
             self.hass,
             self._orchestrator,
             self._vtherm_id,
-            self._scheduler_ids,
+            [*self._scheduler_ids, *self._wake_up_source_ids],
             self._recalculation_trigger_entity_ids(),
             entry_id=self._device_id,
             get_ihp_enabled_func=self.is_ihp_enabled,

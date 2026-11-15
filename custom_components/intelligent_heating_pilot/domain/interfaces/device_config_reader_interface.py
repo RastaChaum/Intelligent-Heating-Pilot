@@ -5,6 +5,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from ..value_objects.wake_up_source_config import WakeUpSourceConfig
+
 
 @dataclass(frozen=True)
 class DeviceConfig:
@@ -47,6 +49,7 @@ class DeviceConfig:
         native_schedule_preset_key: Block data key that holds a preset name.
         native_schedule_temperature_key: Block data key that holds a target temperature.
         native_schedule_fallback_preset: Preset used when a block has neither key.
+        wake_up_sources: Entities holding a point in time that IHP anticipates like a slot.
         safety_shutoff_grace_minutes: Duration in minutes of the grace period for brief heating
                                       interruptions (safety/frost mode). Interruptions shorter than
                                       this threshold do not terminate an in-progress cycle, avoiding
@@ -86,6 +89,9 @@ class DeviceConfig:
     native_schedule_preset_key: str = "preset"
     native_schedule_temperature_key: str = "temperature"
     native_schedule_fallback_preset: str = "comfort"
+
+    # Wake-up sources (#66): entities holding a point in time to anticipate
+    wake_up_sources: tuple[WakeUpSourceConfig, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate configuration values after initialization.

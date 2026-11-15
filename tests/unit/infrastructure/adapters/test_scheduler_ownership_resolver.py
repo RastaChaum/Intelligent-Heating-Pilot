@@ -81,3 +81,23 @@ def test_other_domains_are_unknown(stop_patches) -> None:
     stop_patches.append(patchers)
 
     assert resolver.resolve("input_boolean.heating") is SchedulerKind.UNKNOWN
+
+
+def test_a_configured_wake_up_source_is_a_timestamp_before_any_registry_lookup() -> None:
+    """A phone's alarm sensor belongs to the companion app: only the configuration says what it is."""
+    registry = Mock()
+    registry.async_get = Mock(return_value=Mock(platform="mobile_app"))
+    with patch(f"{MODULE}.er.async_get", return_value=registry):
+        resolver = HASchedulerOwnershipResolver(
+            Mock(), wake_up_source_ids=frozenset({"sensor.phone_next_alarm"})
+        )
+        assert resolver.resolve("sensor.phone_next_alarm") is SchedulerKind.TIMESTAMP
+        registry.async_get.assert_not_called()
+
+
+def test_an_entity_that_is_not_a_source_is_resolved_as_before() -> None:
+    registry = Mock()
+    registry.async_get = Mock(return_value=Mock(platform="scheduler"))
+    with patch(f"{MODULE}.er.async_get", return_value=registry):
+        resolver = HASchedulerOwnershipResolver(Mock(), wake_up_source_ids=frozenset({"sensor.a"}))
+        assert resolver.resolve("switch.plan") is SchedulerKind.HACS

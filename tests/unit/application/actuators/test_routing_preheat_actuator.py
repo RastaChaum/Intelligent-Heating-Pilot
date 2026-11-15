@@ -127,3 +127,17 @@ async def test_a_resumed_recovery_carries_its_slot() -> None:
     recovery = await router.recover(_next_of)
 
     assert recovery.timeslot == make_timeslot()
+
+
+@pytest.mark.asyncio
+async def test_a_wake_up_source_slot_goes_to_the_direct_actuator() -> None:
+    direct, hacs = _actuator(), _actuator(ActuationResult.ATTEMPTED)
+    router = _router(
+        SchedulerKind.TIMESTAMP, {SchedulerKind.TIMESTAMP: direct, SchedulerKind.HACS: hacs}
+    )
+
+    result = await router.start(make_timeslot(scheduler="sensor.phone_next_alarm"))
+
+    assert result is ActuationResult.APPLIED
+    direct.start.assert_awaited_once()
+    hacs.start.assert_not_awaited()

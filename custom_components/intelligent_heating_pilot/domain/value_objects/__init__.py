@@ -24,6 +24,9 @@ from .scheduled_timeslot import ScheduledTimeslot
 from .scheduler_kind import SchedulerKind
 from .slope_data import SlopeData
 from .slot_action import SlotAction, SlotActionKind
+from .slots_around import SlotsAround
+from .wake_up_reading import ReadingIssue, WakeUpReading
+from .wake_up_source_config import WakeUpSourceConfig
 
 __all__ = [
     "ContextualLHSByHour",
@@ -41,6 +44,10 @@ __all__ = [
     "SchedulerKind",
     "SlotAction",
     "SlotActionKind",
+    "SlotsAround",
+    "ReadingIssue",
+    "WakeUpReading",
+    "WakeUpSourceConfig",
     "PredictionResult",
     "HeatingDecision",
     "HeatingAction",

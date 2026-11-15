@@ -13,7 +13,9 @@ from custom_components.intelligent_heating_pilot.domain.interfaces import (
     IClimateCommander,
     IPreheatActuator,
     IPreheatRecordStore,
+    IPresetTemperatureResolver,
     ISchedulerOwnershipResolver,
+    IWakeUpSourceReader,
 )
 
 DOMAIN_ROOT = Path(inspect.getfile(domain)).parent
@@ -42,7 +44,14 @@ def test_the_domain_package_imports_no_home_assistant() -> None:
 
 @pytest.mark.parametrize(
     "port",
-    [IPreheatActuator, ISchedulerOwnershipResolver, IClimateCommander, IPreheatRecordStore],
+    [
+        IPreheatActuator,
+        ISchedulerOwnershipResolver,
+        IClimateCommander,
+        IPreheatRecordStore,
+        IWakeUpSourceReader,
+        IPresetTemperatureResolver,
+    ],
 )
 def test_the_new_ports_are_abstract(port: type) -> None:
     with pytest.raises(TypeError):
