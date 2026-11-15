@@ -67,7 +67,7 @@ jobs:
         id: coverage
         run: |
           set +e
-          poetry run pytest tests/unit --cov=custom_components/intelligent_heating_pilot --cov-report=term --cov-report=xml > coverage-output.txt 2>&1
+          poetry run pytest tests/ --cov=custom_components/intelligent_heating_pilot --cov-report=term --cov-report=xml > coverage-output.txt 2>&1
           COVERAGE_EXIT=$?
           set -e
           if grep -q "^TOTAL" coverage-output.txt; then

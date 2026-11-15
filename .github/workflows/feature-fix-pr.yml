@@ -180,7 +180,7 @@ jobs:
 
       - name: Run tests
         id: tests
-        run: poetry run pytest tests/unit -v
+        run: poetry run pytest tests/ -v
 
       - name: Comment test results
         if: always() && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
