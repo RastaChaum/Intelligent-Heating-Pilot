@@ -84,7 +84,8 @@
           "native_schedule_drive": "Piloter les plannings natifs",
           "native_schedule_preset_key": "Clé du preset (planning natif)",
           "native_schedule_temperature_key": "Clé de la température (planning natif)",
-          "native_schedule_fallback_preset": "Preset par défaut (planning natif)"
+          "native_schedule_fallback_preset": "Preset par défaut (planning natif)",
+          "manage_wake_up_sources": "Gérer les sources de réveil après l'enregistrement"
         },
         "data_description": {
           "vtherm_entity_id": "Le Versatile Thermostat dont IHP apprend et anticipe la chauffe.",
@@ -106,13 +107,66 @@
           "native_schedule_drive": "IHP applique lui-même le prochain bloc d'un planning natif au thermostat, à l'heure de démarrage anticipée. Désactivé : IHP calcule seulement l'anticipation des plannings natifs. Les données d'un bloc peuvent contenir un preset ou une température.",
           "native_schedule_preset_key": "Nom de l'entrée des données du bloc qui contient un preset. Par défaut : preset.",
           "native_schedule_temperature_key": "Nom de l'entrée des données du bloc qui contient une température cible. Par défaut : temperature.",
-          "native_schedule_fallback_preset": "Preset appliqué quand un bloc n'a aucune de ces entrées. Il remplace aussi la température du bloc quand IHP calcule l'anticipation. Par défaut : comfort."
+          "native_schedule_fallback_preset": "Preset appliqué quand un bloc n'a aucune de ces entrées. Il remplace aussi la température du bloc quand IHP calcule l'anticipation. Par défaut : comfort.",
+          "manage_wake_up_sources": "Ouvre le menu des sources de réveil une fois ces réglages enregistrés : une alarme ou toute entité date-heure pour laquelle IHP préchauffe."
+        }
+      },
+      "wake_up_menu": {
+        "title": "Sources de réveil",
+        "description": "Une source de réveil est une entité qui contient un instant, par exemple la prochaine alarme de votre téléphone. IHP préchauffe pour que la pièce soit prête à cet instant. Sources définies : {sources}",
+        "menu_options": {
+          "wake_up_add": "Ajouter une source",
+          "wake_up_edit": "Modifier une source",
+          "wake_up_remove": "Retirer des sources",
+          "wake_up_done": "Enregistrer et fermer"
+        }
+      },
+      "wake_up_edit": {
+        "title": "Modifier une source de réveil",
+        "description": "Choisissez la source à modifier.",
+        "data": {
+          "entity_id": "Source"
+        },
+        "data_description": {
+          "entity_id": "La source de réveil à modifier."
+        }
+      },
+      "wake_up_remove": {
+        "title": "Retirer des sources de réveil",
+        "description": "Choisissez les sources à retirer.",
+        "data": {
+          "entity_id": "Sources"
+        },
+        "data_description": {
+          "entity_id": "Les sources de réveil à retirer."
+        }
+      },
+      "wake_up_form": {
+        "title": "Source de réveil",
+        "description": "IHP préchauffe pour atteindre la cible à l'instant contenu dans cette entité. Indiquez un preset ou une température, ou prenez la cible dans le planning.",
+        "data": {
+          "entity_id": "Entité contenant l'heure",
+          "target_preset": "Preset cible",
+          "target_temperature": "Température cible (°C)",
+          "target_from_schedule": "Prendre la cible dans le planning",
+          "horizon_hours": "Ignorer les heures plus lointaines que (heures)",
+          "hold_minutes": "Garder la cible après l'heure (minutes)"
+        },
+        "data_description": {
+          "entity_id": "Un capteur d'horodatage (comme la prochaine alarme d'un téléphone), une entité date-heure, ou un assistant date-heure avec date et heure.",
+          "target_preset": "Preset à appliquer et à atteindre. Laissez vide pour donner une température.",
+          "target_temperature": "Température à appliquer et à atteindre. Ignorée si un preset est défini.",
+          "target_from_schedule": "Utilise la cible du créneau du planning qui suit cette heure, jamais plus basse que le créneau déjà en cours. Le preset ou la température ci-dessus sert de repli quand le planning ne peut pas répondre.",
+          "horizon_hours": "Une heure plus lointaine que cette durée est ignorée, pour qu'une alarme éloignée ne déclenche jamais un préchauffage par accident. Par défaut : 24 heures.",
+          "hold_minutes": "Après cette heure, IHP remet le thermostat dans son état précédent, sauf si quelqu'un l'a modifié ou si un planning a pris la main. 0 laisse le thermostat tel quel."
         }
       }
     },
     "error": {
       "required": "Ce champ est obligatoire",
-      "vtherm_already_configured": "Ce thermostat est déjà piloté par un autre appareil Intelligent Heating Pilot"
+      "vtherm_already_configured": "Ce thermostat est déjà piloté par un autre appareil Intelligent Heating Pilot",
+      "wake_up_target_required": "Indiquez un preset ou une température, ou prenez la cible dans le planning (cela demande un planning).",
+      "wake_up_duplicate": "Cette entité est déjà une source de réveil de cet appareil."
     }
   },
   "services": {

@@ -87,6 +87,7 @@ class DirectPreheatActuator(IPreheatActuator):
         if action is None:
             return ActuationResult.UNSUPPORTED
         async with self._lock:
+            await self._follow_slot_time(timeslot)
             if await self._is_claimed(timeslot):
                 _LOGGER.debug("Preheat of %s skipped: someone else took over", timeslot.timeslot_id)
                 return ActuationResult.SKIPPED
@@ -156,6 +157,20 @@ class DirectPreheatActuator(IPreheatActuator):
         if record.claimed:
             return PreheatRecovery(RecoveryOutcome.NOTHING)
         return PreheatRecovery(RecoveryOutcome.RESUMED, own_next)
+
+    async def _follow_slot_time(self, timeslot: ScheduledTimeslot) -> None:
+        """Move the record's slot time when the same slot has moved (a snoozed alarm).
+
+        A slot keeps its identity when it moves, so that a change somebody else made stays
+        theirs; the guard window and the claim last until the slot, which must be the new one.
+        """
+        record = await self._store.load()
+        if (
+            record is not None
+            and record.timeslot_id == timeslot.timeslot_id
+            and record.slot_time != timeslot.target_time
+        ):
+            await self._store.save(replace(record, slot_time=timeslot.target_time))
 
     async def _is_claimed(self, timeslot: ScheduledTimeslot) -> bool:
         """Tell whether somebody else took over the climate for this slot, until the slot."""

@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers import selector
 
+from .config_flow_wake_up import WakeUpSourcesFlowMixin
 from .const import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
@@ -21,6 +22,7 @@ from .const import (
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
+    CONF_MANAGE_WAKE_UP_SOURCES,
     CONF_MAX_CYCLE_DURATION_MINUTES,
     CONF_MIN_CYCLE_DURATION_MINUTES,
     CONF_NAME,
@@ -367,8 +369,21 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         )
 
 
-class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
+class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.OptionsFlow):
     """Handle options flow for Intelligent Heating Pilot."""
+
+    def __init__(self) -> None:
+        """Initialize the flow state used while the wake-up sources are managed."""
+        self._pending: dict[str, Any] = {}
+        self._sources: list[dict[str, Any]] = []
+        self._editing: str | None = None
+
+    def _finish(self, options: dict[str, Any]) -> ConfigFlowResult:
+        """Save the options, keying the entry on its new VTherm when it changed."""
+        vtherm = options.get(CONF_VTHERM_ENTITY)
+        if vtherm and vtherm != _configured_vtherm(self.config_entry):
+            self._follow_vtherm(vtherm, options)
+        return self.async_create_entry(title="", data=options)
 
     def _follow_vtherm(self, vtherm: str, options: dict[str, Any]) -> None:
         """Key the entry on its new VTherm, so no two entries ever share a unique_id.
@@ -389,6 +404,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             # Start with user input
             normalized_input = {**user_input}
+            manage_wake_up_sources = bool(normalized_input.pop(CONF_MANAGE_WAKE_UP_SOURCES, False))
             # Schedulers already a list from SelectSelector (multiple=True)
             # Just ensure it's always a list
             normalized_input[CONF_SCHEDULER_ENTITIES] = _as_list(
@@ -429,9 +445,10 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 # For optional fields that were cleared: explicitly set to None to override data
                 for field in fields_to_delete:
                     merged_options[field] = None
-                if vtherm and vtherm != _configured_vtherm(self.config_entry):
-                    self._follow_vtherm(vtherm, merged_options)
-                return self.async_create_entry(title="", data=merged_options)
+                if manage_wake_up_sources:
+                    self._begin_wake_up_management(merged_options)
+                    return await self.async_step_wake_up_menu()
+                return self._finish(merged_options)
 
         # Prepare data sources for defaults
         current_options = getattr(self.config_entry, "options", {})
@@ -664,6 +681,9 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         )
 
         schema_dict.update(_native_schedule_fields(_opt_or_data))
+        schema_dict[vol.Optional(CONF_MANAGE_WAKE_UP_SOURCES, default=False)] = (
+            selector.BooleanSelector()
+        )
 
         data_schema = vol.Schema(schema_dict)
 

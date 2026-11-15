@@ -129,3 +129,5 @@ DEFAULT_WAKE_UP_HORIZON_HOURS = 24
 MIN_WAKE_UP_HORIZON_HOURS = 1
 MAX_WAKE_UP_HORIZON_HOURS = 72
 MAX_WAKE_UP_HOLD_MINUTES = 720
+# Form-only flag of the options form: opens the wake-up sources menu. Never stored.
+CONF_MANAGE_WAKE_UP_SOURCES = "manage_wake_up_sources"

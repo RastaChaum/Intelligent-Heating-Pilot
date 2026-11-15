@@ -50,6 +50,7 @@ MISSING_VTHERM_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: ""}
 OTHER_DEVICE_VTHERM = "climate.office"
 VTHERM_IN_USE_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: OTHER_DEVICE_VTHERM}
 REJECTED_INPUTS = [MISSING_VTHERM_INPUT, VTHERM_IN_USE_INPUT]
+WAKE_UP_ERRORS = {"wake_up_target_required", "wake_up_duplicate"}
 
 # Errors each form raises for REJECTED_INPUTS. A VTherm in use aborts the setup (#192),
 # so it is no form error there.
@@ -170,7 +171,10 @@ async def test_declared_errors_are_the_ones_the_form_raises(
         raised |= set((result.get("errors") or {}).values())
 
     assert raised == EXPECTED_ERRORS[form_name]
-    assert set(_load_json(translation_file)[section].get("error", {})) == raised
+    # The wake-up source forms raise their own errors: covered in
+    # tests/unit/infrastructure/test_translation_parity.py
+    declared = set(_load_json(translation_file)[section].get("error", {}))
+    assert declared - WAKE_UP_ERRORS == raised
 
 
 def test_french_declares_the_same_keys_as_english() -> None:
