@@ -28,8 +28,12 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
     UpdateCacheDataUseCase,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects import (
+    ActuationResult,
+    CancelReason,
     EnvironmentState,
     PredictionResult,
+    PreheatRecovery,
+    RecoveryOutcome,
     ScheduledTimeslot,
 )
 
@@ -69,11 +73,12 @@ def mock_scheduler_reader():
 
 
 @pytest.fixture
-def mock_scheduler_commander():
-    """Mock ISchedulerCommander."""
+def mock_preheat_actuator():
+    """Mock IPreheatActuator."""
     mock = Mock()
-    mock.run_action = AsyncMock()
-    mock.cancel_action = AsyncMock()
+    mock.start = AsyncMock(return_value=ActuationResult.ATTEMPTED)
+    mock.cancel = AsyncMock()
+    mock.recover = AsyncMock(return_value=PreheatRecovery(RecoveryOutcome.NOTHING))
     return mock
 
 
@@ -172,24 +177,23 @@ def mock_calculate_anticipation(
 
 
 @pytest.fixture
-def mock_control_preheating(mock_scheduler_commander):
+def mock_control_preheating(mock_preheat_actuator):
     """Create real ControlPreheatingUseCase with mocked dependencies."""
     return ControlPreheatingUseCase(
-        scheduler_commander=mock_scheduler_commander,
+        preheat_actuator=mock_preheat_actuator,
     )
 
 
 @pytest.fixture
 def mock_schedule_anticipation_action(
     mock_scheduler_reader,
-    mock_scheduler_commander,
+    mock_preheat_actuator,
     mock_timer_scheduler,
     mock_control_preheating,
 ):
     """Create real ScheduleAnticipationActionUseCase with mocked dependencies."""
     return ScheduleAnticipationActionUseCase(
         scheduler_reader=mock_scheduler_reader,
-        scheduler_commander=mock_scheduler_commander,
         timer_scheduler=mock_timer_scheduler,
         control_preheating_use_case=mock_control_preheating,
     )
@@ -345,6 +349,12 @@ def preheating_active_for_target(
     mock_control_preheating._is_preheating_active = True
     mock_control_preheating._preheating_target_time = target_time
     mock_control_preheating._active_scheduler_entity = workflow_context["scheduler_entity"]
+    mock_control_preheating._active_timeslot = ScheduledTimeslot(
+        target_time=target_time,
+        target_temp=21.0,
+        timeslot_id=f"{workflow_context['scheduler_entity']}_{target_time.isoformat()}",
+        scheduler_entity=workflow_context["scheduler_entity"],
+    )
 
     # Set schedule anticipation action state (simulate previous scheduling)
     mock_schedule_anticipation_action._last_scheduled_time = datetime(
@@ -482,6 +492,7 @@ def no_preheating_active(workflow_context, mock_control_preheating):
     mock_control_preheating._is_preheating_active = False
     mock_control_preheating._preheating_target_time = None
     mock_control_preheating._active_scheduler_entity = None
+    mock_control_preheating._active_timeslot = None
 
 
 @given("the scheduler entity was previously active")
@@ -668,10 +679,10 @@ def result_indicates_clear_values(workflow_context):
 
 
 @then("the active preheating should be canceled")
-def active_preheating_canceled(workflow_context, mock_scheduler_commander):
-    """THEN: Scheduler commander was called to cancel active preheating."""
+def active_preheating_canceled(workflow_context, mock_preheat_actuator):
+    """THEN: The actuator was asked to cancel active preheating."""
     if workflow_context.get("ihp_enabled") is False:
-        mock_scheduler_commander.cancel_action.assert_called_once()
+        mock_preheat_actuator.cancel.assert_called_once()
 
 
 @then(parsers.parse("a new preheating timer should be rescheduled for {hour:d}:{minute:d}"))
@@ -696,15 +707,16 @@ def preheating_state_reset(mock_timer_scheduler):
 
 
 @then("preheating should continue without interruption")
-def preheating_continues(mock_scheduler_commander):
+def preheating_continues(mock_preheat_actuator):
     """THEN: No cancel was issued — preheating keeps running."""
-    mock_scheduler_commander.cancel_action.assert_not_called()
+    mock_preheat_actuator.cancel.assert_not_called()
 
 
 @then("no cancel action should be triggered")
-def no_cancel_action(mock_scheduler_commander):
-    """THEN: No cancel action was issued at all."""
-    mock_scheduler_commander.cancel_action.assert_not_called()
+def no_cancel_action(mock_preheat_actuator):
+    """THEN: No revert was requested (reaching the slot is only a signal, never a revert)."""
+    reasons = [call.args[1] for call in mock_preheat_actuator.cancel.call_args_list]
+    assert all(reason is CancelReason.SLOT_REACHED for reason in reasons)
 
 
 @then("preheating should be marked as complete")

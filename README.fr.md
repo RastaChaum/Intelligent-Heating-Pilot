@@ -36,10 +36,11 @@ IHP surveille votre VTherm, apprend à quelle vitesse votre pièce chauffe et d�
 | Planificateur | Démarrage anticipé | IHP lance le chauffage |
 | --- | --- | --- |
 | [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) (`switch.schedule_*`) | ✅ | ✅ |
-| Helper natif `schedule.*` | ✅ (cible = preset confort du VTherm) | ❌ construisez votre propre automatisation |
+| [Climate Scheduler](https://github.com/kneave/climate-scheduler) | ✅ | ✅ |
+| Helper natif `schedule.*` | ✅ | ⚙️ si vous activez le pilotage direct (ou construisez votre propre automatisation) |
 | Autres planificateurs (automatisations, calendriers, autres intégrations) | ❌ | ❌ utilisez le service `calculate_anticipated_start_time` |
 
-Avec HACS Scheduler, l'action de chaque créneau doit être `climate.set_temperature` ou `climate.set_preset_mode`, sur le VTherm de l'appareil IHP. **[Planificateurs pris en charge en détail →](docs/users/CONFIGURATION.md#supported-schedulers)**
+Le planificateur décide de ce qui se passe et quand ; IHP décide seulement de l'avance, et applique l'action propre du créneau (un preset ou une température) à votre thermostat un peu avant le créneau. Avec HACS Scheduler, l'action de chaque créneau doit être `climate.set_temperature` ou `climate.set_preset_mode`, sur le VTherm de l'appareil IHP. **[Planificateurs pris en charge en détail →](docs/users/CONFIGURATION.md#supported-schedulers)**
 
 ---
 
@@ -87,7 +88,8 @@ Paramètres → Appareils et services → + Ajouter une intégration
 - ✅ **Paramètres de détection configurables** - Ajustez finement la détection des cycles à votre installation
 - ✅ **Apprentissage selon l'heure** - Des vitesses de chauffe différentes selon le moment de la journée
 - ✅ **Préchauffage via HACS Scheduler** - Déclenche le prochain créneau en avance, en respectant les conditions du planificateur ; plusieurs planificateurs par appareil
-- ✅ **Plannings natifs** - Les helpers `schedule.*` disposent d'un capteur d'heure de démarrage anticipé pour construire votre propre automatisation (IHP ne lance pas le chauffage pour eux)
+- ✅ **Climate Scheduler et plannings natifs** - IHP applique lui-même l'action du prochain nœud ou bloc à votre thermostat (plannings natifs : activez le pilotage direct, le preset ou la température vient des données de chaque bloc), et le remet comme avant si le préchauffage est annulé et que personne n'y a touché entre-temps
+- ✅ **Sources de réveil** - Donnez à un appareil la prochaine alarme de votre téléphone (ou toute entité date-heure) : IHP préchauffe pour que la pièce soit prête à cette heure, peut prendre la cible dans votre planning, et peut remettre le thermostat comme avant ensuite
 - ✅ **Service de calcul** - `calculate_anticipated_start_time` pour vos propres automatisations, avec ou sans planificateur
 - ✅ **Source extérieure** - Capteur extérieur ou entité `weather.*`, enregistrée avec chaque cycle de chauffe
 - ✅ **Cache incrémental** - Réduit la charge de la base de données de HA pour l'apprentissage à long terme

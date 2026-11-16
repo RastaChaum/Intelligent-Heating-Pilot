@@ -1,0 +1,70 @@
+name: End-to-end (release candidate)
+
+# Starts the official Home Assistant image with IHP, Versatile Thermostat, HACS Scheduler and
+# Climate Scheduler, and checks that IHP loads, preheats on every scheduler and survives a
+# restart. It runs in real time (about 15 minutes), so it gates the release candidates rather
+# than every pull request.
+
+on:
+  workflow_call:
+    inputs:
+      ha_image:
+        description: 'Home Assistant image to test against (default: the pinned one)'
+        required: false
+        type: string
+        default: ''
+  workflow_dispatch:
+    inputs:
+      ha_image:
+        description: 'Home Assistant image to test against (default: the pinned one)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Real Home Assistant
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Fixed on purpose: a caller-supplied ref would run untrusted code with this workflow's rights.
+          ref: integration
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
+        with:
+          version: 1.8.2
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Run the end-to-end tests
+        env:
+          IHP_E2E: '1'
+          IHP_E2E_HA_IMAGE: ${{ inputs.ha_image }}
+          IHP_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
+        run: |
+          if [ -z "$IHP_E2E_HA_IMAGE" ]; then unset IHP_E2E_HA_IMAGE; fi
+          poetry run pytest tests/e2e -v --no-cov -p no:cacheprovider
+
+      - name: Keep the Home Assistant log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: home-assistant-e2e-log
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore

@@ -38,6 +38,36 @@ class ISchedulerReader(ABC):
         """
         pass
 
+    async def get_next_scheduler_timeslot(
+        self, exclude_entity_ids: frozenset[str] = frozenset()
+    ) -> ScheduledTimeslot | None:
+        """Retrieve the next timeslot of the schedulers alone, wake-up sources left out.
+
+        Used to know whether a scheduler will take over the setting before a hold ends. A
+        reader that only knows schedulers answers like ``get_next_timeslot``.
+
+        Args:
+            exclude_entity_ids: Scheduler entity ids to skip for this call.
+
+        Returns:
+            The next scheduler timeslot, or None when there is none.
+        """
+        return await self.get_next_timeslot(exclude_entity_ids)
+
+    def is_wake_up_source(self, entity_id: str) -> bool:
+        """Tell whether an entity is a wake-up source rather than a scheduler.
+
+        A wake-up deadline can move, appear or vanish at any moment, so a preheat for it is
+        handed over to another deadline instead of being undone and started again.
+
+        Args:
+            entity_id: The entity that owns a slot.
+
+        Returns:
+            True for a wake-up source; a reader that only knows schedulers answers False.
+        """
+        return False
+
     @abstractmethod
     async def is_scheduler_enabled(self, scheduler_entity_id: str) -> bool:
         """Check if a specific scheduler is enabled.
@@ -47,5 +77,20 @@ class ISchedulerReader(ABC):
 
         Returns:
             True if the scheduler is enabled (state != "off"), False otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def get_next_timeslot_of(self, scheduler_entity_id: str) -> ScheduledTimeslot | None:
+        """Retrieve the next timeslot of one scheduler.
+
+        Unlike ``get_next_timeslot``, this ignores the other schedulers: it tells whether a
+        given slot is still the next one *of its own scheduler*.
+
+        Args:
+            scheduler_entity_id: The scheduler entity ID to read.
+
+        Returns:
+            Its next timeslot, or None if it has none or is disabled.
         """
         pass

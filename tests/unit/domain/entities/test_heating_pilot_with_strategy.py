@@ -11,7 +11,7 @@ from custom_components.intelligent_heating_pilot.domain.entities.heating_pilot i
     HeatingPilot,
 )
 from custom_components.intelligent_heating_pilot.domain.interfaces import (
-    ISchedulerCommander,
+    IPreheatActuator,
 )
 from custom_components.intelligent_heating_pilot.domain.interfaces.decision_strategy_interface import (
     IDecisionStrategy,
@@ -30,17 +30,17 @@ def mock_decision_strategy():
 
 
 @pytest.fixture
-def mock_scheduler_commander():
+def mock_preheat_actuator():
     """Create a mock scheduler commander."""
-    return AsyncMock(spec=ISchedulerCommander)
+    return AsyncMock(spec=IPreheatActuator)
 
 
 @pytest.fixture
-def heating_pilot(mock_decision_strategy, mock_scheduler_commander):
+def heating_pilot(mock_decision_strategy, mock_preheat_actuator):
     """Create a heating pilot with mocked dependencies."""
     return HeatingPilot(
         decision_strategy=mock_decision_strategy,
-        scheduler_commander=mock_scheduler_commander,
+        preheat_actuator=mock_preheat_actuator,
     )
 
 
@@ -109,7 +109,7 @@ class TestHeatingPilotWithStrategy:
             2.5,
         )
 
-    async def test_can_use_different_strategies(self, mock_scheduler_commander):
+    async def test_can_use_different_strategies(self, mock_preheat_actuator):
         """Should work with any strategy implementation."""
         # GIVEN: Two different strategy implementations
         simple_strategy = AsyncMock(spec=IDecisionStrategy)
@@ -136,7 +136,7 @@ class TestHeatingPilotWithStrategy:
         # WHEN: Using simple strategy
         pilot_simple = HeatingPilot(
             decision_strategy=simple_strategy,
-            scheduler_commander=mock_scheduler_commander,
+            preheat_actuator=mock_preheat_actuator,
         )
         decision_simple = await pilot_simple.decide_heating_action(environment)
 
@@ -146,7 +146,7 @@ class TestHeatingPilotWithStrategy:
         # WHEN: Using ML strategy
         pilot_ml = HeatingPilot(
             decision_strategy=ml_strategy,
-            scheduler_commander=mock_scheduler_commander,
+            preheat_actuator=mock_preheat_actuator,
         )
         decision_ml = await pilot_ml.decide_heating_action(environment)
 

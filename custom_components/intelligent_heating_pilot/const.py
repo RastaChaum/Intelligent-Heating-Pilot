@@ -68,6 +68,19 @@ DEFAULT_MAX_CYCLE_DURATION_MINUTES = 300  # Maximum 5 hours
 CONF_SAFETY_SHUTOFF_GRACE_MINUTES = "safety_shutoff_grace_minutes"
 DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES = 10  # 10 minutes tolerance for safety/frost interruptions
 
+# Native schedule (schedule.*) options. A native schedule's blocks carry free "data" with no
+# convention on the keys, so the user says which keys hold a preset or a temperature, and
+# whether IHP may apply the next block itself. Off by default: native schedules stay
+# compute-only unless the user opts in.
+CONF_NATIVE_SCHEDULE_DRIVE = "native_schedule_drive"
+CONF_NATIVE_SCHEDULE_PRESET_KEY = "native_schedule_preset_key"
+CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY = "native_schedule_temperature_key"
+CONF_NATIVE_SCHEDULE_FALLBACK_PRESET = "native_schedule_fallback_preset"
+DEFAULT_NATIVE_SCHEDULE_DRIVE = False
+DEFAULT_NATIVE_SCHEDULE_PRESET_KEY = "preset"
+DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY = "temperature"
+DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET = "comfort"
+
 # Service names
 SERVICE_CALCULATE_ANTICIPATED_START_TIME = "calculate_anticipated_start_time"
 SERVICE_SCHEDULER_RUN_ACTION = "run_action"
@@ -102,3 +115,19 @@ SCHEDULER_ATTR_NEXT_ACTION = "next_action"
 # Storage
 STORAGE_KEY = "intelligent_heating_pilot_storage"
 STORAGE_VERSION = 1
+
+# Wake-up sources (#66): entities holding a point in time that IHP anticipates like a slot.
+# Stored as a list of objects in the entry options, per IHP; absent means none.
+CONF_WAKE_UP_SOURCES = "wake_up_sources"
+CONF_WAKE_UP_ENTITY = "entity_id"
+CONF_WAKE_UP_FROM_SCHEDULE = "target_from_schedule"
+CONF_WAKE_UP_PRESET = "target_preset"
+CONF_WAKE_UP_TEMPERATURE = "target_temperature"
+CONF_WAKE_UP_HORIZON_HOURS = "horizon_hours"
+CONF_WAKE_UP_HOLD_MINUTES = "hold_minutes"
+DEFAULT_WAKE_UP_HORIZON_HOURS = 24
+MIN_WAKE_UP_HORIZON_HOURS = 1
+MAX_WAKE_UP_HORIZON_HOURS = 72
+MAX_WAKE_UP_HOLD_MINUTES = 720
+# Form-only flag of the options form: opens the wake-up sources menu. Never stored.
+CONF_MANAGE_WAKE_UP_SOURCES = "manage_wake_up_sources"

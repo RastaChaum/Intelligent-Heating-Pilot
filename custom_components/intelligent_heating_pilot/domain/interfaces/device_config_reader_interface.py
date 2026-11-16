@@ -5,6 +5,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from ..value_objects.wake_up_source_config import WakeUpSourceConfig
+
 
 @dataclass(frozen=True)
 class DeviceConfig:
@@ -42,6 +44,12 @@ class DeviceConfig:
         anticipation_recalc_tolerance_minutes: Absolute time delta threshold (minutes) used
                              to decide whether an active preheating should be
                              canceled and rescheduled.
+        native_schedule_drive: If True, IHP applies the next block of a native schedule to the
+                             climate itself; if False, native schedules are computed only.
+        native_schedule_preset_key: Block data key that holds a preset name.
+        native_schedule_temperature_key: Block data key that holds a target temperature.
+        native_schedule_fallback_preset: Preset used when a block has neither key.
+        wake_up_sources: Entities holding a point in time that IHP anticipates like a slot.
         safety_shutoff_grace_minutes: Duration in minutes of the grace period for brief heating
                                       interruptions (safety/frost mode). Interruptions shorter than
                                       this threshold do not terminate an in-progress cycle, avoiding
@@ -75,6 +83,15 @@ class DeviceConfig:
     task_range_days: int = 7
     anticipation_recalc_tolerance_minutes: int = 15
     safety_shutoff_grace_minutes: int = 10
+
+    # Native schedule (schedule.*) handling
+    native_schedule_drive: bool = False
+    native_schedule_preset_key: str = "preset"
+    native_schedule_temperature_key: str = "temperature"
+    native_schedule_fallback_preset: str = "comfort"
+
+    # Wake-up sources (#66): entities holding a point in time to anticipate
+    wake_up_sources: tuple[WakeUpSourceConfig, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate configuration values after initialization.
@@ -120,6 +137,14 @@ class DeviceConfig:
 
         if self.safety_shutoff_grace_minutes < 0:
             raise ValueError("safety_shutoff_grace_minutes must be at least 0")
+
+        for field in (
+            "native_schedule_preset_key",
+            "native_schedule_temperature_key",
+            "native_schedule_fallback_preset",
+        ):
+            if not getattr(self, field).strip():
+                raise ValueError(f"{field} must not be blank")
 
 
 class IDeviceConfigReader(ABC):

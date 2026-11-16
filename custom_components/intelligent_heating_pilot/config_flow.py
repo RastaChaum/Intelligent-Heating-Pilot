@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import voluptuous as vol
@@ -11,6 +12,7 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers import selector
 
+from .config_flow_wake_up import WakeUpSourcesFlowMixin
 from .const import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
@@ -20,9 +22,14 @@ from .const import (
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
+    CONF_MANAGE_WAKE_UP_SOURCES,
     CONF_MAX_CYCLE_DURATION_MINUTES,
     CONF_MIN_CYCLE_DURATION_MINUTES,
     CONF_NAME,
+    CONF_NATIVE_SCHEDULE_DRIVE,
+    CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
+    CONF_NATIVE_SCHEDULE_PRESET_KEY,
+    CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
     CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
     CONF_SCHEDULER_ENTITIES,
     CONF_TASK_RANGE_DAYS,
@@ -37,6 +44,10 @@ from .const import (
     DEFAULT_MAX_CYCLE_DURATION_MINUTES,
     DEFAULT_MIN_CYCLE_DURATION_MINUTES,
     DEFAULT_NAME,
+    DEFAULT_NATIVE_SCHEDULE_DRIVE,
+    DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET,
+    DEFAULT_NATIVE_SCHEDULE_PRESET_KEY,
+    DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY,
     DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES,
     DEFAULT_TASK_RANGE_DAYS,
     DEFAULT_TEMP_DELTA_THRESHOLD,
@@ -94,6 +105,39 @@ def _is_scheduler(state: State) -> bool:
         or state.attributes.get("next_trigger")
         or state.attributes.get("next_event")
     )
+
+
+def _native_schedule_fields(default_of: Callable[[str, Any], Any]) -> dict[Any, Any]:
+    """Build the native schedule fields shared by the setup and options forms.
+
+    Args:
+        default_of: Gives the default of a field from its key and its built-in default.
+
+    Returns:
+        The schema entries, in display order.
+    """
+    return {
+        vol.Optional(
+            CONF_NATIVE_SCHEDULE_DRIVE,
+            default=default_of(CONF_NATIVE_SCHEDULE_DRIVE, DEFAULT_NATIVE_SCHEDULE_DRIVE),
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_NATIVE_SCHEDULE_PRESET_KEY,
+            default=default_of(CONF_NATIVE_SCHEDULE_PRESET_KEY, DEFAULT_NATIVE_SCHEDULE_PRESET_KEY),
+        ): selector.TextSelector(),
+        vol.Optional(
+            CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
+            default=default_of(
+                CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY, DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY
+            ),
+        ): selector.TextSelector(),
+        vol.Optional(
+            CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
+            default=default_of(
+                CONF_NATIVE_SCHEDULE_FALLBACK_PRESET, DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET
+            ),
+        ): selector.TextSelector(),
+    }
 
 
 def _scheduler_selector(hass: HomeAssistant, configured: list[str]) -> Any:
@@ -314,6 +358,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
+                **_native_schedule_fields(lambda _key, default: default),
             }
         )
 
@@ -324,8 +369,21 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         )
 
 
-class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
+class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.OptionsFlow):
     """Handle options flow for Intelligent Heating Pilot."""
+
+    def __init__(self) -> None:
+        """Initialize the flow state used while the wake-up sources are managed."""
+        self._pending: dict[str, Any] = {}
+        self._sources: list[dict[str, Any]] = []
+        self._editing: str | None = None
+
+    def _finish(self, options: dict[str, Any]) -> ConfigFlowResult:
+        """Save the options, keying the entry on its new VTherm when it changed."""
+        vtherm = options.get(CONF_VTHERM_ENTITY)
+        if vtherm and vtherm != _configured_vtherm(self.config_entry):
+            self._follow_vtherm(vtherm, options)
+        return self.async_create_entry(title="", data=options)
 
     def _follow_vtherm(self, vtherm: str, options: dict[str, Any]) -> None:
         """Key the entry on its new VTherm, so no two entries ever share a unique_id.
@@ -346,6 +404,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             # Start with user input
             normalized_input = {**user_input}
+            manage_wake_up_sources = bool(normalized_input.pop(CONF_MANAGE_WAKE_UP_SOURCES, False))
             # Schedulers already a list from SelectSelector (multiple=True)
             # Just ensure it's always a list
             normalized_input[CONF_SCHEDULER_ENTITIES] = _as_list(
@@ -386,9 +445,10 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 # For optional fields that were cleared: explicitly set to None to override data
                 for field in fields_to_delete:
                     merged_options[field] = None
-                if vtherm and vtherm != _configured_vtherm(self.config_entry):
-                    self._follow_vtherm(vtherm, merged_options)
-                return self.async_create_entry(title="", data=merged_options)
+                if manage_wake_up_sources:
+                    self._begin_wake_up_management(merged_options)
+                    return await self.async_step_wake_up_menu()
+                return self._finish(merged_options)
 
         # Prepare data sources for defaults
         current_options = getattr(self.config_entry, "options", {})
@@ -618,6 +678,11 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 unit_of_measurement="minutes",
                 mode=selector.NumberSelectorMode.BOX,
             )
+        )
+
+        schema_dict.update(_native_schedule_fields(_opt_or_data))
+        schema_dict[vol.Optional(CONF_MANAGE_WAKE_UP_SOURCES, default=False)] = (
+            selector.BooleanSelector()
         )
 
         data_schema = vol.Schema(schema_dict)

@@ -20,6 +20,10 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
     ScheduleAnticipationActionUseCase,
     UpdateCacheDataUseCase,
 )
+from custom_components.intelligent_heating_pilot.domain.value_objects import (
+    CancelReason,
+    RecoveryOutcome,
+)
 
 
 class TestHeatingOrchestrator:
@@ -50,6 +54,7 @@ class TestHeatingOrchestrator:
         uc = Mock(spec=ControlPreheatingUseCase)
         uc.start_preheating = AsyncMock()
         uc.cancel_preheating = AsyncMock()
+        uc.recover_preheating = AsyncMock()
         uc.is_preheating_active = Mock(return_value=False)
         return uc
 
@@ -134,7 +139,9 @@ class TestHeatingOrchestrator:
         await orchestrator.disable_preheating(scheduler_entity_id="schedule.heating")
 
         mock_schedule_anticipation_action.cancel_action.assert_called_once()
-        mock_control_preheating.cancel_preheating.assert_called_once_with("schedule.heating")
+        mock_control_preheating.cancel_preheating.assert_called_once_with(
+            "schedule.heating", CancelReason.IHP_DISABLED
+        )
 
     @pytest.mark.asyncio
     async def test_cancel_pending_anticipation_cancels_timer_only(
@@ -169,7 +176,9 @@ class TestHeatingOrchestrator:
 
         mock_schedule_anticipation_action.cancel_action.assert_called_once()
         # With callee-side validation, cancel_preheating is always called
-        mock_control_preheating.cancel_preheating.assert_called_once_with("schedule.heating")
+        mock_control_preheating.cancel_preheating.assert_called_once_with(
+            "schedule.heating", CancelReason.IHP_DISABLED
+        )
 
     @pytest.mark.asyncio
     async def test_reset_all_learning_data_delegates(
@@ -217,6 +226,7 @@ class TestHeatingOrchestratorSchedulerFallback:
         mock_schedule_anticipation_action: Mock,
     ) -> HeatingOrchestrator:
         control_preheating = Mock(spec=ControlPreheatingUseCase)
+        control_preheating.recover_preheating = AsyncMock()
         update_cache = Mock(spec=UpdateCacheDataUseCase)
         return HeatingOrchestrator(
             calculate_anticipation=mock_calculate_anticipation,
@@ -353,3 +363,61 @@ class TestHeatingOrchestratorSchedulerFallback:
         mock_calculate_anticipation.calculate_anticipation_datas.assert_called_once_with(
             exclude_entity_ids=frozenset({"switch.non_vacation"})
         )
+
+
+class TestPreheatRecovery:
+    """A persisted preheat is picked up at the first recalculation, until a scheduler answers."""
+
+    @staticmethod
+    def _orchestrator(outcomes: list[RecoveryOutcome]):
+        calculate = Mock(spec=CalculateAnticipationUseCase)
+        calculate.calculate_anticipation_datas = AsyncMock(
+            return_value={"next_schedule_time": None, "timeslot_id": None}
+        )
+        control = Mock(spec=ControlPreheatingUseCase)
+        control.recover_preheating = AsyncMock(side_effect=outcomes)
+        action = Mock(spec=ScheduleAnticipationActionUseCase)
+        action.handle_anticipation_scheduling = AsyncMock(return_value=None)
+        action.next_timeslot_of = AsyncMock()
+        orchestrator = HeatingOrchestrator(
+            calculate_anticipation=calculate,
+            control_preheating=control,
+            schedule_anticipation_action=action,
+            update_cache=Mock(spec=UpdateCacheDataUseCase),
+        )
+        return orchestrator, control, action
+
+    @pytest.mark.asyncio
+    async def test_the_recovery_gets_the_scheduler_lookup_and_runs_once_when_settled(self) -> None:
+        orchestrator, control, action = self._orchestrator(
+            [RecoveryOutcome.RESUMED, RecoveryOutcome.RESUMED]
+        )
+
+        await orchestrator.calculate_and_schedule_anticipation()
+        await orchestrator.calculate_and_schedule_anticipation()
+
+        control.recover_preheating.assert_awaited_once_with(action.next_timeslot_of)
+
+    @pytest.mark.asyncio
+    async def test_a_deferred_recovery_is_asked_again_at_the_next_cycle(self) -> None:
+        orchestrator, control, _ = self._orchestrator(
+            [RecoveryOutcome.DEFERRED, RecoveryOutcome.DEFERRED, RecoveryOutcome.RELEASED]
+        )
+
+        for _ in range(4):
+            await orchestrator.calculate_and_schedule_anticipation()
+
+        assert control.recover_preheating.await_count == 3  # settled at the third, not asked again
+
+    @pytest.mark.asyncio
+    async def test_the_recovery_runs_before_anything_is_scheduled(self) -> None:
+        orchestrator, control, action = self._orchestrator([RecoveryOutcome.NOTHING])
+        order: list[str] = []
+        control.recover_preheating.side_effect = lambda *_: (
+            order.append("recover") or RecoveryOutcome.NOTHING
+        )
+        action.handle_anticipation_scheduling.side_effect = lambda *_: order.append("schedule")
+
+        await orchestrator.calculate_and_schedule_anticipation()
+
+        assert order == ["recover", "schedule"]
