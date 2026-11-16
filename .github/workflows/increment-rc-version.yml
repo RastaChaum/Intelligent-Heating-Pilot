@@ -12,9 +12,7 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-  issues: write
+permissions: {}
 
 jobs:
   e2e:
@@ -28,6 +26,9 @@ jobs:
   increment-rc:
     needs: e2e
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
     steps:
       - name: Checkout integration branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1  # zizmor: ignore[artipacked] pushes the RC tag
