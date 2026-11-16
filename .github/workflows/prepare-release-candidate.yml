@@ -15,7 +15,7 @@ jobs:
     name: End-to-end on the integration branch
     permissions:
       contents: read
-    uses: ./.github/workflows/e2e-release-candidate.yml
+    uses: ./.github/workflows/e2e-release-candidate.yml  # zizmor: ignore[self-repository] same repository, same commit
     with:
       ref: integration
 

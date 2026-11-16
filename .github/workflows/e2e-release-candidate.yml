@@ -20,11 +20,6 @@ on:
         default: ''
   workflow_dispatch:
     inputs:
-      ref:
-        description: 'Git ref to test'
-        required: false
-        type: string
-        default: integration
       ha_image:
         description: 'Home Assistant image to test against (default: the pinned one)'
         required: false
@@ -43,6 +38,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A manual run tests the branch it is started from; only the release workflows pick a ref.
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
