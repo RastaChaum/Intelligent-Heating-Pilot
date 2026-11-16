@@ -19,7 +19,7 @@ This document describes the GitHub Actions workflows used to prepare, increment,
 
 ### e2e-release-candidate.yml
 
-- Trigger: called by `prepare-release-candidate.yml` and `increment-rc-version.yml`; also manual workflow dispatch, which tests the branch it is started from, with an optional Home Assistant `ha_image` to try another Home Assistant version
+- Trigger: called by `prepare-release-candidate.yml` and `increment-rc-version.yml`; also manual workflow dispatch, which always tests the `integration` branch, with an optional Home Assistant `ha_image` to try another Home Assistant version
 - Purpose: check a release candidate in a real Home Assistant before it is published, without touching a production instance
 - Main actions: start the official Home Assistant image with IHP, Versatile Thermostat, HACS Scheduler and Climate Scheduler, then check that every integration loads, that IHP puts each of three rooms (native schedule, HACS Scheduler, Climate Scheduler) in the slot's preset before the slot starts, that the log holds no unexpected error, and that everything loads again after a restart
 - Duration: about 15 minutes, in real time; the Home Assistant log is kept as the `home-assistant-e2e-log` artifact
