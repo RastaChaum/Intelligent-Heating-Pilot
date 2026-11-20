@@ -302,3 +302,45 @@ async def test_get_current_environment_reads_smoothed_room_temperature(
 
     assert result is not None
     assert result.indoor_temperature == pytest.approx(19.0)
+
+
+_READER_MODULE = (
+    "custom_components.intelligent_heating_pilot.infrastructure.adapters.environment_reader"
+)
+
+
+def _make_reader(mock_hass: Mock) -> HAEnvironmentReader:
+    with patch(f"{_READER_MODULE}.get_entity_name", return_value="Living Room"):
+        return HAEnvironmentReader(mock_hass, "climate.vtherm")
+
+
+@pytest.mark.asyncio
+async def test_missing_temperature_before_first_reading_logs_at_debug(
+    mock_hass: Mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A thermostat without its first temperature after a restart must not warn (#300)."""
+    mock_hass.states.get.return_value = _make_state(attributes={})
+    reader = _make_reader(mock_hass)
+
+    with caplog.at_level("DEBUG", logger=_READER_MODULE):
+        assert await reader.get_current_environment() is None
+
+    records = [r for r in caplog.records if "No room temperature" in r.getMessage()]
+    assert [r.levelname for r in records] == ["DEBUG"]
+
+
+@pytest.mark.asyncio
+async def test_missing_temperature_after_a_valid_reading_warns(
+    mock_hass: Mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Once a temperature was seen, losing it is unexpected and warns again (#300)."""
+    reader = _make_reader(mock_hass)
+    mock_hass.states.get.return_value = _make_state(attributes={"current_temperature": 19.5})
+    assert await reader.get_current_environment() is not None
+
+    mock_hass.states.get.return_value = _make_state(attributes={})
+    with caplog.at_level("DEBUG", logger=_READER_MODULE):
+        assert await reader.get_current_environment() is None
+
+    records = [r for r in caplog.records if "No room temperature" in r.getMessage()]
+    assert [r.levelname for r in records] == ["WARNING"]

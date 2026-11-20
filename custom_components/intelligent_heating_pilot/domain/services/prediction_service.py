@@ -70,9 +70,11 @@ class PredictionService:
         Returns:
             Prediction result with start time and confidence
         """
-        # Handle missing current temperature
+        # Handle missing current temperature. DEBUG only: the environment reader
+        # already warns when a temperature disappears after having been seen, and a
+        # thermostat still starting up is a normal transient state (#300).
         if current_temp is None:
-            _LOGGER.warning("Cannot calculate prediction: current_temp is None")
+            _LOGGER.debug("Cannot calculate prediction: current_temp is None")
             return PredictionResult(
                 anticipated_start_time=target_time,
                 estimated_duration_minutes=0.0,
