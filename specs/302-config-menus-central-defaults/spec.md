@@ -33,6 +33,7 @@ central default configuration second (User Stories 2 and 3).
 - Q: What does device creation store for shareable values? → A: Only device-specific fields; every shareable value is inherited, with no override.
 - Q: Where does the user edit the central configuration? → A: A dedicated visible entry whose configure button opens the theme menus, without device-specific fields.
 - Q: Can the central configuration be deleted while devices exist? → A: No, deletion is refused until no device remains.
+- Q: When do devices pick up a changed central value? → A: Once, when the user leaves the central menus, and only devices whose inherited value changed.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -203,7 +204,9 @@ changes while the device form is open.
 - **FR-008**: Device-specific values (thermostat, schedulers, wake-up sources) MUST NOT be
   inheritable.
 - **FR-009**: A central value change MUST reach every device that inherits it without the user
-  editing those devices, and MUST NOT affect devices that override it.
+  editing those devices, and MUST NOT affect devices that override it. Devices MUST pick up
+  changes once, when the user leaves the central menus, and only devices whose inherited
+  value actually changed MUST be reloaded.
 - **FR-010**: A device theme form MUST show, per shareable value, whether it is inherited or
   overridden, and the central value an inherited one resolves to.
 - **FR-011**: The user MUST be able to reset any overridden value to "inherit".
@@ -289,8 +292,8 @@ changes while the device form is open.
 
 - The central configuration is a single installation-wide set of values, not several named
   profiles.
-- Reloading the devices that inherit a changed central value is acceptable, as it is for a
-  device option change today.
+- Reloading a device that inherits a changed central value is acceptable, as it is for a
+  device option change today; devices whose values did not change are not reloaded.
 - Wake-up sources, thermostat and schedulers stay per device in all cases.
 - The device creation screen asks only for device-specific values; shareable values are set
   afterwards in the theme menus (overrides) or in the central configuration.
