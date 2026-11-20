@@ -173,7 +173,7 @@ class TestForms:
             new_callable=PropertyMock,
             return_value=entry,
         ):
-            defaults = _schema_defaults(await flow.async_step_init())
+            defaults = _schema_defaults(await flow.async_step_native_schedule())
 
         assert defaults[CONF_NATIVE_SCHEDULE_DRIVE] is True
         assert defaults[CONF_NATIVE_SCHEDULE_PRESET_KEY] == "mode"
@@ -191,7 +191,7 @@ class TestForms:
             new_callable=PropertyMock,
             return_value=_entry(),
         ):
-            defaults = _schema_defaults(await flow.async_step_init())
+            defaults = _schema_defaults(await flow.async_step_native_schedule())
 
         for key in NATIVE_KEYS:
             assert defaults[key] == DEFAULTS[key]

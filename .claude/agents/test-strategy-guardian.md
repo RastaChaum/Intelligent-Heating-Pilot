@@ -137,8 +137,10 @@ When auditing, always output:
 def test_calculate_preheat_nominal():  # Already covered in .feature file!
     ...
 
+
 # BAD: Domain test importing HA
 from homeassistant.core import HomeAssistant  # NEVER in domain tests
+
 
 # BAD: Business logic in test fixture
 @pytest.fixture
@@ -146,9 +148,11 @@ def environment():
     if temperature > 20:  # Logic belongs in domain, not fixture
         return warm_env
 
+
 # BAD: Test depending on execution order
 def test_b(shared_state):  # shared_state mutated by test_a
     ...
+
 
 # BAD: Slow test with real I/O in unit layer
 def test_domain_service():

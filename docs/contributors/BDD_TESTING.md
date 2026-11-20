@@ -85,11 +85,12 @@ from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
 # Load all *.feature files from this directory
-scenarios('.')
+scenarios(".")
 
 # ============================================
 # FIXTURES (Reusable test data)
 # ============================================
+
 
 @pytest.fixture
 def mock_hass():
@@ -98,23 +99,30 @@ def mock_hass():
     hass.data = {}
     return hass
 
+
 @pytest.fixture
 def cache_service():
     """Service under test."""
-    from custom_components.intelligent_heating_pilot.domain.services.cache_service import CacheService
+    from custom_components.intelligent_heating_pilot.domain.services.cache_service import (
+        CacheService,
+    )
+
     return CacheService()
+
 
 # ============================================
 # GIVEN: Initial state
 # ============================================
 
+
 @given("a heating cycle is running")
 def heating_cycle_running(mock_hass):
     """Set up a heating cycle in progress."""
-    mock_hass.data['heating_active'] = True
-    mock_hass.data['start_temp'] = 20.0
-    mock_hass.data['current_temp'] = 20.0
+    mock_hass.data["heating_active"] = True
+    mock_hass.data["start_temp"] = 20.0
+    mock_hass.data["current_temp"] = 20.0
     return mock_hass
+
 
 @given("LHS model is trained to 1.2°C/min")
 def lhs_trained(cache_service):
@@ -122,39 +130,47 @@ def lhs_trained(cache_service):
     cache_service.learned_slope = 1.2
     return cache_service
 
+
 @given("cache contains slope 1.5°C/min")
 def cache_has_slope(cache_service):
     """Initialize cache with slope."""
     cache_service.save_slope(1.5)
 
+
 # ============================================
 # WHEN: Actions
 # ============================================
 
+
 @when("heating cycle completes")
 def complete_heating_cycle(mock_hass):
     """Simulate cycle completion."""
-    mock_hass.data['heating_active'] = False
-    mock_hass.data['end_temp'] = 22.4  # 1.2°C per minute × 2 minutes
+    mock_hass.data["heating_active"] = False
+    mock_hass.data["end_temp"] = 22.4  # 1.2°C per minute × 2 minutes
+
 
 @when("vTherm is restarted")
 def restart_vtherm(mock_hass, cache_service):
     """Simulate vTherm restart."""
     cache_service.reload()
 
+
 # ============================================
 # THEN: Assertions
 # ============================================
+
 
 @then("cache stores slope 1.2°C/min")
 def check_cache_slope(cache_service):
     """Verify slope was cached."""
     assert cache_service.get_slope() == pytest.approx(1.2)
 
+
 @then("next heating uses cached slope")
 def next_uses_cache(cache_service):
     """Verify cache is consulted for next cycle."""
     assert cache_service.was_used_in_last_calculation
+
 
 @then("cache slope is 1.5°C/min")
 def verify_cache_persisted(cache_service):
@@ -273,6 +289,7 @@ Python:
 def set_slope(cache_service, slope):
     cache_service.save_slope(slope)
 
+
 @then(parsers.parse("slope should be {slope:f}"))
 def check_slope(cache_service, slope):
     assert cache_service.get_slope() == pytest.approx(slope)
@@ -291,7 +308,9 @@ poetry run pytest tests/features/ -s
 ```python
 @then("cache stores slope")
 def check_cache(cache_service):
-    import pdb; pdb.set_trace()  # Breakpoint
+    import pdb
+
+    pdb.set_trace()  # Breakpoint
     assert cache_service.get_slope() is not None
 ```
 
@@ -356,6 +375,7 @@ poetry run pytest tests/features/ -vv --tb=short
 import pytest
 from unittest.mock import Mock, AsyncMock
 
+
 @pytest.fixture
 def mock_hass():
     """Reusable mock Home Assistant."""
@@ -365,16 +385,15 @@ def mock_hass():
     hass.data = {}
     return hass
 
+
 @pytest.fixture
 def environment_state():
     """Standard test environment."""
     from custom_components.intelligent_heating_pilot.domain.value_objects import EnvironmentState
     from datetime import datetime
+
     return EnvironmentState(
-        current_temp=20.0,
-        outdoor_temp=5.0,
-        humidity=45.0,
-        timestamp=datetime.now()
+        current_temp=20.0, outdoor_temp=5.0, humidity=45.0, timestamp=datetime.now()
     )
 ```
 

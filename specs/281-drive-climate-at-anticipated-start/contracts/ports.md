@@ -55,6 +55,7 @@ class IClimateDataReader(ABC):
     def read_climate_snapshot(self) -> ClimateSnapshot | None:
         """Requested state now; None when the climate is unavailable."""
 
+
 class ISchedulerReader(ABC):
     @abstractmethod
     async def get_next_timeslot_of(self, scheduler_entity_id: str) -> ScheduledTimeslot | None: ...

@@ -10,7 +10,6 @@ from custom_components.intelligent_heating_pilot.config_flow import (
     IntelligentHeatingPilotOptionsFlow,
 )
 from custom_components.intelligent_heating_pilot.const import (
-    CONF_MANAGE_WAKE_UP_SOURCES,
     CONF_SCHEDULER_ENTITIES,
     CONF_VTHERM_ENTITY,
     CONF_WAKE_UP_SOURCES,
@@ -38,6 +37,7 @@ def flow():
     hass.states.get.return_value = None
     hass.states.async_all.return_value = []
     hass.config_entries.async_entries.return_value = []
+    hass.data = {}
     entry = _entry()
     instance = IntelligentHeatingPilotOptionsFlow()
     instance.hass = hass
@@ -54,32 +54,37 @@ def flow():
         yield instance
 
 
-def _main_form(**extra) -> dict:
-    return {CONF_VTHERM_ENTITY: VTHERM, **extra}
+def _stored(flow) -> dict:
+    """The options the flow last wrote to the entry."""
+    return flow.hass.config_entries.async_update_entry.call_args.kwargs["options"]
+
+
+def _with_scheduler(flow) -> None:
+    flow.entry.options = {CONF_SCHEDULER_ENTITIES: ["switch.plan"]}
 
 
 @pytest.mark.asyncio
-async def test_without_the_flag_the_options_are_saved_as_before(flow) -> None:
-    result = await flow.async_step_init(_main_form())
-
-    assert result["type"] == "create_entry"
-    assert CONF_MANAGE_WAKE_UP_SOURCES not in result["data"]
-    assert CONF_WAKE_UP_SOURCES not in result["data"]
-
-
-@pytest.mark.asyncio
-async def test_the_flag_opens_the_menu_and_is_never_stored(flow) -> None:
-    result = await flow.async_step_init(_main_form(manage_wake_up_sources=True))
+async def test_the_wake_up_theme_opens_the_sources_menu(flow) -> None:
+    result = await flow.async_step_wake_up_sources()
 
     assert result["type"] == "menu" and result["step_id"] == "wake_up_menu"
     assert result["menu_options"] == ["wake_up_add", "wake_up_done"]
-    done = await flow.async_step_wake_up_done()
-    assert CONF_MANAGE_WAKE_UP_SOURCES not in done["data"]
+
+
+@pytest.mark.asyncio
+async def test_done_stores_the_sources_and_returns_to_the_main_menu(flow) -> None:
+    await flow.async_step_wake_up_sources()
+
+    result = await flow.async_step_wake_up_done()
+
+    assert result["type"] == "menu" and result["step_id"] == "init"
+    assert CONF_WAKE_UP_SOURCES in _stored(flow)
+    flow.async_create_entry.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_a_source_is_added_and_saved_with_the_options(flow) -> None:
-    await flow.async_step_init(_main_form(manage_wake_up_sources=True))
+    await flow.async_step_wake_up_sources()
     form = await flow.async_step_wake_up_add()
     assert form["step_id"] == "wake_up_form"
 
@@ -87,27 +92,27 @@ async def test_a_source_is_added_and_saved_with_the_options(flow) -> None:
     assert menu["step_id"] == "wake_up_menu"
     assert "wake_up_edit" in menu["menu_options"] and "wake_up_remove" in menu["menu_options"]
 
-    done = await flow.async_step_wake_up_done()
-    (stored,) = done["data"][CONF_WAKE_UP_SOURCES]
+    await flow.async_step_wake_up_done()
+    (stored,) = _stored(flow)[CONF_WAKE_UP_SOURCES]
     assert stored["entity_id"] == ALARM and stored["target_preset"] == "comfort"
 
 
 @pytest.mark.asyncio
 async def test_empty_optional_fields_are_not_stored(flow) -> None:
-    await flow.async_step_init(_main_form(manage_wake_up_sources=True))
+    await flow.async_step_wake_up_sources()
     await flow.async_step_wake_up_form(
         {"entity_id": ALARM, "target_preset": "", "target_temperature": 21, "hold_minutes": 0}
     )
-    done = await flow.async_step_wake_up_done()
+    await flow.async_step_wake_up_done()
 
-    (stored,) = done["data"][CONF_WAKE_UP_SOURCES]
+    (stored,) = _stored(flow)[CONF_WAKE_UP_SOURCES]
     assert "target_preset" not in stored
     assert stored["target_temperature"] == 21
 
 
 @pytest.mark.asyncio
 async def test_a_source_without_any_target_is_refused(flow) -> None:
-    await flow.async_step_init(_main_form(manage_wake_up_sources=True))
+    await flow.async_step_wake_up_sources()
 
     result = await flow.async_step_wake_up_form({"entity_id": ALARM})
 
@@ -117,7 +122,7 @@ async def test_a_source_without_any_target_is_refused(flow) -> None:
 
 @pytest.mark.asyncio
 async def test_from_schedule_without_a_scheduler_needs_a_fixed_target(flow) -> None:
-    await flow.async_step_init(_main_form(manage_wake_up_sources=True))
+    await flow.async_step_wake_up_sources()
 
     result = await flow.async_step_wake_up_form({"entity_id": ALARM, "target_from_schedule": True})
 
@@ -126,9 +131,8 @@ async def test_from_schedule_without_a_scheduler_needs_a_fixed_target(flow) -> N
 
 @pytest.mark.asyncio
 async def test_from_schedule_with_a_scheduler_is_accepted(flow) -> None:
-    await flow.async_step_init(
-        _main_form(manage_wake_up_sources=True, scheduler_entities=["switch.plan"])
-    )
+    _with_scheduler(flow)
+    await flow.async_step_wake_up_sources()
 
     result = await flow.async_step_wake_up_form({"entity_id": ALARM, "target_from_schedule": True})
 
@@ -137,11 +141,10 @@ async def test_from_schedule_with_a_scheduler_is_accepted(flow) -> None:
 
 @pytest.mark.asyncio
 async def test_the_from_schedule_field_is_only_offered_with_a_scheduler(flow) -> None:
-    await flow.async_step_init(_main_form(manage_wake_up_sources=True))
+    await flow.async_step_wake_up_sources()
     without = await flow.async_step_wake_up_add()
-    await flow.async_step_init(
-        _main_form(manage_wake_up_sources=True, scheduler_entities=["switch.plan"])
-    )
+    _with_scheduler(flow)
+    await flow.async_step_wake_up_sources()
     with_scheduler = await flow.async_step_wake_up_add()
 
     assert "target_from_schedule" not in {str(k) for k in without["data_schema"].schema}
@@ -150,7 +153,7 @@ async def test_the_from_schedule_field_is_only_offered_with_a_scheduler(flow) ->
 
 @pytest.mark.asyncio
 async def test_an_entity_can_only_be_a_source_once(flow) -> None:
-    await flow.async_step_init(_main_form(manage_wake_up_sources=True))
+    await flow.async_step_wake_up_sources()
     await flow.async_step_wake_up_form({"entity_id": ALARM, "target_preset": "comfort"})
 
     result = await flow.async_step_wake_up_form({"entity_id": ALARM, "target_preset": "eco"})
@@ -160,7 +163,7 @@ async def test_an_entity_can_only_be_a_source_once(flow) -> None:
 
 @pytest.mark.asyncio
 async def test_a_source_is_edited_in_place(flow) -> None:
-    await flow.async_step_init(_main_form(manage_wake_up_sources=True))
+    await flow.async_step_wake_up_sources()
     await flow.async_step_wake_up_form({"entity_id": ALARM, "target_preset": "comfort"})
     await flow.async_step_wake_up_form({"entity_id": ARRIVAL, "target_temperature": 20})
 
@@ -170,23 +173,23 @@ async def test_a_source_is_edited_in_place(flow) -> None:
     assert form["step_id"] == "wake_up_form"
     await flow.async_step_wake_up_form({"entity_id": ALARM, "target_preset": "boost"})
 
-    done = await flow.async_step_wake_up_done()
-    by_entity = {s["entity_id"]: s for s in done["data"][CONF_WAKE_UP_SOURCES]}
+    await flow.async_step_wake_up_done()
+    by_entity = {s["entity_id"]: s for s in _stored(flow)[CONF_WAKE_UP_SOURCES]}
     assert by_entity[ALARM]["target_preset"] == "boost"
     assert ARRIVAL in by_entity and len(by_entity) == 2
 
 
 @pytest.mark.asyncio
 async def test_sources_are_removed(flow) -> None:
-    await flow.async_step_init(_main_form(manage_wake_up_sources=True))
+    await flow.async_step_wake_up_sources()
     await flow.async_step_wake_up_form({"entity_id": ALARM, "target_preset": "comfort"})
     await flow.async_step_wake_up_form({"entity_id": ARRIVAL, "target_temperature": 20})
 
     menu = await flow.async_step_wake_up_remove({"entity_id": [ALARM]})
     assert menu["step_id"] == "wake_up_menu"
-    done = await flow.async_step_wake_up_done()
+    await flow.async_step_wake_up_done()
 
-    assert [s["entity_id"] for s in done["data"][CONF_WAKE_UP_SOURCES]] == [ARRIVAL]
+    assert [s["entity_id"] for s in _stored(flow)[CONF_WAKE_UP_SOURCES]] == [ARRIVAL]
 
 
 @pytest.mark.asyncio
@@ -200,6 +203,7 @@ async def test_existing_sources_are_loaded_when_the_menu_opens() -> None:
     hass.states.get.return_value = None
     hass.states.async_all.return_value = []
     hass.config_entries.async_entries.return_value = []
+    hass.data = {}
     instance = IntelligentHeatingPilotOptionsFlow()
     instance.hass = hass
     instance.async_show_menu = Mock(side_effect=lambda **kw: kw)
@@ -210,7 +214,7 @@ async def test_existing_sources_are_loaded_when_the_menu_opens() -> None:
         new_callable=PropertyMock,
         return_value=entry,
     ):
-        menu = await instance.async_step_init(_main_form(manage_wake_up_sources=True))
+        menu = await instance.async_step_wake_up_sources()
 
     assert "wake_up_edit" in menu["menu_options"]
     assert ALARM in menu["description_placeholders"]["sources"]

@@ -177,14 +177,17 @@ ci: ...       # CI/CD (GitHub Actions workflows and their configuration)
 # BAD: HA dependency in domain
 def calculate_preheat(self, hass: HomeAssistant): ...
 
+
 # GOOD: domain receives value objects
 def calculate_preheat(self, environment: EnvironmentState): ...
+
 
 # BAD: business logic in adapter
 class HASchedulerAdapter:
     async def get_next_event(self):
         if event.temp > 20:  # Business rule! Wrong layer
             return None
+
 
 # GOOD: adapter just translates
 class HASchedulerAdapter:

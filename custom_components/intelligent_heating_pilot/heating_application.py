@@ -158,7 +158,11 @@ class HeatingApplication:
 
         # Config entry for options updates (set later via setup_config_entry_access)
         self._config_entry: ConfigEntry | None = None
+        # What the device was loaded with (data and options, minus the live toggle): the options
+        # menu compares it with the stored entry to know what "Apply" would change (#302).
         self._options_snapshot: dict[str, Any] | None = None
+        # The IHP enabled flag the update listener last handled.
+        self.ihp_enabled_applied: bool = device_config.ihp_enabled
 
     def _native_schedule_settings(self) -> NativeScheduleSettings:
         """Build how native schedule blocks are read and used, from the device configuration."""

@@ -114,8 +114,8 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 1. Settings → Devices & Services
 2. Find your Intelligent Heating Pilot
 3. Click "Configure" on the device
-4. Update entities or settings, click Submit
-5. The device reloads automatically
+4. Open a group of settings, update it and submit (it is saved at once)
+5. Choose "Apply the saved changes" on the menu: the device reloads once with everything you saved
 
 ## Related Documentation
 
