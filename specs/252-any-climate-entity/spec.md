@@ -25,6 +25,10 @@ best-supported target: its capabilities (preset temperatures, specific states, a
   so the extraction fails for the period instead (an error per period). The behaviour to
   deliver is therefore a graceful, explained "no learning", not the removal of a state
   fallback (that fallback only serves non-climate sources and stays).
+- Finding: the manifest declared `versatile_thermostat` in `dependencies` (#280, whose spec
+  chose a hard dependency because "IHP only works with VTherm"). Home Assistant would refuse to
+  load IHP without it, so the goal is unreachable. It moves to `after_dependencies`: the setup
+  order of #280 is kept when VTherm is installed, and IHP loads without it.
 - Coordination: #302 (menus and central defaults) restructures the same options flow. The
   preset mapping is device-specific and never inherited; see the comment on #302.
 
@@ -88,6 +92,8 @@ Internal names no longer say "VTherm" where any climate is meant, and dead code 
 - **FR-010**: README, `README.fr.md` and `docs/` MUST present VTherm as recommended, not
   required, and list what a generic climate must expose.
 - **FR-011**: The domain layer MUST NOT import `homeassistant.*`.
+- **FR-012**: `versatile_thermostat` MUST be an `after_dependencies` entry of the manifest, not a
+  `dependencies` one.
 
 ## Out of Scope
 
