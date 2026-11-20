@@ -88,8 +88,6 @@ def test_the_menu_and_the_pick_steps_are_translated(path: Path) -> None:
     for step_id in ("wake_up_edit", "wake_up_remove"):
         assert set(steps[step_id]["data"]) == {"entity_id"}
         assert set(steps[step_id]["data_description"]) == {"entity_id"}
-    assert "manage_wake_up_sources" in steps["init"]["data"]
-    assert "manage_wake_up_sources" in steps["init"]["data_description"]
 
 
 @pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
@@ -130,3 +128,52 @@ def test_strings_json_mirrors_english() -> None:
 @pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
 def test_no_translation_text_is_empty(path: Path) -> None:
     assert _empty(_load(path)) == []
+
+
+THEME_FORM_STEPS = (
+    "thermostat_schedulers",
+    "native_schedule",
+    "environment",
+    "learning",
+    "cycle_detection",
+    "anticipation",
+)
+MENU_ENTRIES = {*THEME_FORM_STEPS, "wake_up_sources", "preset_temperatures", "apply"}
+
+
+@pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
+def test_the_options_menu_lists_every_theme_and_apply(path: Path) -> None:
+    init = _load(path)["options"]["step"]["init"]
+
+    assert set(init["menu_options"]) == MENU_ENTRIES
+    assert "{pending}" in init["description"]
+
+
+@pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
+@pytest.mark.parametrize("theme", THEME_FORM_STEPS)
+def test_every_setting_of_a_theme_has_a_label_and_a_help_text(path: Path, theme: str) -> None:
+    from custom_components.intelligent_heating_pilot.domain.services.settings_catalog import (
+        SettingsCatalog,
+    )
+    from custom_components.intelligent_heating_pilot.domain.value_objects.setting_definition import (
+        SettingTheme,
+    )
+
+    keys = {d.key for d in SettingsCatalog().of_theme(SettingTheme(theme))}
+    step = _load(path)["options"]["step"][theme]
+
+    assert set(step["data"]) == keys
+    assert set(step["data_description"]) == keys
+    assert step["title"].strip() and step["description"].strip()
+
+
+def test_every_setting_of_the_catalog_is_in_a_translated_theme() -> None:
+    from custom_components.intelligent_heating_pilot.domain.services.settings_catalog import (
+        SettingsCatalog,
+    )
+
+    in_forms = {d.key for d in SettingsCatalog().all() if d.theme.value in THEME_FORM_STEPS}
+    translated = set()
+    for theme in THEME_FORM_STEPS:
+        translated |= set(_load(FILES[0])["options"]["step"][theme]["data"])
+    assert in_forms == translated

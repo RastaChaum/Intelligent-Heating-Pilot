@@ -15,7 +15,6 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from custom_components.intelligent_heating_pilot.const import (
-    CONF_MANAGE_PRESET_TEMPERATURES,
     CONF_PRESET_TEMPERATURES,
 )
 from tests.integration.real_components.home import (
@@ -146,11 +145,11 @@ async def test_the_options_offer_the_presets_of_the_real_thermostat(
 ) -> None:
     entry = await generic_home.start_ihp([])
 
-    init = await hass.config_entries.options.async_init(entry.entry_id)
-    assert CONF_MANAGE_PRESET_TEMPERATURES in {str(key) for key in init["data_schema"].schema}
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    assert "preset_temperatures" in menu["menu_options"]
 
     mapping_form = await hass.config_entries.options.async_configure(
-        init["flow_id"], {"vtherm_entity_id": THERMOSTAT, CONF_MANAGE_PRESET_TEMPERATURES: True}
+        menu["flow_id"], {"next_step_id": "preset_temperatures"}
     )
     assert mapping_form["step_id"] == "preset_temperatures"
     assert {"away", "eco", "comfort"} <= {str(key) for key in mapping_form["data_schema"].schema}
@@ -159,5 +158,5 @@ async def test_the_options_offer_the_presets_of_the_real_thermostat(
     done = await hass.config_entries.options.async_configure(
         mapping_form["flow_id"], {"comfort": COMFORT_C}
     )
-    assert done["type"] == "create_entry"
+    assert done["type"] == "menu"
     assert entry.options[CONF_PRESET_TEMPERATURES] == {"comfort": COMFORT_C}

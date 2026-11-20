@@ -3,196 +3,27 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
-from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.helpers import selector
+from homeassistant.core import callback
 
 from .config_flow_presets import PresetTemperaturesFlowMixin, mappable_presets
+from .config_flow_selectors import as_list, build_theme_schema, form_definitions
+from .config_flow_themes import STEP_PRESET_TEMPERATURES, ThemeStepsMixin, vtherm_in_use
 from .config_flow_wake_up import WakeUpSourcesFlowMixin
 from .const import (
-    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
-    CONF_AUTO_LEARNING,
     CONF_CLIMATE_ENTITY,
-    CONF_CLOUD_COVER_ENTITY,
-    CONF_CYCLE_SPLIT_DURATION_MINUTES,
-    CONF_DEAD_TIME_MINUTES,
-    CONF_HUMIDITY_IN_ENTITY,
-    CONF_HUMIDITY_OUT_ENTITY,
-    CONF_LHS_RETENTION_DAYS,
-    CONF_MANAGE_PRESET_TEMPERATURES,
-    CONF_MANAGE_WAKE_UP_SOURCES,
-    CONF_MAX_CYCLE_DURATION_MINUTES,
-    CONF_MIN_CYCLE_DURATION_MINUTES,
     CONF_NAME,
-    CONF_NATIVE_SCHEDULE_DRIVE,
-    CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
-    CONF_NATIVE_SCHEDULE_PRESET_KEY,
-    CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
-    CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
+    CONF_PRESET_TEMPERATURES,
     CONF_SCHEDULER_ENTITIES,
-    CONF_TASK_RANGE_DAYS,
-    CONF_TEMP_DELTA_THRESHOLD,
-    CONF_TEMPERATURE_OUT_ENTITY,
-    DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
-    DEFAULT_AUTO_LEARNING,
-    DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
-    DEFAULT_DEAD_TIME_MINUTES,
-    DEFAULT_LHS_RETENTION_DAYS,
-    DEFAULT_MAX_CYCLE_DURATION_MINUTES,
-    DEFAULT_MIN_CYCLE_DURATION_MINUTES,
     DEFAULT_NAME,
-    DEFAULT_NATIVE_SCHEDULE_DRIVE,
-    DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET,
-    DEFAULT_NATIVE_SCHEDULE_PRESET_KEY,
-    DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY,
-    DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES,
-    DEFAULT_TASK_RANGE_DAYS,
-    DEFAULT_TEMP_DELTA_THRESHOLD,
     DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-CLIMATE_DOMAIN = "climate"
-SCHEDULER_DOMAINS = ("switch", "schedule")
-MISSING_SCHEDULER_LABEL = "{entity_id} (not found)"
-
-
-def _climate_selector() -> selector.EntitySelector:
-    """Offer every climate entity: Versatile Thermostat is recommended, never required (#252)."""
-    return selector.EntitySelector(selector.EntitySelectorConfig(domain=CLIMATE_DOMAIN))
-
-
-def _outdoor_source_selector(device_class: str | None = None) -> selector.EntitySelector:
-    """Build a selector accepting a sensor or a weather entity.
-
-    Weather entities expose temperature, humidity and cloud coverage as attributes,
-    so they are valid outdoor sources alongside dedicated sensors.
-
-    The filters are dict literals rather than a named selector config TypedDict:
-    the filter item type was renamed across Home Assistant releases, and literals
-    type-check against whichever one the installed release declares.
-    """
-    return selector.EntitySelector(
-        selector.EntitySelectorConfig(
-            filter=[
-                {"domain": "sensor", "device_class": device_class},
-                {"domain": "weather"},
-            ]
-            if device_class
-            else [{"domain": "sensor"}, {"domain": "weather"}]
-        )
-    )
-
-
-def _as_list(value: Any) -> list[str]:
-    """Return a scheduler value as a list: older entries may store a single entity id."""
-    if isinstance(value, list):
-        return value
-    return [value] if value else []
-
-
-def _scheduler_label(hass: HomeAssistant, entity_id: str) -> str:
-    """Label a scheduler with its friendly name, or flag it as not found."""
-    state = hass.states.get(entity_id)
-    if state is None:
-        return MISSING_SCHEDULER_LABEL.format(entity_id=entity_id)
-    friendly_name = state.attributes.get("friendly_name", entity_id)
-    return f"{friendly_name} ({entity_id})"
-
-
-def _is_scheduler(state: State) -> bool:
-    """Tell whether a state looks like a scheduler (scheduler-component switch or schedule)."""
-    return state.domain in SCHEDULER_DOMAINS and bool(
-        "schedule" in state.entity_id.lower()
-        or state.attributes.get("next_trigger")
-        or state.attributes.get("next_event")
-    )
-
-
-def _native_schedule_fields(default_of: Callable[[str, Any], Any]) -> dict[Any, Any]:
-    """Build the native schedule fields shared by the setup and options forms.
-
-    Args:
-        default_of: Gives the default of a field from its key and its built-in default.
-
-    Returns:
-        The schema entries, in display order.
-    """
-    return {
-        vol.Optional(
-            CONF_NATIVE_SCHEDULE_DRIVE,
-            default=default_of(CONF_NATIVE_SCHEDULE_DRIVE, DEFAULT_NATIVE_SCHEDULE_DRIVE),
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_NATIVE_SCHEDULE_PRESET_KEY,
-            default=default_of(CONF_NATIVE_SCHEDULE_PRESET_KEY, DEFAULT_NATIVE_SCHEDULE_PRESET_KEY),
-        ): selector.TextSelector(),
-        vol.Optional(
-            CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
-            default=default_of(
-                CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY, DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY
-            ),
-        ): selector.TextSelector(),
-        vol.Optional(
-            CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
-            default=default_of(
-                CONF_NATIVE_SCHEDULE_FALLBACK_PRESET, DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET
-            ),
-        ): selector.TextSelector(),
-    }
-
-
-def _scheduler_selector(hass: HomeAssistant, configured: list[str]) -> Any:
-    """Build the scheduler field: a dropdown of the schedulers found, or an entity picker.
-
-    The dropdown also lists every configured scheduler. One that was removed or renamed must
-    stay among the choices: the selector rejects any value outside them, so the form could
-    not be saved, and the user could not see which entry to remove (#192). When no scheduler
-    is found, the entity picker accepts any switch or schedule entity, configured or not.
-    """
-    found = {state.entity_id for state in hass.states.async_all() if _is_scheduler(state)}
-    if not found:
-        return selector.EntitySelector(
-            selector.EntitySelectorConfig(domain=list(SCHEDULER_DOMAINS), multiple=True)
-        )
-    options = [
-        selector.SelectOptionDict(value=entity_id, label=_scheduler_label(hass, entity_id))
-        for entity_id in found.union(configured)
-    ]
-    return selector.SelectSelector(
-        selector.SelectSelectorConfig(
-            options=sorted(options, key=lambda option: option["label"]),
-            multiple=True,
-            mode=selector.SelectSelectorMode.DROPDOWN,
-        )
-    )
-
-
-def _configured_climate(entry: config_entries.ConfigEntry) -> Any:
-    """Return the climate entity a device drives: the options value when set, else the setup value."""
-    if CONF_CLIMATE_ENTITY in entry.options:
-        return entry.options[CONF_CLIMATE_ENTITY]
-    return entry.data.get(CONF_CLIMATE_ENTITY)
-
-
-def _climate_in_use(hass: HomeAssistant, climate: str, exclude_entry_id: str | None = None) -> bool:
-    """Tell whether another device already drives this climate entity.
-
-    Two devices on one climate entity would overwrite each other's setpoint, so a climate entity identifies a
-    device. Entries are compared on the climate entity they use, not on their unique_id, because
-    entries created before #192 are keyed on their name.
-    """
-    return any(
-        _configured_climate(entry) == climate
-        for entry in hass.config_entries.async_entries(DOMAIN)
-        if entry.entry_id != exclude_entry_id
-    )
 
 
 class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -219,7 +50,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
             # Schedulers already a list from SelectSelector (multiple=True)
             # Just ensure it's always a list
-            processed[CONF_SCHEDULER_ENTITIES] = _as_list(processed.get(CONF_SCHEDULER_ENTITIES))
+            processed[CONF_SCHEDULER_ENTITIES] = as_list(processed.get(CONF_SCHEDULER_ENTITIES))
 
             # Note: EntitySelector optional fields are simply not present in user_input if not filled
             # No need to remove them as they won't exist in the dict
@@ -227,142 +58,28 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             _LOGGER.debug("Processed data before validation: %s", processed)
 
             # Required validations
-            climate_val = processed.get(CONF_CLIMATE_ENTITY)
-            if not climate_val or (isinstance(climate_val, str) and climate_val.strip() == ""):
+            vtherm_val = processed.get(CONF_CLIMATE_ENTITY)
+            if not vtherm_val or (isinstance(vtherm_val, str) and vtherm_val.strip() == ""):
                 errors[CONF_CLIMATE_ENTITY] = "required"
 
             # Scheduler is now optional - no validation needed
 
             if not errors:
-                climate: str = processed[CONF_CLIMATE_ENTITY]
-                if _climate_in_use(self.hass, climate):
+                vtherm: str = processed[CONF_CLIMATE_ENTITY]
+                if vtherm_in_use(self.hass, vtherm):
                     return self.async_abort(reason="already_configured")
                 _LOGGER.info("Creating entry with data: %s", processed)
-                await self.async_set_unique_id(climate)
+                await self.async_set_unique_id(vtherm)
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title=processed[CONF_NAME],
                     data=processed,
                 )
 
-        scheduler_selector = _scheduler_selector(self.hass, [])
-
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
-                vol.Required(CONF_CLIMATE_ENTITY): _climate_selector(),
-                vol.Optional(CONF_SCHEDULER_ENTITIES): scheduler_selector,
-                vol.Optional(CONF_HUMIDITY_IN_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
-                ),
-                vol.Optional(CONF_HUMIDITY_OUT_ENTITY): _outdoor_source_selector("humidity"),
-                vol.Optional(CONF_TEMPERATURE_OUT_ENTITY): _outdoor_source_selector("temperature"),
-                vol.Optional(CONF_CLOUD_COVER_ENTITY): _outdoor_source_selector(),
-                vol.Optional(
-                    CONF_LHS_RETENTION_DAYS, default=DEFAULT_LHS_RETENTION_DAYS
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=7,
-                        max=90,
-                        step=1,
-                        unit_of_measurement="days",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(
-                    CONF_DEAD_TIME_MINUTES, default=DEFAULT_DEAD_TIME_MINUTES
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.0,
-                        max=60.0,
-                        step=1.0,
-                        unit_of_measurement="minutes",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(
-                    CONF_AUTO_LEARNING, default=DEFAULT_AUTO_LEARNING
-                ): selector.BooleanSelector(),
-                vol.Optional(
-                    CONF_TEMP_DELTA_THRESHOLD, default=DEFAULT_TEMP_DELTA_THRESHOLD
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=1.0,
-                        step=0.1,
-                        unit_of_measurement="°C",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(
-                    CONF_CYCLE_SPLIT_DURATION_MINUTES, default=DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=120,
-                        step=5,
-                        unit_of_measurement="minutes",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(
-                    CONF_MIN_CYCLE_DURATION_MINUTES, default=DEFAULT_MIN_CYCLE_DURATION_MINUTES
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1,
-                        max=30,
-                        step=1,
-                        unit_of_measurement="minutes",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(
-                    CONF_MAX_CYCLE_DURATION_MINUTES, default=DEFAULT_MAX_CYCLE_DURATION_MINUTES
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=15,
-                        max=360,
-                        step=5,
-                        unit_of_measurement="minutes",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(
-                    CONF_TASK_RANGE_DAYS, default=DEFAULT_TASK_RANGE_DAYS
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1,
-                        max=30,
-                        step=1,
-                        unit_of_measurement="days",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(
-                    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
-                    default=DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=1,
-                        max=60,
-                        step=1,
-                        unit_of_measurement="minutes",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(
-                    CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
-                    default=DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=30,
-                        step=1,
-                        unit_of_measurement="minutes",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                **_native_schedule_fields(lambda _key, default: default),
+                **build_theme_schema(self.hass, form_definitions(), {}).schema,
             }
         )
 
@@ -374,344 +91,44 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
 
 class IntelligentHeatingPilotOptionsFlow(
-    PresetTemperaturesFlowMixin, WakeUpSourcesFlowMixin, config_entries.OptionsFlow
+    ThemeStepsMixin,
+    PresetTemperaturesFlowMixin,
+    WakeUpSourcesFlowMixin,
+    config_entries.OptionsFlow,
 ):
-    """Handle options flow for Intelligent Heating Pilot."""
+    """Options of a device: a menu of themes, each form stored at once, then "Apply"."""
 
     def __init__(self) -> None:
-        """Initialize the flow state used while the wake-up sources are managed."""
+        """Initialize the state used while the wake-up sources are managed."""
         self._pending: dict[str, Any] = {}
         self._sources: list[dict[str, Any]] = []
         self._editing: str | None = None
-        self._then_wake_up = False
 
-    async def _after_preset_temperatures(self) -> ConfigFlowResult:
-        """Go on with the wake-up sources when they were asked too, else save the options."""
-        if self._then_wake_up:
-            self._begin_wake_up_management(self._pending)
-            return await self.async_step_wake_up_menu()
-        return self._finish(self._pending)
-
-    def _finish(self, options: dict[str, Any]) -> ConfigFlowResult:
-        """Save the options, keying the entry on its new climate entity when it changed."""
-        climate = options.get(CONF_CLIMATE_ENTITY)
-        if climate and climate != _configured_climate(self.config_entry):
-            self._follow_climate(climate, options)
-        return self.async_create_entry(title="", data=options)
-
-    def _follow_climate(self, climate: str, options: dict[str, Any]) -> None:
-        """Key the entry on its new climate entity, so no two entries ever share a unique_id.
-
-        The options are written in the same update: updating the unique_id alone would run
-        the update listener, which reloads the device, with the previous options.
-        """
-        _LOGGER.info("[%s] Climate entity changed to %s", self.config_entry.title, climate)
-        self.hass.config_entries.async_update_entry(
-            self.config_entry, unique_id=climate, options=options
-        )
+    def _extra_menu_entries(self) -> list[str]:
+        """Offer the preset temperatures only for a climate that does not publish them (#252)."""
+        climate = {**self.config_entry.data, **self.config_entry.options}.get(CONF_CLIMATE_ENTITY)
+        return [STEP_PRESET_TEMPERATURES] if mappable_presets(self.hass, climate) else []
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Manage the options."""
-        errors: dict[str, str] = {}
-        normalized_input: dict[str, Any] = {}
+        """Show the menu of themes."""
+        return await self._show_menu()
 
-        if user_input is not None:
-            # Start with user input
-            normalized_input = {**user_input}
-            manage_wake_up_sources = bool(normalized_input.pop(CONF_MANAGE_WAKE_UP_SOURCES, False))
-            manage_preset_temperatures = bool(
-                normalized_input.pop(CONF_MANAGE_PRESET_TEMPERATURES, False)
-            )
-            # Schedulers already a list from SelectSelector (multiple=True)
-            # Just ensure it's always a list
-            normalized_input[CONF_SCHEDULER_ENTITIES] = _as_list(
-                normalized_input.get(CONF_SCHEDULER_ENTITIES)
-            )
+    async def async_step_preset_temperatures(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Map the presets of the climate to temperatures, stored when the form is submitted."""
+        if user_input is None:
+            self._pending = {**self.config_entry.data, **self.config_entry.options}
+        return await PresetTemperaturesFlowMixin.async_step_preset_temperatures(self, user_input)
 
-            # For optional fields: if not in user_input OR empty, explicitly mark for deletion
-            optional_entity_fields = [
-                CONF_HUMIDITY_IN_ENTITY,
-                CONF_HUMIDITY_OUT_ENTITY,
-                CONF_TEMPERATURE_OUT_ENTITY,
-                CONF_CLOUD_COVER_ENTITY,
-            ]
-            fields_to_delete = []
-            for field in optional_entity_fields:
-                if field not in user_input:
-                    # Field not submitted = user cleared it
-                    fields_to_delete.append(field)
-                elif not user_input[field] or (
-                    isinstance(user_input[field], str) and user_input[field].strip() == ""
-                ):
-                    # Field submitted but empty
-                    fields_to_delete.append(field)
+    async def _after_preset_temperatures(self) -> ConfigFlowResult:
+        """Store the mapping and go back to the menu."""
+        self._write_values({CONF_PRESET_TEMPERATURES: self._pending[CONF_PRESET_TEMPERATURES]})
+        return await self.async_step_init()
 
-            # Validate required fields
-            climate: str | None = normalized_input.get(CONF_CLIMATE_ENTITY)
-            if not climate:
-                errors[CONF_CLIMATE_ENTITY] = "required"
-            elif _climate_in_use(self.hass, climate, exclude_entry_id=self.config_entry.entry_id):
-                errors[CONF_CLIMATE_ENTITY] = "vtherm_already_configured"
-
-            # Scheduler is now optional - no validation needed
-
-            if not errors:
-                # Merge with existing options
-                merged_options: dict[str, Any] = {**self.config_entry.options}
-                merged_options.update(normalized_input)
-                # For optional fields that were cleared: explicitly set to None to override data
-                for field in fields_to_delete:
-                    merged_options[field] = None
-                if manage_preset_temperatures:
-                    self._pending = merged_options
-                    self._then_wake_up = manage_wake_up_sources
-                    return await self.async_step_preset_temperatures()
-                if manage_wake_up_sources:
-                    self._begin_wake_up_management(merged_options)
-                    return await self.async_step_wake_up_menu()
-                return self._finish(merged_options)
-
-        # Prepare data sources for defaults
-        current_options = getattr(self.config_entry, "options", {})
-        if user_input is not None and errors:
-            # Re-display user's attempted values on validation errors
-            current_data = {**self.config_entry.data, **current_options, **normalized_input}
-        else:
-            current_data = {**self.config_entry.data, **current_options}
-
-        def _opt_or_data(key: str, default: Any = None) -> Any:
-            # First check options (overrides data)
-            if key in current_options:
-                val = current_options.get(key)
-                # None means explicitly deleted, don't fallback to data
-                if val is None:
-                    return default
-                return val
-            # Fallback to data
-            return current_data.get(key, default)
-
-        # Compute defaults for entity selectors
-        default_schedulers_list = _as_list(_opt_or_data(CONF_SCHEDULER_ENTITIES, []))
-        climate_val = _opt_or_data(CONF_CLIMATE_ENTITY)
-        hum_in_val = _opt_or_data(CONF_HUMIDITY_IN_ENTITY)
-        hum_out_val = _opt_or_data(CONF_HUMIDITY_OUT_ENTITY)
-        temp_out_val = _opt_or_data(CONF_TEMPERATURE_OUT_ENTITY)
-        cloud_val = _opt_or_data(CONF_CLOUD_COVER_ENTITY)
-
-        # Build schema dynamically: only set default if value exists and is non-empty
-        schema_dict: dict[Any, Any] = {}
-
-        # Required: climate entity (only set default if exists and non-empty)
-        climate_field = (
-            vol.Required(CONF_CLIMATE_ENTITY, default=climate_val)
-            if climate_val and climate_val != ""
-            else vol.Required(CONF_CLIMATE_ENTITY)
-        )
-        schema_dict[climate_field] = _climate_selector()
-
-        # Optional: Schedulers (multiple, only set default if non-empty list)
-        scheduler_selector = _scheduler_selector(self.hass, default_schedulers_list)
-        schedulers_field = (
-            vol.Optional(CONF_SCHEDULER_ENTITIES, default=default_schedulers_list)
-            if default_schedulers_list and len(default_schedulers_list) > 0
-            else vol.Optional(CONF_SCHEDULER_ENTITIES)
-        )
-        schema_dict[schedulers_field] = scheduler_selector
-
-        # Optional humidity/cloud fields: Use suggested_value to pre-fill while allowing clearing
-        schema_dict[
-            vol.Optional(
-                CONF_HUMIDITY_IN_ENTITY,
-                description={"suggested_value": hum_in_val}
-                if hum_in_val and hum_in_val != ""
-                else {},
-            )
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
-        )
-
-        schema_dict[
-            vol.Optional(
-                CONF_HUMIDITY_OUT_ENTITY,
-                description={"suggested_value": hum_out_val}
-                if hum_out_val and hum_out_val != ""
-                else {},
-            )
-        ] = _outdoor_source_selector("humidity")
-
-        schema_dict[
-            vol.Optional(
-                CONF_TEMPERATURE_OUT_ENTITY,
-                description={"suggested_value": temp_out_val}
-                if temp_out_val and temp_out_val != ""
-                else {},
-            )
-        ] = _outdoor_source_selector("temperature")
-
-        schema_dict[
-            vol.Optional(
-                CONF_CLOUD_COVER_ENTITY,
-                description={"suggested_value": cloud_val} if cloud_val and cloud_val != "" else {},
-            )
-        ] = _outdoor_source_selector()
-
-        # Numeric fields
-        schema_dict[
-            vol.Optional(
-                CONF_LHS_RETENTION_DAYS,
-                default=_opt_or_data(CONF_LHS_RETENTION_DAYS, DEFAULT_LHS_RETENTION_DAYS),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=7,
-                max=90,
-                step=1,
-                unit_of_measurement="days",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        )
-        schema_dict[
-            vol.Optional(
-                CONF_DEAD_TIME_MINUTES,
-                default=_opt_or_data(CONF_DEAD_TIME_MINUTES, DEFAULT_DEAD_TIME_MINUTES),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.0,
-                max=60.0,
-                step=1.0,
-                unit_of_measurement="minutes",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        )
-        schema_dict[
-            vol.Optional(
-                CONF_AUTO_LEARNING, default=_opt_or_data(CONF_AUTO_LEARNING, DEFAULT_AUTO_LEARNING)
-            )
-        ] = selector.BooleanSelector()
-        schema_dict[
-            vol.Optional(
-                CONF_TEMP_DELTA_THRESHOLD,
-                default=_opt_or_data(CONF_TEMP_DELTA_THRESHOLD, DEFAULT_TEMP_DELTA_THRESHOLD),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=1.0,
-                step=0.1,
-                unit_of_measurement="°C",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        )
-        schema_dict[
-            vol.Optional(
-                CONF_CYCLE_SPLIT_DURATION_MINUTES,
-                default=_opt_or_data(
-                    CONF_CYCLE_SPLIT_DURATION_MINUTES, DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
-                ),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0,
-                max=120,
-                step=5,
-                unit_of_measurement="minutes",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        )
-        schema_dict[
-            vol.Optional(
-                CONF_MIN_CYCLE_DURATION_MINUTES,
-                default=_opt_or_data(
-                    CONF_MIN_CYCLE_DURATION_MINUTES, DEFAULT_MIN_CYCLE_DURATION_MINUTES
-                ),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1,
-                max=30,
-                step=1,
-                unit_of_measurement="minutes",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        )
-        schema_dict[
-            vol.Optional(
-                CONF_MAX_CYCLE_DURATION_MINUTES,
-                default=_opt_or_data(
-                    CONF_MAX_CYCLE_DURATION_MINUTES, DEFAULT_MAX_CYCLE_DURATION_MINUTES
-                ),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=15,
-                max=360,
-                step=5,
-                unit_of_measurement="minutes",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        )
-        schema_dict[
-            vol.Optional(
-                CONF_TASK_RANGE_DAYS,
-                default=_opt_or_data(CONF_TASK_RANGE_DAYS, DEFAULT_TASK_RANGE_DAYS),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1,
-                max=30,
-                step=1,
-                unit_of_measurement="days",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        )
-        schema_dict[
-            vol.Optional(
-                CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
-                default=_opt_or_data(
-                    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
-                    DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
-                ),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1,
-                max=60,
-                step=1,
-                unit_of_measurement="minutes",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        )
-        schema_dict[
-            vol.Optional(
-                CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
-                default=_opt_or_data(
-                    CONF_SAFETY_SHUTOFF_GRACE_MINUTES, DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES
-                ),
-            )
-        ] = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0,
-                max=30,
-                step=1,
-                unit_of_measurement="minutes",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        )
-
-        schema_dict.update(_native_schedule_fields(_opt_or_data))
-        if mappable_presets(self.hass, climate_val):
-            schema_dict[vol.Optional(CONF_MANAGE_PRESET_TEMPERATURES, default=False)] = (
-                selector.BooleanSelector()
-            )
-        schema_dict[vol.Optional(CONF_MANAGE_WAKE_UP_SOURCES, default=False)] = (
-            selector.BooleanSelector()
-        )
-
-        data_schema = vol.Schema(schema_dict)
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=data_schema,  # type: ignore[arg-type, unused-ignore]  # HA types schemas as probatio
-            errors=errors,
-        )
+    async def async_step_wake_up_sources(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Open the wake-up sources menu on what the entry stores now."""
+        self._begin_wake_up_management({**self.config_entry.data, **self.config_entry.options})
+        return await self.async_step_wake_up_menu()

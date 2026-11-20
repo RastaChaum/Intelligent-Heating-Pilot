@@ -22,6 +22,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import CONF_IHP_ENABLED, DOMAIN
 from .heating_application import HeatingApplication
+from .infrastructure.adapters.entry_changes import effective_values
 from .services import async_setup_services
 from .utils.config_helpers import as_bool
 from .view import async_register_http_views
@@ -121,7 +122,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = HeatingApplication(hass, device_config)
     coordinator.setup_config_entry_access(entry)
-    coordinator._options_snapshot = dict(entry.options)
+    coordinator._options_snapshot = effective_values(entry)
     await coordinator.async_load()
 
     # Store coordinator
@@ -214,31 +215,22 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Update options and reload integration."""
+    """React to a write of the entry: only the live IHP toggle is applied here.
+
+    Saving a theme of the options writes the entry but does not reload the device: the user
+    reloads it with "Apply" (#302). The coordinator keeps a snapshot of what it was loaded with,
+    so that the options menu can tell what is stored and not applied yet.
+    """
     coordinator: HeatingApplication | None = hass.data[DOMAIN].get(entry.entry_id)
-
-    previous_options = (
-        dict(getattr(coordinator, "_options_snapshot", {}) or {}) if coordinator else {}
-    )
-    previous_no_toggle = {k: v for k, v in previous_options.items() if k != CONF_IHP_ENABLED}
-    current_no_toggle = {k: v for k, v in entry.options.items() if k != CONF_IHP_ENABLED}
-    ihp_enabled = as_bool(entry.options.get(CONF_IHP_ENABLED), default=True)
-
-    # If only the ihp_enabled flag changed, skip full reload
-    if coordinator and previous_no_toggle == current_no_toggle:
-        _LOGGER.info("[%s] Options updated (ihp_enabled only), skipping reload", entry.entry_id)
-        coordinator._options_snapshot = dict(entry.options)
-        coordinator._ihp_enabled = ihp_enabled
-        await coordinator.async_update()
+    if coordinator is None:
         return
 
-    _LOGGER.info("[%s] Options updated, reloading", entry.entry_id)
-    if coordinator:
-        coordinator._options_snapshot = dict(entry.options)
+    ihp_enabled = as_bool(entry.options.get(CONF_IHP_ENABLED), default=True)
+    if ihp_enabled == coordinator.ihp_enabled_applied:
+        _LOGGER.debug("[%s] Options updated, nothing to apply until reload", entry.entry_id)
+        return
 
-    await hass.config_entries.async_reload(entry.entry_id)
-
-    # Schedule async update after reload (non-blocking)
-    coordinator = hass.data[DOMAIN].get(entry.entry_id)
-    if coordinator:
-        hass.async_create_task(coordinator.async_update())
+    _LOGGER.info("[%s] IHP enabled state changed to %s", entry.entry_id, ihp_enabled)
+    coordinator.ihp_enabled_applied = ihp_enabled
+    coordinator._ihp_enabled = ihp_enabled
+    await coordinator.async_update()

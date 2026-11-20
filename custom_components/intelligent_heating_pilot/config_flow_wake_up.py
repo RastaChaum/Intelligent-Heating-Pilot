@@ -176,7 +176,11 @@ class WakeUpSourcesFlowMixin:
     if TYPE_CHECKING:
         # Provided by the host options flow; declared here for the type checker only, so that
         # these names never shadow the real methods of the base class.
-        def _finish(self, options: dict[str, Any]) -> ConfigFlowResult: ...
+        def _write_values(self, values: dict[str, Any]) -> None: ...
+
+        async def async_step_init(
+            self, user_input: dict[str, Any] | None = None
+        ) -> ConfigFlowResult: ...
 
         def async_show_menu(self, **kwargs: Any) -> ConfigFlowResult: ...
 
@@ -294,6 +298,6 @@ class WakeUpSourcesFlowMixin:
     async def async_step_wake_up_done(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Save the options together with the sources."""
-        self._pending[CONF_WAKE_UP_SOURCES] = self._sources
-        return self._finish(self._pending)
+        """Store the sources and go back to the main menu; "Apply" reloads the device."""
+        self._write_values({CONF_WAKE_UP_SOURCES: self._sources})
+        return await self.async_step_init()

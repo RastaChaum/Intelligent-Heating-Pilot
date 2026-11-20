@@ -175,6 +175,7 @@ def __init__(
     on_scheduler_blocked: Callable[[str], Awaitable[None]] | None = None,
 ) -> None: ...
 
+
 def set_on_scheduler_blocked(self, callback: Callable[[str], Awaitable[None]] | None) -> None:
     """Set the callback invoked when a timer-fired trigger is confirmed blocked.
 
@@ -225,11 +226,13 @@ helper so both the normal entry point and the timer-fired callback (§5 amendmen
 async def calculate_and_schedule_anticipation(self, ihp_enabled: bool = True) -> dict[str, Any]:
     return await self._run_anticipation_cycle(ihp_enabled, frozenset())
 
+
 async def retry_anticipation_after_blocked_scheduler(self, blocked_entity_id: str) -> None:
     """Re-enter the cycle, excluding a scheduler a timer-fired trigger just confirmed
     blocked. Called by ScheduleAnticipationActionUseCase's on_scheduler_blocked callback —
     not part of the integration-facing API."""
     await self._run_anticipation_cycle(True, frozenset({blocked_entity_id}))
+
 
 async def _run_anticipation_cycle(
     self, ihp_enabled: bool, seed_excluded: frozenset[str]

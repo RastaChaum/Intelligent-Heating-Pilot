@@ -52,7 +52,7 @@ class TestThermostatSelector:
             new_callable=PropertyMock,
             return_value=_options_entry(),
         ):
-            config = _climate_selector_config(await flow.async_step_init())
+            config = _climate_selector_config(await flow.async_step_thermostat_schedulers())
 
         assert config["domain"] == ["climate"]
         assert "integration" not in config

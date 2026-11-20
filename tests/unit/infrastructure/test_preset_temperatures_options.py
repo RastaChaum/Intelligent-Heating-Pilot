@@ -11,8 +11,6 @@ from custom_components.intelligent_heating_pilot.config_flow import (
 )
 from custom_components.intelligent_heating_pilot.const import (
     CONF_CLIMATE_ENTITY,
-    CONF_MANAGE_PRESET_TEMPERATURES,
-    CONF_MANAGE_WAKE_UP_SOURCES,
     CONF_PRESET_TEMPERATURES,
     CONF_SCHEDULER_ENTITIES,
 )
@@ -49,6 +47,7 @@ def _make_flow(attributes: dict | None, options: dict | None = None):
     hass.states.get.return_value = _state(attributes) if attributes is not None else None
     hass.states.async_all.return_value = []
     hass.config_entries.async_entries.return_value = []
+    hass.data = {}
     instance = IntelligentHeatingPilotOptionsFlow()
     instance.hass = hass
     instance.async_show_menu = Mock(side_effect=lambda **kw: {"type": "menu", **kw})
@@ -69,12 +68,13 @@ def generic_flow():
         yield instance
 
 
-def _main_form(**extra) -> dict:
-    return {CONF_CLIMATE_ENTITY: TRV, **extra}
-
-
 def _fields(result) -> dict:
     return {marker.schema: marker for marker in result["data_schema"].schema}
+
+
+def _stored(flow) -> dict:
+    """The options the flow last wrote to the entry."""
+    return flow.hass.config_entries.async_update_entry.call_args.kwargs["options"]
 
 
 class TestWhenTheMappingIsOffered:
@@ -90,7 +90,7 @@ class TestWhenTheMappingIsOffered:
         ids=["generic", "vtherm-publishes-them", "only-none", "no-presets", "unavailable"],
     )
     @pytest.mark.asyncio
-    async def test_the_flag_is_only_shown_when_a_mapping_is_useful(
+    async def test_the_menu_entry_is_only_offered_when_a_mapping_is_useful(
         self, attributes, offered
     ) -> None:
         instance, entry = _make_flow(attributes)
@@ -102,15 +102,15 @@ class TestWhenTheMappingIsOffered:
         ):
             result = await instance.async_step_init()
 
-        assert (CONF_MANAGE_PRESET_TEMPERATURES in _fields(result)) is offered
+        assert ("preset_temperatures" in result["menu_options"]) is offered
 
 
 class TestMappingForm:
     @pytest.mark.asyncio
-    async def test_the_flag_opens_a_form_with_one_field_per_preset(self, generic_flow) -> None:
-        result = await generic_flow.async_step_init(
-            _main_form(**{CONF_MANAGE_PRESET_TEMPERATURES: True})
-        )
+    async def test_the_menu_entry_opens_a_form_with_one_field_per_preset(
+        self, generic_flow
+    ) -> None:
+        result = await generic_flow.async_step_preset_temperatures()
 
         assert result["type"] == "form" and result["step_id"] == "preset_temperatures"
         assert set(_fields(result)) == {"eco", "comfort"}
@@ -124,64 +124,37 @@ class TestMappingForm:
             new_callable=PropertyMock,
             return_value=entry,
         ):
-            result = await instance.async_step_init(
-                _main_form(**{CONF_MANAGE_PRESET_TEMPERATURES: True})
-            )
+            result = await instance.async_step_preset_temperatures()
 
         assert _fields(result)["eco"].description == {"suggested_value": 17.0}
         assert _fields(result)["comfort"].description in (None, {})
 
     @pytest.mark.asyncio
-    async def test_the_mapping_is_saved_with_the_options(self, generic_flow) -> None:
-        await generic_flow.async_step_init(_main_form(**{CONF_MANAGE_PRESET_TEMPERATURES: True}))
+    async def test_the_mapping_is_stored_at_once_and_the_menu_is_shown_again(
+        self, generic_flow
+    ) -> None:
+        await generic_flow.async_step_preset_temperatures()
 
         result = await generic_flow.async_step_preset_temperatures({"eco": 17, "comfort": 20.5})
 
-        assert result["type"] == "create_entry"
-        assert result["data"][CONF_PRESET_TEMPERATURES] == {"eco": 17.0, "comfort": 20.5}
-        assert CONF_MANAGE_PRESET_TEMPERATURES not in result["data"]
+        assert result["type"] == "menu" and result["step_id"] == "init"
+        assert _stored(generic_flow)[CONF_PRESET_TEMPERATURES] == {"eco": 17.0, "comfort": 20.5}
 
     @pytest.mark.asyncio
     async def test_an_empty_field_removes_the_preset_from_the_mapping(self, generic_flow) -> None:
-        await generic_flow.async_step_init(_main_form(**{CONF_MANAGE_PRESET_TEMPERATURES: True}))
+        await generic_flow.async_step_preset_temperatures()
 
-        result = await generic_flow.async_step_preset_temperatures({"eco": 17, "comfort": None})
+        await generic_flow.async_step_preset_temperatures({"eco": 17, "comfort": None})
 
-        assert result["data"][CONF_PRESET_TEMPERATURES] == {"eco": 17.0}
+        assert _stored(generic_flow)[CONF_PRESET_TEMPERATURES] == {"eco": 17.0}
 
     @pytest.mark.asyncio
     async def test_clearing_every_field_empties_the_mapping(self, generic_flow) -> None:
-        await generic_flow.async_step_init(_main_form(**{CONF_MANAGE_PRESET_TEMPERATURES: True}))
+        await generic_flow.async_step_preset_temperatures()
 
-        result = await generic_flow.async_step_preset_temperatures({})
+        await generic_flow.async_step_preset_temperatures({})
 
-        assert result["data"][CONF_PRESET_TEMPERATURES] == {}
-
-    @pytest.mark.asyncio
-    async def test_the_wake_up_menu_follows_when_both_are_asked(self, generic_flow) -> None:
-        await generic_flow.async_step_init(
-            _main_form(**{CONF_MANAGE_PRESET_TEMPERATURES: True, CONF_MANAGE_WAKE_UP_SOURCES: True})
-        )
-
-        result = await generic_flow.async_step_preset_temperatures({"eco": 17})
-
-        assert result["type"] == "menu" and result["step_id"] == "wake_up_menu"
-        done = await generic_flow.async_step_wake_up_done()
-        assert done["data"][CONF_PRESET_TEMPERATURES] == {"eco": 17.0}
-
-    @pytest.mark.asyncio
-    async def test_without_the_flag_the_mapping_is_left_alone(self) -> None:
-        instance, entry = _make_flow(GENERIC, {CONF_PRESET_TEMPERATURES: {"eco": 17.0}})
-        with patch.object(
-            IntelligentHeatingPilotOptionsFlow,
-            "config_entry",
-            new_callable=PropertyMock,
-            return_value=entry,
-        ):
-            result = await instance.async_step_init(_main_form())
-
-        assert result["type"] == "create_entry"
-        assert result["data"][CONF_PRESET_TEMPERATURES] == {"eco": 17.0}
+        assert _stored(generic_flow)[CONF_PRESET_TEMPERATURES] == {}
 
 
 class TestDeviceConfigReading:

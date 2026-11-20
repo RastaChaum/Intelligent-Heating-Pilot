@@ -189,15 +189,16 @@ To prevent unbounded memory growth, Tier 1 cache implements **LRU eviction**:
 ```python
 MAX_MEMORY_CACHE_ENTRIES = 50
 
+
 async def _evict_old_memory_cache_entries(self) -> None:
     """Evict oldest entries if cache exceeds limit."""
     if len(self._cached_cycles_for_target_time) > MAX_MEMORY_CACHE_ENTRIES:
         # Sort by date (oldest first) and remove oldest half
         sorted_keys = sorted(
             self._cached_cycles_for_target_time.keys(),
-            key=lambda k: k[1]  # key[1] is the date
+            key=lambda k: k[1],  # key[1] is the date
         )
-        keys_to_remove = sorted_keys[:MAX_MEMORY_CACHE_ENTRIES // 2]
+        keys_to_remove = sorted_keys[: MAX_MEMORY_CACHE_ENTRIES // 2]
 
         for key in keys_to_remove:
             del self._cached_cycles_for_target_time[key]

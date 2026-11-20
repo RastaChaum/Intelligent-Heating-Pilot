@@ -1,36 +1,56 @@
 """Constants for the Intelligent Heating Pilot integration."""
 
+from .domain.constants import (  # noqa: F401  re-exported for the Home Assistant layers
+    CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+    CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
+    CONF_CLOUD_COVER_ENTITY,
+    CONF_CYCLE_SPLIT_DURATION_MINUTES,
+    CONF_DEAD_TIME_MINUTES,
+    CONF_HUMIDITY_IN_ENTITY,
+    CONF_HUMIDITY_OUT_ENTITY,
+    CONF_LHS_RETENTION_DAYS,
+    CONF_MAX_CYCLE_DURATION_MINUTES,
+    CONF_MIN_CYCLE_DURATION_MINUTES,
+    CONF_NATIVE_SCHEDULE_DRIVE,
+    CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
+    CONF_NATIVE_SCHEDULE_PRESET_KEY,
+    CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
+    CONF_PRESET_TEMPERATURES,
+    CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
+    CONF_SCHEDULER_ENTITIES,
+    CONF_TASK_RANGE_DAYS,
+    CONF_TEMP_DELTA_THRESHOLD,
+    CONF_TEMPERATURE_OUT_ENTITY,
+    CONF_WAKE_UP_SOURCES,
+    DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+    DEFAULT_AUTO_LEARNING,
+    DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
+    DEFAULT_DEAD_TIME_MINUTES,
+    DEFAULT_LHS_RETENTION_DAYS,
+    DEFAULT_MAX_CYCLE_DURATION_MINUTES,
+    DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+    DEFAULT_NATIVE_SCHEDULE_DRIVE,
+    DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET,
+    DEFAULT_NATIVE_SCHEDULE_PRESET_KEY,
+    DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY,
+    DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES,
+    DEFAULT_TASK_RANGE_DAYS,
+    DEFAULT_TEMP_DELTA_THRESHOLD,
+)
+
 VERSION = "0.7.1"
 DOMAIN = "intelligent_heating_pilot"
 EVENT_DEAD_TIME_UPDATED = f"{DOMAIN}_dead_time_updated"
 # Configuration keys
 CONF_NAME = "name"
-CONF_CLIMATE_ENTITY = "vtherm_entity_id"
-CONF_SCHEDULER_ENTITIES = "scheduler_entities"
-CONF_HUMIDITY_IN_ENTITY = "humidity_in_entity_id"
-CONF_HUMIDITY_OUT_ENTITY = "humidity_out_entity_id"
-CONF_TEMPERATURE_OUT_ENTITY = "temperature_out_entity_id"
-CONF_CLOUD_COVER_ENTITY = "cloud_cover_entity_id"
 CONF_DATA_RETENTION_DAYS = (
     "data_retention_days"  # Retention period for all IHP data (cycles, slopes, etc.)
 )
-CONF_LHS_RETENTION_DAYS = "lhs_retention_days"  # Deprecated: Use CONF_DATA_RETENTION_DAYS
 CONF_DECISION_MODE = "decision_mode"  # NEW: Choose between 'simple' and 'ml'
-CONF_DEAD_TIME_MINUTES = "dead_time_minutes"  # Dead time in minutes (initial heating delay)
-CONF_AUTO_LEARNING = "auto_learning"  # Auto-learn parameters from heating cycles
 
 # Heating Cycle Detection Parameters
-CONF_TEMP_DELTA_THRESHOLD = "temp_delta_threshold"
-CONF_CYCLE_SPLIT_DURATION_MINUTES = "cycle_split_duration_minutes"
-CONF_MIN_CYCLE_DURATION_MINUTES = "min_cycle_duration_minutes"
-CONF_MAX_CYCLE_DURATION_MINUTES = "max_cycle_duration_minutes"
 CONF_IHP_ENABLED = "ihp_enabled"  # Enable/disable IHP preheating
-CONF_TASK_RANGE_DAYS = "task_range_days"  # Number of days covered by each Recorder extraction task
-CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES = (
-    "anticipation_recalc_tolerance_minutes"  # Min delta for active preheating revert
-)
-
-# Legacy keys (kept for backward compatibility if needed)
 CONF_THERMAL_SLOPE_ENTITY = "thermal_slope_entity"
 CONF_CURRENT_TEMP_ENTITY = "current_temp_entity"
 CONF_CURRENT_HUMIDITY_ENTITY = "current_humidity_entity"
@@ -47,41 +67,20 @@ DECISION_MODE_ML = "ml"  # AI-powered decisions (requires IHP-ML-Models)
 # Default values
 DEFAULT_NAME = "Intelligent Heating Pilot"
 DEFAULT_DATA_RETENTION_DAYS = 30  # Keep IHP data (cycles, slopes, etc.) for 30 days
-DEFAULT_LHS_RETENTION_DAYS = 30  # Deprecated: Use DEFAULT_DATA_RETENTION_DAYS
 DEFAULT_DECISION_MODE = DECISION_MODE_SIMPLE  # Simple mode by default
-DEFAULT_DEAD_TIME_MINUTES = 0.0  # Default dead time (0 = will be learned from cycles)
-DEFAULT_AUTO_LEARNING = True  # Auto-learning enabled by default
-DEFAULT_TASK_RANGE_DAYS = 7  # Number of days per Recorder extraction task (tune to machine power)
-DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES = 15  # Default revert threshold for time shifts
 
 # Default values for Heating Cycle Detection
-DEFAULT_TEMP_DELTA_THRESHOLD = 0.2  # °C threshold for cycle start/end detection
-DEFAULT_CYCLE_SPLIT_DURATION_MINUTES = 0  # 0 = No splitting (disabled)
-DEFAULT_MIN_CYCLE_DURATION_MINUTES = 5  # Minimum 5 minutes
-DEFAULT_MAX_CYCLE_DURATION_MINUTES = 300  # Maximum 5 hours
 
 # Safety shutoff grace period: brief interruptions shorter than this threshold (e.g. frost/safety mode)
 # will NOT terminate an in-progress heating cycle, preventing bogus slope values.
 # Note: 10 minutes is the recommended production default (enabled for all new/upgraded devices).
 # HeatingCycleService.__init__ defaults to 0 for test-isolation purposes; production always reads
 # this value from HA config (or falls back to DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES).
-CONF_SAFETY_SHUTOFF_GRACE_MINUTES = "safety_shutoff_grace_minutes"
-DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES = 10  # 10 minutes tolerance for safety/frost interruptions
 
 # Native schedule (schedule.*) options. A native schedule's blocks carry free "data" with no
 # convention on the keys, so the user says which keys hold a preset or a temperature, and
 # whether IHP may apply the next block itself. Off by default: native schedules stay
 # compute-only unless the user opts in.
-CONF_NATIVE_SCHEDULE_DRIVE = "native_schedule_drive"
-CONF_NATIVE_SCHEDULE_PRESET_KEY = "native_schedule_preset_key"
-CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY = "native_schedule_temperature_key"
-CONF_NATIVE_SCHEDULE_FALLBACK_PRESET = "native_schedule_fallback_preset"
-DEFAULT_NATIVE_SCHEDULE_DRIVE = False
-DEFAULT_NATIVE_SCHEDULE_PRESET_KEY = "preset"
-DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY = "temperature"
-DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET = "comfort"
-
-# Service names
 SERVICE_CALCULATE_ANTICIPATED_START_TIME = "calculate_anticipated_start_time"
 SERVICE_SCHEDULER_RUN_ACTION = "run_action"
 
@@ -117,7 +116,6 @@ STORAGE_VERSION = 1
 
 # Wake-up sources (#66): entities holding a point in time that IHP anticipates like a slot.
 # Stored as a list of objects in the entry options, per IHP; absent means none.
-CONF_WAKE_UP_SOURCES = "wake_up_sources"
 CONF_WAKE_UP_ENTITY = "entity_id"
 CONF_WAKE_UP_FROM_SCHEDULE = "target_from_schedule"
 CONF_WAKE_UP_PRESET = "target_preset"
@@ -128,10 +126,3 @@ DEFAULT_WAKE_UP_HORIZON_HOURS = 24
 MIN_WAKE_UP_HORIZON_HOURS = 1
 MAX_WAKE_UP_HORIZON_HOURS = 72
 MAX_WAKE_UP_HOLD_MINUTES = 720
-# Form-only flag of the options form: opens the wake-up sources menu. Never stored.
-CONF_MANAGE_WAKE_UP_SOURCES = "manage_wake_up_sources"
-# Temperature the user maps to each preset of a climate that does not publish it (#252),
-# stored as {preset name: temperature}
-CONF_PRESET_TEMPERATURES = "preset_temperatures"
-# Form-only flag of the options form: opens the preset mapping step. Never stored.
-CONF_MANAGE_PRESET_TEMPERATURES = "manage_preset_temperatures"

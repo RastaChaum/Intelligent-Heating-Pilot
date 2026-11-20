@@ -81,3 +81,43 @@ DEFAULT_PRESET_TEMPERATURE_C = 20.0
 # A wake-up source does not necessarily change at its deadline: the recalculation that completes
 # the preheat and starts its hold is requested this long after it, once the deadline has passed.
 DEADLINE_RECALC_DELAY_SECONDS = 1
+
+# Setting keys and built-in defaults of the configurable settings. They are declared here, in the
+# domain, so that the settings catalog depends only on domain code; `const.py` re-exports them.
+CONF_CLIMATE_ENTITY = "vtherm_entity_id"
+CONF_SCHEDULER_ENTITIES = "scheduler_entities"
+CONF_HUMIDITY_IN_ENTITY = "humidity_in_entity_id"
+CONF_HUMIDITY_OUT_ENTITY = "humidity_out_entity_id"
+CONF_TEMPERATURE_OUT_ENTITY = "temperature_out_entity_id"
+CONF_CLOUD_COVER_ENTITY = "cloud_cover_entity_id"
+CONF_LHS_RETENTION_DAYS = "lhs_retention_days"
+CONF_DEAD_TIME_MINUTES = "dead_time_minutes"
+CONF_AUTO_LEARNING = "auto_learning"
+CONF_TEMP_DELTA_THRESHOLD = "temp_delta_threshold"
+CONF_CYCLE_SPLIT_DURATION_MINUTES = "cycle_split_duration_minutes"
+CONF_MIN_CYCLE_DURATION_MINUTES = "min_cycle_duration_minutes"
+CONF_MAX_CYCLE_DURATION_MINUTES = "max_cycle_duration_minutes"
+CONF_TASK_RANGE_DAYS = "task_range_days"
+CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES = "anticipation_recalc_tolerance_minutes"
+CONF_SAFETY_SHUTOFF_GRACE_MINUTES = "safety_shutoff_grace_minutes"
+CONF_NATIVE_SCHEDULE_DRIVE = "native_schedule_drive"
+CONF_NATIVE_SCHEDULE_PRESET_KEY = "native_schedule_preset_key"
+CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY = "native_schedule_temperature_key"
+CONF_NATIVE_SCHEDULE_FALLBACK_PRESET = "native_schedule_fallback_preset"
+CONF_WAKE_UP_SOURCES = "wake_up_sources"
+DEFAULT_LHS_RETENTION_DAYS = 30
+DEFAULT_AUTO_LEARNING = True
+DEFAULT_TASK_RANGE_DAYS = 7
+DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES = 15
+DEFAULT_TEMP_DELTA_THRESHOLD = 0.2
+DEFAULT_CYCLE_SPLIT_DURATION_MINUTES = 0
+DEFAULT_MIN_CYCLE_DURATION_MINUTES = 5
+DEFAULT_MAX_CYCLE_DURATION_MINUTES = 300
+DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES = 10
+DEFAULT_NATIVE_SCHEDULE_DRIVE = False
+DEFAULT_NATIVE_SCHEDULE_PRESET_KEY = "preset"
+DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY = "temperature"
+DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET = "comfort"
+# Temperature the user maps to each preset of a climate that does not publish it (#252),
+# stored as {preset name: temperature}
+CONF_PRESET_TEMPERATURES = "preset_temperatures"

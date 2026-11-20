@@ -67,10 +67,20 @@ async def _set_up_device(hass: HomeAssistant, name: str, vtherm: str) -> Any:
     )
 
 
+async def _open_theme(
+    hass: HomeAssistant, entry: MockConfigEntry, theme: str = "thermostat_schedulers"
+) -> Any:
+    """Open the form of one theme of the options menu (#302)."""
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    return await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": theme}
+    )
+
+
 async def _submit_options(
     hass: HomeAssistant, entry: MockConfigEntry, user_input: dict[str, Any]
 ) -> Any:
-    form = await hass.config_entries.options.async_init(entry.entry_id)
+    form = await _open_theme(hass, entry)
     return await hass.config_entries.options.async_configure(form["flow_id"], user_input)
 
 
@@ -88,7 +98,7 @@ class TestOptionsWithAMissingScheduler:
     async def test_missing_scheduler_is_listed_as_not_found(
         self, hass: HomeAssistant, entry: MockConfigEntry
     ) -> None:
-        form = await hass.config_entries.options.async_init(entry.entry_id)
+        form = await _open_theme(hass, entry)
 
         labels = _scheduler_option_labels(form)
 
@@ -105,7 +115,7 @@ class TestOptionsWithAMissingScheduler:
             hass, entry, {CONF_CLIMATE_ENTITY: BEDROOM, CONF_SCHEDULER_ENTITIES: schedulers}
         )
 
-        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["type"] is FlowResultType.MENU
         assert entry.options[CONF_SCHEDULER_ENTITIES] == schedulers
 
     @pytest.mark.asyncio
@@ -118,7 +128,7 @@ class TestOptionsWithAMissingScheduler:
             {CONF_CLIMATE_ENTITY: BEDROOM, CONF_SCHEDULER_ENTITIES: [EXISTING_SCHEDULER]},
         )
 
-        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["type"] is FlowResultType.MENU
         assert entry.options[CONF_SCHEDULER_ENTITIES] == [EXISTING_SCHEDULER]
 
     @pytest.mark.asyncio
@@ -129,7 +139,7 @@ class TestOptionsWithAMissingScheduler:
             entry, data={**entry.data, CONF_SCHEDULER_ENTITIES: MISSING_SCHEDULER}
         )
 
-        form = await hass.config_entries.options.async_init(entry.entry_id)
+        form = await _open_theme(hass, entry)
 
         assert MISSING_SCHEDULER in _scheduler_option_labels(form)
 
@@ -191,7 +201,7 @@ class TestOneDevicePerVTherm:
 
         result = await _submit_options(hass, office, {CONF_CLIMATE_ENTITY: OFFICE})
 
-        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["type"] is FlowResultType.MENU
         assert office.unique_id == OFFICE
 
     @pytest.mark.asyncio

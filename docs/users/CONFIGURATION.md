@@ -173,7 +173,7 @@ A **wake-up source** is an entity that holds a point in time: your phone's next 
 
 ### Setting One Up
 
-1. Open the device's **Configure** screen and tick **Manage wake-up sources after saving**, then save.
+1. Open the device's **Configure** screen and choose **Wake-up sources**.
 2. In the menu, choose **Add a source** and fill in:
 
 | Field | What it does |
@@ -184,7 +184,7 @@ A **wake-up source** is an entity that holds a point in time: your phone's next 
 | **Ignore times further than (hours)** | Default 24. A time further away is ignored, so a distant alarm never starts a preheat by accident. |
 | **Keep the target after the time (minutes)** | Optional. After this long, IHP puts the thermostat back in its earlier state. 0 leaves the thermostat as it is. |
 
-3. **Save and close**. A device can have several sources; each source belongs to one device.
+3. Choose **Save and go back**, then **Apply the saved changes** on the main menu. A device can have several sources; each source belongs to one device.
 
 ### How the Deadlines Combine
 
@@ -308,10 +308,31 @@ Need to change entities or settings after setup?
 1. Go to **Settings** → **Devices & Services**
 2. Open **Intelligent Heating Pilot**
 3. Click **Configure** on the device you want to change
-4. Update the entities or settings
-5. Click **Submit**
+4. Choose the group of settings to change, update it and submit
+5. Back on the menu, choose **Apply the saved changes** when you are done
 
-The device reloads automatically. The **Name** cannot be changed there: rename the device from its device page.
+The **Name** cannot be changed there: rename the device from its device page.
+
+### The Settings Menu
+
+The settings of a device are grouped by theme, so you only see the fields relevant to what you are changing:
+
+| Theme | What it holds |
+|-------|---------------|
+| **Thermostat and schedulers** | The Versatile Thermostat the device drives and the schedulers that control it |
+| **Native schedules** | Whether IHP drives native `schedule.*` helpers, and the keys of their block data |
+| **Wake-up sources** | Alarms and date-time entities IHP preheats for (see below) |
+| **Environment sensors** | Indoor humidity, outdoor temperature and humidity, cloud coverage |
+| **Learning** | Automatic learning, initial dead time, data retention, recorder extraction period |
+| **Cycle detection** | Temperature threshold, cycle durations, cycle split, safety grace period |
+| **Anticipation behaviour** | Preheating revert time delta |
+
+### Saving and Applying
+
+- **Each group is saved as soon as you submit it.** Closing the dialog, even before choosing anything else, loses nothing.
+- **Saving does not reload the device.** The device keeps running with the settings it was loaded with until you apply them.
+- **Apply the saved changes** reloads the device once, with everything you saved. It is only listed while something is saved and not applied yet, and the menu text names the groups concerned. A restart of Home Assistant, or any other reload of the device, applies saved settings too.
+- Turning IHP on or off with its switch takes effect at once, with no reload.
 
 ---
 
@@ -494,9 +515,9 @@ Fine-tune how IHP detects and processes heating cycles for the Learned Heating S
 1. Go to **Settings** → **Devices & Services**
 2. Open **Intelligent Heating Pilot**
 3. Click **Configure** on the device
-4. Scroll down to the settings below the entities
-5. Adjust parameters based on your heating system
-6. Click **Submit**
+4. Open the group of settings you want (for example **Cycle detection** or **Learning**)
+5. Adjust parameters based on your heating system and submit
+6. Choose **Apply the saved changes** on the menu
 
 **Tip**: Start with defaults and only adjust if you notice issues with cycle detection in the logs.
 

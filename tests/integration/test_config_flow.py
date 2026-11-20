@@ -56,6 +56,50 @@ def _get_default_value(schema_key: Any) -> Any:
     return default_value() if callable(default_value) else default_value
 
 
+THEME_KEYS = {
+    "thermostat_schedulers": [CONF_CLIMATE_ENTITY, CONF_SCHEDULER_ENTITIES],
+    "environment": [
+        CONF_HUMIDITY_IN_ENTITY,
+        CONF_HUMIDITY_OUT_ENTITY,
+        CONF_CLOUD_COVER_ENTITY,
+    ],
+    "learning": [CONF_LHS_RETENTION_DAYS, CONF_DEAD_TIME_MINUTES, CONF_AUTO_LEARNING],
+    "cycle_detection": [
+        CONF_TEMP_DELTA_THRESHOLD,
+        CONF_CYCLE_SPLIT_DURATION_MINUTES,
+        CONF_MIN_CYCLE_DURATION_MINUTES,
+        CONF_MAX_CYCLE_DURATION_MINUTES,
+    ],
+    "anticipation": [CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES],
+}
+
+
+async def _open_theme(hass, entry_id: str, theme: str):
+    menu = await hass.config_entries.options.async_init(entry_id)
+    assert menu["type"] == "menu"
+    return await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": theme}
+    )
+
+
+async def _save_in_themes(hass, entry_id: str, values: dict[str, Any]) -> None:
+    """Save each value in the theme that holds it, as a user going through the menu does."""
+    for theme, keys in THEME_KEYS.items():
+        form = await _open_theme(hass, entry_id, theme)
+        assert form["type"] == "form"
+        subset = {key: values[key] for key in keys if key in values}
+        result = await hass.config_entries.options.async_configure(form["flow_id"], subset)
+        assert result["type"] == "menu"
+
+
+async def _all_theme_schemas(hass, entry_id: str) -> dict[Any, Any]:
+    """The fields of every theme form, merged, as the options currently show them."""
+    schema: dict[Any, Any] = {}
+    for theme in THEME_KEYS:
+        schema.update((await _open_theme(hass, entry_id, theme))["data_schema"].schema)
+    return schema
+
+
 @pytest.mark.asyncio
 async def test_user_flow_creates_entry_with_all_values(hass) -> None:
     """Create entry with user-provided values and preserve them in data."""
@@ -121,9 +165,6 @@ async def test_options_flow_persists_and_reopens_with_last_values(hass) -> None:
     )
     entry.add_to_hass(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] == "form"
-
     updated_options = {
         CONF_CLIMATE_ENTITY: "climate.updated_vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.updated_schedule"],
@@ -140,20 +181,12 @@ async def test_options_flow_persists_and_reopens_with_last_values(hass) -> None:
         CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: 22,
     }
 
-    result2 = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        updated_options,
-    )
-
-    assert result2["type"] == "create_entry"
+    await _save_in_themes(hass, entry.entry_id, updated_options)
 
     for key, value in updated_options.items():
         assert entry.options.get(key) == value
 
-    result3 = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result3["type"] == "form"
-
-    schema = result3["data_schema"].schema
+    schema = await _all_theme_schemas(hass, entry.entry_id)
 
     vtherm_key = _find_schema_key(schema, CONF_CLIMATE_ENTITY)
     assert _get_default_value(vtherm_key) == "climate.updated_vtherm"
@@ -198,9 +231,6 @@ async def test_options_flow_values_used_by_device_config_reader(hass) -> None:
     )
     entry.add_to_hass(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] == "form"
-
     updated_options = {
         CONF_CLIMATE_ENTITY: "climate.reader_vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.reader_schedule"],
@@ -217,12 +247,7 @@ async def test_options_flow_values_used_by_device_config_reader(hass) -> None:
         CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: 11,
     }
 
-    result2 = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        updated_options,
-    )
-
-    assert result2["type"] == "create_entry"
+    await _save_in_themes(hass, entry.entry_id, updated_options)
 
     reader = HADeviceConfigReader(hass, entry)
     device_config = await reader.get_device_config(entry.entry_id)
@@ -257,10 +282,7 @@ async def test_options_flow_defaults_when_no_overrides(hass) -> None:
     )
     entry.add_to_hass(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] == "form"
-
-    schema = result["data_schema"].schema
+    schema = await _all_theme_schemas(hass, entry.entry_id)
 
     vtherm_key = _find_schema_key(schema, CONF_CLIMATE_ENTITY)
     assert _get_default_value(vtherm_key) == "climate.default_vtherm"
