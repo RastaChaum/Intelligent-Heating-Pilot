@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..value_objects.wake_up_source_config import WakeUpSourceConfig
 
@@ -50,6 +50,8 @@ class DeviceConfig:
         native_schedule_temperature_key: Block data key that holds a target temperature.
         native_schedule_fallback_preset: Preset used when a block has neither key.
         wake_up_sources: Entities holding a point in time that IHP anticipates like a slot.
+        preset_temperatures: Temperature the user mapped to each preset, for a climate that does
+                             not publish them (#252). Empty for a Versatile Thermostat.
         safety_shutoff_grace_minutes: Duration in minutes of the grace period for brief heating
                                       interruptions (safety/frost mode). Interruptions shorter than
                                       this threshold do not terminate an in-progress cycle, avoiding
@@ -92,6 +94,9 @@ class DeviceConfig:
 
     # Wake-up sources (#66): entities holding a point in time to anticipate
     wake_up_sources: tuple[WakeUpSourceConfig, ...] = ()
+
+    # Preset -> temperature mapping for climates that do not publish it (#252)
+    preset_temperatures: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate configuration values after initialization.
@@ -138,13 +143,13 @@ class DeviceConfig:
         if self.safety_shutoff_grace_minutes < 0:
             raise ValueError("safety_shutoff_grace_minutes must be at least 0")
 
-        for field in (
+        for text_field in (
             "native_schedule_preset_key",
             "native_schedule_temperature_key",
             "native_schedule_fallback_preset",
         ):
-            if not getattr(self, field).strip():
-                raise ValueError(f"{field} must not be blank")
+            if not getattr(self, text_field).strip():
+                raise ValueError(f"{text_field} must not be blank")
 
 
 class IDeviceConfigReader(ABC):

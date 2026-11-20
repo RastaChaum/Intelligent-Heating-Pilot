@@ -87,6 +87,9 @@ async def _open_user_form(hass: HomeAssistant) -> FlowResult:
 
 async def _open_options_form(hass: HomeAssistant) -> FlowResult:
     entry = _add_entry(hass)
+    # The preset mapping is only offered for a climate that lists presets but not their
+    # temperatures (#252), so the form shows every field it can have
+    hass.states.async_set("climate.living_room", "heat", {"preset_modes": ["eco", "comfort"]})
     return await hass.config_entries.options.async_init(entry.entry_id)
 
 

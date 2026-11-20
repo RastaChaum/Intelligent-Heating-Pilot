@@ -130,3 +130,8 @@ MAX_WAKE_UP_HORIZON_HOURS = 72
 MAX_WAKE_UP_HOLD_MINUTES = 720
 # Form-only flag of the options form: opens the wake-up sources menu. Never stored.
 CONF_MANAGE_WAKE_UP_SOURCES = "manage_wake_up_sources"
+# Temperature the user maps to each preset of a climate that does not publish it (#252),
+# stored as {preset name: temperature}
+CONF_PRESET_TEMPERATURES = "preset_temperatures"
+# Form-only flag of the options form: opens the preset mapping step. Never stored.
+CONF_MANAGE_PRESET_TEMPERATURES = "manage_preset_temperatures"

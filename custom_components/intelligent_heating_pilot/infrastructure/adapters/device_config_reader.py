@@ -23,6 +23,7 @@ from ...const import (
     CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
     CONF_NATIVE_SCHEDULE_PRESET_KEY,
     CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
+    CONF_PRESET_TEMPERATURES,
     CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
     CONF_SCHEDULER_ENTITIES,
     CONF_TASK_RANGE_DAYS,
@@ -45,6 +46,7 @@ from ...const import (
 )
 from ...domain.interfaces.device_config_reader_interface import DeviceConfig, IDeviceConfigReader
 from ...utils.config_helpers import as_bool
+from .preset_temperatures_config import parse_preset_temperatures
 from .wake_up_sources_config import parse_wake_up_sources
 
 if TYPE_CHECKING:
@@ -215,6 +217,9 @@ class HADeviceConfigReader(IDeviceConfigReader):
             wake_up_sources=parse_wake_up_sources(
                 self._get_config_value(config, options, CONF_WAKE_UP_SOURCES),
                 has_scheduler=bool(scheduler_entities),
+            ),
+            preset_temperatures=parse_preset_temperatures(
+                self._get_config_value(config, options, CONF_PRESET_TEMPERATURES)
             ),
         )
 

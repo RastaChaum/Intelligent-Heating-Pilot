@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from ...domain.interfaces.preset_temperature_resolver_interface import IPresetTemperatureResolver
 from ...domain.interfaces.scheduler_ownership_resolver_interface import ISchedulerOwnershipResolver
 from ...domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from ...domain.value_objects import ScheduledTimeslot, SchedulerKind, SlotAction
@@ -49,6 +50,7 @@ class HASchedulerReader(ISchedulerReader):
         climate_entity_id: str | None = None,
         native_settings: NativeScheduleSettings | None = None,
         ownership_resolver: ISchedulerOwnershipResolver | None = None,
+        preset_resolver: IPresetTemperatureResolver | None = None,
     ) -> None:
         """Initialize the scheduler reader adapter.
 
@@ -63,6 +65,8 @@ class HASchedulerReader(ISchedulerReader):
             ownership_resolver: Tells which integration owns a ``switch.*`` scheduler, so that a
                 Climate Scheduler switch (which imitates HACS Scheduler's attributes) is read as
                 its own. Without it, every switch is read as a HACS Scheduler one.
+            preset_resolver: Tells the temperature a preset stands for. Without it, only what
+                the climate publishes is used (no user mapping).
         """
         self._hass = hass
         self._scheduler_entity_ids = scheduler_entity_ids
@@ -71,7 +75,9 @@ class HASchedulerReader(ISchedulerReader):
         self._native_reader = HANativeScheduleReader(hass, self._native_settings)
         self._climate_scheduler_reader = HAClimateSchedulerReader(climate_entity_id or "")
         self._ownership_resolver = ownership_resolver
-        self._preset_resolver = HAPresetTemperatureResolver(hass, climate_entity_id)
+        self._preset_resolver = preset_resolver or HAPresetTemperatureResolver(
+            hass, climate_entity_id
+        )
 
     async def get_next_timeslot(
         self, exclude_entity_ids: frozenset[str] = frozenset()

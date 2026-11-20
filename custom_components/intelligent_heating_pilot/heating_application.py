@@ -210,16 +210,19 @@ class HeatingApplication:
         Returns:
             The reader every consumer of the next slot uses.
         """
+        presets = HAPresetTemperatureResolver(
+            self.hass, self._climate_id, self._device_config.preset_temperatures
+        )
         schedulers = HASchedulerReader(
             self.hass,
             self._scheduler_ids,
             climate_entity_id=self._climate_id,
             native_settings=self._native_schedule_settings(),
             ownership_resolver=ownership_resolver,
+            preset_resolver=presets,
         )
         if not self._wake_up_sources:
             return schedulers
-        presets = HAPresetTemperatureResolver(self.hass, self._climate_id)
         return CombinedTimeslotReader(
             scheduler_reader=schedulers,
             source_reader=HAWakeUpSourceReader(self.hass),

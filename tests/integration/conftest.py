@@ -10,26 +10,16 @@ from homeassistant.components.recorder import Recorder
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
-    MockModule,
-    mock_integration,
 )
 
 
 @pytest.fixture
-def mock_vtherm_integration(hass: HomeAssistant) -> None:
-    """Make the manifest dependency resolvable for tests going through the HA loader.
-
-    Opening a config or options flow sets up the dependencies first, and Versatile
-    Thermostat is not installed in the test environment.
-    """
-    mock_integration(hass, MockModule("versatile_thermostat"))
-
-
-@pytest.fixture
 def flow_environment(
-    recorder_mock: Recorder, enable_custom_integrations: None, mock_vtherm_integration: None
+    recorder_mock: Recorder, enable_custom_integrations: None
 ) -> Generator[AsyncMock]:
     """Let config and options flows load the integration and its dependencies.
+
+    Versatile Thermostat is deliberately not installed here: IHP only orders itself after it (#252).
 
     The manifest declares ``recorder`` as a dependency (#192), so opening a flow sets the
     recorder up: ``recorder_mock`` provides an in-memory one. Entries created by a flow are
