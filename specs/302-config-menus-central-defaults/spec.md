@@ -32,6 +32,7 @@ central default configuration second (User Stories 2 and 3).
 - Q: How is the central configuration created? → A: Automatically with the first device.
 - Q: What does device creation store for shareable values? → A: Only device-specific fields; every shareable value is inherited, with no override.
 - Q: Where does the user edit the central configuration? → A: A dedicated visible entry whose configure button opens the theme menus, without device-specific fields.
+- Q: Can the central configuration be deleted while devices exist? → A: No, deletion is refused until no device remains.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -162,8 +163,10 @@ changes while the device form is open.
 
 ### Edge Cases
 
-- A device exists but the central configuration is later removed: devices fall back to
-  built-in defaults for values they do not override, with no error at startup.
+- The user tries to delete the central configuration while devices exist: the deletion is
+  refused with an explanation, and no device changes.
+- Installations upgraded from a version without central configuration have devices but no
+  central values yet: devices behave exactly as before until central values are set.
 - A central value is cleared (for example the outdoor sensor): inheriting devices behave as
   if the sensor was never configured.
 - A central sensor entity is unavailable or deleted: handled like a device-level sensor that
@@ -233,7 +236,8 @@ changes while the device form is open.
   schedulers) and MUST store no override: every shareable value is inherited until the user
   overrides it from a theme menu.
 - **FR-023**: The central configuration MUST appear as its own entry in the integration list
-  under an explicit name, and its configure action MUST open the same theme menus as a
+  under an explicit name, deletion MUST be refused while at least one device exists, and
+  its configure action MUST open the same theme menus as a
   device, limited to shareable themes and without device-specific fields.
 
 ### Workflow Requirements *(mandatory)*
@@ -292,4 +296,8 @@ changes while the device form is open.
   afterwards in the theme menus (overrides) or in the central configuration.
 - Menus ship first as their own pull request, the central configuration in a following one,
   both under this specification.
+- Refusing deletion of the central entry may not be technically possible with the platform's
+  entry removal; if the plan shows it is not, the fallback is to allow deletion, fall back to
+  built-in defaults for inherited values, and recreate the entry at the next device creation
+  or startup. The plan MUST settle this.
 - The existing "copy settings from another device" idea is out of scope.
