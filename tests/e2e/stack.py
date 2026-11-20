@@ -45,6 +45,8 @@ class Room:
     """One heated room: a thermostat over a switch, with a sensor to read and a heater to drive."""
 
     key: str
+    # Heated by Home Assistant's own generic_thermostat instead of a Versatile Thermostat (#252)
+    generic: bool = False
 
     @property
     def name(self) -> str:
@@ -97,7 +99,36 @@ def render_configuration(rooms: list[Room]) -> str:
             for room in rooms
         ],
     ]
+    generic_rooms = [room for room in rooms if room.generic]
+    if generic_rooms:
+        lines.append("climate:")
+        lines += [_generic_thermostat(room) for room in generic_rooms]
     return "\n".join(lines) + "\n"
+
+
+# The temperature of each preset of a generic thermostat: part of its YAML configuration, never
+# published in its attributes, so IHP must be given them in its options
+GENERIC_PRESET_TEMPERATURES = {"away": 15.0, "eco": 17.0, "comfort": 21.0}
+
+
+def _generic_thermostat(room: Room) -> str:
+    """A ``generic_thermostat`` heating the room, resting at its eco temperature."""
+    presets = "\n".join(
+        f"    {preset}_temp: {celsius}" for preset, celsius in GENERIC_PRESET_TEMPERATURES.items()
+    )
+    return (
+        "  - platform: generic_thermostat\n"
+        f"    name: {room.name}\n"
+        f"    unique_id: {room.key}_room\n"
+        f"    heater: {room.heater}\n"
+        f"    target_sensor: {room.sensor}\n"
+        "    min_temp: 15\n"
+        "    max_temp: 30\n"
+        f"    target_temp: {GENERIC_PRESET_TEMPERATURES['eco']}\n"
+        "    target_temp_step: 0.5\n"
+        "    initial_hvac_mode: heat\n"
+        f"{presets}"
+    )
 
 
 class HomeAssistantStack:

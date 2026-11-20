@@ -27,6 +27,10 @@ Versatile Thermostat's behaviour, that would otherwise only show up on a live Ho
 | `test_scheduler_specifics.py` | Native options (fallback preset, data keys, opt-in), HACS Scheduler conditions, Climate Scheduler disabled switch and temperature node |
 | `test_preheat_restore.py` | Safe restore: removed or moved block, manual change, set by hand, imminent slot, restart, slot reached |
 | `test_wake_up_sources.py` | Wake-up sources: earliest deadline, hold and restore, target from the schedule, snooze, removal, unknown alarm, restart during the hold |
+| `test_generic_climate.py` | Home Assistant's own `generic_thermostat`, no Versatile Thermostat set up (#252): temperature and mapped preset slots on the three schedulers, unmapped preset warning, native default, the preset mapping step of the options flow |
+
+`GenericThermostatHome` (fixture `generic_home`) is the same room heated by `generic_thermostat`. It
+lists its presets but does not publish their temperatures, and it has no `boost` preset.
 
 ```bash
 poetry run pytest tests/integration/real_components -v

@@ -75,3 +75,11 @@ async def home(real_components: None, clock: FrozenDateTimeFactory, hass: HomeAs
     from tests.integration.real_components.home import Home
 
     return await Home.build(hass, clock)
+
+
+@pytest.fixture
+async def generic_home(real_components: None, clock: FrozenDateTimeFactory, hass: HomeAssistant):
+    """The same cold room, heated by Home Assistant's own generic thermostat (#252)."""
+    from tests.integration.real_components.home import GenericThermostatHome
+
+    return await GenericThermostatHome.build(hass, clock)

@@ -37,6 +37,7 @@ from custom_components.versatile_thermostat.const import (
 )
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import Event, HomeAssistant
+from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -72,6 +73,7 @@ CYCLE_MINUTES = 5
 ECO_C = 17.0
 COMFORT_C = 21.0
 BOOST_C = 23.0
+GENERIC_AWAY_C = 15.0
 COLD_ROOM_C = 18.0
 YIELDS_PER_STEP = 30
 MAX_CLOCK_STEP_SECONDS = 60
@@ -184,13 +186,17 @@ class Home:
         home._room_c = room_c
         await home._add_thermostat(room_c, outdoor_c)
         await home.user_selects_hvac_mode("heat")
-        await home.set_preset_temperatures(comfort=COMFORT_C, eco=ECO_C, boost=BOOST_C)
+        await home._prepare_presets()
+        home._record_commands()
+        return home
+
+    async def _prepare_presets(self) -> None:
+        """Give the presets their temperature, and leave the room resting in eco."""
+        await self.set_preset_temperatures(comfort=COMFORT_C, eco=ECO_C, boost=BOOST_C)
         # Versatile Thermostat publishes a preset's temperature in its attributes only once that
         # preset has been selected, so the user goes through each one before the room rests.
         for preset in ("boost", "comfort", "eco"):
-            await home.user_selects_preset(preset)
-        home._record_commands()
-        return home
+            await self.user_selects_preset(preset)
 
     # --- the room -----------------------------------------------------------------------
 
@@ -370,6 +376,48 @@ class Home:
                 break
             anticipated = latest
         return anticipated
+
+
+class GenericThermostatHome(Home):
+    """The same room, heated by Home Assistant's own ``generic_thermostat`` instead (#252).
+
+    It is a standard climate: it lists its presets (``preset_modes``) but, unlike Versatile
+    Thermostat, never publishes the temperature behind them, and Versatile Thermostat is not
+    set up at all.
+    """
+
+    async def _add_thermostat(self, room_c: float, outdoor_c: float) -> None:
+        hass = self.hass
+        hass.states.async_set(ROOM_SENSOR, str(room_c))
+        hass.states.async_set(OUTDOOR_SENSOR, str(outdoor_c))
+        hass.states.async_set(HEATER_SWITCH, "off")
+        # generic_thermostat drives its heater through the homeassistant domain
+        for domain in ("switch", "homeassistant"):
+            async_mock_service(hass, domain, "turn_on")
+            async_mock_service(hass, domain, "turn_off")
+        config = {
+            "climate": {
+                "platform": "generic_thermostat",
+                "name": "Room",
+                "heater": HEATER_SWITCH,
+                "target_sensor": ROOM_SENSOR,
+                "min_temp": THERMOSTAT_MIN_C,
+                "max_temp": THERMOSTAT_MAX_C,
+                "target_temp": ECO_C,
+                "target_temp_step": THERMOSTAT_STEP_C,
+                "initial_hvac_mode": "heat",
+                # generic_thermostat has no boost preset
+                "away_temp": GENERIC_AWAY_C,
+                "eco_temp": ECO_C,
+                "comfort_temp": COMFORT_C,
+            }
+        }
+        assert await async_setup_component(hass, "climate", config)
+        await hass.async_block_till_done()
+
+    async def _prepare_presets(self) -> None:
+        """The preset temperatures are part of the thermostat's configuration: rest in eco."""
+        await self.user_selects_preset("eco")
 
 
 def _targets(command: Command, entity_id: str) -> bool:
