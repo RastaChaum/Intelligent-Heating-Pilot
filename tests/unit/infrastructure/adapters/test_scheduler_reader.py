@@ -517,7 +517,7 @@ def test_resolve_preset_temperature_v8_format(mock_hass: Mock) -> None:
     }
 
     reader = HASchedulerReader(
-        mock_hass, ["switch.schedule"], vtherm_entity_id="climate.test_vtherm"
+        mock_hass, ["switch.schedule"], climate_entity_id="climate.test_vtherm"
     )
 
     # Mock VTherm state
@@ -550,7 +550,7 @@ def test_resolve_preset_temperature_ignores_zero_values(mock_hass: Mock) -> None
     }
 
     reader = HASchedulerReader(
-        mock_hass, ["switch.schedule"], vtherm_entity_id="climate.test_vtherm"
+        mock_hass, ["switch.schedule"], climate_entity_id="climate.test_vtherm"
     )
 
     mock_hass.states.get.return_value = vtherm_state
@@ -709,7 +709,7 @@ def _native_reader_with_vtherm(
     mock_hass.is_running = True
     _give_schedule(mock_hass, _native_schedule(monday=blocks or _evening_block()))
     return HASchedulerReader(
-        mock_hass, [NATIVE_ID], vtherm_entity_id="climate.vtherm", native_settings=settings
+        mock_hass, [NATIVE_ID], climate_entity_id="climate.vtherm", native_settings=settings
     )
 
 
@@ -931,7 +931,7 @@ def test_get_native_schedule_temperature_no_vtherm_uses_default(
 def test_get_native_schedule_temperature_vtherm_missing_uses_default(mock_hass: Mock) -> None:
     """An unavailable VTherm entity falls back to the default comfort temperature."""
     mock_hass.states.get.return_value = None
-    reader = HASchedulerReader(mock_hass, ["schedule.test"], vtherm_entity_id="climate.vtherm")
+    reader = HASchedulerReader(mock_hass, ["schedule.test"], climate_entity_id="climate.vtherm")
 
     result = reader._native_target_temperature(None)
 
@@ -950,7 +950,7 @@ def test_get_native_schedule_temperature_flat_comfort_zero_uses_default(
             "comfort_temp": 0,
         }
     )
-    reader = HASchedulerReader(mock_hass, ["schedule.test"], vtherm_entity_id="climate.vtherm")
+    reader = HASchedulerReader(mock_hass, ["schedule.test"], climate_entity_id="climate.vtherm")
 
     result = reader._native_target_temperature(None)
 
@@ -964,7 +964,7 @@ def test_get_native_schedule_temperature_comfort_active_uses_current_target(
     mock_hass.states.get.return_value = _make_vtherm_state(
         {"temperature": 21.5, "preset_mode": "comfort"}
     )
-    reader = HASchedulerReader(mock_hass, ["schedule.test"], vtherm_entity_id="climate.vtherm")
+    reader = HASchedulerReader(mock_hass, ["schedule.test"], climate_entity_id="climate.vtherm")
 
     result = reader._native_target_temperature(None)
 
@@ -1063,7 +1063,7 @@ def _cs_reader(mock_hass: Mock, state: Mock, vtherm_attributes: dict | None = No
     return HASchedulerReader(
         mock_hass,
         [CS_ID],
-        vtherm_entity_id="climate.vtherm",
+        climate_entity_id="climate.vtherm",
         ownership_resolver=_Owner(SchedulerKind.CLIMATE_SCHEDULER),
     )
 

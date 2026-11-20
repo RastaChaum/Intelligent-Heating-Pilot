@@ -16,8 +16,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_CLIMATE_ENTITY,
     CONF_SCHEDULER_ENTITIES,
-    CONF_VTHERM_ENTITY,
     CONF_WAKE_UP_ENTITY,
     CONF_WAKE_UP_FROM_SCHEDULE,
     CONF_WAKE_UP_HOLD_MINUTES,
@@ -269,7 +269,7 @@ class WakeUpSourcesFlowMixin:
             step_id="wake_up_form",
             data_schema=build_source_schema(
                 self.hass,
-                self._pending.get(CONF_VTHERM_ENTITY),
+                self._pending.get(CONF_CLIMATE_ENTITY),
                 self._has_scheduler(),
                 defaults,
             ),

@@ -72,7 +72,7 @@ def ihp_monitors_thermostat(jitter_context: dict) -> None:
     bridge = HAEventBridge(
         hass=Mock(),
         orchestrator=AsyncMock(),
-        vtherm_entity_id=VTHERM_ENTITY_ID,
+        climate_entity_id=VTHERM_ENTITY_ID,
         scheduler_entity_ids=[],
     )
     bridge._request_recalculate = Mock()  # type: ignore[method-assign]

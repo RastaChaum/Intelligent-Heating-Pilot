@@ -66,8 +66,7 @@ class TestCalculateAnticipationUseCase:
     def mock_climate_data_reader(self) -> Mock:
         """Create mock climate data reader."""
         reader = Mock()
-        reader.get_vtherm_entity_id = Mock(return_value="climate.test_vtherm")
-        reader.get_current_slope = Mock(return_value=None)
+        reader.get_climate_entity_id = Mock(return_value="climate.test_vtherm")
         reader.is_heating_active = Mock(return_value=False)
         return reader
 
@@ -430,7 +429,7 @@ class TestCalculateAnticipationUseCaseDeadTimeHydration:
     @pytest.fixture
     def mock_climate_data_reader(self) -> Mock:
         reader = Mock()
-        reader.get_vtherm_entity_id = Mock(return_value="climate.test_vtherm")
+        reader.get_climate_entity_id = Mock(return_value="climate.test_vtherm")
         return reader
 
     @pytest.fixture

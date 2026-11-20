@@ -151,7 +151,7 @@ class NativeStack:
         self.reader = HASchedulerReader(
             self.hass,
             [self.scheduler_id],
-            vtherm_entity_id=CLIMATE_ID,
+            climate_entity_id=CLIMATE_ID,
             native_settings=settings,
             ownership_resolver=resolver,
         )

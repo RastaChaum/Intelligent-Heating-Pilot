@@ -96,8 +96,7 @@ def mock_adapters_ihp_switch():
 
     # Climate data reader (replaces old vtherm_metadata/slope/state readers)
     climate_data_reader = Mock()
-    climate_data_reader.get_vtherm_entity_id = Mock(return_value="climate.bedroom")
-    climate_data_reader.get_current_slope = Mock(return_value=None)
+    climate_data_reader.get_climate_entity_id = Mock(return_value="climate.bedroom")
     climate_data_reader.is_heating_active = Mock(return_value=False)
 
     timer_scheduler = Mock()

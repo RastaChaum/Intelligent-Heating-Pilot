@@ -104,7 +104,7 @@ class HeatingApplication:
 
         # Extract configuration from DeviceConfig (NOT from config_entry!)
         # This is the key change: we read from the injected value object
-        self._vtherm_id = device_config.vtherm_entity_id
+        self._climate_id = device_config.climate_entity_id
         self._scheduler_ids = device_config.scheduler_entities
         self._wake_up_sources = device_config.wake_up_sources
         self._wake_up_source_ids = [source.entity_id for source in self._wake_up_sources]
@@ -213,13 +213,13 @@ class HeatingApplication:
         schedulers = HASchedulerReader(
             self.hass,
             self._scheduler_ids,
-            vtherm_entity_id=self._vtherm_id,
+            climate_entity_id=self._climate_id,
             native_settings=self._native_schedule_settings(),
             ownership_resolver=ownership_resolver,
         )
         if not self._wake_up_sources:
             return schedulers
-        presets = HAPresetTemperatureResolver(self.hass, self._vtherm_id)
+        presets = HAPresetTemperatureResolver(self.hass, self._climate_id)
         return CombinedTimeslotReader(
             scheduler_reader=schedulers,
             source_reader=HAWakeUpSourceReader(self.hass),
@@ -248,7 +248,7 @@ class HeatingApplication:
             self._scheduler_ids,
             ownership_resolver,
             HANativeScheduleReader(self.hass, self._native_schedule_settings()),
-            HAClimateSchedulerReader(self._vtherm_id),
+            HAClimateSchedulerReader(self._climate_id),
             presets,
         )
 
@@ -258,7 +258,7 @@ class HeatingApplication:
         if climate_reader is None:
             raise RuntimeError("The climate data reader must exist before the actuator is built")
         return DirectPreheatActuator(
-            commander=HAClimateCommander(self.hass, self._vtherm_id),
+            commander=HAClimateCommander(self.hass, self._climate_id),
             climate_reader=climate_reader,
             record_store=self._record_store,
             policy=PreheatSessionPolicy(),
@@ -284,7 +284,7 @@ class HeatingApplication:
         from .infrastructure.recorder_queue import get_recorder_queue
 
         self._climate_data_reader = HAClimateDataReader(
-            self.hass, get_recorder_queue(self.hass), self._vtherm_id
+            self.hass, get_recorder_queue(self.hass), self._climate_id
         )
 
         self._record_store = HAPreheatRecordStorage(self.hass, self._device_id)
@@ -296,7 +296,7 @@ class HeatingApplication:
         self._preheat_actuator = self._build_preheat_actuator(ownership_resolver)
         self._environment_reader = HAEnvironmentReader(
             self.hass,
-            self._vtherm_id,
+            self._climate_id,
             outdoor_temp_entity_id=self._temperature_out_id,
             humidity_in_entity_id=self._humidity_in_id,
             humidity_out_entity_id=self._humidity_out_id,
@@ -410,7 +410,7 @@ class HeatingApplication:
         self._event_bridge = HAEventBridge(
             self.hass,
             self._orchestrator,
-            self._vtherm_id,
+            self._climate_id,
             [*self._scheduler_ids, *self._wake_up_source_ids],
             self._recalculation_trigger_entity_ids(),
             entry_id=self._device_id,
@@ -431,7 +431,7 @@ class HeatingApplication:
         _LOGGER.info(
             "[%s] Coordinator initialized (VTherm: %s, Schedulers: %d)",
             self._device_id,
-            self._vtherm_id,
+            self._climate_id,
             len(self._scheduler_ids),
         )
 
@@ -525,12 +525,12 @@ class HeatingApplication:
                 return
 
             # Verify VTherm entity exists before attempting to query its history
-            vtherm_state = self.hass.states.get(self._vtherm_id)
+            vtherm_state = self.hass.states.get(self._climate_id)
             if vtherm_state is None:
                 _LOGGER.error(
                     "Cannot initialize cycle extraction: VTherm entity %s not found. "
                     "Ensure the climate entity is loaded before IHP starts.",
-                    self._vtherm_id,
+                    self._climate_id,
                 )
                 return
 
@@ -556,7 +556,7 @@ class HeatingApplication:
         except Exception as err:  # pylint: disable=broad-except
             _LOGGER.error(
                 "Failed to initialize cycle extraction for %s: %s",
-                self._vtherm_id,
+                self._climate_id,
                 err,
                 exc_info=True,
             )
@@ -882,9 +882,9 @@ class HeatingApplication:
         """Get device identifier (config entry ID)."""
         return self._device_id
 
-    def get_vtherm_entity(self) -> str:
+    def get_climate_entity(self) -> str:
         """Get VTherm entity ID."""
-        return self._vtherm_id
+        return self._climate_id
 
     def get_scheduler_entities(self) -> list[str]:
         """Get scheduler entity IDs."""

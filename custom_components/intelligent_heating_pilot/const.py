@@ -5,7 +5,7 @@ DOMAIN = "intelligent_heating_pilot"
 EVENT_DEAD_TIME_UPDATED = f"{DOMAIN}_dead_time_updated"
 # Configuration keys
 CONF_NAME = "name"
-CONF_VTHERM_ENTITY = "vtherm_entity_id"
+CONF_CLIMATE_ENTITY = "vtherm_entity_id"
 CONF_SCHEDULER_ENTITIES = "scheduler_entities"
 CONF_HUMIDITY_IN_ENTITY = "humidity_in_entity_id"
 CONF_HUMIDITY_OUT_ENTITY = "humidity_out_entity_id"
@@ -103,7 +103,6 @@ ATTR_LEARNED_HEATING_SLOPE = "learned_heating_slope"
 ATTR_MAX_HEATING_SLOPE = "max_heating_slope"
 
 # VTherm specific attributes
-VTHERM_ATTR_SLOPE = "temperature_slope"
 VTHERM_ATTR_TEMPERATURE = "temperature"
 VTHERM_ATTR_CURRENT_TEMPERATURE = "ema_temp"  # Actual room temperature (exponential moving average)
 

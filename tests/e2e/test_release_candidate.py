@@ -63,9 +63,9 @@ def _entry_dict(domain: str, title: str, entry_id: str, data: dict, options: dic
 
 def _seeded_entries() -> list[dict]:
     from custom_components.intelligent_heating_pilot.const import (
+        CONF_CLIMATE_ENTITY,
         CONF_NATIVE_SCHEDULE_DRIVE,
         CONF_SCHEDULER_ENTITIES,
-        CONF_VTHERM_ENTITY,
     )
     from tests.integration.real_components.home import vtherm_entry_data
 
@@ -90,7 +90,7 @@ def _seeded_entries() -> list[dict]:
                 f"IHP {room.name}",
                 f"ihp{room.key:0>25}",
                 {
-                    CONF_VTHERM_ENTITY: room.thermostat,
+                    CONF_CLIMATE_ENTITY: room.thermostat,
                     CONF_SCHEDULER_ENTITIES: [SCHEDULE_ENTITIES[room.key]],
                 },
                 options,

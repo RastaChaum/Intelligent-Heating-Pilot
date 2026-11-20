@@ -16,6 +16,7 @@ from .config_flow_wake_up import WakeUpSourcesFlowMixin
 from .const import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_DEAD_TIME_MINUTES,
@@ -35,7 +36,6 @@ from .const import (
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
     DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
@@ -168,9 +168,9 @@ def _scheduler_selector(hass: HomeAssistant, configured: list[str]) -> Any:
 
 def _configured_vtherm(entry: config_entries.ConfigEntry) -> Any:
     """Return the VTherm a device drives: the options value when set, else the setup value."""
-    if CONF_VTHERM_ENTITY in entry.options:
-        return entry.options[CONF_VTHERM_ENTITY]
-    return entry.data.get(CONF_VTHERM_ENTITY)
+    if CONF_CLIMATE_ENTITY in entry.options:
+        return entry.options[CONF_CLIMATE_ENTITY]
+    return entry.data.get(CONF_CLIMATE_ENTITY)
 
 
 def _vtherm_in_use(hass: HomeAssistant, vtherm: str, exclude_entry_id: str | None = None) -> bool:
@@ -219,14 +219,14 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             _LOGGER.debug("Processed data before validation: %s", processed)
 
             # Required validations
-            vtherm_val = processed.get(CONF_VTHERM_ENTITY)
+            vtherm_val = processed.get(CONF_CLIMATE_ENTITY)
             if not vtherm_val or (isinstance(vtherm_val, str) and vtherm_val.strip() == ""):
-                errors[CONF_VTHERM_ENTITY] = "required"
+                errors[CONF_CLIMATE_ENTITY] = "required"
 
             # Scheduler is now optional - no validation needed
 
             if not errors:
-                vtherm: str = processed[CONF_VTHERM_ENTITY]
+                vtherm: str = processed[CONF_CLIMATE_ENTITY]
                 if _vtherm_in_use(self.hass, vtherm):
                     return self.async_abort(reason="already_configured")
                 _LOGGER.info("Creating entry with data: %s", processed)
@@ -242,7 +242,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
-                vol.Required(CONF_VTHERM_ENTITY): selector.EntitySelector(
+                vol.Required(CONF_CLIMATE_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain="climate", integration="versatile_thermostat"
                     )
@@ -380,7 +380,7 @@ class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.
 
     def _finish(self, options: dict[str, Any]) -> ConfigFlowResult:
         """Save the options, keying the entry on its new VTherm when it changed."""
-        vtherm = options.get(CONF_VTHERM_ENTITY)
+        vtherm = options.get(CONF_CLIMATE_ENTITY)
         if vtherm and vtherm != _configured_vtherm(self.config_entry):
             self._follow_vtherm(vtherm, options)
         return self.async_create_entry(title="", data=options)
@@ -430,11 +430,11 @@ class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.
                     fields_to_delete.append(field)
 
             # Validate required fields
-            vtherm: str | None = normalized_input.get(CONF_VTHERM_ENTITY)
+            vtherm: str | None = normalized_input.get(CONF_CLIMATE_ENTITY)
             if not vtherm:
-                errors[CONF_VTHERM_ENTITY] = "required"
+                errors[CONF_CLIMATE_ENTITY] = "required"
             elif _vtherm_in_use(self.hass, vtherm, exclude_entry_id=self.config_entry.entry_id):
-                errors[CONF_VTHERM_ENTITY] = "vtherm_already_configured"
+                errors[CONF_CLIMATE_ENTITY] = "vtherm_already_configured"
 
             # Scheduler is now optional - no validation needed
 
@@ -471,7 +471,7 @@ class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.
 
         # Compute defaults for entity selectors
         default_schedulers_list = _as_list(_opt_or_data(CONF_SCHEDULER_ENTITIES, []))
-        vtherm_val = _opt_or_data(CONF_VTHERM_ENTITY)
+        vtherm_val = _opt_or_data(CONF_CLIMATE_ENTITY)
         hum_in_val = _opt_or_data(CONF_HUMIDITY_IN_ENTITY)
         hum_out_val = _opt_or_data(CONF_HUMIDITY_OUT_ENTITY)
         temp_out_val = _opt_or_data(CONF_TEMPERATURE_OUT_ENTITY)
@@ -482,9 +482,9 @@ class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.
 
         # Required: VTherm (only set default if exists and non-empty)
         vtherm_field = (
-            vol.Required(CONF_VTHERM_ENTITY, default=vtherm_val)
+            vol.Required(CONF_CLIMATE_ENTITY, default=vtherm_val)
             if vtherm_val and vtherm_val != ""
-            else vol.Required(CONF_VTHERM_ENTITY)
+            else vol.Required(CONF_CLIMATE_ENTITY)
         )
         schema_dict[vtherm_field] = selector.EntitySelector(
             selector.EntitySelectorConfig(domain="climate", integration="versatile_thermostat")

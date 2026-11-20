@@ -109,7 +109,7 @@ def environment_reader(mock_hass: Mock) -> HAEnvironmentReader:
     """Create HAEnvironmentReader with mock HA."""
     return HAEnvironmentReader(
         hass=mock_hass,
-        vtherm_entity_id="climate.test_vtherm",
+        climate_entity_id="climate.test_vtherm",
         outdoor_temp_entity_id="sensor.outdoor_temp",
         humidity_in_entity_id="sensor.indoor_humidity",
         humidity_out_entity_id="sensor.outdoor_humidity",
@@ -123,7 +123,7 @@ def scheduler_reader(mock_hass: Mock) -> HASchedulerReader:
     return HASchedulerReader(
         hass=mock_hass,
         scheduler_entity_ids=["schedule.heating"],
-        vtherm_entity_id="climate.test_vtherm",
+        climate_entity_id="climate.test_vtherm",
     )
 
 
@@ -138,7 +138,7 @@ def climate_data_reader(mock_hass: Mock) -> HAClimateDataReader:
     """Create HAClimateDataReader with mock HA."""
     return HAClimateDataReader(
         hass=mock_hass,
-        vtherm_entity_id="climate.test_vtherm",
+        climate_entity_id="climate.test_vtherm",
     )
 
 

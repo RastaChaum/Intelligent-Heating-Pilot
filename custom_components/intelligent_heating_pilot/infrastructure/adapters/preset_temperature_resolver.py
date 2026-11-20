@@ -12,7 +12,7 @@ import logging
 from homeassistant.core import HomeAssistant
 
 from ...domain.interfaces.preset_temperature_resolver_interface import IPresetTemperatureResolver
-from ..vtherm_compat import get_vtherm_attribute
+from ..climate_attributes import get_climate_attribute
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,22 +20,22 @@ _LOGGER = logging.getLogger(__name__)
 class HAPresetTemperatureResolver(IPresetTemperatureResolver):
     """Tells which temperature a VTherm preset stands for, from its published attributes."""
 
-    def __init__(self, hass: HomeAssistant, vtherm_entity_id: str | None) -> None:
+    def __init__(self, hass: HomeAssistant, climate_entity_id: str | None) -> None:
         """Initialize the resolver.
 
         Args:
             hass: Home Assistant instance.
-            vtherm_entity_id: The VTherm climate entity whose attributes are read.
+            climate_entity_id: The VTherm climate entity whose attributes are read.
         """
         self._hass = hass
-        self._vtherm_entity_id = vtherm_entity_id
+        self._climate_entity_id = climate_entity_id
 
     def resolve(self, preset: str) -> float | None:
         """Resolve a preset name to a numeric temperature using VTherm attributes.
 
         This uses the VTherm climate entity attributes as the source of truth. It
         attempts common attribute naming conventions, with v8.0.0+ compatibility
-        using get_vtherm_attribute() to access both legacy and new data structures.
+        using get_climate_attribute() to access both legacy and new data structures.
 
         Args:
             preset: Preset mode name from the scheduler action
@@ -43,17 +43,17 @@ class HAPresetTemperatureResolver(IPresetTemperatureResolver):
         Returns:
             Temperature in Celsius, or None if it cannot be resolved.
         """
-        if not self._vtherm_entity_id:
+        if not self._climate_entity_id:
             return None
-        state = self._hass.states.get(self._vtherm_entity_id)
+        state = self._hass.states.get(self._climate_entity_id)
         if not state:
-            _LOGGER.debug("VTherm entity not found: %s", self._vtherm_entity_id)
+            _LOGGER.debug("VTherm entity not found: %s", self._climate_entity_id)
             return None
 
         key = str(preset).lower().replace(" ", "_")
 
         # First, try the preset_temperatures dict (VTherm v8.0.0+ format)
-        preset_temps = get_vtherm_attribute(state, "preset_temperatures")
+        preset_temps = get_climate_attribute(state, "preset_temperatures")
         if isinstance(preset_temps, dict):
             # VTherm uses format like "eco_temp", "boost_temp", "comfort_temp"
             # Try multiple key patterns
@@ -97,8 +97,8 @@ class HAPresetTemperatureResolver(IPresetTemperatureResolver):
         ]
 
         for k in candidate_keys:
-            # Use get_vtherm_attribute to handle both legacy and v8.0.0+ formats
-            value = get_vtherm_attribute(state, k)
+            # Use get_climate_attribute to handle both legacy and v8.0.0+ formats
+            value = get_climate_attribute(state, k)
             if value is not None:
                 try:
                     temp_value = float(value)
@@ -111,10 +111,10 @@ class HAPresetTemperatureResolver(IPresetTemperatureResolver):
                 _LOGGER.debug("Skipping preset attribute %s with 0°C (likely uninitialized)", k)
 
         # Fallback: if this preset is currently active, use current target temperature
-        current_preset = get_vtherm_attribute(state, "preset_mode")
+        current_preset = get_climate_attribute(state, "preset_mode")
         if isinstance(current_preset, str) and current_preset.lower() == key:
             for target_key in ("temperature", "target_temperature", "target_temp"):
-                value = get_vtherm_attribute(state, target_key)
+                value = get_climate_attribute(state, target_key)
                 if value is not None:
                     try:
                         return float(value)

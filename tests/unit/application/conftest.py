@@ -44,7 +44,7 @@ def device_config() -> DeviceConfig:
     """Create default device configuration for testing."""
     return DeviceConfig(
         device_id="climate.test_vtherm",
-        vtherm_entity_id="climate.test_vtherm",
+        climate_entity_id="climate.test_vtherm",
         scheduler_entities=["schedule.heating"],
         lhs_retention_days=30,
     )
@@ -55,7 +55,7 @@ def device_config_short_retention() -> DeviceConfig:
     """Create device config with reduced retention for edge case tests."""
     return DeviceConfig(
         device_id="climate.test_vtherm_short",
-        vtherm_entity_id="climate.test_vtherm_short",
+        climate_entity_id="climate.test_vtherm_short",
         scheduler_entities=["schedule.heating"],
         lhs_retention_days=7,
     )
@@ -411,7 +411,7 @@ def device_config_with_dead_time_learning(
     """
     return DeviceConfig(
         device_id=device_config.device_id,
-        vtherm_entity_id=device_config.vtherm_entity_id,
+        climate_entity_id=device_config.climate_entity_id,
         scheduler_entities=device_config.scheduler_entities,
         humidity_in_entity_id=device_config.humidity_in_entity_id,
         humidity_out_entity_id=device_config.humidity_out_entity_id,
@@ -438,7 +438,7 @@ def device_config_without_dead_time_learning(
     """
     return DeviceConfig(
         device_id=device_config.device_id,
-        vtherm_entity_id=device_config.vtherm_entity_id,
+        climate_entity_id=device_config.climate_entity_id,
         scheduler_entities=device_config.scheduler_entities,
         humidity_in_entity_id=device_config.humidity_in_entity_id,
         humidity_out_entity_id=device_config.humidity_out_entity_id,

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from ...const import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_DATA_RETENTION_DAYS,
@@ -27,7 +28,6 @@ from ...const import (
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
     CONF_WAKE_UP_SOURCES,
     DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
@@ -97,9 +97,9 @@ class HADeviceConfigReader(IDeviceConfigReader):
         config = dict(self._config_entry.data)
         options = dict(self._config_entry.options or {})
 
-        vtherm_entity = self._get_config_value(config, options, CONF_VTHERM_ENTITY)
+        vtherm_entity = self._get_config_value(config, options, CONF_CLIMATE_ENTITY)
         if not vtherm_entity:
-            raise ValueError("Missing required vtherm_entity_id in configuration")
+            raise ValueError("Missing required climate_entity_id in configuration")
 
         scheduler_entities = self._get_config_value(config, options, CONF_SCHEDULER_ENTITIES) or []
         if isinstance(scheduler_entities, str):
@@ -191,7 +191,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
 
         device_config = DeviceConfig(
             device_id=device_id,
-            vtherm_entity_id=vtherm_entity,
+            climate_entity_id=vtherm_entity,
             scheduler_entities=scheduler_entities,
             humidity_in_entity_id=humidity_in,
             humidity_out_entity_id=humidity_out,

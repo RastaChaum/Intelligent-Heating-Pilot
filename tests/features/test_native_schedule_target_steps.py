@@ -118,7 +118,7 @@ def _make_reader(schedule_context: dict) -> HASchedulerReader:
     return HASchedulerReader(
         _make_hass(schedule_context),
         [schedule_context["schedule_id"]],
-        vtherm_entity_id=schedule_context["vtherm_id"],
+        climate_entity_id=schedule_context["vtherm_id"],
     )
 
 

@@ -63,7 +63,7 @@ def dead_time_context() -> dict[str, Any]:
 def _device_config() -> DeviceConfig:
     return DeviceConfig(
         device_id=DEVICE_ID,
-        vtherm_entity_id=VTHERM_ID,
+        climate_entity_id=VTHERM_ID,
         scheduler_entities=["schedule.heating"],
         lhs_retention_days=RETENTION_DAYS,
         dead_time_minutes=CONFIGURED_DEAD_TIME,

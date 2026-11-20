@@ -14,7 +14,7 @@ from homeassistant.util import dt as dt_util
 
 from ...domain.interfaces import IEnvironmentReader
 from ...domain.value_objects import EnvironmentState
-from ..vtherm_compat import get_vtherm_room_temperature
+from ..climate_attributes import get_room_temperature
 from .utils import (
     WEATHER_ATTR_CLOUD_COVERAGE,
     WEATHER_ATTR_HUMIDITY,
@@ -39,7 +39,7 @@ class HAEnvironmentReader(IEnvironmentReader):
     def __init__(
         self,
         hass: HomeAssistant,
-        vtherm_entity_id: str,
+        climate_entity_id: str,
         outdoor_temp_entity_id: str | None = None,
         humidity_in_entity_id: str | None = None,
         humidity_out_entity_id: str | None = None,
@@ -49,19 +49,19 @@ class HAEnvironmentReader(IEnvironmentReader):
 
         Args:
             hass: Home Assistant instance
-            vtherm_entity_id: VTherm climate entity ID
+            climate_entity_id: Climate entity ID
             outdoor_temp_entity_id: Outdoor temperature sensor or weather entity (optional)
             humidity_in_entity_id: Indoor humidity sensor (optional)
             humidity_out_entity_id: Outdoor humidity sensor or weather entity (optional)
             cloud_cover_entity_id: Cloud coverage sensor or weather entity (optional)
         """
         self._hass = hass
-        self._vtherm_entity_id = vtherm_entity_id
+        self._climate_entity_id = climate_entity_id
         self._outdoor_temp_entity_id = outdoor_temp_entity_id
         self._humidity_in_entity_id = humidity_in_entity_id
         self._humidity_out_entity_id = humidity_out_entity_id
         self._cloud_cover_entity_id = cloud_cover_entity_id
-        self._device_name = get_entity_name(hass, vtherm_entity_id)
+        self._device_name = get_entity_name(hass, climate_entity_id)
 
     async def get_current_environment(self) -> EnvironmentState | None:
         """Read current environmental state from HA entities.
@@ -70,14 +70,14 @@ class HAEnvironmentReader(IEnvironmentReader):
             EnvironmentState value object, or None if required data missing
         """
         # Get current indoor temperature from VTherm
-        vtherm_state = self._hass.states.get(self._vtherm_entity_id)
+        vtherm_state = self._hass.states.get(self._climate_entity_id)
         if not vtherm_state:
-            _LOGGER.warning("[%s] VTherm entity not found", self._device_name)
+            _LOGGER.warning("[%s] Climate entity not found", self._device_name)
             return None
 
         # The smoothed room temperature: a raw reading toggling between two
         # adjacent values moved the anticipated start back and forth (#258).
-        current_temp = get_vtherm_room_temperature(vtherm_state)
+        current_temp = get_room_temperature(vtherm_state)
         if current_temp is None:
             _LOGGER.warning("[%s] No room temperature available", self._device_name)
             return None

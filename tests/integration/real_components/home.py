@@ -45,8 +45,8 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_CLIMATE_ENTITY,
     CONF_SCHEDULER_ENTITIES,
-    CONF_VTHERM_ENTITY,
     DOMAIN,
 )
 
@@ -283,7 +283,7 @@ class Home:
         entry = MockConfigEntry(
             domain=DOMAIN,
             title="IHP",
-            data={CONF_VTHERM_ENTITY: THERMOSTAT, CONF_SCHEDULER_ENTITIES: self._ihp_entities},
+            data={CONF_CLIMATE_ENTITY: THERMOSTAT, CONF_SCHEDULER_ENTITIES: self._ihp_entities},
             options=self._ihp_options,
         )
         entry.add_to_hass(self.hass)

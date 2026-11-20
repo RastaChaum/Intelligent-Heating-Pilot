@@ -10,9 +10,9 @@ from custom_components.intelligent_heating_pilot.config_flow import (
     IntelligentHeatingPilotOptionsFlow,
 )
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_CLIMATE_ENTITY,
     CONF_MANAGE_WAKE_UP_SOURCES,
     CONF_SCHEDULER_ENTITIES,
-    CONF_VTHERM_ENTITY,
     CONF_WAKE_UP_SOURCES,
 )
 
@@ -26,7 +26,7 @@ def _entry(options: dict | None = None, schedulers: list[str] | None = None) -> 
     entry.entry_id = "device"
     entry.title = "Living room"
     entry.unique_id = VTHERM
-    entry.data = {CONF_VTHERM_ENTITY: VTHERM, CONF_SCHEDULER_ENTITIES: schedulers or []}
+    entry.data = {CONF_CLIMATE_ENTITY: VTHERM, CONF_SCHEDULER_ENTITIES: schedulers or []}
     entry.options = options or {}
     return entry
 
@@ -55,7 +55,7 @@ def flow():
 
 
 def _main_form(**extra) -> dict:
-    return {CONF_VTHERM_ENTITY: VTHERM, **extra}
+    return {CONF_CLIMATE_ENTITY: VTHERM, **extra}
 
 
 @pytest.mark.asyncio

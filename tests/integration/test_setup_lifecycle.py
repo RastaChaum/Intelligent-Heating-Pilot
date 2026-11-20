@@ -23,7 +23,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.intelligent_heating_pilot import async_setup_entry, async_unload_entry
 from custom_components.intelligent_heating_pilot.const import (
-    CONF_VTHERM_ENTITY,
+    CONF_CLIMATE_ENTITY,
     DOMAIN,
     SERVICE_CALCULATE_ANTICIPATED_START_TIME,
 )
@@ -46,7 +46,7 @@ def entry(
         domain=DOMAIN,
         entry_id="entry_lifecycle",
         unique_id="climate.bedroom",
-        data={CONF_VTHERM_ENTITY: "climate.bedroom"},
+        data={CONF_CLIMATE_ENTITY: "climate.bedroom"},
     )
     config_entry.add_to_hass(hass)
     release_on_teardown(config_entry)

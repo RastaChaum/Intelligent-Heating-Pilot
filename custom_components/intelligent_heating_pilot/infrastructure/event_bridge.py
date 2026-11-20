@@ -28,7 +28,7 @@ from .adapters.utils import (
     WEATHER_DOMAIN,
     read_numeric_state,
 )
-from .vtherm_compat import get_vtherm_room_temperature
+from .climate_attributes import get_room_temperature
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -72,7 +72,7 @@ class HAEventBridge:
         self,
         hass: HomeAssistant,
         orchestrator: HeatingOrchestrator,
-        vtherm_entity_id: str,
+        climate_entity_id: str,
         scheduler_entity_ids: list[str],
         monitored_entity_ids: list[str] | None = None,
         entry_id: str | None = None,
@@ -83,7 +83,7 @@ class HAEventBridge:
         Args:
             hass: Home Assistant instance
             orchestrator: Orchestrator to delegate to
-            vtherm_entity_id: VTherm entity to monitor for slopes
+            climate_entity_id: Climate entity to monitor for slopes
             scheduler_entity_ids: Scheduler entities to monitor
             monitored_entity_ids: Additional entities to monitor (humidity, etc.)
             entry_id: Config entry ID for event filtering
@@ -91,7 +91,7 @@ class HAEventBridge:
         """
         self._hass = hass
         self._orchestrator = orchestrator
-        self._vtherm_entity_id = vtherm_entity_id
+        self._climate_entity_id = climate_entity_id
         self._scheduler_entity_ids = scheduler_entity_ids
         self._monitored_entity_ids = monitored_entity_ids or []
         self._get_ihp_enabled = get_ihp_enabled_func or (lambda: True)
@@ -101,7 +101,7 @@ class HAEventBridge:
         # several fields: track it once, otherwise each of its updates would fire the
         # listener (and a recalculation) once per field.
         self._tracked_entities = list(
-            dict.fromkeys([vtherm_entity_id] + scheduler_entity_ids + self._monitored_entity_ids)
+            dict.fromkeys([climate_entity_id] + scheduler_entity_ids + self._monitored_entity_ids)
         )
 
         # Listener cleanup callbacks
@@ -143,7 +143,7 @@ class HAEventBridge:
                 return
 
             # VTherm-specific handling for slope learning
-            if entity_id == self._vtherm_entity_id:
+            if entity_id == self._climate_entity_id:
                 self._handle_vtherm_change(event)
             elif entity_id in self._scheduler_entity_ids:
                 # Only trigger for meaningful scheduler state changes
@@ -419,8 +419,8 @@ class HAEventBridge:
 
         # Same room temperature as the anticipation reads: a raw reading toggling
         # while the smoothed one stays put must not move the pending preheat (#258).
-        old_temp = get_vtherm_room_temperature(old_state)
-        new_temp = get_vtherm_room_temperature(new_state)
+        old_temp = get_room_temperature(old_state)
+        new_temp = get_room_temperature(new_state)
 
         if old_temp == new_temp:
             _LOGGER.debug("VTherm change but temperature unchanged, skipping")

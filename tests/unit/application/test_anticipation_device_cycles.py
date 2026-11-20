@@ -99,7 +99,7 @@ def cycle_manager(storage: _KeyedCycleStorage) -> HeatingCycleLifecycleManager:
     """Real cycle manager whose device id differs from the VTherm entity id."""
     config = DeviceConfig(
         device_id=ENTRY_ID,
-        vtherm_entity_id=VTHERM_ID,
+        climate_entity_id=VTHERM_ID,
         scheduler_entities=[],
         lhs_retention_days=30,
     )
@@ -146,7 +146,7 @@ def use_case(
         )
     )
     climate_reader = Mock()
-    climate_reader.get_vtherm_entity_id = Mock(return_value=VTHERM_ID)
+    climate_reader.get_climate_entity_id = Mock(return_value=VTHERM_ID)
     return CalculateAnticipationUseCase(
         scheduler_reader=None,
         environment_reader=environment_reader,

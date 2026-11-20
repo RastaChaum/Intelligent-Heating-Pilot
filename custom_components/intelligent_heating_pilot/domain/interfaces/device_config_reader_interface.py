@@ -19,7 +19,7 @@ class DeviceConfig:
     Attributes:
         # Required fields
         device_id: Unique identifier for the device (typically config_entry.entry_id)
-        vtherm_entity_id: Entity ID of the virtual thermostat (climate entity)
+        climate_entity_id: Entity ID of the climate entity to preheat (a Versatile Thermostat is recommended, any climate works). Stored under the legacy config key ``vtherm_entity_id``
 
         # Optional entity IDs (environmental sensors)
         scheduler_entities: List of entity IDs for scheduled events (switches)
@@ -58,7 +58,7 @@ class DeviceConfig:
 
     # Required fields
     device_id: str
-    vtherm_entity_id: str
+    climate_entity_id: str
 
     # Optional entity IDs
     scheduler_entities: list[str]
@@ -103,8 +103,8 @@ class DeviceConfig:
         if not self.device_id or not isinstance(self.device_id, str):
             raise ValueError("device_id must be a non-empty string")
 
-        if not self.vtherm_entity_id or not isinstance(self.vtherm_entity_id, str):
-            raise ValueError("vtherm_entity_id must be a non-empty string")
+        if not self.climate_entity_id or not isinstance(self.climate_entity_id, str):
+            raise ValueError("climate_entity_id must be a non-empty string")
 
         # Validate scheduler_entities is a list
         if not isinstance(self.scheduler_entities, list):
