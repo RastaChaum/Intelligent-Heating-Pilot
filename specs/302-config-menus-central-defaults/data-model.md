@@ -68,7 +68,7 @@ A `DEVICE` setting is never read from `central_values`, even if the central mapp
 
 ```text
 absent (inherit) --user selects it and saves--> present (override)
-present (override) --user unselects it and saves--> absent (inherit)
+present (override) --user unselects it and applies--> absent in data AND options (inherit)
 present (override) --user clears an optional entity--> None ("none")
 None ("none") --user unselects it and saves--> absent (inherit)
 ```

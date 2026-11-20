@@ -33,7 +33,7 @@ central default configuration second (User Stories 2 and 3).
 - Q: What does device creation store for shareable values? → A: Only device-specific fields; every shareable value is inherited, with no override.
 - Q: Where does the user edit the central configuration? → A: A dedicated visible entry whose configure button opens the theme menus, without device-specific fields.
 - Q: Can the central configuration be deleted while devices exist? → A: No, deletion is refused until no device remains.
-- Q: When do devices pick up a changed central value? → A: Once, when the user leaves the central menus, and only devices whose inherited value changed.
+- Q: When do devices pick up a changed central value? → A: Once, when the user applies the central changes, and only devices whose inherited value changed.
 - Q: When are changes stored? → A: Each theme form has its own save, which stages the change; an "Apply" entry on the main menu stores everything and reloads, and is offered only when something is staged.
 - Q: Can a device override an optional sensor with "none"? → A: Yes, "none" is a valid override distinct from "inherit".
 
@@ -179,8 +179,9 @@ changes while the device form is open.
   if the sensor was never configured.
 - A central sensor entity is unavailable or deleted: handled like a device-level sensor that
   is unavailable today.
-- Two edits happen at once (central value and device form): the last saved value wins and
-  no partial state is stored.
+- Two edits happen at once (central value and device form): the last applied value wins and
+  no partial state is stored; staged changes are merged onto the stored values at apply time,
+  not at the time the dialog was opened.
 - Existing devices after an upgrade: every value they already hold becomes an explicit
   override, so no behaviour changes.
 - A device is added when the central configuration does not exist yet.
@@ -193,16 +194,17 @@ changes while the device form is open.
 
 - **FR-001**: Device options MUST open on a menu of themes, and each theme MUST open a form
   containing only the fields of that theme.
-- **FR-002**: Themes MUST be: thermostat and schedulers, wake-up sources, environment
-  sensors, learning, cycle detection, anticipation behaviour; the final grouping may be
-  refined in the plan without moving a setting out of its theme's intent.
+- **FR-002**: Themes MUST be: thermostat and schedulers, native schedules (drive and keys),
+  wake-up sources, environment sensors, learning, cycle detection, anticipation behaviour.
+  Native schedule settings form their own theme because they mix a device-only setting
+  (the drive opt-in) with shareable ones (the keys).
 - **FR-003**: Saving a theme form MUST stage its changes and return to the main menu. The
   main menu MUST offer "Apply" only while changes are staged; "Apply" MUST store all staged
   changes and reload once. While changes are staged, the main menu MUST say how many
   themes are not applied. Closing the dialog with staged changes discards them; the
   platform offers no confirmation hook, so the warning is the menu text.
 - **FR-004**: The existing wake-up sources flow MUST keep its behaviour and be reachable from
-  the menu.
+  the menu; finishing it stages its result like any other theme, and "Apply" stores it.
 - **FR-005**: Each theme form MUST apply the same validation as the current single form.
 - **FR-006**: The integration MUST offer a central configuration holding the shareable values:
   environment sensors, learning and cycle parameters, safety grace period, native schedule
@@ -215,8 +217,9 @@ changes while the device form is open.
   inheritable.
 - **FR-009**: A central value change MUST reach every device that inherits it without the user
   editing those devices, and MUST NOT affect devices that override it. Devices MUST pick up
-  changes once, when the user leaves the central menus, and only devices whose inherited
-  value actually changed MUST be reloaded.
+  changes once, when the user applies the central changes, and only devices whose inherited
+  value actually changed MUST be reloaded; a device that fails to reload MUST NOT prevent
+  the others from reloading.
 - **FR-010**: A device theme form MUST show, per shareable value, whether it is inherited or
   overridden, and the central value an inherited one resolves to.
 - **FR-011**: The user MUST be able to reset any overridden value to "inherit".
@@ -249,7 +252,8 @@ changes while the device form is open.
   schedulers) and MUST store no override: every shareable value is inherited until the user
   overrides it from a theme menu.
 - **FR-023**: The central configuration MUST appear as its own entry in the integration list
-  under an explicit name, deletion MUST be refused while at least one device exists, and
+  under an explicit name, deletion MUST be refused while at least one device exists where
+  the platform allows it (otherwise the fallback in the assumptions applies), and
   its configure action MUST open the same theme menus as a
   device, limited to shareable themes and without device-specific fields.
 - **FR-024**: For optional values such as environment sensors, "none" MUST be a valid
@@ -292,8 +296,9 @@ changes while the device form is open.
 
 ### Measurable Outcomes
 
-- **SC-001**: A user can change one setting of a device by opening at most one menu and one
-  form, and sees no more than the fields of that theme (at most 8 fields).
+- **SC-001**: A user can change one setting of a device by opening one menu entry and at most
+  two forms (which settings to override, then their values), and no form shows more than 8
+  fields. In the central configuration it takes one form.
 - **SC-002**: Changing a value shared by 8 devices takes one edit instead of 8.
 - **SC-003**: After an upgrade, 100% of existing devices run with the same effective values
   as before.

@@ -14,6 +14,10 @@ in options as "deleted, do not fall back" (`_opt_or_data`). Presence-based overr
 migration: every value an existing device holds is already an override (FR-012), and no marker
 field has to be kept in sync with the values.
 
+**Consequence**: a legacy entry may hold shareable keys in `data`. Resetting such a key to
+"inherit" must remove it from `data` and `options` in one `async_update_entry` call, because an
+absent options key falls back to `data`.
+
 **Alternatives**: a per-device list of overridden keys (rejected: second source of truth, needs a
 migration); storing the inheritance mode per key (rejected: same, plus larger entries).
 
