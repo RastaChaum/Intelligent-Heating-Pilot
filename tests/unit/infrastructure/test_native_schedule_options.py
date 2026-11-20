@@ -11,12 +11,12 @@ from custom_components.intelligent_heating_pilot.config_flow import (
     IntelligentHeatingPilotOptionsFlow,
 )
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_CLIMATE_ENTITY,
     CONF_NATIVE_SCHEDULE_DRIVE,
     CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
     CONF_NATIVE_SCHEDULE_PRESET_KEY,
     CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
     CONF_SCHEDULER_ENTITIES,
-    CONF_VTHERM_ENTITY,
 )
 from custom_components.intelligent_heating_pilot.domain.interfaces.device_config_reader_interface import (
     DeviceConfig,
@@ -44,7 +44,7 @@ def _entry(data: dict | None = None, options: dict | None = None) -> Mock:
     entry.entry_id = "device"
     entry.title = "Living room"
     entry.data = {
-        CONF_VTHERM_ENTITY: "climate.vtherm",
+        CONF_CLIMATE_ENTITY: "climate.vtherm",
         CONF_SCHEDULER_ENTITIES: ["schedule.heating"],
         **(data or {}),
     }
@@ -54,7 +54,7 @@ def _entry(data: dict | None = None, options: dict | None = None) -> Mock:
 
 class TestDeviceConfig:
     def test_native_schedules_are_computed_only_by_default(self) -> None:
-        config = DeviceConfig(device_id="d", vtherm_entity_id="climate.v", scheduler_entities=[])
+        config = DeviceConfig(device_id="d", climate_entity_id="climate.v", scheduler_entities=[])
 
         assert config.native_schedule_drive is False
         assert config.native_schedule_preset_key == "preset"
@@ -72,7 +72,7 @@ class TestDeviceConfig:
     def test_a_blank_key_or_preset_is_rejected(self, field: str) -> None:
         with pytest.raises(ValueError, match=field):
             DeviceConfig(
-                device_id="d", vtherm_entity_id="climate.v", scheduler_entities=[], **{field: " "}
+                device_id="d", climate_entity_id="climate.v", scheduler_entities=[], **{field: " "}
             )
 
 

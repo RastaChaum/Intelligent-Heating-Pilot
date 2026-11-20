@@ -16,9 +16,10 @@ from custom_components.intelligent_heating_pilot.domain.value_objects.setting_de
 
 MAX_SETTINGS_PER_THEME = 8
 DEVICE_ONLY_KEYS = {
-    const.CONF_VTHERM_ENTITY,
+    const.CONF_CLIMATE_ENTITY,
     const.CONF_SCHEDULER_ENTITIES,
     const.CONF_WAKE_UP_SOURCES,
+    const.CONF_PRESET_TEMPERATURES,
     const.CONF_HUMIDITY_IN_ENTITY,
     const.CONF_NATIVE_SCHEDULE_DRIVE,
 }

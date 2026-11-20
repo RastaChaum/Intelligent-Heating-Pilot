@@ -53,7 +53,7 @@ def _make_bridge(**kwargs) -> HAEventBridge:
     return HAEventBridge(
         hass=hass,
         orchestrator=orchestrator,
-        vtherm_entity_id=kwargs.get("vtherm_entity_id", "climate.vtherm"),
+        climate_entity_id=kwargs.get("vtherm_entity_id", "climate.vtherm"),
         scheduler_entity_ids=kwargs.get("scheduler_entity_ids", ["switch.schedule_1"]),
         monitored_entity_ids=kwargs.get("monitored_entity_ids", []),
         entry_id=kwargs.get("entry_id", "entry_abc"),
@@ -89,7 +89,7 @@ def event_bridge(
     return HAEventBridge(
         hass=hass,
         orchestrator=mock_orchestrator,
-        vtherm_entity_id="climate.bedroom",
+        climate_entity_id="climate.bedroom",
         scheduler_entity_ids=["switch.bedroom_schedule"],
         monitored_entity_ids=["sensor.bedroom_humidity", "sensor.cloud_coverage"],
         entry_id="test_entry",
@@ -529,7 +529,7 @@ class TestRecalculateAndPublishDeduplication:
         return HAEventBridge(
             hass=hass,
             orchestrator=orchestrator,
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entity_ids=["switch.schedule_1"],
             entry_id="entry_abc",
         )

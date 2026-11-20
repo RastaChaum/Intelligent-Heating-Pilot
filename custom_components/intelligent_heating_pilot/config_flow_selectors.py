@@ -17,6 +17,7 @@ from homeassistant.helpers import selector
 from .domain.constants import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_DEAD_TIME_MINUTES,
@@ -34,7 +35,6 @@ from .domain.constants import (
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
 )
 from .domain.services.settings_catalog import SettingsCatalog
 from .domain.value_objects.setting_definition import SettingDefinition, SettingTheme
@@ -181,8 +181,9 @@ def selector_for(
     if key in TEXT_KEYS:
         return selector.TextSelector()
     simple: dict[str, Any] = {
-        CONF_VTHERM_ENTITY: lambda: selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="climate", integration="versatile_thermostat")
+        # Versatile Thermostat is recommended, never required (#252)
+        CONF_CLIMATE_ENTITY: lambda: selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="climate")
         ),
         CONF_HUMIDITY_IN_ENTITY: lambda: selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
@@ -210,7 +211,7 @@ def _field_marker(definition: SettingDefinition, current: Mapping[str, Any]) -> 
     """
     key = definition.key
     value = current.get(key)
-    if key == CONF_VTHERM_ENTITY:
+    if key == CONF_CLIMATE_ENTITY:
         return vol.Required(key, default=value) if not _is_blank(value) else vol.Required(key)
     if key == CONF_SCHEDULER_ENTITIES:
         schedulers = as_list(value)
@@ -240,10 +241,14 @@ def theme_definitions(theme: SettingTheme) -> tuple[SettingDefinition, ...]:
     return SettingsCatalog().of_theme(theme)
 
 
+# Themes with their own flow instead of a plain form
+FLOW_THEMES = (SettingTheme.WAKE_UP_SOURCES, SettingTheme.PRESET_TEMPERATURES)
+
+
 def form_definitions() -> tuple[SettingDefinition, ...]:
     """Return every plain form field in the order of the setup form (wake-up sources excluded).
 
     The native schedule settings come last, as they always did in the setup form.
     """
-    fields = [d for d in SettingsCatalog().all() if d.theme is not SettingTheme.WAKE_UP_SOURCES]
+    fields = [d for d in SettingsCatalog().all() if d.theme not in FLOW_THEMES]
     return tuple(sorted(fields, key=lambda d: d.theme is SettingTheme.NATIVE_SCHEDULE))

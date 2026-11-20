@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from ...const import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_DATA_RETENTION_DAYS,
@@ -22,12 +23,12 @@ from ...const import (
     CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
     CONF_NATIVE_SCHEDULE_PRESET_KEY,
     CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
+    CONF_PRESET_TEMPERATURES,
     CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
     CONF_SCHEDULER_ENTITIES,
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
     CONF_WAKE_UP_SOURCES,
     DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
@@ -45,6 +46,7 @@ from ...const import (
 )
 from ...domain.interfaces.device_config_reader_interface import DeviceConfig, IDeviceConfigReader
 from ...utils.config_helpers import as_bool
+from .preset_temperatures_config import parse_preset_temperatures
 from .wake_up_sources_config import parse_wake_up_sources
 
 if TYPE_CHECKING:
@@ -97,9 +99,9 @@ class HADeviceConfigReader(IDeviceConfigReader):
         config = dict(self._config_entry.data)
         options = dict(self._config_entry.options or {})
 
-        vtherm_entity = self._get_config_value(config, options, CONF_VTHERM_ENTITY)
+        vtherm_entity = self._get_config_value(config, options, CONF_CLIMATE_ENTITY)
         if not vtherm_entity:
-            raise ValueError("Missing required vtherm_entity_id in configuration")
+            raise ValueError("Missing required climate_entity_id in configuration")
 
         scheduler_entities = self._get_config_value(config, options, CONF_SCHEDULER_ENTITIES) or []
         if isinstance(scheduler_entities, str):
@@ -191,7 +193,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
 
         device_config = DeviceConfig(
             device_id=device_id,
-            vtherm_entity_id=vtherm_entity,
+            climate_entity_id=vtherm_entity,
             scheduler_entities=scheduler_entities,
             humidity_in_entity_id=humidity_in,
             humidity_out_entity_id=humidity_out,
@@ -215,6 +217,9 @@ class HADeviceConfigReader(IDeviceConfigReader):
             wake_up_sources=parse_wake_up_sources(
                 self._get_config_value(config, options, CONF_WAKE_UP_SOURCES),
                 has_scheduler=bool(scheduler_entities),
+            ),
+            preset_temperatures=parse_preset_temperatures(
+                self._get_config_value(config, options, CONF_PRESET_TEMPERATURES)
             ),
         )
 

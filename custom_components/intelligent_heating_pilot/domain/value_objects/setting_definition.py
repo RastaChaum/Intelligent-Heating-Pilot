@@ -23,6 +23,7 @@ class SettingTheme(Enum):
     LEARNING = "learning"
     CYCLE_DETECTION = "cycle_detection"
     ANTICIPATION = "anticipation"
+    PRESET_TEMPERATURES = "preset_temperatures"
 
 
 @dataclass(frozen=True)

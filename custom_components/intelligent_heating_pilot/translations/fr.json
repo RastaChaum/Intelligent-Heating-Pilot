@@ -3,10 +3,10 @@
     "step": {
       "user": {
         "title": "Configurer Intelligent Heating Pilot",
-        "description": "Configurez votre intégration Intelligent Heating Pilot (IHP) pour des calculs de préchauffage intelligents basés sur l'apprentissage des pentes thermiques de votre VTherm.",
+        "description": "Configurez votre intégration Intelligent Heating Pilot (IHP) pour des calculs de préchauffage intelligents basés sur l'apprentissage des pentes thermiques de votre thermostat.",
         "data": {
           "name": "Nom de l'intégration",
-          "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
+          "vtherm_entity_id": "Thermostat (Versatile Thermostat recommandé)",
           "scheduler_entities": "Entités Scheduler",
           "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
           "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure (optionnel)",
@@ -29,8 +29,8 @@
         },
         "data_description": {
           "name": "Un nom pour cet appareil IHP, par exemple la pièce qu'il chauffe.",
-          "vtherm_entity_id": "Le Versatile Thermostat dont IHP apprend et anticipe la chauffe.",
-          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé dans Plannings natifs.",
+          "vtherm_entity_id": "L'entité climate dont IHP apprend et anticipe la chauffe. Versatile Thermostat est recommandé ; toute entité climate fonctionne. Un thermostat qui ne publie pas son état de chauffe (hvac_action) est préchauffé, mais IHP ne peut pas apprendre de lui.",
+          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce thermostat. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé plus bas.",
           "humidity_in_entity_id": "Capteur d'humidité de la pièce pour affiner les calculs.",
           "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure. Surveillé, pas encore utilisé dans la prédiction.",
           "temperature_out_entity_id": "Capteur ou entité météo de température extérieure, enregistrée avec chaque cycle de chauffe.",
@@ -72,19 +72,20 @@
           "learning": "Apprentissage",
           "cycle_detection": "Détection des cycles",
           "anticipation": "Comportement d'anticipation",
-          "apply": "Appliquer les modifications enregistrées"
+          "apply": "Appliquer les modifications enregistrées",
+          "preset_temperatures": "Températures des presets"
         }
       },
       "thermostat_schedulers": {
         "title": "Thermostat et schedulers",
         "description": "Le thermostat piloté par cet appareil et les schedulers qui le commandent. Enregistré dès la validation.",
         "data": {
-          "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
+          "vtherm_entity_id": "Thermostat (Versatile Thermostat recommandé)",
           "scheduler_entities": "Entités Scheduler"
         },
         "data_description": {
-          "vtherm_entity_id": "Le Versatile Thermostat dont IHP apprend et anticipe la chauffe.",
-          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé dans Plannings natifs."
+          "vtherm_entity_id": "L'entité climate dont IHP apprend et anticipe la chauffe. Versatile Thermostat est recommandé ; toute entité climate fonctionne. Un thermostat qui ne publie pas son état de chauffe (hvac_action) est préchauffé, mais IHP ne peut pas apprendre de lui.",
+          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce thermostat. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé dans Plannings natifs."
         }
       },
       "native_schedule": {
@@ -212,6 +213,10 @@
           "horizon_hours": "Une heure plus lointaine que cette durée est ignorée, pour qu'une alarme éloignée ne déclenche jamais un préchauffage par accident. Par défaut : 24 heures.",
           "hold_minutes": "Après cette heure, IHP remet le thermostat dans son état précédent, sauf si quelqu'un l'a modifié ou si un planning a pris la main. 0 laisse le thermostat tel quel."
         }
+      },
+      "preset_temperatures": {
+        "title": "Températures des presets",
+        "description": "Indiquez la température de chaque preset. Laissez un preset vide pour ne pas l'anticiper : les créneaux qui utilisent un preset non associé sont ignorés, et un bloc de planning natif retombe sur 20 °C."
       }
     },
     "error": {
@@ -236,7 +241,7 @@
         },
         "target_temp": {
           "name": "Température cible",
-          "description": "Température cible souhaitée en °C (optionnelle : la consigne du VTherm est utilisée si elle n'est pas indiquée)"
+          "description": "Température cible souhaitée en °C (optionnelle : la consigne du thermostat est utilisée si elle n'est pas indiquée)"
         }
       }
     },

@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..constants import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_DEAD_TIME_MINUTES,
@@ -17,12 +18,12 @@ from ..constants import (
     CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
     CONF_NATIVE_SCHEDULE_PRESET_KEY,
     CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
+    CONF_PRESET_TEMPERATURES,
     CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
     CONF_SCHEDULER_ENTITIES,
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
     CONF_WAKE_UP_SOURCES,
     DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
@@ -45,7 +46,7 @@ _DEVICE = SettingScope.DEVICE
 _SHAREABLE = SettingScope.SHAREABLE
 
 _DEFINITIONS: tuple[SettingDefinition, ...] = (
-    SettingDefinition(CONF_VTHERM_ENTITY, SettingTheme.THERMOSTAT_SCHEDULERS, _DEVICE),
+    SettingDefinition(CONF_CLIMATE_ENTITY, SettingTheme.THERMOSTAT_SCHEDULERS, _DEVICE),
     SettingDefinition(CONF_SCHEDULER_ENTITIES, SettingTheme.THERMOSTAT_SCHEDULERS, _DEVICE),
     # The drive opt-in lets IHP act on the climate, so it stays a per-device decision (#281).
     SettingDefinition(
@@ -73,6 +74,8 @@ _DEFINITIONS: tuple[SettingDefinition, ...] = (
         DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET,
     ),
     SettingDefinition(CONF_WAKE_UP_SOURCES, SettingTheme.WAKE_UP_SOURCES, _DEVICE),
+    # The temperature of each preset of a climate that does not publish them is per device.
+    SettingDefinition(CONF_PRESET_TEMPERATURES, SettingTheme.PRESET_TEMPERATURES, _DEVICE),
     # The indoor humidity sensor belongs to the room of one device: never inherited.
     SettingDefinition(CONF_HUMIDITY_IN_ENTITY, SettingTheme.ENVIRONMENT, _DEVICE, optional=True),
     SettingDefinition(

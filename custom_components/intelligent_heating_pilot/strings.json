@@ -3,10 +3,10 @@
     "step": {
       "user": {
         "title": "Configure Intelligent Heating Pilot",
-        "description": "Set up your Intelligent Heating Pilot (IHP) integration for intelligent preheating calculations based on learned thermal slopes from your VTherm.",
+        "description": "Set up your Intelligent Heating Pilot (IHP) integration for intelligent preheating calculations based on learned thermal slopes from your thermostat.",
         "data": {
           "name": "Integration Name",
-          "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
+          "vtherm_entity_id": "Thermostat (Versatile Thermostat recommended)",
           "scheduler_entities": "Scheduler Entities",
           "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
           "humidity_out_entity_id": "Outdoor Humidity Sensor or Weather Entity (optional)",
@@ -29,8 +29,8 @@
         },
         "data_description": {
           "name": "A friendly name for this IHP device, e.g. the room it heats.",
-          "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
-          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this VTherm. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on in Native schedules.",
+          "vtherm_entity_id": "The climate entity whose heating IHP learns and anticipates. Versatile Thermostat is recommended; any climate entity works. A thermostat that does not publish its heating state (hvac_action) is preheated, but IHP cannot learn from it.",
+          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this thermostat. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on below.",
           "humidity_in_entity_id": "Room humidity sensor to refine calculations.",
           "humidity_out_entity_id": "Outdoor humidity sensor or weather entity. Monitored, not used in the prediction yet.",
           "temperature_out_entity_id": "Outdoor temperature sensor or weather entity, recorded with each heating cycle.",
@@ -72,19 +72,20 @@
           "learning": "Learning",
           "cycle_detection": "Cycle detection",
           "anticipation": "Anticipation behaviour",
-          "apply": "Apply the saved changes"
+          "apply": "Apply the saved changes",
+          "preset_temperatures": "Preset temperatures"
         }
       },
       "thermostat_schedulers": {
         "title": "Thermostat and schedulers",
         "description": "The thermostat this device drives and the schedulers that control it. Saved as soon as you submit.",
         "data": {
-          "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
+          "vtherm_entity_id": "Thermostat (Versatile Thermostat recommended)",
           "scheduler_entities": "Scheduler Entities"
         },
         "data_description": {
-          "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
-          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this VTherm. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on in Native schedules."
+          "vtherm_entity_id": "The climate entity whose heating IHP learns and anticipates. Versatile Thermostat is recommended; any climate entity works. A thermostat that does not publish its heating state (hvac_action) is preheated, but IHP cannot learn from it.",
+          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this thermostat. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on in Native schedules."
         }
       },
       "native_schedule": {
@@ -212,6 +213,10 @@
           "horizon_hours": "A time further away than this is ignored, so that a distant alarm never starts a preheat by accident. Default: 24 hours.",
           "hold_minutes": "After this time, IHP puts the thermostat back in its earlier state, unless someone changed it or a schedule took over. 0 leaves the thermostat as it is."
         }
+      },
+      "preset_temperatures": {
+        "title": "Preset temperatures",
+        "description": "Give the temperature each preset stands for. Leave a preset empty to not anticipate it: slots that use an unmapped preset are skipped, and a native schedule block falls back to 20 °C."
       }
     },
     "error": {
@@ -236,7 +241,7 @@
         },
         "target_temp": {
           "name": "Target Temperature",
-          "description": "Desired target temperature in Celsius (optional, uses VTherm target if not specified)"
+          "description": "Desired target temperature in Celsius (optional, uses the thermostat target if not specified)"
         }
       }
     },

@@ -138,7 +138,7 @@ THEME_FORM_STEPS = (
     "cycle_detection",
     "anticipation",
 )
-MENU_ENTRIES = {*THEME_FORM_STEPS, "wake_up_sources", "apply"}
+MENU_ENTRIES = {*THEME_FORM_STEPS, "wake_up_sources", "preset_temperatures", "apply"}
 
 
 @pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)

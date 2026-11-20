@@ -18,7 +18,7 @@ from homeassistant.helpers.translation import async_get_translations
 
 from .config_flow_selectors import _is_blank, as_list, build_theme_schema, theme_definitions
 from .const import DOMAIN
-from .domain.constants import CONF_SCHEDULER_ENTITIES, CONF_VTHERM_ENTITY
+from .domain.constants import CONF_CLIMATE_ENTITY, CONF_SCHEDULER_ENTITIES
 from .domain.value_objects.setting_definition import SettingDefinition, SettingTheme
 from .infrastructure.adapters.entry_changes import themes_of, unapplied_keys
 
@@ -28,6 +28,7 @@ ERROR_REQUIRED = "required"
 ERROR_VTHERM_IN_USE = "vtherm_already_configured"
 NO_PENDING_TEXT = "-"
 STEP_APPLY = "apply"
+STEP_PRESET_TEMPERATURES = "preset_temperatures"
 # The wake-up sources have their own flow; the others are plain forms.
 FORM_THEMES = (
     SettingTheme.THERMOSTAT_SCHEDULERS,
@@ -50,9 +51,9 @@ MENU_ORDER = (
 
 def configured_vtherm(entry: config_entries.ConfigEntry) -> Any:
     """Return the VTherm a device drives: the options value when set, else the setup value."""
-    if CONF_VTHERM_ENTITY in entry.options:
-        return entry.options[CONF_VTHERM_ENTITY]
-    return entry.data.get(CONF_VTHERM_ENTITY)
+    if CONF_CLIMATE_ENTITY in entry.options:
+        return entry.options[CONF_CLIMATE_ENTITY]
+    return entry.data.get(CONF_CLIMATE_ENTITY)
 
 
 def vtherm_in_use(hass: HomeAssistant, vtherm: str, exclude_entry_id: str | None = None) -> bool:
@@ -134,6 +135,10 @@ class ThemeStepsMixin:
             self, user_input: dict[str, Any] | None = None
         ) -> ConfigFlowResult: ...
 
+    def _extra_menu_entries(self) -> list[str]:
+        """Return the menu entries that depend on the device, after the fixed themes."""
+        return []
+
     def _is_applied(self) -> bool:
         """Tell whether the device runs with what is stored: nothing to apply."""
         snapshot = applied_snapshot(self.hass, self.config_entry)
@@ -157,6 +162,7 @@ class ThemeStepsMixin:
     async def _show_menu(self) -> ConfigFlowResult:
         """Show the themes, and "Apply" only while something is stored and not applied."""
         menu = [theme.value for theme in MENU_ORDER]
+        menu += self._extra_menu_entries()
         if not self._is_applied():
             menu.append(STEP_APPLY)
         return self.async_show_menu(
@@ -176,7 +182,7 @@ class ThemeStepsMixin:
         entry = self.config_entry
         options = {**entry.options, **values}
         _LOGGER.info("[%s] Saving settings: %s", entry.title, ", ".join(sorted(values)))
-        vtherm = options.get(CONF_VTHERM_ENTITY)
+        vtherm = options.get(CONF_CLIMATE_ENTITY)
         if vtherm and vtherm != configured_vtherm(entry):
             _LOGGER.info("[%s] VTherm changed to %s", entry.title, vtherm)
             self.hass.config_entries.async_update_entry(entry, unique_id=vtherm, options=options)
@@ -187,11 +193,11 @@ class ThemeStepsMixin:
         """Return the errors of a submitted theme, by field."""
         if theme is not SettingTheme.THERMOSTAT_SCHEDULERS:
             return {}
-        vtherm = values.get(CONF_VTHERM_ENTITY)
+        vtherm = values.get(CONF_CLIMATE_ENTITY)
         if _is_blank(vtherm):
-            return {CONF_VTHERM_ENTITY: ERROR_REQUIRED}
+            return {CONF_CLIMATE_ENTITY: ERROR_REQUIRED}
         if vtherm_in_use(self.hass, str(vtherm), exclude_entry_id=self.config_entry.entry_id):
-            return {CONF_VTHERM_ENTITY: ERROR_VTHERM_IN_USE}
+            return {CONF_CLIMATE_ENTITY: ERROR_VTHERM_IN_USE}
         return {}
 
     async def _theme_step(

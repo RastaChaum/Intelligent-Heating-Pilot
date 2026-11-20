@@ -18,12 +18,12 @@ import pytest
 
 from custom_components.intelligent_heating_pilot.const import (
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_CLOUD_COVER_ENTITY,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
     CONF_SCHEDULER_ENTITIES,
-    CONF_VTHERM_ENTITY,
 )
 from custom_components.intelligent_heating_pilot.domain.interfaces.device_config_reader_interface import (
     DeviceConfig,
@@ -47,7 +47,7 @@ def mock_config_entry() -> Mock:
     config_entry = MagicMock()
     config_entry.entry_id = "test_device_id"
     config_entry.data = {
-        CONF_VTHERM_ENTITY: "climate.vtherm",
+        CONF_CLIMATE_ENTITY: "climate.vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.schedule1"],
     }
     config_entry.options = {}
@@ -62,7 +62,7 @@ def sample_device_config() -> DeviceConfig:
     """
     return DeviceConfig(
         device_id="test_device_id",
-        vtherm_entity_id="climate.vtherm",
+        climate_entity_id="climate.vtherm",
         scheduler_entities=["switch.schedule1", "switch.schedule2"],
         humidity_in_entity_id="sensor.humidity_indoor",
         humidity_out_entity_id="sensor.humidity_outdoor",
@@ -148,10 +148,10 @@ class TestCoordinatorUsesInjectedConfig:
     def test_coordinator_extracts_vtherm_from_device_config(
         self, mock_hass: Mock, mock_config_entry: Mock, sample_device_config: DeviceConfig
     ) -> None:
-        """Test that Coordinator uses DeviceConfig.vtherm_entity_id.
+        """Test that Coordinator uses DeviceConfig.climate_entity_id.
 
         FAILS with current code: Coordinator extracts from config_entry, not DeviceConfig
-        PASSES with fix: self._vtherm_entity comes from device_config.vtherm_entity_id
+        PASSES with fix: self._vtherm_entity comes from device_config.climate_entity_id
         """
         from custom_components.intelligent_heating_pilot.heating_application import (
             HeatingApplication,
@@ -160,12 +160,12 @@ class TestCoordinatorUsesInjectedConfig:
         # GIVEN: DeviceConfig with specific vtherm entity
         device_config = DeviceConfig(
             device_id="test_id",
-            vtherm_entity_id="climate.injected_vtherm",  # From DeviceConfig
+            climate_entity_id="climate.injected_vtherm",  # From DeviceConfig
             scheduler_entities=[],
         )
 
         # AND: config_entry has DIFFERENT value (should be IGNORED)
-        mock_config_entry.data[CONF_VTHERM_ENTITY] = "climate.config_entry_vtherm"
+        mock_config_entry.data[CONF_CLIMATE_ENTITY] = "climate.config_entry_vtherm"
 
         # WHEN: Creating coordinator with injected DeviceConfig (no config_entry needed)
         coordinator = HeatingApplication(
@@ -174,7 +174,7 @@ class TestCoordinatorUsesInjectedConfig:
         )
 
         # THEN: Coordinator should use value from DeviceConfig
-        assert coordinator._vtherm_id == "climate.injected_vtherm"
+        assert coordinator._climate_id == "climate.injected_vtherm"
 
     def test_coordinator_extracts_scheduler_entities_from_device_config(
         self, mock_hass: Mock, mock_config_entry: Mock, sample_device_config: DeviceConfig
@@ -191,7 +191,7 @@ class TestCoordinatorUsesInjectedConfig:
         # GIVEN: DeviceConfig with specific scheduler entities
         device_config = DeviceConfig(
             device_id="test_id",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=["switch.injected_1", "switch.injected_2"],
         )
 
@@ -222,7 +222,7 @@ class TestCoordinatorUsesInjectedConfig:
         # GIVEN: DeviceConfig with all optional sensors
         device_config = DeviceConfig(
             device_id="test_id",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=[],
             humidity_in_entity_id="sensor.injected_humidity_in",
             humidity_out_entity_id="sensor.injected_humidity_out",
@@ -277,7 +277,7 @@ class TestCoordinatorUsesAllDeviceConfigParameters:
         # GIVEN: DeviceConfig with specific retention days
         device_config = DeviceConfig(
             device_id="test_id",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=[],
             lhs_retention_days=75,  # From DeviceConfig
         )
@@ -309,7 +309,7 @@ class TestCoordinatorUsesAllDeviceConfigParameters:
         # GIVEN: DeviceConfig with specific dead time
         device_config = DeviceConfig(
             device_id="test_id",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=[],
             dead_time_minutes=20.5,
         )
@@ -338,7 +338,7 @@ class TestCoordinatorUsesAllDeviceConfigParameters:
         # GIVEN: DeviceConfig with auto_learning disabled
         device_config = DeviceConfig(
             device_id="test_id",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=[],
             auto_learning=False,  # Explicitly disabled
         )
@@ -426,7 +426,7 @@ class TestCoordinatorAsyncLoadUsesDeviceConfig:
         # GIVEN: DeviceConfig with specific values
         device_config = DeviceConfig(
             device_id="test_id",
-            vtherm_entity_id="climate.specific_vtherm",
+            climate_entity_id="climate.specific_vtherm",
             scheduler_entities=["switch.specific_schedule"],
             humidity_in_entity_id="sensor.specific_humidity_in",
             lhs_retention_days=90,
@@ -442,7 +442,7 @@ class TestCoordinatorAsyncLoadUsesDeviceConfig:
 
         # THEN: Coordinator should store all DeviceConfig values as instance variables
         # which will be used by async_load to create adapters with correct parameters
-        assert coordinator._vtherm_id == "climate.specific_vtherm"
+        assert coordinator._climate_id == "climate.specific_vtherm"
         assert coordinator._scheduler_ids == ["switch.specific_schedule"]
         assert coordinator._humidity_in_id == "sensor.specific_humidity_in"
         assert coordinator._data_retention_days == 90  # From lhs_retention_days

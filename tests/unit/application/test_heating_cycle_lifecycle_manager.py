@@ -46,7 +46,7 @@ class TestHeatingCycleLifecycleManager:
         """Create device configuration."""
         return DeviceConfig(
             device_id="climate.test_vtherm",
-            vtherm_entity_id="climate.test_vtherm",
+            climate_entity_id="climate.test_vtherm",
             scheduler_entities=["schedule.heating"],
             lhs_retention_days=30,
         )
@@ -318,7 +318,7 @@ class TestHeatingCycleLifecycleManager:
         # GIVEN: a config that differs from the defaults on several fields
         custom_config = DeviceConfig(
             device_id="climate.test_vtherm",
-            vtherm_entity_id="climate.test_vtherm",
+            climate_entity_id="climate.test_vtherm",
             scheduler_entities=["schedule.heating"],
             lhs_retention_days=30,
             auto_learning=False,

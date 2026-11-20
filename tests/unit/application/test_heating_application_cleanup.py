@@ -23,7 +23,7 @@ async def test_cleanup_cancels_pending_anticipation_timer() -> None:
     """Unloading the entry must cancel the anticipation timer of this instance."""
     device_config = DeviceConfig(
         device_id="climate.test_vtherm",
-        vtherm_entity_id="climate.test_vtherm",
+        climate_entity_id="climate.test_vtherm",
         scheduler_entities=["schedule.heating"],
     )
     app = HeatingApplication(Mock(), device_config)

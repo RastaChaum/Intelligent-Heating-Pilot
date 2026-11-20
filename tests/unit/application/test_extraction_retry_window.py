@@ -47,7 +47,7 @@ def manager(storage: Mock) -> HeatingCycleLifecycleManager:
     return HeatingCycleLifecycleManager(
         device_config=DeviceConfig(
             device_id=DEVICE_ID,
-            vtherm_entity_id=DEVICE_ID,
+            climate_entity_id=DEVICE_ID,
             scheduler_entities=["schedule.heating"],
             lhs_retention_days=RETENTION_DAYS,
             task_range_days=TASK_RANGE_DAYS,

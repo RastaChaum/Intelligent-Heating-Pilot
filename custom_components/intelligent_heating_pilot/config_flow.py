@@ -10,10 +10,18 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
 
+from .config_flow_presets import PresetTemperaturesFlowMixin, mappable_presets
 from .config_flow_selectors import as_list, build_theme_schema, form_definitions
-from .config_flow_themes import ThemeStepsMixin, vtherm_in_use
+from .config_flow_themes import STEP_PRESET_TEMPERATURES, ThemeStepsMixin, vtherm_in_use
 from .config_flow_wake_up import WakeUpSourcesFlowMixin
-from .const import CONF_NAME, CONF_SCHEDULER_ENTITIES, CONF_VTHERM_ENTITY, DEFAULT_NAME, DOMAIN
+from .const import (
+    CONF_CLIMATE_ENTITY,
+    CONF_NAME,
+    CONF_PRESET_TEMPERATURES,
+    CONF_SCHEDULER_ENTITIES,
+    DEFAULT_NAME,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,14 +58,14 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             _LOGGER.debug("Processed data before validation: %s", processed)
 
             # Required validations
-            vtherm_val = processed.get(CONF_VTHERM_ENTITY)
+            vtherm_val = processed.get(CONF_CLIMATE_ENTITY)
             if not vtherm_val or (isinstance(vtherm_val, str) and vtherm_val.strip() == ""):
-                errors[CONF_VTHERM_ENTITY] = "required"
+                errors[CONF_CLIMATE_ENTITY] = "required"
 
             # Scheduler is now optional - no validation needed
 
             if not errors:
-                vtherm: str = processed[CONF_VTHERM_ENTITY]
+                vtherm: str = processed[CONF_CLIMATE_ENTITY]
                 if vtherm_in_use(self.hass, vtherm):
                     return self.async_abort(reason="already_configured")
                 _LOGGER.info("Creating entry with data: %s", processed)
@@ -83,7 +91,10 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
 
 
 class IntelligentHeatingPilotOptionsFlow(
-    ThemeStepsMixin, WakeUpSourcesFlowMixin, config_entries.OptionsFlow
+    ThemeStepsMixin,
+    PresetTemperaturesFlowMixin,
+    WakeUpSourcesFlowMixin,
+    config_entries.OptionsFlow,
 ):
     """Options of a device: a menu of themes, each form stored at once, then "Apply"."""
 
@@ -93,9 +104,27 @@ class IntelligentHeatingPilotOptionsFlow(
         self._sources: list[dict[str, Any]] = []
         self._editing: str | None = None
 
+    def _extra_menu_entries(self) -> list[str]:
+        """Offer the preset temperatures only for a climate that does not publish them (#252)."""
+        climate = {**self.config_entry.data, **self.config_entry.options}.get(CONF_CLIMATE_ENTITY)
+        return [STEP_PRESET_TEMPERATURES] if mappable_presets(self.hass, climate) else []
+
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Show the menu of themes."""
         return await self._show_menu()
+
+    async def async_step_preset_temperatures(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Map the presets of the climate to temperatures, stored when the form is submitted."""
+        if user_input is None:
+            self._pending = {**self.config_entry.data, **self.config_entry.options}
+        return await PresetTemperaturesFlowMixin.async_step_preset_temperatures(self, user_input)
+
+    async def _after_preset_temperatures(self) -> ConfigFlowResult:
+        """Store the mapping and go back to the menu."""
+        self._write_values({CONF_PRESET_TEMPERATURES: self._pending[CONF_PRESET_TEMPERATURES]})
+        return await self.async_step_init()
 
     async def async_step_wake_up_sources(
         self, user_input: dict[str, Any] | None = None

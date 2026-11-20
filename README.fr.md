@@ -6,7 +6,7 @@
 
 🇬🇧 [English version](README.md)
 
-> **Le cerveau adaptatif de Versatile Thermostat**
+> **Le cerveau adaptatif de votre thermostat, avec Versatile Thermostat comme compagnon recommandé**
 
 Une intégration Home Assistant qui apprend le comportement de votre chauffage et le démarre automatiquement au bon moment, sans aucun réglage manuel.
 
@@ -23,14 +23,14 @@ Une intégration Home Assistant qui apprend le comportement de votre chauffage e
 ✅ La pièce atteint 21°C pile à 18:00
 ```
 
-IHP surveille votre VTherm, apprend à quelle vitesse votre pièce chauffe et déclenche votre planificateur au moment idéal : vous retrouvez une maison chaude, à chaque fois.
+IHP surveille votre thermostat, apprend à quelle vitesse votre pièce chauffe et déclenche votre planificateur au moment idéal : vous retrouvez une maison chaude, à chaque fois.
 
 ---
 
 ## ✅ Prérequis
 
 - **Home Assistant** 2024.11 ou plus récent
-- **[Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat)** : IHP ne fonctionne qu'avec des entités VTherm ; utilisez un appareil IHP par thermostat
+- **Une entité `climate` à préchauffer** : utilisez un appareil IHP par thermostat. **[Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat)** est la cible recommandée et la mieux prise en charge, mais toute entité `climate` fonctionne (voir [ce qu'un climate générique doit exposer](docs/users/CONFIGURATION.md#using-a-climate-that-is-not-a-versatile-thermostat))
 - **Un planificateur pris en charge**, pour qu'IHP anticipe vos créneaux :
 
 | Planificateur | Démarrage anticipé | IHP lance le chauffage |
@@ -61,7 +61,7 @@ HACS → Intégrations → ⋮ → Dépôts personnalisés
 ```text
 Paramètres → Appareils et services → + Ajouter une intégration
 → Rechercher « Intelligent Heating Pilot »
-→ Sélectionner le VTherm et le HACS Scheduler → Valider
+→ Sélectionner votre thermostat et le HACS Scheduler → Valider
 ```
 
 **[Guide de configuration complet →](docs/users/CONFIGURATION.md)**
@@ -93,7 +93,7 @@ Paramètres → Appareils et services → + Ajouter une intégration
 - ✅ **Service de calcul** - `calculate_anticipated_start_time` pour vos propres automatisations, avec ou sans planificateur
 - ✅ **Source extérieure** - Capteur extérieur ou entité `weather.*`, enregistrée avec chaque cycle de chauffe
 - ✅ **Cache incrémental** - Réduit la charge de la base de données de HA pour l'apprentissage à long terme
-- ✅ **Compatible VTherm v8+** - Fonctionne avec les dernières versions de Versatile Thermostat
+- ✅ **Toute entité climate** - Versatile Thermostat v8+ est recommandé et ses capacités supplémentaires (températures des presets, délestage) sont détectées automatiquement ; les autres thermostats fonctionnent aussi
 - ✅ **Démarrage optimisé** - Le chargement différé et le filtrage intelligent évitent les timeouts du watchdog de HA
 - ✅ **Prêt pour les vacances** - S'arrête automatiquement quand le HACS Scheduler est désactivé ou que ses conditions le bloquent
 

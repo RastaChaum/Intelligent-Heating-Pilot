@@ -1,10 +1,9 @@
-"""Versatile Thermostat compatibility layer.
+"""Attribute access shared by every climate entity IHP preheats.
 
-This module provides backward-compatible access to VTherm attributes
-to support both legacy versions (pre-v8.0.0) and new versions (v8.0.0+).
-
-In v8.0.0+, many attributes were moved under a 'specific_states' nested object.
-This module abstracts that change to maintain compatibility.
+Any ``climate`` entity publishes its attributes at the root of its state. Versatile Thermostat
+(VTherm, the recommended target) v8.0.0+ also moves many of them under a ``specific_states``
+nested object. This module reads both layouts, so the adapters never care which kind of
+climate they were given, and it prefers VTherm's smoothed room temperature when it exists.
 """
 
 from __future__ import annotations
@@ -18,12 +17,12 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-def get_vtherm_attribute(
+def get_climate_attribute(
     state: State | None,
     attribute_name: str,
     default: Any = None,
 ) -> Any:
-    """Get a VTherm attribute with backward compatibility.
+    """Get a climate attribute, whichever layout the entity uses.
 
     Tries to read from the new nested path first (v8.0.0+):
         state.attributes["specific_states"][attribute_name]
@@ -32,7 +31,7 @@ def get_vtherm_attribute(
         state.attributes[attribute_name]
 
     Args:
-        state: The VTherm entity state object
+        state: The climate entity state object
         attribute_name: Name of the attribute to retrieve
         default: Default value if attribute not found
 
@@ -41,11 +40,11 @@ def get_vtherm_attribute(
 
     Examples:
         >>> # Works with v8.0.0+ (nested structure)
-        >>> get_vtherm_attribute(state, "temperature_slope")
+        >>> get_climate_attribute(state, "temperature_slope")
         0.04
 
         >>> # Also works with pre-v8.0.0 (flat structure)
-        >>> get_vtherm_attribute(state, "temperature_slope")
+        >>> get_climate_attribute(state, "temperature_slope")
         0.04
     """
     if not state or not state.attributes:
@@ -86,7 +85,7 @@ VTHERM_ATTR_SMOOTHED_TEMPERATURE = "ema_temp"
 CLIMATE_ATTR_CURRENT_TEMPERATURE = "current_temperature"
 
 
-def get_vtherm_room_temperature(state: State | None) -> float | None:
+def get_room_temperature(state: State | None) -> float | None:
     """Return the room temperature IHP anticipates from.
 
     Versatile Thermostat publishes ``ema_temp``, an exponential moving average
@@ -104,7 +103,7 @@ def get_vtherm_room_temperature(state: State | None) -> float | None:
         when it is a number, otherwise None.
     """
     for attribute_name in (VTHERM_ATTR_SMOOTHED_TEMPERATURE, CLIMATE_ATTR_CURRENT_TEMPERATURE):
-        temperature = _as_float(get_vtherm_attribute(state, attribute_name))
+        temperature = _as_float(get_climate_attribute(state, attribute_name))
         if temperature is not None:
             return temperature
     return None

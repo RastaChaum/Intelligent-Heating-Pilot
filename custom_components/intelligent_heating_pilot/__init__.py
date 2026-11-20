@@ -109,7 +109,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _LOGGER.debug(
         "Loaded device configuration: vtherm=%s, schedulers=%d, ihp_enabled=%s",
-        device_config.vtherm_entity_id,
+        device_config.climate_entity_id,
         len(device_config.scheduler_entities),
         device_config.ihp_enabled,
     )

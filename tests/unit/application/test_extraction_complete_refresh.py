@@ -36,7 +36,7 @@ def app_after_reset() -> HeatingApplication:
     """Create a HeatingApplication whose caches still hold the post-reset defaults."""
     device_config = DeviceConfig(
         device_id=DEVICE_ID,
-        vtherm_entity_id=DEVICE_ID,
+        climate_entity_id=DEVICE_ID,
         scheduler_entities=["schedule.heating"],
         lhs_retention_days=30,
     )

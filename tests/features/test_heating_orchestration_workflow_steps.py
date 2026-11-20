@@ -94,8 +94,7 @@ def mock_environment_reader():
 def mock_climate_data_reader():
     """Mock IClimateDataReader."""
     mock = Mock()
-    mock.get_vtherm_entity_id = Mock(return_value="climate.test_vtherm")
-    mock.get_current_slope = Mock(return_value=2.0)
+    mock.get_climate_entity_id = Mock(return_value="climate.test_vtherm")
     return mock
 
 

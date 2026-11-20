@@ -15,9 +15,10 @@ They need Docker and network access (the image, then the third-party releases pi
 
 ## What one run checks
 
-One container holds three rooms. Each has a real Versatile Thermostat, an IHP and one scheduler:
-a native `schedule`, HACS Scheduler, Climate Scheduler. Their slot starts about ten minutes after
-the scenario is set up.
+One container holds four rooms. Three have a real Versatile Thermostat, an IHP and one scheduler:
+a native `schedule`, HACS Scheduler, Climate Scheduler. The fourth is heated by Home Assistant's own
+`generic_thermostat` through a HACS Scheduler preset slot, with the preset temperatures given in
+IHP's options (#252). Their slot starts about ten minutes after the scenario is set up.
 
 - every config entry loads;
 - IHP publishes its entities for each room;
