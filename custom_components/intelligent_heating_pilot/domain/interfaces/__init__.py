@@ -6,6 +6,7 @@ the outside world without coupling to specific implementations.
 
 from __future__ import annotations
 
+from .central_config_reader_interface import ICentralConfigReader
 from .climate_commander_interface import IClimateCommander
 from .climate_data_reader_interface import IClimateDataReader
 from .context_reader_interface import IContextReader
@@ -27,6 +28,7 @@ from .timer_scheduler import ITimerScheduler
 from .wake_up_source_reader_interface import IWakeUpSourceReader
 
 __all__ = [
+    "ICentralConfigReader",
     "IClimateCommander",
     "IClimateDataReader",
     "IPreheatActuator",

@@ -23,6 +23,7 @@ from custom_components.intelligent_heating_pilot.const import (
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.entry_changes import (
     effective_values,
 )
+from tests.integration.options_helpers import save_theme
 
 pytestmark = pytest.mark.usefixtures("flow_environment")
 
@@ -63,11 +64,7 @@ async def _menu(hass: HomeAssistant, entry: MockConfigEntry) -> Any:
 
 
 async def _save(hass: HomeAssistant, menu: Any, theme: str, values: dict[str, Any]) -> Any:
-    form = await hass.config_entries.options.async_configure(
-        menu["flow_id"], {"next_step_id": theme}
-    )
-    assert form["type"] is FlowResultType.FORM
-    return await hass.config_entries.options.async_configure(form["flow_id"], values)
+    return await save_theme(hass, menu["flow_id"], theme, values)
 
 
 @pytest.mark.asyncio
@@ -186,8 +183,11 @@ async def test_a_save_is_merged_onto_the_entry_as_stored_at_that_moment(
         entry, options={**entry.options, CONF_LHS_RETENTION_DAYS: 75}
     )
 
+    values = await hass.config_entries.options.async_configure(
+        form["flow_id"], {"overridden_settings": [CONF_TEMPERATURE_OUT_ENTITY]}
+    )
     await hass.config_entries.options.async_configure(
-        form["flow_id"], {CONF_TEMPERATURE_OUT_ENTITY: "sensor.out"}
+        values["flow_id"], {CONF_TEMPERATURE_OUT_ENTITY: "sensor.out"}
     )
 
     assert entry.options[CONF_LHS_RETENTION_DAYS] == 75
@@ -200,7 +200,7 @@ async def test_a_cleared_optional_entity_is_stored_as_none(hass: HomeAssistant) 
     menu = await _menu(hass, entry)
     await _save(hass, menu, "environment", {CONF_HUMIDITY_OUT_ENTITY: "sensor.hum"})
 
-    await _save(hass, menu, "environment", {})
+    await save_theme(hass, menu["flow_id"], "environment", {}, keep=[CONF_HUMIDITY_OUT_ENTITY])
 
     assert entry.options[CONF_HUMIDITY_OUT_ENTITY] is None
 
@@ -234,16 +234,16 @@ async def test_a_theme_without_saving_stores_nothing(hass: HomeAssistant) -> Non
 
 
 @pytest.mark.asyncio
-async def test_submitting_a_theme_unchanged_stores_no_default_and_offers_no_apply(
+async def test_submitting_a_theme_unchanged_stores_nothing_and_offers_no_apply(
     hass: HomeAssistant,
 ) -> None:
     entry = _add_device(hass)
     menu = await _menu(hass, entry)
     form = await hass.config_entries.options.async_configure(
-        menu["flow_id"], {"next_step_id": "learning"}
+        menu["flow_id"], {"next_step_id": "environment"}
     )
 
-    # the form is pre-filled with the built-in defaults: submitting them as they are
+    # nothing is overridden: submitting the form as it is
     result = await hass.config_entries.options.async_configure(form["flow_id"], {})
 
     assert entry.options == {CONF_LHS_RETENTION_DAYS: 30}

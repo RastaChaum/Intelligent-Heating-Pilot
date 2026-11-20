@@ -138,7 +138,27 @@ THEME_FORM_STEPS = (
     "cycle_detection",
     "anticipation",
 )
-MENU_ENTRIES = {*THEME_FORM_STEPS, "wake_up_sources", "apply"}
+CENTRAL_THEMES = THEME_FORM_STEPS[1:]
+MENU_ENTRIES = {
+    *THEME_FORM_STEPS,
+    "wake_up_sources",
+    "apply",
+    *(f"central_{theme}" for theme in CENTRAL_THEMES),
+}
+PICKER = "overridden_settings"
+
+
+def _keys(theme: str, scope: str) -> set[str]:
+    from custom_components.intelligent_heating_pilot.domain.services.settings_catalog import (
+        SettingsCatalog,
+    )
+    from custom_components.intelligent_heating_pilot.domain.value_objects.setting_definition import (
+        SettingScope,
+        SettingTheme,
+    )
+
+    wanted = SettingScope(scope)
+    return {d.key for d in SettingsCatalog().of_theme(SettingTheme(theme)) if d.scope is wanted}
 
 
 @pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
@@ -151,29 +171,34 @@ def test_the_options_menu_lists_every_theme_and_apply(path: Path) -> None:
 
 @pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
 @pytest.mark.parametrize("theme", THEME_FORM_STEPS)
-def test_every_setting_of_a_theme_has_a_label_and_a_help_text(path: Path, theme: str) -> None:
-    from custom_components.intelligent_heating_pilot.domain.services.settings_catalog import (
-        SettingsCatalog,
-    )
-    from custom_components.intelligent_heating_pilot.domain.value_objects.setting_definition import (
-        SettingTheme,
-    )
-
-    keys = {d.key for d in SettingsCatalog().of_theme(SettingTheme(theme))}
+def test_a_device_theme_form_has_its_device_fields_and_the_picker(path: Path, theme: str) -> None:
     step = _load(path)["options"]["step"][theme]
+    expected = _keys(theme, "device") | ({PICKER} if _keys(theme, "shareable") else set())
 
-    assert set(step["data"]) == keys
-    assert set(step["data_description"]) == keys
+    assert set(step["data"]) == expected
+    assert set(step["data_description"]) == expected
     assert step["title"].strip() and step["description"].strip()
+    assert ("{settings}" in step["description"]) == bool(_keys(theme, "shareable"))
 
 
-def test_every_setting_of_the_catalog_is_in_a_translated_theme() -> None:
-    from custom_components.intelligent_heating_pilot.domain.services.settings_catalog import (
-        SettingsCatalog,
-    )
+@pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
+@pytest.mark.parametrize("theme", CENTRAL_THEMES)
+def test_the_values_and_central_forms_have_a_label_and_a_help_text_per_shared_setting(
+    path: Path, theme: str
+) -> None:
+    steps = _load(path)["options"]["step"]
+    keys = _keys(theme, "shareable")
 
-    in_forms = {d.key for d in SettingsCatalog().all() if d.theme.value in THEME_FORM_STEPS}
-    translated = set()
-    for theme in THEME_FORM_STEPS:
-        translated |= set(_load(FILES[0])["options"]["step"][theme]["data"])
-    assert in_forms == translated
+    for step_id in (f"{theme}_values", f"central_{theme}"):
+        assert set(steps[step_id]["data"]) == keys, step_id
+        assert set(steps[step_id]["data_description"]) == keys, step_id
+        assert steps[step_id]["title"].strip() and steps[step_id]["description"].strip()
+
+
+@pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
+def test_the_picker_and_the_indicators_are_translated(path: Path) -> None:
+    translated = _load(path)
+    shareable = set().union(*(_keys(theme, "shareable") for theme in CENTRAL_THEMES))
+
+    assert set(translated["selector"][PICKER]["options"]) == shareable
+    assert set(translated["common"]) == {"inherited", "overridden", "none"}

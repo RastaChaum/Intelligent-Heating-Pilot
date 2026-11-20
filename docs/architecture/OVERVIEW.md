@@ -30,6 +30,12 @@ custom_components/intelligent_heating_pilot/
 - Adapts Home Assistant entities, services, and storage to domain interfaces.
 - Must stay thin and avoid business decisions.
 
+### Settings and the Central Configuration
+
+- The domain `SettingsCatalog` declares every configurable setting (theme, shareable or device-only, default); `SettingsResolver` applies the rule *device value, else central value, else built-in default*. A key present in a device's data or options is an override; `None` is a valid override of an optional sensor.
+- The central configuration is a config entry of the same domain (`entry_type: central`, fixed unique id). It creates no coordinator and no entity; it is created automatically with the first device and read through `ICentralConfigReader`.
+- The options flows (`config_flow_themes.py`, `config_flow_overrides.py`) store each theme at once without reloading; "Apply" reloads the device, or, for the central entry, the devices that inherit a changed value.
+
 ## Main Runtime Flow
 
 1. Infrastructure reads VTherm, scheduler, and environment state.

@@ -3,52 +3,16 @@
     "step": {
       "user": {
         "title": "Configurer Intelligent Heating Pilot",
-        "description": "Configurez votre intégration Intelligent Heating Pilot (IHP) pour des calculs de préchauffage intelligents basés sur l'apprentissage des pentes thermiques de votre VTherm.",
+        "description": "Configurez un appareil Intelligent Heating Pilot (IHP) pour le préchauffage intelligent, à partir des pentes thermiques apprises sur votre VTherm. Le reste (capteurs, apprentissage, détection des cycles) est hérité de la configuration centrale, et peut être réglé par appareil ensuite depuis l'écran Configurer de l'appareil.",
         "data": {
           "name": "Nom de l'intégration",
           "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
-          "scheduler_entities": "Entités Scheduler",
-          "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
-          "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure (optionnel)",
-          "temperature_out_entity_id": "Capteur ou entité météo de température extérieure (optionnel)",
-          "cloud_cover_entity_id": "Capteur ou entité météo de couverture nuageuse (optionnel)",
-          "lhs_retention_days": "Rétention des données de pente (jours)",
-          "dead_time_minutes": "Temps mort initial (minutes)",
-          "auto_learning": "Apprentissage automatique",
-          "temp_delta_threshold": "Seuil de détection de température (°C)",
-          "cycle_split_duration_minutes": "Durée de découpage des cycles (minutes)",
-          "min_cycle_duration_minutes": "Durée minimale de cycle (minutes)",
-          "max_cycle_duration_minutes": "Durée maximale de cycle (minutes)",
-          "task_range_days": "Période d'extraction Recorder (jours)",
-          "anticipation_recalc_tolerance_minutes": "Delta temporel de réversion du préchauffage (minutes)",
-          "safety_shutoff_grace_minutes": "Délai de grâce après coupure de sécurité (minutes)",
-          "native_schedule_drive": "Piloter les plannings natifs",
-          "native_schedule_preset_key": "Clé du preset (planning natif)",
-          "native_schedule_temperature_key": "Clé de la température (planning natif)",
-          "native_schedule_fallback_preset": "Preset par défaut (planning natif)"
+          "scheduler_entities": "Entités Scheduler"
         },
         "data_description": {
           "name": "Un nom pour cet appareil IHP, par exemple la pièce qu'il chauffe.",
           "vtherm_entity_id": "Le Versatile Thermostat dont IHP apprend et anticipe la chauffe.",
-          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé dans Plannings natifs.",
-          "humidity_in_entity_id": "Capteur d'humidité de la pièce pour affiner les calculs.",
-          "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure. Surveillé, pas encore utilisé dans la prédiction.",
-          "temperature_out_entity_id": "Capteur ou entité météo de température extérieure, enregistrée avec chaque cycle de chauffe.",
-          "cloud_cover_entity_id": "Capteur ou entité météo de couverture nuageuse pour prendre en compte l'impact solaire.",
-          "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage. Par défaut : 30 jours.",
-          "dead_time_minutes": "Délai entre le début de la chauffe et la première hausse de température. Utilisé tant qu'IHP ne l'a pas appris des cycles de chauffe, et toujours si l'apprentissage automatique est désactivé. Par défaut : 0 min.",
-          "auto_learning": "Apprend le temps mort à partir des cycles de chauffe. Désactivé, le temps mort initial est toujours utilisé. La pente de chauffe est apprise dans les deux cas.",
-          "temp_delta_threshold": "Écart de température utilisé pour détecter le début et la fin d'un cycle de chauffe. Une valeur plus faible rend la détection plus sensible. Par défaut : 0,2 °C.",
-          "cycle_split_duration_minutes": "Découpe les longs cycles de chauffe en sous-cycles de cette durée pour l'augmentation de données ML. 0 = désactivé (par défaut).",
-          "min_cycle_duration_minutes": "Durée du plus court cycle de chauffe retenu pour l'apprentissage. Filtre les micro-cycles (bruit). Par défaut : 5 min.",
-          "max_cycle_duration_minutes": "Durée du plus long cycle de chauffe retenu pour l'apprentissage. Filtre les cycles anormalement longs (dysfonctionnements). Par défaut : 300 min.",
-          "task_range_days": "Nombre de jours par tâche d'extraction du Recorder. Augmentez-le sur une machine puissante pour réduire le nombre de tâches, diminuez-le sur une machine lente pour alléger chaque requête. Par défaut : 7 jours.",
-          "anticipation_recalc_tolerance_minutes": "Report minimal de l'heure de démarrage anticipée qui annule un préchauffage actif et le replanifie. Par défaut : 15 min.",
-          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel, délestage de Versatile Thermostat, fenêtre ouverte) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min.",
-          "native_schedule_drive": "IHP applique lui-même le prochain bloc d'un planning natif au thermostat, à l'heure de démarrage anticipée. Désactivé : IHP calcule seulement l'anticipation des plannings natifs. Les données d'un bloc peuvent contenir un preset ou une température.",
-          "native_schedule_preset_key": "Nom de l'entrée des données du bloc qui contient un preset. Par défaut : preset.",
-          "native_schedule_temperature_key": "Nom de l'entrée des données du bloc qui contient une température cible. Par défaut : temperature.",
-          "native_schedule_fallback_preset": "Preset appliqué quand un bloc n'a aucune de ces entrées. Il remplace aussi la température du bloc quand IHP calcule l'anticipation. Par défaut : comfort."
+          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé dans les réglages Plannings natifs de l'appareil."
         }
       }
     },
@@ -72,7 +36,12 @@
           "learning": "Apprentissage",
           "cycle_detection": "Détection des cycles",
           "anticipation": "Comportement d'anticipation",
-          "apply": "Appliquer les modifications enregistrées"
+          "apply": "Appliquer les modifications enregistrées",
+          "central_native_schedule": "Central : Plannings natifs",
+          "central_environment": "Central : Capteurs d'environnement",
+          "central_learning": "Central : Apprentissage",
+          "central_cycle_detection": "Central : Détection des cycles",
+          "central_anticipation": "Central : Comportement d'anticipation"
         }
       },
       "thermostat_schedulers": {
@@ -89,78 +58,56 @@
       },
       "native_schedule": {
         "title": "Plannings natifs",
-        "description": "Comment IHP lit et pilote les planifications natives. Enregistré dès la validation.",
+        "description": "Comment IHP lit et pilote les planifications natives. Enregistré dès la validation.\n\nÉtat actuel des réglages de ce groupe :\n\n{settings}",
         "data": {
           "native_schedule_drive": "Piloter les plannings natifs",
-          "native_schedule_preset_key": "Clé du preset (planning natif)",
-          "native_schedule_temperature_key": "Clé de la température (planning natif)",
-          "native_schedule_fallback_preset": "Preset par défaut (planning natif)"
+          "overridden_settings": "Réglages surchargés sur cet appareil"
         },
         "data_description": {
           "native_schedule_drive": "IHP applique lui-même le prochain bloc d'un planning natif au thermostat, à l'heure de démarrage anticipée. Désactivé : IHP calcule seulement l'anticipation des plannings natifs. Les données d'un bloc peuvent contenir un preset ou une température.",
-          "native_schedule_preset_key": "Nom de l'entrée des données du bloc qui contient un preset. Par défaut : preset.",
-          "native_schedule_temperature_key": "Nom de l'entrée des données du bloc qui contient une température cible. Par défaut : temperature.",
-          "native_schedule_fallback_preset": "Preset appliqué quand un bloc n'a aucune de ces entrées. Il remplace aussi la température du bloc quand IHP calcule l'anticipation. Par défaut : comfort."
+          "overridden_settings": "Cochez un réglage pour donner à cet appareil sa propre valeur. Les réglages décochés suivent la configuration centrale."
         }
       },
       "environment": {
         "title": "Capteurs d'environnement",
-        "description": "Capteurs qui affinent la prédiction. Enregistré dès la validation.",
+        "description": "Capteurs qui affinent la prédiction. Enregistré dès la validation.\n\nÉtat actuel des réglages de ce groupe :\n\n{settings}",
         "data": {
           "humidity_in_entity_id": "Capteur d'humidité intérieure (optionnel)",
-          "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure (optionnel)",
-          "temperature_out_entity_id": "Capteur ou entité météo de température extérieure (optionnel)",
-          "cloud_cover_entity_id": "Capteur ou entité météo de couverture nuageuse (optionnel)"
+          "overridden_settings": "Réglages surchargés sur cet appareil"
         },
         "data_description": {
           "humidity_in_entity_id": "Capteur d'humidité de la pièce pour affiner les calculs.",
-          "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure. Surveillé, pas encore utilisé dans la prédiction.",
-          "temperature_out_entity_id": "Capteur ou entité météo de température extérieure, enregistrée avec chaque cycle de chauffe.",
-          "cloud_cover_entity_id": "Capteur ou entité météo de couverture nuageuse pour prendre en compte l'impact solaire."
+          "overridden_settings": "Cochez un réglage pour donner à cet appareil sa propre valeur. Les réglages décochés suivent la configuration centrale."
         }
       },
       "learning": {
         "title": "Apprentissage",
-        "description": "Comment IHP apprend le comportement de chauffe de la pièce. Enregistré dès la validation.",
+        "description": "Comment IHP apprend le comportement de chauffe de la pièce. Enregistré dès la validation.\n\nÉtat actuel des réglages de ce groupe :\n\n{settings}",
         "data": {
-          "auto_learning": "Apprentissage automatique",
-          "dead_time_minutes": "Temps mort initial (minutes)",
-          "lhs_retention_days": "Rétention des données de pente (jours)",
-          "task_range_days": "Période d'extraction Recorder (jours)"
+          "overridden_settings": "Réglages surchargés sur cet appareil"
         },
         "data_description": {
-          "auto_learning": "Apprend le temps mort à partir des cycles de chauffe. Désactivé, le temps mort initial est toujours utilisé. La pente de chauffe est apprise dans les deux cas.",
-          "dead_time_minutes": "Délai entre le début de la chauffe et la première hausse de température. Utilisé tant qu'IHP ne l'a pas appris des cycles de chauffe, et toujours si l'apprentissage automatique est désactivé. Par défaut : 0 min.",
-          "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage. Par défaut : 30 jours.",
-          "task_range_days": "Nombre de jours par tâche d'extraction du Recorder. Augmentez-le sur une machine puissante pour réduire le nombre de tâches, diminuez-le sur une machine lente pour alléger chaque requête. Par défaut : 7 jours."
+          "overridden_settings": "Cochez un réglage pour donner à cet appareil sa propre valeur. Les réglages décochés suivent la configuration centrale."
         }
       },
       "cycle_detection": {
         "title": "Détection des cycles",
-        "description": "Comment les cycles de chauffe sont détectés et filtrés. Enregistré dès la validation.",
+        "description": "Comment les cycles de chauffe sont détectés et filtrés. Enregistré dès la validation.\n\nÉtat actuel des réglages de ce groupe :\n\n{settings}",
         "data": {
-          "temp_delta_threshold": "Seuil de détection de température (°C)",
-          "cycle_split_duration_minutes": "Durée de découpage des cycles (minutes)",
-          "min_cycle_duration_minutes": "Durée minimale de cycle (minutes)",
-          "max_cycle_duration_minutes": "Durée maximale de cycle (minutes)",
-          "safety_shutoff_grace_minutes": "Délai de grâce après coupure de sécurité (minutes)"
+          "overridden_settings": "Réglages surchargés sur cet appareil"
         },
         "data_description": {
-          "temp_delta_threshold": "Écart de température utilisé pour détecter le début et la fin d'un cycle de chauffe. Une valeur plus faible rend la détection plus sensible. Par défaut : 0,2 °C.",
-          "cycle_split_duration_minutes": "Découpe les longs cycles de chauffe en sous-cycles de cette durée pour l'augmentation de données ML. 0 = désactivé (par défaut).",
-          "min_cycle_duration_minutes": "Durée du plus court cycle de chauffe retenu pour l'apprentissage. Filtre les micro-cycles (bruit). Par défaut : 5 min.",
-          "max_cycle_duration_minutes": "Durée du plus long cycle de chauffe retenu pour l'apprentissage. Filtre les cycles anormalement longs (dysfonctionnements). Par défaut : 300 min.",
-          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel, délestage de Versatile Thermostat, fenêtre ouverte) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min."
+          "overridden_settings": "Cochez un réglage pour donner à cet appareil sa propre valeur. Les réglages décochés suivent la configuration centrale."
         }
       },
       "anticipation": {
         "title": "Comportement d'anticipation",
-        "description": "Quand un préchauffage en cours est recalculé. Enregistré dès la validation.",
+        "description": "Quand un préchauffage en cours est recalculé. Enregistré dès la validation.\n\nÉtat actuel des réglages de ce groupe :\n\n{settings}",
         "data": {
-          "anticipation_recalc_tolerance_minutes": "Delta temporel de réversion du préchauffage (minutes)"
+          "overridden_settings": "Réglages surchargés sur cet appareil"
         },
         "data_description": {
-          "anticipation_recalc_tolerance_minutes": "Report minimal de l'heure de démarrage anticipée qui annule un préchauffage actif et le replanifie. Par défaut : 15 min."
+          "overridden_settings": "Cochez un réglage pour donner à cet appareil sa propre valeur. Les réglages décochés suivent la configuration centrale."
         }
       },
       "wake_up_menu": {
@@ -212,6 +159,150 @@
           "horizon_hours": "Une heure plus lointaine que cette durée est ignorée, pour qu'une alarme éloignée ne déclenche jamais un préchauffage par accident. Par défaut : 24 heures.",
           "hold_minutes": "Après cette heure, IHP remet le thermostat dans son état précédent, sauf si quelqu'un l'a modifié ou si un planning a pris la main. 0 laisse le thermostat tel quel."
         }
+      },
+      "native_schedule_values": {
+        "title": "Plannings natifs : valeurs",
+        "description": "Indiquez la valeur utilisée par cet appareil à la place de la valeur héritée. Laissez un capteur optionnel vide pour n'utiliser aucun capteur.",
+        "data": {
+          "native_schedule_preset_key": "Clé du preset (planning natif)",
+          "native_schedule_temperature_key": "Clé de la température (planning natif)",
+          "native_schedule_fallback_preset": "Preset par défaut (planning natif)"
+        },
+        "data_description": {
+          "native_schedule_preset_key": "Nom de l'entrée des données du bloc qui contient un preset. Par défaut : preset.",
+          "native_schedule_temperature_key": "Nom de l'entrée des données du bloc qui contient une température cible. Par défaut : temperature.",
+          "native_schedule_fallback_preset": "Preset appliqué quand un bloc n'a aucune de ces entrées. Il remplace aussi la température du bloc quand IHP calcule l'anticipation. Par défaut : comfort."
+        }
+      },
+      "central_native_schedule": {
+        "title": "Central : Plannings natifs",
+        "description": "Valeurs partagées par tous les appareils qui ne les surchargent pas. Videz un capteur optionnel pour ne donner aucune valeur centrale aux appareils.",
+        "data": {
+          "native_schedule_preset_key": "Clé du preset (planning natif)",
+          "native_schedule_temperature_key": "Clé de la température (planning natif)",
+          "native_schedule_fallback_preset": "Preset par défaut (planning natif)"
+        },
+        "data_description": {
+          "native_schedule_preset_key": "Nom de l'entrée des données du bloc qui contient un preset. Par défaut : preset.",
+          "native_schedule_temperature_key": "Nom de l'entrée des données du bloc qui contient une température cible. Par défaut : temperature.",
+          "native_schedule_fallback_preset": "Preset appliqué quand un bloc n'a aucune de ces entrées. Il remplace aussi la température du bloc quand IHP calcule l'anticipation. Par défaut : comfort."
+        }
+      },
+      "environment_values": {
+        "title": "Capteurs d'environnement : valeurs",
+        "description": "Indiquez la valeur utilisée par cet appareil à la place de la valeur héritée. Laissez un capteur optionnel vide pour n'utiliser aucun capteur.",
+        "data": {
+          "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure (optionnel)",
+          "temperature_out_entity_id": "Capteur ou entité météo de température extérieure (optionnel)",
+          "cloud_cover_entity_id": "Capteur ou entité météo de couverture nuageuse (optionnel)"
+        },
+        "data_description": {
+          "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure. Surveillé, pas encore utilisé dans la prédiction.",
+          "temperature_out_entity_id": "Capteur ou entité météo de température extérieure, enregistrée avec chaque cycle de chauffe.",
+          "cloud_cover_entity_id": "Capteur ou entité météo de couverture nuageuse pour prendre en compte l'impact solaire."
+        }
+      },
+      "central_environment": {
+        "title": "Central : Capteurs d'environnement",
+        "description": "Valeurs partagées par tous les appareils qui ne les surchargent pas. Videz un capteur optionnel pour ne donner aucune valeur centrale aux appareils.",
+        "data": {
+          "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure (optionnel)",
+          "temperature_out_entity_id": "Capteur ou entité météo de température extérieure (optionnel)",
+          "cloud_cover_entity_id": "Capteur ou entité météo de couverture nuageuse (optionnel)"
+        },
+        "data_description": {
+          "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure. Surveillé, pas encore utilisé dans la prédiction.",
+          "temperature_out_entity_id": "Capteur ou entité météo de température extérieure, enregistrée avec chaque cycle de chauffe.",
+          "cloud_cover_entity_id": "Capteur ou entité météo de couverture nuageuse pour prendre en compte l'impact solaire."
+        }
+      },
+      "learning_values": {
+        "title": "Apprentissage : valeurs",
+        "description": "Indiquez la valeur utilisée par cet appareil à la place de la valeur héritée. Laissez un capteur optionnel vide pour n'utiliser aucun capteur.",
+        "data": {
+          "auto_learning": "Apprentissage automatique",
+          "dead_time_minutes": "Temps mort initial (minutes)",
+          "lhs_retention_days": "Rétention des données de pente (jours)",
+          "task_range_days": "Période d'extraction Recorder (jours)"
+        },
+        "data_description": {
+          "auto_learning": "Apprend le temps mort à partir des cycles de chauffe. Désactivé, le temps mort initial est toujours utilisé. La pente de chauffe est apprise dans les deux cas.",
+          "dead_time_minutes": "Délai entre le début de la chauffe et la première hausse de température. Utilisé tant qu'IHP ne l'a pas appris des cycles de chauffe, et toujours si l'apprentissage automatique est désactivé. Par défaut : 0 min.",
+          "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage. Par défaut : 30 jours.",
+          "task_range_days": "Nombre de jours par tâche d'extraction du Recorder. Augmentez-le sur une machine puissante pour réduire le nombre de tâches, diminuez-le sur une machine lente pour alléger chaque requête. Par défaut : 7 jours."
+        }
+      },
+      "central_learning": {
+        "title": "Central : Apprentissage",
+        "description": "Valeurs partagées par tous les appareils qui ne les surchargent pas. Videz un capteur optionnel pour ne donner aucune valeur centrale aux appareils.",
+        "data": {
+          "auto_learning": "Apprentissage automatique",
+          "dead_time_minutes": "Temps mort initial (minutes)",
+          "lhs_retention_days": "Rétention des données de pente (jours)",
+          "task_range_days": "Période d'extraction Recorder (jours)"
+        },
+        "data_description": {
+          "auto_learning": "Apprend le temps mort à partir des cycles de chauffe. Désactivé, le temps mort initial est toujours utilisé. La pente de chauffe est apprise dans les deux cas.",
+          "dead_time_minutes": "Délai entre le début de la chauffe et la première hausse de température. Utilisé tant qu'IHP ne l'a pas appris des cycles de chauffe, et toujours si l'apprentissage automatique est désactivé. Par défaut : 0 min.",
+          "lhs_retention_days": "Nombre de jours de rétention des données de pente dans le stockage. Par défaut : 30 jours.",
+          "task_range_days": "Nombre de jours par tâche d'extraction du Recorder. Augmentez-le sur une machine puissante pour réduire le nombre de tâches, diminuez-le sur une machine lente pour alléger chaque requête. Par défaut : 7 jours."
+        }
+      },
+      "cycle_detection_values": {
+        "title": "Détection des cycles : valeurs",
+        "description": "Indiquez la valeur utilisée par cet appareil à la place de la valeur héritée. Laissez un capteur optionnel vide pour n'utiliser aucun capteur.",
+        "data": {
+          "temp_delta_threshold": "Seuil de détection de température (°C)",
+          "cycle_split_duration_minutes": "Durée de découpage des cycles (minutes)",
+          "min_cycle_duration_minutes": "Durée minimale de cycle (minutes)",
+          "max_cycle_duration_minutes": "Durée maximale de cycle (minutes)",
+          "safety_shutoff_grace_minutes": "Délai de grâce après coupure de sécurité (minutes)"
+        },
+        "data_description": {
+          "temp_delta_threshold": "Écart de température utilisé pour détecter le début et la fin d'un cycle de chauffe. Une valeur plus faible rend la détection plus sensible. Par défaut : 0,2 °C.",
+          "cycle_split_duration_minutes": "Découpe les longs cycles de chauffe en sous-cycles de cette durée pour l'augmentation de données ML. 0 = désactivé (par défaut).",
+          "min_cycle_duration_minutes": "Durée du plus court cycle de chauffe retenu pour l'apprentissage. Filtre les micro-cycles (bruit). Par défaut : 5 min.",
+          "max_cycle_duration_minutes": "Durée du plus long cycle de chauffe retenu pour l'apprentissage. Filtre les cycles anormalement longs (dysfonctionnements). Par défaut : 300 min.",
+          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel, délestage de Versatile Thermostat, fenêtre ouverte) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min."
+        }
+      },
+      "central_cycle_detection": {
+        "title": "Central : Détection des cycles",
+        "description": "Valeurs partagées par tous les appareils qui ne les surchargent pas. Videz un capteur optionnel pour ne donner aucune valeur centrale aux appareils.",
+        "data": {
+          "temp_delta_threshold": "Seuil de détection de température (°C)",
+          "cycle_split_duration_minutes": "Durée de découpage des cycles (minutes)",
+          "min_cycle_duration_minutes": "Durée minimale de cycle (minutes)",
+          "max_cycle_duration_minutes": "Durée maximale de cycle (minutes)",
+          "safety_shutoff_grace_minutes": "Délai de grâce après coupure de sécurité (minutes)"
+        },
+        "data_description": {
+          "temp_delta_threshold": "Écart de température utilisé pour détecter le début et la fin d'un cycle de chauffe. Une valeur plus faible rend la détection plus sensible. Par défaut : 0,2 °C.",
+          "cycle_split_duration_minutes": "Découpe les longs cycles de chauffe en sous-cycles de cette durée pour l'augmentation de données ML. 0 = désactivé (par défaut).",
+          "min_cycle_duration_minutes": "Durée du plus court cycle de chauffe retenu pour l'apprentissage. Filtre les micro-cycles (bruit). Par défaut : 5 min.",
+          "max_cycle_duration_minutes": "Durée du plus long cycle de chauffe retenu pour l'apprentissage. Filtre les cycles anormalement longs (dysfonctionnements). Par défaut : 300 min.",
+          "safety_shutoff_grace_minutes": "Délai pendant lequel une brève interruption de chauffe (mode sécurité/hors-gel, délestage de Versatile Thermostat, fenêtre ouverte) ne termine pas le cycle en cours. 0 = désactivé. Par défaut : 10 min."
+        }
+      },
+      "anticipation_values": {
+        "title": "Comportement d'anticipation : valeurs",
+        "description": "Indiquez la valeur utilisée par cet appareil à la place de la valeur héritée. Laissez un capteur optionnel vide pour n'utiliser aucun capteur.",
+        "data": {
+          "anticipation_recalc_tolerance_minutes": "Delta temporel de réversion du préchauffage (minutes)"
+        },
+        "data_description": {
+          "anticipation_recalc_tolerance_minutes": "Report minimal de l'heure de démarrage anticipée qui annule un préchauffage actif et le replanifie. Par défaut : 15 min."
+        }
+      },
+      "central_anticipation": {
+        "title": "Central : Comportement d'anticipation",
+        "description": "Valeurs partagées par tous les appareils qui ne les surchargent pas. Videz un capteur optionnel pour ne donner aucune valeur centrale aux appareils.",
+        "data": {
+          "anticipation_recalc_tolerance_minutes": "Delta temporel de réversion du préchauffage (minutes)"
+        },
+        "data_description": {
+          "anticipation_recalc_tolerance_minutes": "Report minimal de l'heure de démarrage anticipée qui annule un préchauffage actif et le replanifie. Par défaut : 15 min."
+        }
       }
     },
     "error": {
@@ -248,6 +339,33 @@
           "name": "Entité IHP",
           "description": "L'entité de l'appareil IHP dont l'apprentissage doit être réinitialisé (par ex. sensor.intelligent_heating_pilot_anticipated_start_time)"
         }
+      }
+    }
+  },
+  "common": {
+    "inherited": "hérité",
+    "overridden": "surchargé",
+    "none": "aucun"
+  },
+  "selector": {
+    "overridden_settings": {
+      "options": {
+        "native_schedule_preset_key": "Clé du preset (planning natif)",
+        "native_schedule_temperature_key": "Clé de la température (planning natif)",
+        "native_schedule_fallback_preset": "Preset par défaut (planning natif)",
+        "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure (optionnel)",
+        "temperature_out_entity_id": "Capteur ou entité météo de température extérieure (optionnel)",
+        "cloud_cover_entity_id": "Capteur ou entité météo de couverture nuageuse (optionnel)",
+        "auto_learning": "Apprentissage automatique",
+        "dead_time_minutes": "Temps mort initial (minutes)",
+        "lhs_retention_days": "Rétention des données de pente (jours)",
+        "task_range_days": "Période d'extraction Recorder (jours)",
+        "temp_delta_threshold": "Seuil de détection de température (°C)",
+        "cycle_split_duration_minutes": "Durée de découpage des cycles (minutes)",
+        "min_cycle_duration_minutes": "Durée minimale de cycle (minutes)",
+        "max_cycle_duration_minutes": "Durée maximale de cycle (minutes)",
+        "safety_shutoff_grace_minutes": "Délai de grâce après coupure de sécurité (minutes)",
+        "anticipation_recalc_tolerance_minutes": "Delta temporel de réversion du préchauffage (minutes)"
       }
     }
   }

@@ -22,6 +22,15 @@ from homeassistant.util import dt as dt_util
 
 from .const import CONF_IHP_ENABLED, DOMAIN
 from .heating_application import HeatingApplication
+from .infrastructure.adapters.central_entry import (
+    applied_central_values,
+    central_values_of,
+    device_entries,
+    ensure_central_entry,
+    find_central_entry,
+    is_central_entry,
+    set_applied_central_values,
+)
 from .infrastructure.adapters.entry_changes import effective_values
 from .services import async_setup_services
 from .utils.config_helpers import as_bool
@@ -86,6 +95,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("Setting up IHP config entry: %s", entry.entry_id)
 
     hass.data.setdefault(DOMAIN, {})
+
+    if is_central_entry(entry):
+        # The central configuration holds values for the devices: no coordinator, no entity.
+        set_applied_central_values(hass, central_values_of(entry))
+        return True
+
+    # Every device needs the central configuration to exist (created with the first device, and
+    # again after an upgrade or a deletion); the values it reads are the ones stored right now.
+    ensure_central_entry(hass)
+    central = find_central_entry(hass)
+    if central is not None and applied_central_values(hass) is None:
+        set_applied_central_values(hass, central_values_of(central))
 
     # ============================================================================
     # REFACTORING: Create device config reader and extract configuration
@@ -201,9 +222,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry.
 
+    The central configuration has nothing to unload.
+
     The platforms are unloaded first: if that fails, the entry stays loaded and keeps a
     working coordinator instead of sensors bound to a cleaned-up one (#192).
     """
+    if is_central_entry(entry):
+        return True
+
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
 
@@ -212,6 +238,22 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.async_cleanup()
 
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Warn when the central configuration is removed while devices exist.
+
+    An integration cannot refuse the removal of an entry: devices then fall back to their
+    built-in defaults for what they inherit, and the entry is recreated at the next device setup
+    (#302).
+    """
+    if is_central_entry(entry) and device_entries(hass):
+        _LOGGER.warning(
+            "The central configuration was removed while %d device(s) exist: they use the "
+            "built-in defaults for the settings they do not override, until it is recreated "
+            "at the next restart or device reload",
+            len(device_entries(hass)),
+        )
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
