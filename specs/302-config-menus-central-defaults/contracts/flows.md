@@ -7,14 +7,14 @@ translation keys under `options.step`.
 
 ```text
 init (menu)
-├── thermostat_schedulers   -> form: vtherm, schedulers                      -> init
+├── thermostat_schedulers   -> form: vtherm, schedulers (save stages)         -> init
 ├── native_schedule         -> form: drive + overrides picker                -> native_schedule_values -> init
 ├── wake_up_menu            -> existing wake-up sources flow (unchanged)     -> init
 ├── environment             -> form: indoor humidity + overrides picker      -> environment_values -> init
 ├── learning                -> form: overrides picker                        -> learning_values -> init
 ├── cycle_detection         -> form: overrides picker                        -> cycle_detection_values -> init
 ├── anticipation            -> form: overrides picker                        -> anticipation_values -> init
-└── save                    -> persist staged options once, finish
+└── apply                   -> offered only while changes are staged: persist once, reload, finish
 ```
 
 - Each `<theme>` step shows, in its description, one line per shareable setting: "inherited
@@ -25,8 +25,8 @@ init (menu)
   cleared optional entity is staged as `None`.
 - Unselecting a setting removes its key from the staged options (inherit).
 - Validation errors keep the step open with the error on the field; nothing is staged.
-- `init` description states that closing the dialog discards what was not saved with "Save and
-  close".
+- `init` description says how many themes are staged and not applied, and that closing the
+  dialog discards them. `apply` is not listed when nothing is staged.
 
 ## Central options flow
 
@@ -37,7 +37,8 @@ init (menu)
 ├── cycle_detection  -> form: delta, min, max, split, safety grace
 ├── native_schedule  -> form: preset key, temperature key, fallback preset
 ├── anticipation     -> form: recalculation tolerance
-└── save             -> persist staged options once, finish
+└── apply            -> offered only while changes are staged: persist once, finish; the update
+                        listener then reloads the inheriting devices once
 ```
 
 - Fields are shown directly; no picker. A cleared field removes the key (no central value).

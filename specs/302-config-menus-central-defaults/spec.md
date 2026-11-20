@@ -34,6 +34,7 @@ central default configuration second (User Stories 2 and 3).
 - Q: Where does the user edit the central configuration? → A: A dedicated visible entry whose configure button opens the theme menus, without device-specific fields.
 - Q: Can the central configuration be deleted while devices exist? → A: No, deletion is refused until no device remains.
 - Q: When do devices pick up a changed central value? → A: Once, when the user leaves the central menus, and only devices whose inherited value changed.
+- Q: When are changes stored? → A: Each theme form has its own save, which stages the change; an "Apply" entry on the main menu stores everything and reloads, and is offered only when something is staged.
 - Q: Can a device override an optional sensor with "none"? → A: Yes, "none" is a valid override distinct from "inherit".
 
 ## User Scenarios & Testing *(mandatory)*
@@ -63,7 +64,10 @@ value, save, and check that the value is stored and every other value is unchang
    themes is shown and no setting field is shown yet.
 2. **Given** the theme menu, **When** the user opens "Learning" and saves a new retention,
    **Then** only the retention changes and the menu is shown again.
-3. **Given** a theme form, **When** the user leaves without saving, **Then** nothing changes.
+3. **Given** a theme form, **When** the user leaves it without saving, **Then** nothing is staged.
+   **Given** staged changes, **When** the user chooses "Apply" on the main menu, **Then** they
+   are stored and the device reloads once; **Given** nothing is staged, **Then** "Apply" is
+   not offered.
 4. **Given** the menu, **When** the user opens "Wake-up sources", **Then** the existing
    wake-up sources flow behaves as before.
 5. **Given** a theme form with an invalid value, **When** the user saves, **Then** the form
@@ -76,12 +80,14 @@ Feature: Device options grouped by theme
     When I open the device options and choose the "Learning" theme
     And I set the data retention to 60 days and save
     Then the options menu is shown again
-    And the data retention of the device is 60 days
+    And the menu offers "Apply"
+    When I choose "Apply"
+    Then the data retention of the device is 60 days
     And no other setting of the device has changed
 ```
 
 **Technical validation**: invalid and out-of-range values per theme; leaving a form without
-saving; saving two themes in a row keeps both changes; every theme and menu entry has an
+saving; saving two themes in a row stages both; "Apply" absent when nothing is staged; every theme and menu entry has an
 English and a French label.
 
 ---
@@ -190,8 +196,11 @@ changes while the device form is open.
 - **FR-002**: Themes MUST be: thermostat and schedulers, wake-up sources, environment
   sensors, learning, cycle detection, anticipation behaviour; the final grouping may be
   refined in the plan without moving a setting out of its theme's intent.
-- **FR-003**: Saving a theme form MUST return to the menu, and the user MUST be able to
-  leave the menu at any time; unsaved changes in a form MUST NOT be stored.
+- **FR-003**: Saving a theme form MUST stage its changes and return to the main menu. The
+  main menu MUST offer "Apply" only while changes are staged; "Apply" MUST store all staged
+  changes and reload once. While changes are staged, the main menu MUST say how many
+  themes are not applied. Closing the dialog with staged changes discards them; the
+  platform offers no confirmation hook, so the warning is the menu text.
 - **FR-004**: The existing wake-up sources flow MUST keep its behaviour and be reachable from
   the menu.
 - **FR-005**: Each theme form MUST apply the same validation as the current single form.

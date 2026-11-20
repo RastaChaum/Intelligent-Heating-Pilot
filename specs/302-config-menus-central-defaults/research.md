@@ -57,11 +57,17 @@ such as "inherit" in each field (rejected: breaks typed selectors); a separate "
 
 ## D5. When values are persisted
 
-**Decision**: stage in memory, persist once on "Save and close".
+**Decision**: each theme form stages its values in memory; an "Apply" entry on the main menu,
+offered only while something is staged, persists once and reloads once. Closing the dialog
+discards staged values.
 
 **Rationale**: persisting updates the entry, and the entry update listener reloads the device (or,
 for the central entry, the inheriting devices). Persisting per theme would reload per theme, which
 Q4 rules out. The wake-up flow already stages the same way.
+
+**Platform limits**: a menu cannot grey an entry out, so "Apply" is omitted when nothing is
+staged; the frontend gives an integration no hook on the close button, so the unapplied warning is
+text in the menu description (verify in T0).
 
 **Alternatives**: persist per theme (rejected: repeated reloads); a debounce on the listener
 (rejected: timing logic and flaky tests for no user gain).
