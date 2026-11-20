@@ -187,8 +187,11 @@ changes while the device form is open.
   made, not at the time the dialog was opened.
 - Saved changes are not applied and Home Assistant restarts or the device reloads for another
   reason: the device then runs with the saved values, which is the same as applying them.
-- Existing devices after an upgrade: every value they already hold becomes an explicit
+- Existing devices after an upgrade: every value they already hold is an explicit
   override, so no behaviour changes.
+- An existing device that never stored a value (for example no outdoor sensor) inherits the
+  central value as soon as one is set; the central configuration starts empty, so nothing
+  changes until the user sets a central value.
 - A device is added when the central configuration does not exist yet.
 - Out-of-range values are rejected in the central configuration with the same rules as at
   device level.
@@ -214,14 +217,16 @@ changes while the device form is open.
   "Apply" reloads.
 - **FR-005**: Each theme form MUST apply the same validation as the current single form.
 - **FR-006**: The integration MUST offer a central configuration holding the shareable values:
-  environment sensors, learning and cycle parameters, safety grace period, native schedule
-  keys.
+  environment sensors (outdoor temperature, outdoor humidity, cloud coverage), learning
+  parameters (including the initial dead time; values learned by a device stay on that
+  device), cycle parameters, safety grace period, native schedule keys.
   The native schedule drive opt-in (#281) is NOT shareable: it stays a per-device decision
   because it lets IHP act on the climate.
 - **FR-007**: A device MUST resolve each shareable value as: its own override if present, else
   the central value if present, else the built-in default.
-- **FR-008**: Device-specific values (thermostat, schedulers, wake-up sources) MUST NOT be
-  inheritable.
+- **FR-008**: Device-specific values (thermostat, schedulers, wake-up sources, indoor
+  humidity sensor, native schedule drive) MUST NOT be inheritable. The indoor humidity
+  sensor belongs to the room of one device.
 - **FR-009**: A central value change MUST reach every device that inherits it without the user
   editing those devices, and MUST NOT affect devices that override it. Devices MUST pick up
   changes once, when the user applies the central changes, and only devices whose inherited
@@ -230,8 +235,8 @@ changes while the device form is open.
 - **FR-010**: A device theme form MUST show, per shareable value, whether it is inherited or
   overridden, and the central value an inherited one resolves to.
 - **FR-011**: The user MUST be able to reset any overridden value to "inherit".
-- **FR-012**: Upgrading MUST convert every value held by an existing device into an explicit
-  override so that no existing behaviour changes.
+- **FR-012**: Upgrading MUST leave every value held by an existing device as an explicit
+  override, without rewriting the device, so that no existing behaviour changes.
 - **FR-013**: When no central configuration exists, devices MUST behave exactly as before the
   feature.
 - **FR-014**: Creating the central configuration MUST be possible when devices already exist
@@ -323,7 +328,8 @@ changes while the device form is open.
 - The device creation screen asks only for device-specific values; shareable values are set
   afterwards in the theme menus (overrides) or in the central configuration.
 - Menus ship first as their own pull request, the central configuration in a following one,
-  both under this specification.
+  both under this specification. The maintainer accepted two pull requests for this issue
+  (2026-11-20), an exception to the one-pull-request-per-feature rule.
 - Refusing deletion of the central entry may not be technically possible with the platform's
   entry removal; if the plan shows it is not, the fallback is to allow deletion, fall back to
   built-in defaults for inherited values, and recreate the entry at the next device creation

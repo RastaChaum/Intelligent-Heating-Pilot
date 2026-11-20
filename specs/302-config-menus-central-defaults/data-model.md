@@ -21,7 +21,7 @@ One declared setting.
 | `key` | `str` | non-empty, unique in the catalog, equal to the stored key |
 | `theme` | `SettingTheme` | the form it appears in |
 | `scope` | `SettingScope` | `DEVICE` or `SHAREABLE` |
-| `default` | `object \| None` | the built-in default; `None` for optional entities |
+| `default` | `object \| None` | the built-in default, declared in `domain/constants.py`; `None` for optional entities |
 | `optional` | `bool` | true when "none" is a valid value (environment sensors) |
 
 - A `DEVICE` setting never has `optional` set for inheritance purposes; the flag only drives the
