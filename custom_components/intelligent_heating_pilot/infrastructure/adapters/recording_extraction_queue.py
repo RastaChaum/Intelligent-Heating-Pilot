@@ -125,6 +125,7 @@ class RecordingExtractionQueue:
         self._extracted_count = 0
         self._failed_count = 0
         self._cancel_requested = False
+        self._warned_no_hvac_action = False
 
         _LOGGER.debug(
             "Initialized RecordingExtractionQueue for device=%s, entity=%s, task_range_days=%d",
@@ -382,6 +383,10 @@ class RecordingExtractionQueue:
 
         historical_data_set = await self._fetch_period_history(start_time, end_time)
 
+        if self._lacks_heating_state(historical_data_set):
+            self._warn_no_hvac_action()
+            return []
+
         cycles = await self._heating_cycle_service.extract_heating_cycles(
             device_id=self._device_id,
             history_data_set=historical_data_set,
@@ -397,6 +402,30 @@ class RecordingExtractionQueue:
         )
 
         return cycles
+
+    @staticmethod
+    def _lacks_heating_state(history: HistoricalDataSet) -> bool:
+        """Tell whether a climate recorded its temperatures but never its heating state.
+
+        Cycles are delimited by ``hvac_action``: without it there is nothing to extract, and
+        guessing from the HVAC mode would count a whole ``heat`` period as heating (#252).
+        """
+        return (
+            HistoricalDataKey.HEATING_STATE not in history.data
+            and HistoricalDataKey.INDOOR_TEMP in history.data
+        )
+
+    def _warn_no_hvac_action(self) -> None:
+        """Explain once why this climate is preheated but not learned from."""
+        if self._warned_no_hvac_action:
+            return
+        self._warned_no_hvac_action = True
+        _LOGGER.warning(
+            "%s does not publish hvac_action, so IHP cannot tell when it heats and learns no "
+            "heating cycle from it. Preheating still works with the default or configured "
+            "slope.",
+            self._entity_id,
+        )
 
     async def _fetch_period_history(
         self, start_time: datetime, end_time: datetime

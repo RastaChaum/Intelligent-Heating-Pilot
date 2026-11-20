@@ -24,7 +24,7 @@ from ...domain.value_objects import (
 )
 from ...domain.value_objects.climate_snapshot import ClimateSnapshot
 from ...domain.value_objects.entity_attribute_mapping import AttributeConcept
-from ..vtherm_compat import get_vtherm_attribute
+from ..climate_attributes import get_climate_attribute
 from .entity_attribute_mapper_registry import EntityAttributeMapperRegistry
 
 if TYPE_CHECKING:
@@ -82,53 +82,32 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         self,
         hass: HomeAssistant,
         recorder_queue: RecorderAccessQueue,
-        vtherm_entity_id: str,
+        climate_entity_id: str,
     ) -> None:
         """Initialize the climate data reader.
 
         Args:
             hass: Home Assistant instance
             recorder_queue: Shared FIFO queue to serialize recorder access (MANDATORY)
-            vtherm_entity_id: VTherm climate entity ID
+            climate_entity_id: Climate entity ID
                 (e.g., ``"climate.living_room_vtherm"``).
         """
         self._hass = hass
         self._recorder_queue = recorder_queue
-        self._vtherm_entity_id = vtherm_entity_id
+        self._climate_entity_id = climate_entity_id
         self._mapper_registry = EntityAttributeMapperRegistry(hass)
         _LOGGER.debug(
             "Initialized HAClimateDataReader for %s with mandatory RecorderAccessQueue",
-            vtherm_entity_id,
+            climate_entity_id,
         )
 
     # ------------------------------------------------------------------
     # IClimateDataReader implementation (real-time state)
     # ------------------------------------------------------------------
 
-    def get_vtherm_entity_id(self) -> str:
-        """Return the VTherm climate entity ID."""
-        return self._vtherm_entity_id
-
-    def get_current_slope(self) -> float | None:
-        """Get current heating slope from VTherm.
-
-        Reads real-time state (does NOT use RecorderAccessQueue).
-
-        Returns:
-            Current slope in °C/h, or ``None`` if not available.
-        """
-        vtherm_state = self._hass.states.get(self._vtherm_entity_id)
-        if not vtherm_state:
-            return None
-
-        slope_raw = get_vtherm_attribute(vtherm_state, "slope")
-        if slope_raw is None:
-            return None
-
-        try:
-            return float(slope_raw)
-        except (ValueError, TypeError):
-            return None
+    def get_climate_entity_id(self) -> str:
+        """Return the climate entity ID."""
+        return self._climate_entity_id
 
     def is_heating_active(self) -> bool:
         """Check if heating is currently active.
@@ -142,7 +121,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         Returns:
             ``True`` when actively heating, ``False`` otherwise.
         """
-        vtherm_state = self._hass.states.get(self._vtherm_entity_id)
+        vtherm_state = self._hass.states.get(self._climate_entity_id)
         if not vtherm_state:
             return False
 
@@ -150,8 +129,8 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         if hvac_mode != "heat":
             return False
 
-        current_temp = get_vtherm_attribute(vtherm_state, "current_temperature")
-        target_temp = get_vtherm_attribute(vtherm_state, "temperature")
+        current_temp = get_climate_attribute(vtherm_state, "current_temperature")
+        target_temp = get_climate_attribute(vtherm_state, "temperature")
 
         if current_temp is None or target_temp is None:
             return False
@@ -170,11 +149,11 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
             Current target temperature in Celsius, or ``None`` if the VTherm
             entity is unavailable or its target temperature cannot be read.
         """
-        vtherm_state = self._hass.states.get(self._vtherm_entity_id)
+        vtherm_state = self._hass.states.get(self._climate_entity_id)
         if not vtherm_state:
             return None
 
-        target_temp = get_vtherm_attribute(vtherm_state, "temperature")
+        target_temp = get_climate_attribute(vtherm_state, "temperature")
         if target_temp is None:
             return None
 
@@ -194,10 +173,10 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         Returns:
             The snapshot, or ``None`` when the climate entity is unavailable.
         """
-        state = self._hass.states.get(self._vtherm_entity_id)
+        state = self._hass.states.get(self._climate_entity_id)
         if state is None or state.state in _UNAVAILABLE_STATES:
             return None
-        requested = get_vtherm_attribute(state, ATTR_REQUESTED_STATE)
+        requested = get_climate_attribute(state, ATTR_REQUESTED_STATE)
         if isinstance(requested, dict):
             hvac_mode = str(requested.get("hvac_mode") or state.state)
             preset = requested.get("preset")
@@ -233,7 +212,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
             changed.set()
 
         unsubscribe = async_track_state_change_event(
-            self._hass, [self._vtherm_entity_id], _on_state_change
+            self._hass, [self._climate_entity_id], _on_state_change
         )
         try:
             async with asyncio.timeout(timeout_seconds):

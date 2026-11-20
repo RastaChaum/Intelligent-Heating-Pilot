@@ -65,7 +65,7 @@ def test_a_central_sensor_is_inherited(resolve) -> None:
 
 @pytest.mark.parametrize(
     "key",
-    [const.CONF_VTHERM_ENTITY, const.CONF_NATIVE_SCHEDULE_DRIVE, const.CONF_HUMIDITY_IN_ENTITY],
+    [const.CONF_CLIMATE_ENTITY, const.CONF_NATIVE_SCHEDULE_DRIVE, const.CONF_HUMIDITY_IN_ENTITY],
 )
 def test_a_device_only_setting_never_reads_the_central_values(resolve, key: str) -> None:
     resolved = resolve({}, {key: "from-central"})[key]

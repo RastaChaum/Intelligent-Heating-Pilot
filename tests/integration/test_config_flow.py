@@ -10,6 +10,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.intelligent_heating_pilot.const import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_DEAD_TIME_MINUTES,
@@ -21,7 +22,6 @@ from custom_components.intelligent_heating_pilot.const import (
     CONF_NAME,
     CONF_SCHEDULER_ENTITIES,
     CONF_TEMP_DELTA_THRESHOLD,
-    CONF_VTHERM_ENTITY,
     DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
@@ -58,7 +58,7 @@ def _get_default_value(schema_key: Any) -> Any:
 
 
 THEME_KEYS = {
-    "thermostat_schedulers": [CONF_VTHERM_ENTITY, CONF_SCHEDULER_ENTITIES],
+    "thermostat_schedulers": [CONF_CLIMATE_ENTITY, CONF_SCHEDULER_ENTITIES],
     "environment": [
         CONF_HUMIDITY_IN_ENTITY,
         CONF_HUMIDITY_OUT_ENTITY,
@@ -123,13 +123,13 @@ async def test_user_flow_asks_only_for_the_device_specific_values(hass) -> None:
     assert result["errors"] == {}
     assert {str(key) for key in result["data_schema"].schema} == {
         CONF_NAME,
-        CONF_VTHERM_ENTITY,
+        CONF_CLIMATE_ENTITY,
         CONF_SCHEDULER_ENTITIES,
     }
 
     user_input = {
         CONF_NAME: "Living Room IHP",
-        CONF_VTHERM_ENTITY: "climate.living_room_vtherm",
+        CONF_CLIMATE_ENTITY: "climate.living_room_vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.schedule_1", "switch.schedule_2"],
     }
 
@@ -148,7 +148,7 @@ async def test_options_flow_persists_and_reopens_with_last_values(hass) -> None:
         entry_id="entry_config_flow",
         data={
             CONF_NAME: DEFAULT_NAME,
-            CONF_VTHERM_ENTITY: "climate.initial_vtherm",
+            CONF_CLIMATE_ENTITY: "climate.initial_vtherm",
             CONF_SCHEDULER_ENTITIES: ["switch.initial_schedule"],
         },
         options={},
@@ -156,7 +156,7 @@ async def test_options_flow_persists_and_reopens_with_last_values(hass) -> None:
     entry.add_to_hass(hass)
 
     updated_options = {
-        CONF_VTHERM_ENTITY: "climate.updated_vtherm",
+        CONF_CLIMATE_ENTITY: "climate.updated_vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.updated_schedule"],
         CONF_HUMIDITY_IN_ENTITY: "sensor.updated_humidity_in",
         CONF_HUMIDITY_OUT_ENTITY: "sensor.updated_humidity_out",
@@ -178,7 +178,7 @@ async def test_options_flow_persists_and_reopens_with_last_values(hass) -> None:
 
     schema = await _all_theme_schemas(hass, entry.entry_id)
 
-    vtherm_key = _find_schema_key(schema, CONF_VTHERM_ENTITY)
+    vtherm_key = _find_schema_key(schema, CONF_CLIMATE_ENTITY)
     assert _get_default_value(vtherm_key) == "climate.updated_vtherm"
 
     sched_key = _find_schema_key(schema, CONF_SCHEDULER_ENTITIES)
@@ -214,7 +214,7 @@ async def test_options_flow_values_used_by_device_config_reader(hass) -> None:
         entry_id="entry_reader",
         data={
             CONF_NAME: DEFAULT_NAME,
-            CONF_VTHERM_ENTITY: "climate.base_vtherm",
+            CONF_CLIMATE_ENTITY: "climate.base_vtherm",
             CONF_SCHEDULER_ENTITIES: ["switch.base_schedule"],
         },
         options={},
@@ -222,7 +222,7 @@ async def test_options_flow_values_used_by_device_config_reader(hass) -> None:
     entry.add_to_hass(hass)
 
     updated_options = {
-        CONF_VTHERM_ENTITY: "climate.reader_vtherm",
+        CONF_CLIMATE_ENTITY: "climate.reader_vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.reader_schedule"],
         CONF_HUMIDITY_IN_ENTITY: "sensor.reader_humidity_in",
         CONF_HUMIDITY_OUT_ENTITY: "sensor.reader_humidity_out",
@@ -242,7 +242,7 @@ async def test_options_flow_values_used_by_device_config_reader(hass) -> None:
     reader = HADeviceConfigReader(hass, entry)
     device_config = await reader.get_device_config(entry.entry_id)
 
-    assert device_config.vtherm_entity_id == "climate.reader_vtherm"
+    assert device_config.climate_entity_id == "climate.reader_vtherm"
     assert device_config.scheduler_entities == ["switch.reader_schedule"]
     assert device_config.humidity_in_entity_id == "sensor.reader_humidity_in"
     assert device_config.humidity_out_entity_id == "sensor.reader_humidity_out"
@@ -265,7 +265,7 @@ async def test_options_flow_defaults_when_no_overrides(hass) -> None:
         entry_id="entry_defaults",
         data={
             CONF_NAME: DEFAULT_NAME,
-            CONF_VTHERM_ENTITY: "climate.default_vtherm",
+            CONF_CLIMATE_ENTITY: "climate.default_vtherm",
             CONF_SCHEDULER_ENTITIES: [],
         },
         options={},
@@ -274,7 +274,7 @@ async def test_options_flow_defaults_when_no_overrides(hass) -> None:
 
     schema = await _all_theme_schemas(hass, entry.entry_id)
 
-    vtherm_key = _find_schema_key(schema, CONF_VTHERM_ENTITY)
+    vtherm_key = _find_schema_key(schema, CONF_CLIMATE_ENTITY)
     assert _get_default_value(vtherm_key) == "climate.default_vtherm"
 
     assert (

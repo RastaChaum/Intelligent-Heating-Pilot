@@ -73,7 +73,7 @@ def test_the_central_entry_is_ignored_when_looking_for_a_vtherm_in_use() -> None
     )
 
     central = Mock(entry_id="central", data={CONF_ENTRY_TYPE: ENTRY_TYPE_CENTRAL}, options={})
-    device = Mock(entry_id="device", data={const.CONF_VTHERM_ENTITY: "climate.a"}, options={})
+    device = Mock(entry_id="device", data={const.CONF_CLIMATE_ENTITY: "climate.a"}, options={})
     hass = Mock()
     hass.config_entries.async_entries.return_value = [central, device]
 

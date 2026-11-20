@@ -19,11 +19,11 @@ from custom_components.intelligent_heating_pilot import (
 )
 from custom_components.intelligent_heating_pilot.const import (
     CENTRAL_UNIQUE_ID,
+    CONF_CLIMATE_ENTITY,
     CONF_ENTRY_TYPE,
     CONF_LHS_RETENTION_DAYS,
     CONF_NAME,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
     DEFAULT_LHS_RETENTION_DAYS,
     DEFAULT_NAME,
     DOMAIN,
@@ -62,7 +62,7 @@ def _add_device(hass: HomeAssistant, entry_id: str, vtherm: str, **extra: Any) -
         entry_id=entry_id,
         unique_id=vtherm,
         title=entry_id,
-        data={CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: vtherm},
+        data={CONF_NAME: DEFAULT_NAME, CONF_CLIMATE_ENTITY: vtherm},
         options=extra.get("options", {}),
     )
     entry.add_to_hass(hass)
@@ -229,7 +229,7 @@ async def test_a_device_created_before_the_feature_keeps_its_values(hass: HomeAs
         unique_id="climate.legacy",
         data={
             CONF_NAME: DEFAULT_NAME,
-            CONF_VTHERM_ENTITY: "climate.legacy",
+            CONF_CLIMATE_ENTITY: "climate.legacy",
             CONF_LHS_RETENTION_DAYS: 45,
         },
     )
@@ -387,7 +387,7 @@ def _loaded_device(hass: HomeAssistant, **extra: Any) -> MockConfigEntry:
     device = _add_device(hass, "living", "climate.living", **extra)
     device.mock_state(hass, ConfigEntryState.LOADED)
     hass.data.setdefault(DOMAIN, {})[device.entry_id] = Mock(
-        _options_snapshot={CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: "climate.living"}
+        _options_snapshot={CONF_NAME: DEFAULT_NAME, CONF_CLIMATE_ENTITY: "climate.living"}
     )
     return device
 
@@ -557,7 +557,7 @@ async def test_a_legacy_retention_key_stays_the_devices_own_value(hass: HomeAssi
         unique_id="climate.old",
         data={
             CONF_NAME: DEFAULT_NAME,
-            CONF_VTHERM_ENTITY: "climate.old",
+            CONF_CLIMATE_ENTITY: "climate.old",
             "data_retention_days": 20,
         },
     )

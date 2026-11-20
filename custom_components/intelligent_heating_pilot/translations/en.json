@@ -6,13 +6,13 @@
         "description": "Set up an Intelligent Heating Pilot (IHP) device for intelligent preheating based on the thermal slopes learned from your VTherm. Everything else (sensors, learning, cycle detection) is inherited from the central configuration, and can be set per device afterwards from the device's Configure screen.",
         "data": {
           "name": "Integration Name",
-          "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
+          "vtherm_entity_id": "Thermostat (Versatile Thermostat recommended)",
           "scheduler_entities": "Scheduler Entities"
         },
         "data_description": {
           "name": "A friendly name for this IHP device, e.g. the room it heats.",
-          "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
-          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this VTherm. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on in the device's Native schedules settings."
+          "vtherm_entity_id": "The climate entity whose heating IHP learns and anticipates. Versatile Thermostat is recommended; any climate entity works. A thermostat that does not publish its heating state (hvac_action) is preheated, but IHP cannot learn from it.",
+          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this thermostat. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on in the device's Native schedules settings."
         }
       }
     },
@@ -41,19 +41,20 @@
           "central_environment": "Central: Environment sensors",
           "central_learning": "Central: Learning",
           "central_cycle_detection": "Central: Cycle detection",
-          "central_anticipation": "Central: Anticipation behaviour"
+          "central_anticipation": "Central: Anticipation behaviour",
+          "preset_temperatures": "Preset temperatures"
         }
       },
       "thermostat_schedulers": {
         "title": "Thermostat and schedulers",
         "description": "The thermostat this device drives and the schedulers that control it. Saved as soon as you submit.",
         "data": {
-          "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
+          "vtherm_entity_id": "Thermostat (Versatile Thermostat recommended)",
           "scheduler_entities": "Scheduler Entities"
         },
         "data_description": {
-          "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
-          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this VTherm. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on in Native schedules."
+          "vtherm_entity_id": "The climate entity whose heating IHP learns and anticipates. Versatile Thermostat is recommended; any climate entity works. A thermostat that does not publish its heating state (hvac_action) is preheated, but IHP cannot learn from it.",
+          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this thermostat. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on in Native schedules."
         }
       },
       "native_schedule": {
@@ -303,6 +304,10 @@
         "data_description": {
           "anticipation_recalc_tolerance_minutes": "Minimum postponement of the anticipated start that cancels an active preheating and reschedules it. Default: 15 min."
         }
+      },
+      "preset_temperatures": {
+        "title": "Preset temperatures",
+        "description": "Give the temperature each preset stands for. Leave a preset empty to not anticipate it: slots that use an unmapped preset are skipped, and a native schedule block falls back to 20 °C."
       }
     },
     "error": {
@@ -327,7 +332,7 @@
         },
         "target_temp": {
           "name": "Target Temperature",
-          "description": "Desired target temperature in Celsius (optional, uses VTherm target if not specified)"
+          "description": "Desired target temperature in Celsius (optional, uses the thermostat target if not specified)"
         }
       }
     },

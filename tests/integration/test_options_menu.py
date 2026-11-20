@@ -12,11 +12,11 @@ from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_CLIMATE_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
     CONF_NAME,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
     DEFAULT_NAME,
     DOMAIN,
 )
@@ -45,7 +45,7 @@ def _add_device(hass: HomeAssistant, *, loaded: bool = True) -> MockConfigEntry:
         entry_id="device",
         unique_id="climate.living",
         title="Living room",
-        data={CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: "climate.living"},
+        data={CONF_NAME: DEFAULT_NAME, CONF_CLIMATE_ENTITY: "climate.living"},
         options={CONF_LHS_RETENTION_DAYS: 30},
     )
     entry.add_to_hass(hass)
@@ -255,7 +255,7 @@ async def test_a_changed_vtherm_becomes_the_unique_id(hass: HomeAssistant) -> No
     entry = _add_device(hass)
     menu = await _menu(hass, entry)
 
-    await _save(hass, menu, "thermostat_schedulers", {CONF_VTHERM_ENTITY: "climate.office"})
+    await _save(hass, menu, "thermostat_schedulers", {CONF_CLIMATE_ENTITY: "climate.office"})
 
     assert entry.unique_id == "climate.office"
-    assert entry.options[CONF_VTHERM_ENTITY] == "climate.office"
+    assert entry.options[CONF_CLIMATE_ENTITY] == "climate.office"

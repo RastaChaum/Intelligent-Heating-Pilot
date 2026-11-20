@@ -18,10 +18,10 @@ from homeassistant.core import State
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_CLIMATE_ENTITY,
     CONF_CLOUD_COVER_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
 )
 from custom_components.intelligent_heating_pilot.domain.interfaces import (
     ILhsStorage,
@@ -76,7 +76,7 @@ def _at(clock: str) -> datetime:
 def outdoor_context() -> dict:
     """Shared context: config entry data, HA states and results."""
     return {
-        "data": {CONF_VTHERM_ENTITY: VTHERM_ENTITY_ID},
+        "data": {CONF_CLIMATE_ENTITY: VTHERM_ENTITY_ID},
         "states": {
             VTHERM_ENTITY_ID: State(
                 VTHERM_ENTITY_ID, "heat", {"current_temperature": INDOOR_TEMPERATURE}
@@ -157,7 +157,7 @@ def ihp_monitors(outdoor_context: dict, entity_id: str) -> None:
     bridge = HAEventBridge(
         hass=Mock(),
         orchestrator=AsyncMock(),
-        vtherm_entity_id=VTHERM_ENTITY_ID,
+        climate_entity_id=VTHERM_ENTITY_ID,
         scheduler_entity_ids=[],
         monitored_entity_ids=[entity_id],
     )
@@ -301,7 +301,7 @@ def read_environment(outdoor_context: dict) -> None:
         config = await HADeviceConfigReader(hass, config_entry).get_device_config("entry")
         reader = HAEnvironmentReader(
             hass,
-            config.vtherm_entity_id,
+            config.climate_entity_id,
             outdoor_temp_entity_id=config.temperature_out_entity_id,
             humidity_out_entity_id=config.humidity_out_entity_id,
             cloud_cover_entity_id=config.cloud_cover_entity_id,

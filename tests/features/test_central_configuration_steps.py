@@ -11,13 +11,13 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_CLIMATE_ENTITY,
     CONF_ENTRY_TYPE,
     CONF_LHS_RETENTION_DAYS,
     CONF_NAME,
     CONF_NATIVE_SCHEDULE_DRIVE,
     CONF_SCHEDULER_ENTITIES,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
     DEFAULT_LHS_RETENTION_DAYS,
     ENTRY_TYPE_CENTRAL,
 )
@@ -72,7 +72,7 @@ class Installation:
         device = Mock(entry_id=f"device_{n}", title=f"Device {n}")
         device.data = {
             CONF_NAME: f"Device {n}",
-            CONF_VTHERM_ENTITY: f"climate.d{n}",
+            CONF_CLIMATE_ENTITY: f"climate.d{n}",
             **(data or {}),
         }
         device.options = dict(options or {})
@@ -187,7 +187,7 @@ def override_none(world: Installation, sensor: str) -> None:
 def create_device(world: Installation) -> None:
     world.created = {  # type: ignore[attr-defined]
         CONF_NAME: "Room",
-        CONF_VTHERM_ENTITY: "climate.room",
+        CONF_CLIMATE_ENTITY: "climate.room",
         CONF_SCHEDULER_ENTITIES: ["switch.plan"],
     }
 
@@ -235,5 +235,5 @@ def no_drive(world: Installation) -> None:
 
 @then("the device stores only those three values")
 def stores_three(world: Installation) -> None:
-    assert set(world.created) == {CONF_NAME, CONF_VTHERM_ENTITY, CONF_SCHEDULER_ENTITIES}  # type: ignore[attr-defined]
+    assert set(world.created) == {CONF_NAME, CONF_CLIMATE_ENTITY, CONF_SCHEDULER_ENTITIES}  # type: ignore[attr-defined]
     assert not set(world.created) & set(central_values_of(Mock(options=world.created)))  # type: ignore[attr-defined]

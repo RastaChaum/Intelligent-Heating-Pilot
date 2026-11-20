@@ -13,8 +13,8 @@ from custom_components.intelligent_heating_pilot.config_flow import (
     IntelligentHeatingPilotOptionsFlow,
 )
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_CLIMATE_ENTITY,
     CONF_LHS_RETENTION_DAYS,
-    CONF_VTHERM_ENTITY,
     DOMAIN,
 )
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.entry_changes import (
@@ -31,7 +31,7 @@ class Device:
 
     def __init__(self) -> None:
         self.entry = Mock(entry_id="device", title="Living room", unique_id=LIVING)
-        self.entry.data = {CONF_VTHERM_ENTITY: LIVING}
+        self.entry.data = {CONF_CLIMATE_ENTITY: LIVING}
         self.entry.options = {CONF_LHS_RETENTION_DAYS: 30}
         self.entry.state = Mock()
         self.others: list[Mock] = []
@@ -113,7 +113,7 @@ def a_device(context: dict, days: int) -> None:
 @given(parsers.parse('another IHP device drives "{vtherm}"'))
 def another_device(context: dict, vtherm: str) -> None:
     other = Mock(entry_id="other", options={})
-    other.data = {CONF_VTHERM_ENTITY: vtherm}
+    other.data = {CONF_CLIMATE_ENTITY: vtherm}
     context["device"].others.append(other)
 
 
@@ -152,7 +152,7 @@ def set_retention(context: dict, days: int) -> None:
 @when(parsers.parse('I submit the thermostat "{vtherm}"'))
 def submit_thermostat(context: dict, vtherm: str) -> None:
     context["result"] = _run(
-        context["flow"].async_step_thermostat_schedulers({CONF_VTHERM_ENTITY: vtherm})
+        context["flow"].async_step_thermostat_schedulers({CONF_CLIMATE_ENTITY: vtherm})
     )
 
 
@@ -217,4 +217,4 @@ def form_error(context: dict, error: str) -> None:
 @then(parsers.parse('the thermostat stored for the device is "{vtherm}"'))
 def stored_thermostat(context: dict, vtherm: str) -> None:
     entry = context["device"].entry
-    assert entry.options.get(CONF_VTHERM_ENTITY, entry.data[CONF_VTHERM_ENTITY]) == vtherm
+    assert entry.options.get(CONF_CLIMATE_ENTITY, entry.data[CONF_CLIMATE_ENTITY]) == vtherm

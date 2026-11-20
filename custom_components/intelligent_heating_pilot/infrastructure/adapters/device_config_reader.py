@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from ...const import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_DATA_RETENTION_DAYS,
@@ -23,12 +24,12 @@ from ...const import (
     CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
     CONF_NATIVE_SCHEDULE_PRESET_KEY,
     CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
+    CONF_PRESET_TEMPERATURES,
     CONF_SAFETY_SHUTOFF_GRACE_MINUTES,
     CONF_SCHEDULER_ENTITIES,
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
     CONF_WAKE_UP_SOURCES,
     DEFAULT_LHS_RETENTION_DAYS,
 )
@@ -39,6 +40,7 @@ from ...domain.services.settings_resolver import SettingsResolver
 from ...domain.value_objects.resolved_setting import ResolvedSetting
 from ...utils.config_helpers import as_bool
 from .central_config_reader import HACentralConfigReader
+from .preset_temperatures_config import parse_preset_temperatures
 from .wake_up_sources_config import parse_wake_up_sources
 
 if TYPE_CHECKING:
@@ -113,7 +115,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
             self._catalog, device_values, self._central_reader.read_central_values()
         )
 
-        vtherm_entity = device_values.get(CONF_VTHERM_ENTITY)
+        vtherm_entity = device_values.get(CONF_CLIMATE_ENTITY)
         if not vtherm_entity:
             raise ValueError("Missing required vtherm_entity_id in configuration")
 
@@ -134,7 +136,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
 
         device_config = DeviceConfig(
             device_id=device_id,
-            vtherm_entity_id=vtherm_entity,
+            climate_entity_id=vtherm_entity,
             scheduler_entities=scheduler_entities,
             humidity_in_entity_id=device_values.get(CONF_HUMIDITY_IN_ENTITY),
             humidity_out_entity_id=self._entity(resolved, CONF_HUMIDITY_OUT_ENTITY),
@@ -164,6 +166,9 @@ class HADeviceConfigReader(IDeviceConfigReader):
             ),
             native_schedule_fallback_preset=self._text(
                 resolved, CONF_NATIVE_SCHEDULE_FALLBACK_PRESET
+            ),
+            preset_temperatures=parse_preset_temperatures(
+                device_values.get(CONF_PRESET_TEMPERATURES)
             ),
             wake_up_sources=parse_wake_up_sources(
                 device_values.get(CONF_WAKE_UP_SOURCES),

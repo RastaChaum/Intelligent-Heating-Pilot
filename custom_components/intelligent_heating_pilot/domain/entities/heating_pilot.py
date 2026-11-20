@@ -14,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class HeatingPilot:
-    """Coordinates heating decisions for a single VTherm.
+    """Coordinates heating decisions for a single climate entity.
 
     This is the aggregate root that orchestrates all domain logic
     for intelligent heating control. It delegates decision-making to

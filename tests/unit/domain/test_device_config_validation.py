@@ -29,7 +29,7 @@ class TestDeviceConfigLhsRetentionDaysValidation:
         """
         device_config = DeviceConfig(
             device_id="test_device_1",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=["switch.schedule"],
             lhs_retention_days=0,  # No retention - should be allowed
         )
@@ -45,7 +45,7 @@ class TestDeviceConfigLhsRetentionDaysValidation:
         with pytest.raises(ValueError) as exc_info:
             DeviceConfig(
                 device_id="test_device_1",
-                vtherm_entity_id="climate.vtherm",
+                climate_entity_id="climate.vtherm",
                 scheduler_entities=["switch.schedule"],
                 lhs_retention_days=-1,  # Invalid: negative
             )
@@ -56,7 +56,7 @@ class TestDeviceConfigLhsRetentionDaysValidation:
         """Test that positive lhs_retention_days values are allowed."""
         device_config = DeviceConfig(
             device_id="test_device_1",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=["switch.schedule"],
             lhs_retention_days=30,
         )
@@ -67,7 +67,7 @@ class TestDeviceConfigLhsRetentionDaysValidation:
         """Test that default lhs_retention_days is 30."""
         device_config = DeviceConfig(
             device_id="test_device_1",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=["switch.schedule"],
         )
 
@@ -77,7 +77,7 @@ class TestDeviceConfigLhsRetentionDaysValidation:
         """Test that DeviceConfig with lhs_retention_days=0 is immutable."""
         device_config = DeviceConfig(
             device_id="test_device_1",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=["switch.schedule"],
             lhs_retention_days=0,
         )
@@ -95,7 +95,7 @@ class TestDeviceConfigLhsRetentionDaysValidation:
         # Valid: 0
         valid_config = DeviceConfig(
             device_id="test_device_1",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=["switch.schedule"],
             lhs_retention_days=0,
         )
@@ -104,7 +104,7 @@ class TestDeviceConfigLhsRetentionDaysValidation:
         # Valid: 1 (minimum positive)
         valid_config = DeviceConfig(
             device_id="test_device_1",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=["switch.schedule"],
             lhs_retention_days=1,
         )
@@ -113,7 +113,7 @@ class TestDeviceConfigLhsRetentionDaysValidation:
         # Valid: large value
         valid_config = DeviceConfig(
             device_id="test_device_1",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=["switch.schedule"],
             lhs_retention_days=365,
         )
@@ -123,7 +123,7 @@ class TestDeviceConfigLhsRetentionDaysValidation:
         with pytest.raises(ValueError):
             DeviceConfig(
                 device_id="test_device_1",
-                vtherm_entity_id="climate.vtherm",
+                climate_entity_id="climate.vtherm",
                 scheduler_entities=["switch.schedule"],
                 lhs_retention_days=-1,
             )
@@ -146,7 +146,7 @@ class TestDeviceConfigSafetyShutoffGrace:
         """
         config = DeviceConfig(
             device_id="dev_1",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=[],
         )
 
@@ -159,7 +159,7 @@ class TestDeviceConfigSafetyShutoffGrace:
         """
         config = DeviceConfig(
             device_id="dev_1",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=[],
             safety_shutoff_grace_minutes=0,
         )
@@ -173,7 +173,7 @@ class TestDeviceConfigSafetyShutoffGrace:
         """
         config = DeviceConfig(
             device_id="dev_1",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=[],
             safety_shutoff_grace_minutes=15,
         )
@@ -190,7 +190,7 @@ class TestDeviceConfigSafetyShutoffGrace:
         with pytest.raises(ValueError) as exc_info:
             DeviceConfig(
                 device_id="dev_1",
-                vtherm_entity_id="climate.vtherm",
+                climate_entity_id="climate.vtherm",
                 scheduler_entities=[],
                 safety_shutoff_grace_minutes=-1,
             )
@@ -204,7 +204,7 @@ class TestDeviceConfigSafetyShutoffGrace:
         """
         config = DeviceConfig(
             device_id="dev_1",
-            vtherm_entity_id="climate.vtherm",
+            climate_entity_id="climate.vtherm",
             scheduler_entities=[],
             safety_shutoff_grace_minutes=10,
         )

@@ -6,13 +6,13 @@
         "description": "Configurez un appareil Intelligent Heating Pilot (IHP) pour le préchauffage intelligent, à partir des pentes thermiques apprises sur votre VTherm. Le reste (capteurs, apprentissage, détection des cycles) est hérité de la configuration centrale, et peut être réglé par appareil ensuite depuis l'écran Configurer de l'appareil.",
         "data": {
           "name": "Nom de l'intégration",
-          "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
+          "vtherm_entity_id": "Thermostat (Versatile Thermostat recommandé)",
           "scheduler_entities": "Entités Scheduler"
         },
         "data_description": {
           "name": "Un nom pour cet appareil IHP, par exemple la pièce qu'il chauffe.",
-          "vtherm_entity_id": "Le Versatile Thermostat dont IHP apprend et anticipe la chauffe.",
-          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé dans les réglages Plannings natifs de l'appareil."
+          "vtherm_entity_id": "L'entité climate dont IHP apprend et anticipe la chauffe. Versatile Thermostat est recommandé ; toute entité climate fonctionne. Un thermostat qui ne publie pas son état de chauffe (hvac_action) est préchauffé, mais IHP ne peut pas apprendre de lui.",
+          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce thermostat. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé dans les réglages Plannings natifs de l'appareil."
         }
       }
     },
@@ -41,19 +41,20 @@
           "central_environment": "Central : Capteurs d'environnement",
           "central_learning": "Central : Apprentissage",
           "central_cycle_detection": "Central : Détection des cycles",
-          "central_anticipation": "Central : Comportement d'anticipation"
+          "central_anticipation": "Central : Comportement d'anticipation",
+          "preset_temperatures": "Températures des presets"
         }
       },
       "thermostat_schedulers": {
         "title": "Thermostat et schedulers",
         "description": "Le thermostat piloté par cet appareil et les schedulers qui le commandent. Enregistré dès la validation.",
         "data": {
-          "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
+          "vtherm_entity_id": "Thermostat (Versatile Thermostat recommandé)",
           "scheduler_entities": "Entités Scheduler"
         },
         "data_description": {
-          "vtherm_entity_id": "Le Versatile Thermostat dont IHP apprend et anticipe la chauffe.",
-          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé dans Plannings natifs."
+          "vtherm_entity_id": "L'entité climate dont IHP apprend et anticipe la chauffe. Versatile Thermostat est recommandé ; toute entité climate fonctionne. Un thermostat qui ne publie pas son état de chauffe (hvac_action) est préchauffé, mais IHP ne peut pas apprendre de lui.",
+          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce thermostat. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé dans Plannings natifs."
         }
       },
       "native_schedule": {
@@ -303,6 +304,10 @@
         "data_description": {
           "anticipation_recalc_tolerance_minutes": "Report minimal de l'heure de démarrage anticipée qui annule un préchauffage actif et le replanifie. Par défaut : 15 min."
         }
+      },
+      "preset_temperatures": {
+        "title": "Températures des presets",
+        "description": "Indiquez la température de chaque preset. Laissez un preset vide pour ne pas l'anticiper : les créneaux qui utilisent un preset non associé sont ignorés, et un bloc de planning natif retombe sur 20 °C."
       }
     },
     "error": {
@@ -327,7 +332,7 @@
         },
         "target_temp": {
           "name": "Température cible",
-          "description": "Température cible souhaitée en °C (optionnelle : la consigne du VTherm est utilisée si elle n'est pas indiquée)"
+          "description": "Température cible souhaitée en °C (optionnelle : la consigne du thermostat est utilisée si elle n'est pas indiquée)"
         }
       }
     },

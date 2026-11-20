@@ -16,8 +16,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_CLIMATE_ENTITY,
     CONF_SCHEDULER_ENTITIES,
-    CONF_VTHERM_ENTITY,
     CONF_WAKE_UP_ENTITY,
     CONF_WAKE_UP_FROM_SCHEDULE,
     CONF_WAKE_UP_HOLD_MINUTES,
@@ -45,9 +45,9 @@ ERROR_TARGET_REQUIRED = "wake_up_target_required"
 ERROR_DUPLICATE = "wake_up_duplicate"
 
 
-def _preset_field(hass: HomeAssistant, vtherm: str | None) -> Any:
+def _preset_field(hass: HomeAssistant, climate: str | None) -> Any:
     """Offer the presets the thermostat publishes, or free text when it publishes none."""
-    state = hass.states.get(vtherm) if vtherm else None
+    state = hass.states.get(climate) if climate else None
     presets = state.attributes.get("preset_modes") if state is not None else None
     if isinstance(presets, list) and presets:
         return selector.SelectSelector(
@@ -66,13 +66,13 @@ def _suggested(key: str, defaults: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_source_schema(
-    hass: HomeAssistant, vtherm: str | None, has_scheduler: bool, defaults: dict[str, Any]
+    hass: HomeAssistant, climate: str | None, has_scheduler: bool, defaults: dict[str, Any]
 ) -> vol.Schema:
     """Build the form of one wake-up source.
 
     Args:
         hass: Home Assistant instance.
-        vtherm: The thermostat whose presets are offered.
+        climate: The thermostat whose presets are offered.
         has_scheduler: Whether the IHP has a scheduler; "from the schedule" is only offered then.
         defaults: The values to pre-fill, when a source is edited.
 
@@ -85,7 +85,7 @@ def build_source_schema(
         ),
         vol.Optional(
             CONF_WAKE_UP_PRESET, description=_suggested(CONF_WAKE_UP_PRESET, defaults)
-        ): _preset_field(hass, vtherm),
+        ): _preset_field(hass, climate),
         vol.Optional(
             CONF_WAKE_UP_TEMPERATURE, description=_suggested(CONF_WAKE_UP_TEMPERATURE, defaults)
         ): selector.NumberSelector(
@@ -273,7 +273,7 @@ class WakeUpSourcesFlowMixin:
             step_id="wake_up_form",
             data_schema=build_source_schema(
                 self.hass,
-                self._pending.get(CONF_VTHERM_ENTITY),
+                self._pending.get(CONF_CLIMATE_ENTITY),
                 self._has_scheduler(),
                 defaults,
             ),

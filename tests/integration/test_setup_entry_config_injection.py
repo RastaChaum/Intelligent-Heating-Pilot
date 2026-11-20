@@ -33,11 +33,11 @@ from custom_components.intelligent_heating_pilot import (
 )
 from custom_components.intelligent_heating_pilot.const import (
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_DEAD_TIME_MINUTES,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_LHS_RETENTION_DAYS,
     CONF_SCHEDULER_ENTITIES,
-    CONF_VTHERM_ENTITY,
     DOMAIN,
 )
 from custom_components.intelligent_heating_pilot.domain.interfaces.device_config_reader_interface import (
@@ -54,7 +54,7 @@ def config_entry(
         domain=DOMAIN,
         entry_id="integration_test_entry",
         data={
-            CONF_VTHERM_ENTITY: "climate.integration_vtherm",
+            CONF_CLIMATE_ENTITY: "climate.integration_vtherm",
             CONF_SCHEDULER_ENTITIES: ["switch.integration_schedule"],
         },
         options={
@@ -141,7 +141,7 @@ class TestAsyncSetupEntryCreatesDeviceConfigReader:
             mock_reader_instance.get_device_config = AsyncMock(
                 return_value=DeviceConfig(
                     device_id=config_entry.entry_id,
-                    vtherm_entity_id="climate.integration_vtherm",
+                    climate_entity_id="climate.integration_vtherm",
                     scheduler_entities=["switch.integration_schedule"],
                 )
             )
@@ -178,7 +178,7 @@ class TestAsyncSetupEntryCreatesDeviceConfigReader:
             mock_reader_instance.get_device_config = AsyncMock(
                 return_value=DeviceConfig(
                     device_id=config_entry.entry_id,
-                    vtherm_entity_id="climate.vtherm",
+                    climate_entity_id="climate.vtherm",
                     scheduler_entities=[],
                 )
             )
@@ -219,7 +219,7 @@ class TestAsyncSetupEntryInjectsDeviceConfigIntoCoordinator:
         # GIVEN: A specific DeviceConfig from reader
         expected_device_config = DeviceConfig(
             device_id=config_entry.entry_id,
-            vtherm_entity_id="climate.injected_vtherm",
+            climate_entity_id="climate.injected_vtherm",
             scheduler_entities=["switch.injected_schedule"],
             humidity_in_entity_id="sensor.injected_humidity",
             lhs_retention_days=80,
@@ -278,7 +278,7 @@ class TestEndToEndConfigInjectionFlow:
         hass.config_entries.async_update_entry(
             config_entry,
             data={
-                CONF_VTHERM_ENTITY: "climate.end_to_end_vtherm",
+                CONF_CLIMATE_ENTITY: "climate.end_to_end_vtherm",
                 CONF_SCHEDULER_ENTITIES: ["switch.end_to_end_schedule"],
             },
             options={
@@ -296,7 +296,7 @@ class TestEndToEndConfigInjectionFlow:
         device_config = coordinator._device_config
 
         assert device_config.device_id == config_entry.entry_id
-        assert device_config.vtherm_entity_id == "climate.end_to_end_vtherm"
+        assert device_config.climate_entity_id == "climate.end_to_end_vtherm"
         assert device_config.scheduler_entities == ["switch.end_to_end_schedule"]
         assert device_config.lhs_retention_days == 100  # From options
         assert device_config.dead_time_minutes == 30.0
@@ -325,7 +325,7 @@ class TestEndToEndConfigInjectionFlow:
         hass.config_entries.async_update_entry(
             config_entry,
             data={
-                CONF_VTHERM_ENTITY: "climate.test_vtherm",
+                CONF_CLIMATE_ENTITY: "climate.test_vtherm",
                 CONF_SCHEDULER_ENTITIES: ["switch.test_schedule"],
             },
             options={
@@ -341,7 +341,7 @@ class TestEndToEndConfigInjectionFlow:
         device_config = coordinator._device_config
 
         # These values come from config_entry, read by HADeviceConfigReader
-        assert device_config.vtherm_entity_id == "climate.test_vtherm"
+        assert device_config.climate_entity_id == "climate.test_vtherm"
         assert device_config.scheduler_entities == ["switch.test_schedule"]
         assert device_config.lhs_retention_days == 60  # From DeviceConfig, used by adapters
 

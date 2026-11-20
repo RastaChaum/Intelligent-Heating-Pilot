@@ -84,7 +84,7 @@ DEADLINE_RECALC_DELAY_SECONDS = 1
 
 # Setting keys and built-in defaults of the configurable settings. They are declared here, in the
 # domain, so that the settings catalog depends only on domain code; `const.py` re-exports them.
-CONF_VTHERM_ENTITY = "vtherm_entity_id"
+CONF_CLIMATE_ENTITY = "vtherm_entity_id"
 CONF_SCHEDULER_ENTITIES = "scheduler_entities"
 CONF_HUMIDITY_IN_ENTITY = "humidity_in_entity_id"
 CONF_HUMIDITY_OUT_ENTITY = "humidity_out_entity_id"
@@ -118,3 +118,6 @@ DEFAULT_NATIVE_SCHEDULE_DRIVE = False
 DEFAULT_NATIVE_SCHEDULE_PRESET_KEY = "preset"
 DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY = "temperature"
 DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET = "comfort"
+# Temperature the user maps to each preset of a climate that does not publish it (#252),
+# stored as {preset name: temperature}
+CONF_PRESET_TEMPERATURES = "preset_temperatures"

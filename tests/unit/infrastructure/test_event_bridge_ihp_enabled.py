@@ -44,7 +44,7 @@ def event_bridge(
     bridge = HAEventBridge(
         hass=hass,
         orchestrator=mock_app_service,
-        vtherm_entity_id="climate.bedroom",
+        climate_entity_id="climate.bedroom",
         scheduler_entity_ids=["switch.bedroom_schedule"],
         monitored_entity_ids=["sensor.bedroom_humidity", "sensor.cloud_coverage"],
         entry_id="test_entry_123",
@@ -339,7 +339,7 @@ class TestEventBridgeMultipleSchedulers:
         bridge = HAEventBridge(
             hass=hass,
             orchestrator=mock_app_service,
-            vtherm_entity_id="climate.bedroom",
+            climate_entity_id="climate.bedroom",
             scheduler_entity_ids=[
                 "switch.bedroom_schedule",
                 "switch.bedroom_schedule2",
@@ -380,7 +380,7 @@ class TestEventBridgeMultipleSchedulers:
         bridge = HAEventBridge(
             hass=hass,
             orchestrator=mock_app_service,
-            vtherm_entity_id="climate.bedroom",
+            climate_entity_id="climate.bedroom",
             scheduler_entity_ids=[
                 "switch.bedroom_schedule",
                 "switch.bedroom_schedule2",
@@ -423,7 +423,7 @@ class TestEventBridgeNoCallableProvided:
         bridge = HAEventBridge(
             hass=hass,
             orchestrator=mock_app_service,
-            vtherm_entity_id="climate.bedroom",
+            climate_entity_id="climate.bedroom",
             scheduler_entity_ids=["switch.bedroom_schedule"],
             entry_id="test_entry_123",
             get_ihp_enabled_func=None,  # Explicitly None

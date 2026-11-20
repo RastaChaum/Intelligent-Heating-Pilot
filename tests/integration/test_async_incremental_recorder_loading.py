@@ -104,7 +104,7 @@ async def test_refresh_creates_extraction_queue():
     """
     device_config = DeviceConfig(
         device_id="climate.living_room",
-        vtherm_entity_id="climate.living_room",
+        climate_entity_id="climate.living_room",
         scheduler_entities=["calendar.schedule"],
         lhs_retention_days=90,
     )
@@ -204,7 +204,7 @@ async def test_refresh_schedules_24h_timer():
     """
     device_config = DeviceConfig(
         device_id="climate.living_room",
-        vtherm_entity_id="climate.living_room",
+        climate_entity_id="climate.living_room",
         scheduler_entities=["calendar.schedule"],
         lhs_retention_days=90,
     )
@@ -342,7 +342,7 @@ async def test_24h_refresh_creates_new_queue_instance():
     """
     device_config = DeviceConfig(
         device_id="climate.living_room",
-        vtherm_entity_id="climate.living_room",
+        climate_entity_id="climate.living_room",
         scheduler_entities=["calendar.schedule"],
         lhs_retention_days=90,
     )
@@ -396,7 +396,7 @@ async def test_refresh_respects_retention_window():
     """
     device_config = DeviceConfig(
         device_id="climate.living_room",
-        vtherm_entity_id="climate.living_room",
+        climate_entity_id="climate.living_room",
         scheduler_entities=["calendar.schedule"],
         lhs_retention_days=90,
     )
@@ -601,7 +601,7 @@ async def test_retention_change_invalidates_caches_and_reextracts():
     """
     device_config = DeviceConfig(
         device_id="climate.living_room",
-        vtherm_entity_id="climate.living_room",
+        climate_entity_id="climate.living_room",
         scheduler_entities=["calendar.schedule"],
         lhs_retention_days=90,
     )
@@ -756,7 +756,7 @@ async def test_refresh_end_date_is_yesterday():
     """
     device_config = DeviceConfig(
         device_id="climate.living_room",
-        vtherm_entity_id="climate.living_room",
+        climate_entity_id="climate.living_room",
         scheduler_entities=["calendar.schedule"],
         lhs_retention_days=30,
     )

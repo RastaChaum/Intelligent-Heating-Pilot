@@ -142,6 +142,7 @@ CENTRAL_THEMES = THEME_FORM_STEPS[1:]
 MENU_ENTRIES = {
     *THEME_FORM_STEPS,
     "wake_up_sources",
+    "preset_temperatures",
     "apply",
     *(f"central_{theme}" for theme in CENTRAL_THEMES),
 }

@@ -41,7 +41,7 @@ class IEnvironmentReader(ABC):
             if indoor_temperature is unavailable.
 
         Edge Cases:
-            - Returns None if VTherm entity is missing
+            - Returns None if the climate entity is missing
             - Returns None if indoor_temperature cannot be read
             - Sensor-specific fallbacks:
                 - outdoor_temp: None if unavailable (the prediction then skips
