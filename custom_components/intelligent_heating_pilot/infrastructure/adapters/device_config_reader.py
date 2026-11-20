@@ -103,6 +103,12 @@ class HADeviceConfigReader(IDeviceConfigReader):
             **self._config_entry.data,
             **self._config_entry.options,
         }
+        # A device that only stores the legacy retention key still owns its retention (#186).
+        if (
+            CONF_LHS_RETENTION_DAYS not in device_values
+            and device_values.get(CONF_DATA_RETENTION_DAYS) is not None
+        ):
+            device_values[CONF_LHS_RETENTION_DAYS] = device_values[CONF_DATA_RETENTION_DAYS]
         resolved = self._resolver.resolve(
             self._catalog, device_values, self._central_reader.read_central_values()
         )
@@ -131,9 +137,9 @@ class HADeviceConfigReader(IDeviceConfigReader):
             vtherm_entity_id=vtherm_entity,
             scheduler_entities=scheduler_entities,
             humidity_in_entity_id=device_values.get(CONF_HUMIDITY_IN_ENTITY),
-            humidity_out_entity_id=resolved[CONF_HUMIDITY_OUT_ENTITY].value,  # type: ignore[arg-type]
-            temperature_out_entity_id=resolved[CONF_TEMPERATURE_OUT_ENTITY].value,  # type: ignore[arg-type]
-            cloud_cover_entity_id=resolved[CONF_CLOUD_COVER_ENTITY].value,  # type: ignore[arg-type]
+            humidity_out_entity_id=self._entity(resolved, CONF_HUMIDITY_OUT_ENTITY),
+            temperature_out_entity_id=self._entity(resolved, CONF_TEMPERATURE_OUT_ENTITY),
+            cloud_cover_entity_id=self._entity(resolved, CONF_CLOUD_COVER_ENTITY),
             lhs_retention_days=retention,
             dead_time_minutes=self._number(resolved, CONF_DEAD_TIME_MINUTES, float),
             auto_learning=bool(self._value(resolved, CONF_AUTO_LEARNING)),
@@ -200,6 +206,12 @@ class HADeviceConfigReader(IDeviceConfigReader):
         if value is None:
             return cast(self._catalog.get(key).default) if allow_default else None
         return cast(value)
+
+    @staticmethod
+    def _entity(resolved: Mapping[str, ResolvedSetting], key: str) -> str | None:
+        """Return an optional sensor: an entity id, or ``None`` for none."""
+        value = resolved[key].value
+        return str(value) if value else None
 
     def _text(self, resolved: Mapping[str, ResolvedSetting], key: str) -> str:
         """Return a resolved text, trimmed; a blank value gives the default.

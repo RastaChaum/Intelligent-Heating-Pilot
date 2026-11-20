@@ -20,6 +20,7 @@ from .config_flow_selectors import _is_blank, as_list, build_theme_schema, theme
 from .const import DOMAIN
 from .domain.constants import CONF_SCHEDULER_ENTITIES, CONF_VTHERM_ENTITY
 from .domain.value_objects.setting_definition import SettingDefinition, SettingTheme
+from .infrastructure.adapters.central_entry import is_central_entry
 from .infrastructure.adapters.entry_changes import themes_of, unapplied_keys
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ def vtherm_in_use(hass: HomeAssistant, vtherm: str, exclude_entry_id: str | None
     return any(
         configured_vtherm(entry) == vtherm
         for entry in hass.config_entries.async_entries(DOMAIN)
-        if entry.entry_id != exclude_entry_id
+        if entry.entry_id != exclude_entry_id and not is_central_entry(entry)
     )
 
 

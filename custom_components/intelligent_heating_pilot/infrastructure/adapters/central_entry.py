@@ -148,8 +148,3 @@ def apply_central_changes(hass: HomeAssistant, central: ConfigEntry) -> list[Con
         )
         hass.async_create_task(_reload_each(hass, reloads))
     return reloads
-
-
-def has_unapplied_central_changes(hass: HomeAssistant, central: ConfigEntry) -> bool:
-    """Tell whether the stored central values differ from those the devices run with."""
-    return bool(changed_central_keys(central, applied_central_values(hass)))

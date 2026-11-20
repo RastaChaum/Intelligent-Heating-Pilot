@@ -509,3 +509,58 @@ async def test_the_native_drive_stays_a_device_setting(hass: HomeAssistant) -> N
     assert "native_schedule_drive" in fields and "overridden_settings" in fields
     picker = next(k for k in form["data_schema"].schema if str(k) == "overridden_settings")
     assert "native_schedule_drive" not in form["data_schema"].schema[picker].config["options"]
+
+
+@pytest.mark.asyncio
+async def test_the_indicators_follow_the_language(hass: HomeAssistant) -> None:
+    hass.config.language = "fr"
+    _add_central(hass, {CONF_LHS_RETENTION_DAYS: 60})
+    device = _loaded_device(hass, options={"dead_time_minutes": 7})
+
+    form = await _open(hass, device, "learning")
+
+    text = form["description_placeholders"]["settings"]
+    assert "hérité (60)" in text and "surchargé (7)" in text
+
+
+@pytest.mark.asyncio
+async def test_the_central_entry_title_follows_the_language(hass: HomeAssistant) -> None:
+    hass.config.language = "fr"
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "import"}, data={CONF_ENTRY_TYPE: ENTRY_TYPE_CENTRAL}
+    )
+
+    assert result["title"] == "Configuration centrale"
+
+
+@pytest.mark.asyncio
+async def test_reloading_the_central_entry_keeps_changes_not_yet_applied(
+    hass: HomeAssistant,
+) -> None:
+    central = _add_central(hass)
+    central.mock_state(hass, ConfigEntryState.LOADED)
+    hass.config_entries.async_update_entry(central, options={CONF_LHS_RETENTION_DAYS: 60})
+
+    await async_setup_entry(hass, central)
+
+    menu = await hass.config_entries.options.async_init(central.entry_id)
+    assert "apply" in menu["menu_options"]
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_retention_key_stays_the_devices_own_value(hass: HomeAssistant) -> None:
+    _add_central(hass, {CONF_LHS_RETENTION_DAYS: 60})
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="old",
+        unique_id="climate.old",
+        data={
+            CONF_NAME: DEFAULT_NAME,
+            CONF_VTHERM_ENTITY: "climate.old",
+            "data_retention_days": 20,
+        },
+    )
+    entry.add_to_hass(hass)
+
+    assert (await _read(hass, entry)).lhs_retention_days == 20

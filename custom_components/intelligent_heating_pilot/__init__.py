@@ -98,7 +98,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if is_central_entry(entry):
         # The central configuration holds values for the devices: no coordinator, no entity.
-        set_applied_central_values(hass, central_values_of(entry))
+        # Keep the snapshot of what the devices run with: a central entry that is reloaded or
+        # recreated must not hide changes that were saved and not applied yet.
+        if applied_central_values(hass) is None:
+            set_applied_central_values(hass, central_values_of(entry))
         return True
 
     # Every device needs the central configuration to exist (created with the first device, and

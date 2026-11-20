@@ -16,6 +16,7 @@ from .config_flow_themes import CENTRAL_MENU_ORDER, ThemeStepsMixin, vtherm_in_u
 from .config_flow_wake_up import WakeUpSourcesFlowMixin
 from .const import (
     CENTRAL_ENTRY_TITLE,
+    CENTRAL_ENTRY_TITLES,
     CENTRAL_UNIQUE_ID,
     CONF_ENTRY_TYPE,
     CONF_NAME,
@@ -61,7 +62,10 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         await self.async_set_unique_id(CENTRAL_UNIQUE_ID)
         self._abort_if_unique_id_configured()
         return self.async_create_entry(
-            title=CENTRAL_ENTRY_TITLE, data={CONF_ENTRY_TYPE: ENTRY_TYPE_CENTRAL}
+            title=CENTRAL_ENTRY_TITLES.get(
+                self.hass.config.language.split("-")[0], CENTRAL_ENTRY_TITLE
+            ),
+            data={CONF_ENTRY_TYPE: ENTRY_TYPE_CENTRAL},
         )
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -131,36 +135,6 @@ class IntelligentHeatingPilotOptionsFlow(
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Show the menu of themes."""
         return await self._show_menu()
-
-    async def async_step_central_native_schedule(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Native schedule keys shared by every device."""
-        return await self._theme_step(SettingTheme.NATIVE_SCHEDULE, user_input)
-
-    async def async_step_central_environment(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Environment sensors shared by every device."""
-        return await self._theme_step(SettingTheme.ENVIRONMENT, user_input)
-
-    async def async_step_central_learning(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Learning settings shared by every device."""
-        return await self._theme_step(SettingTheme.LEARNING, user_input)
-
-    async def async_step_central_cycle_detection(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Cycle detection settings shared by every device."""
-        return await self._theme_step(SettingTheme.CYCLE_DETECTION, user_input)
-
-    async def async_step_central_anticipation(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Anticipation settings shared by every device."""
-        return await self._theme_step(SettingTheme.ANTICIPATION, user_input)
 
     async def async_step_wake_up_sources(
         self, user_input: dict[str, Any] | None = None
