@@ -519,6 +519,8 @@ For each bug-driven test addition, record:
 - one new Home Assistant `Store` per config entry for the preheat record (same pattern as `HALhsStorage`) (281-drive-climate-at-anticipated-start)
 - Python 3.14 (dev virtualenv), Home Assistant 2026.10.x; native-schedule lookup needs `schedule.get_schedule` (HA 2025.3+), with the degradation already used by #292 below that + Home Assistant core only (`sensor`, `input_datetime`, `datetime`, `schedule`); no new package (066-adaptive-wake-up-timestamp-sources)
 - the existing `PreheatRecord` store gains two optional fields (hold); wake-up sources live in the config entry options (066-adaptive-wake-up-timestamp-sources)
+- Python 3.14 (virtualenv managed by Poetry) + Home Assistant core (`homeassistant.*` only in infrastructure and the config flow modules), pytest, pytest-bdd (302-config-menus-central-defaults)
+- Home Assistant config entries only (data and options); no new `Store` (302-config-menus-central-defaults)
 
 ## Recent Changes
 - 001-fix-cicd-workflow: Added YAML (GitHub Actions workflow syntax), Bash (GNU coreutils, awk, diff, git, jq, GitHub CLI `gh`) + `actions/checkout@v6`, `gh` CLI (pre-installed on `ubuntu-latest` runners), `jq` (pre-installed), standard POSIX utilities
