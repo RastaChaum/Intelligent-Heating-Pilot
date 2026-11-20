@@ -34,6 +34,7 @@ central default configuration second (User Stories 2 and 3).
 - Q: Where does the user edit the central configuration? → A: A dedicated visible entry whose configure button opens the theme menus, without device-specific fields.
 - Q: Can the central configuration be deleted while devices exist? → A: No, deletion is refused until no device remains.
 - Q: When do devices pick up a changed central value? → A: Once, when the user leaves the central menus, and only devices whose inherited value changed.
+- Q: Can a device override an optional sensor with "none"? → A: Yes, "none" is a valid override distinct from "inherit".
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -242,6 +243,9 @@ changes while the device form is open.
   under an explicit name, deletion MUST be refused while at least one device exists, and
   its configure action MUST open the same theme menus as a
   device, limited to shareable themes and without device-specific fields.
+- **FR-024**: For optional values such as environment sensors, "none" MUST be a valid
+  override, distinct from "inherit": a device set to "none" uses no such sensor even when the
+  central configuration defines one.
 
 ### Workflow Requirements *(mandatory)*
 
