@@ -11,9 +11,9 @@ from homeassistant.helpers import selector
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_CLIMATE_ENTITY,
     CONF_NAME,
     CONF_SCHEDULER_ENTITIES,
-    CONF_VTHERM_ENTITY,
     DEFAULT_NAME,
     DOMAIN,
 )
@@ -43,7 +43,7 @@ def _add_device(
         title=DEFAULT_NAME,
         data={
             CONF_NAME: DEFAULT_NAME,
-            CONF_VTHERM_ENTITY: vtherm,
+            CONF_CLIMATE_ENTITY: vtherm,
             CONF_SCHEDULER_ENTITIES: schedulers or [],
         },
         options=options or {},
@@ -63,7 +63,7 @@ def _scheduler_option_labels(form: Any) -> dict[str, str]:
 async def _set_up_device(hass: HomeAssistant, name: str, vtherm: str) -> Any:
     form = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     return await hass.config_entries.flow.async_configure(
-        form["flow_id"], {CONF_NAME: name, CONF_VTHERM_ENTITY: vtherm}
+        form["flow_id"], {CONF_NAME: name, CONF_CLIMATE_ENTITY: vtherm}
     )
 
 
@@ -102,7 +102,7 @@ class TestOptionsWithAMissingScheduler:
         schedulers = [EXISTING_SCHEDULER, MISSING_SCHEDULER]
 
         result = await _submit_options(
-            hass, entry, {CONF_VTHERM_ENTITY: BEDROOM, CONF_SCHEDULER_ENTITIES: schedulers}
+            hass, entry, {CONF_CLIMATE_ENTITY: BEDROOM, CONF_SCHEDULER_ENTITIES: schedulers}
         )
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -115,7 +115,7 @@ class TestOptionsWithAMissingScheduler:
         result = await _submit_options(
             hass,
             entry,
-            {CONF_VTHERM_ENTITY: BEDROOM, CONF_SCHEDULER_ENTITIES: [EXISTING_SCHEDULER]},
+            {CONF_CLIMATE_ENTITY: BEDROOM, CONF_SCHEDULER_ENTITIES: [EXISTING_SCHEDULER]},
         )
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -159,7 +159,7 @@ class TestOneDevicePerVTherm:
     async def test_vtherm_set_in_the_options_of_another_device_is_refused(
         self, hass: HomeAssistant
     ) -> None:
-        _add_device(hass, "entry_moved", STUDY, options={CONF_VTHERM_ENTITY: BEDROOM})
+        _add_device(hass, "entry_moved", STUDY, options={CONF_CLIMATE_ENTITY: BEDROOM})
 
         result = await _set_up_device(hass, "Bedroom", BEDROOM)
 
@@ -168,7 +168,7 @@ class TestOneDevicePerVTherm:
 
     @pytest.mark.asyncio
     async def test_vtherm_left_by_another_device_is_accepted(self, hass: HomeAssistant) -> None:
-        _add_device(hass, "entry_moved", BEDROOM, options={CONF_VTHERM_ENTITY: STUDY})
+        _add_device(hass, "entry_moved", BEDROOM, options={CONF_CLIMATE_ENTITY: STUDY})
 
         result = await _set_up_device(hass, "Bedroom", BEDROOM)
 
@@ -179,17 +179,17 @@ class TestOneDevicePerVTherm:
         _add_device(hass, "entry_bedroom", BEDROOM, unique_id=BEDROOM)
         office = _add_device(hass, "entry_office", OFFICE, unique_id=OFFICE)
 
-        result = await _submit_options(hass, office, {CONF_VTHERM_ENTITY: BEDROOM})
+        result = await _submit_options(hass, office, {CONF_CLIMATE_ENTITY: BEDROOM})
 
         assert result["type"] is FlowResultType.FORM
-        assert result["errors"] == {CONF_VTHERM_ENTITY: "vtherm_already_configured"}
+        assert result["errors"] == {CONF_CLIMATE_ENTITY: "vtherm_already_configured"}
         assert office.options == {}
 
     @pytest.mark.asyncio
     async def test_options_keep_the_own_vtherm(self, hass: HomeAssistant) -> None:
         office = _add_device(hass, "entry_office", OFFICE, unique_id=OFFICE)
 
-        result = await _submit_options(hass, office, {CONF_VTHERM_ENTITY: OFFICE})
+        result = await _submit_options(hass, office, {CONF_CLIMATE_ENTITY: OFFICE})
 
         assert result["type"] is FlowResultType.CREATE_ENTRY
         assert office.unique_id == OFFICE
@@ -198,6 +198,6 @@ class TestOneDevicePerVTherm:
     async def test_unique_id_follows_a_vtherm_change(self, hass: HomeAssistant) -> None:
         office = _add_device(hass, "entry_office", OFFICE, unique_id=OFFICE)
 
-        await _submit_options(hass, office, {CONF_VTHERM_ENTITY: STUDY})
+        await _submit_options(hass, office, {CONF_CLIMATE_ENTITY: STUDY})
 
         assert office.unique_id == STUDY

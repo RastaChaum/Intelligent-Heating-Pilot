@@ -36,7 +36,7 @@ def app_with_learned_global_lhs() -> HeatingApplication:
     """Create a HeatingApplication with a learned global LHS and one contextual hour."""
     device_config = DeviceConfig(
         device_id=DEVICE_ID,
-        vtherm_entity_id=DEVICE_ID,
+        climate_entity_id=DEVICE_ID,
         scheduler_entities=["schedule.heating"],
         lhs_retention_days=30,
     )

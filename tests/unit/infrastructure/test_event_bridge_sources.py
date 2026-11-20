@@ -18,7 +18,7 @@ def _bridge() -> HAEventBridge:
     return HAEventBridge(
         hass=hass,
         orchestrator=AsyncMock(),
-        vtherm_entity_id="climate.vtherm",
+        climate_entity_id="climate.vtherm",
         scheduler_entity_ids=["switch.plan", ALARM],
         monitored_entity_ids=[],
         entry_id="entry",

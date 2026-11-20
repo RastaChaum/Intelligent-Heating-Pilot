@@ -20,8 +20,8 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_CLIMATE_ENTITY,
     CONF_SCHEDULER_ENTITIES,
-    CONF_VTHERM_ENTITY,
     DOMAIN,
 )
 
@@ -74,7 +74,7 @@ def config_entry_a(
         domain=DOMAIN,
         entry_id="entry_device_a",
         data={
-            CONF_VTHERM_ENTITY: "climate.vtherm_a",
+            CONF_CLIMATE_ENTITY: "climate.vtherm_a",
             CONF_SCHEDULER_ENTITIES: ["switch.schedule_a"],
         },
         options={},
@@ -93,7 +93,7 @@ def config_entry_b(
         domain=DOMAIN,
         entry_id="entry_device_b",
         data={
-            CONF_VTHERM_ENTITY: "climate.vtherm_b",
+            CONF_CLIMATE_ENTITY: "climate.vtherm_b",
             CONF_SCHEDULER_ENTITIES: ["switch.schedule_b"],
         },
         options={},

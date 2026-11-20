@@ -28,7 +28,7 @@ def device_config_for_dead_time() -> DeviceConfig:
     """Create device config with auto_learning enabled."""
     return DeviceConfig(
         device_id="climate.test_vtherm",
-        vtherm_entity_id="climate.test_vtherm",
+        climate_entity_id="climate.test_vtherm",
         scheduler_entities=["schedule.heating"],
         lhs_retention_days=30,
         auto_learning=True,
@@ -41,7 +41,7 @@ def device_config_dead_time_disabled() -> DeviceConfig:
     """Create device config with auto_learning disabled."""
     return DeviceConfig(
         device_id="climate.test_vtherm",
-        vtherm_entity_id="climate.test_vtherm",
+        climate_entity_id="climate.test_vtherm",
         scheduler_entities=["schedule.heating"],
         lhs_retention_days=30,
         auto_learning=False,

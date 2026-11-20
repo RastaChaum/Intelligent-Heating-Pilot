@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from ...domain.interfaces.preset_temperature_resolver_interface import IPresetTemperatureResolver
 from ...domain.interfaces.scheduler_ownership_resolver_interface import ISchedulerOwnershipResolver
 from ...domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from ...domain.value_objects import ScheduledTimeslot, SchedulerKind, SlotAction
@@ -46,16 +47,17 @@ class HASchedulerReader(ISchedulerReader):
         self,
         hass: HomeAssistant,
         scheduler_entity_ids: list[str],
-        vtherm_entity_id: str | None = None,
+        climate_entity_id: str | None = None,
         native_settings: NativeScheduleSettings | None = None,
         ownership_resolver: ISchedulerOwnershipResolver | None = None,
+        preset_resolver: IPresetTemperatureResolver | None = None,
     ) -> None:
         """Initialize the scheduler reader adapter.
 
         Args:
             hass: Home Assistant instance
             scheduler_entity_ids: List of scheduler entity IDs to monitor
-            vtherm_entity_id: Optional VTherm climate entity ID used to resolve
+            climate_entity_id: Optional climate entity ID used to resolve
                 preset temperatures (e.g., when actions use preset modes, or the
                 comfort preset for native HA schedule entities).
             native_settings: How native ``schedule.*`` blocks are read and used. Defaults to
@@ -63,15 +65,19 @@ class HASchedulerReader(ISchedulerReader):
             ownership_resolver: Tells which integration owns a ``switch.*`` scheduler, so that a
                 Climate Scheduler switch (which imitates HACS Scheduler's attributes) is read as
                 its own. Without it, every switch is read as a HACS Scheduler one.
+            preset_resolver: Tells the temperature a preset stands for. Without it, only what
+                the climate publishes is used (no user mapping).
         """
         self._hass = hass
         self._scheduler_entity_ids = scheduler_entity_ids
-        self._vtherm_entity_id = vtherm_entity_id
+        self._climate_entity_id = climate_entity_id
         self._native_settings = native_settings or NativeScheduleSettings()
         self._native_reader = HANativeScheduleReader(hass, self._native_settings)
-        self._climate_scheduler_reader = HAClimateSchedulerReader(vtherm_entity_id or "")
+        self._climate_scheduler_reader = HAClimateSchedulerReader(climate_entity_id or "")
         self._ownership_resolver = ownership_resolver
-        self._preset_resolver = HAPresetTemperatureResolver(hass, vtherm_entity_id)
+        self._preset_resolver = preset_resolver or HAPresetTemperatureResolver(
+            hass, climate_entity_id
+        )
 
     async def get_next_timeslot(
         self, exclude_entity_ids: frozenset[str] = frozenset()
@@ -276,8 +282,8 @@ class HASchedulerReader(ISchedulerReader):
         if temperature is not None:
             return temperature
         _LOGGER.debug(
-            "Could not resolve the VTherm preset (entity=%s), using %.1f°C default",
-            self._vtherm_entity_id,
+            "Could not resolve the preset (entity=%s), using %.1f°C default",
+            self._climate_entity_id,
             _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE,
         )
         return _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE
@@ -452,7 +458,7 @@ class HASchedulerReader(ISchedulerReader):
                 _LOGGER.debug(
                     "Could not resolve preset '%s' to temperature (entity=%s)",
                     preset,
-                    self._vtherm_entity_id,
+                    self._climate_entity_id,
                 )
             return None
 

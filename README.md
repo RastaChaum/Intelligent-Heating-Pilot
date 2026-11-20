@@ -6,7 +6,7 @@
 
 🇫🇷 [Version française](README.fr.md)
 
-> **The Adaptive Brain for Versatile Thermostat**
+> **The Adaptive Brain for Your Thermostat, with Versatile Thermostat as the recommended companion**
 
 A Home Assistant integration that learns your heating system and automatically starts heating at exactly the right time—no manual tuning required.
 
@@ -21,14 +21,14 @@ A Home Assistant integration that learns your heating system and automatically s
 ✅ Room reaches 21°C exactly at 18:00
 ```
 
-IHP monitors your VTherm, learns how fast your room heats, and triggers your scheduler at the perfect moment so you arrive to a warm home—every time.
+IHP monitors your thermostat, learns how fast your room heats, and triggers your scheduler at the perfect moment so you arrive to a warm home—every time.
 
 ---
 
 ## ✅ Requirements
 
 - **Home Assistant** 2024.11 or later
-- **[Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat)**: IHP only works with VTherm entities; use one IHP device per thermostat
+- **A `climate` entity to preheat**: use one IHP device per thermostat. **[Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat)** is the recommended target and the best supported, but any `climate` entity works (see [what a generic climate must expose](docs/users/CONFIGURATION.md#using-a-climate-that-is-not-a-versatile-thermostat))
 - **A supported scheduler**, for IHP to anticipate your slots:
 
 | Scheduler | Anticipated start | IHP starts the heating |
@@ -59,7 +59,7 @@ HACS → Integrations → ⋮ → Custom repositories
 ```text
 Settings → Devices & Services → + Add Integration
 → Search "Intelligent Heating Pilot"
-→ Select VTherm + HACS Scheduler → Submit
+→ Select your thermostat + HACS Scheduler → Submit
 ```
 
 **[Full configuration guide →](docs/users/CONFIGURATION.md)**
@@ -91,7 +91,7 @@ Settings → Devices & Services → + Add Integration
 - ✅ **Calculation Service** - `calculate_anticipated_start_time` for your own automations, with or without a scheduler
 - ✅ **Outdoor Source** - Outdoor sensor or `weather.*` entity, recorded with each heating cycle
 - ✅ **Incremental Cache** - Reduces HA database load for long-term learning
-- ✅ **VTherm v8+ Compatible** - Works with latest Versatile Thermostat versions
+- ✅ **Any climate entity** - Versatile Thermostat v8+ is recommended and gets its extra capabilities (preset temperatures, load shedding awareness) detected automatically; other thermostats work too
 - ✅ **Optimized Startup** - Lazy loading and smart filtering prevent HA watchdog timeouts
 - ✅ **Vacation Mode Ready** - Stops automatically when the HACS Scheduler is switched off or its conditions block it
 

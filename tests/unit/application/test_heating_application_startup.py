@@ -20,7 +20,7 @@ def app() -> HeatingApplication:
     """Create a HeatingApplication with its collaborators replaced at the layer boundary."""
     device_config = DeviceConfig(
         device_id=DEVICE_ID,
-        vtherm_entity_id=DEVICE_ID,
+        climate_entity_id=DEVICE_ID,
         scheduler_entities=["schedule.heating"],
         lhs_retention_days=30,
     )

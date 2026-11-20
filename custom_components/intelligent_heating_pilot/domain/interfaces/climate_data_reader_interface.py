@@ -1,8 +1,8 @@
 """Climate data reader interface.
 
-Unified interface for reading VTherm climate data: entity identification,
+Unified interface for reading climate data: entity identification,
 current heating slope, and heating active state.  All three concerns target
-the *same* VTherm entity and are therefore grouped into a single contract
+the *same* climate entity and are therefore grouped into a single contract
 to avoid unnecessary fragmentation.
 """
 
@@ -14,68 +14,54 @@ from ..value_objects.climate_snapshot import ClimateSnapshot
 
 
 class IClimateDataReader(ABC):
-    """Contract for reading climate data from a VTherm entity.
+    """Contract for reading climate data from any climate entity.
 
     This interface unifies three previously separate readers
     (IVThermMetadataReader, IHeatingSlopeReader, IHeatingStateReader)
-    that all operate on the same underlying VTherm climate entity.
+    that all operate on the same underlying climate entity.
 
     Implementors must be stateless with respect to the returned values;
     each call should read the current live state.
     """
 
     @abstractmethod
-    def get_vtherm_entity_id(self) -> str:
-        """Retrieve the VTherm (climate entity) ID.
+    def get_climate_entity_id(self) -> str:
+        """Retrieve the ID of the climate entity IHP preheats.
 
         Returns:
-            The VTherm entity ID (e.g., ``"climate.living_room_vtherm"``).
-        """
-
-    @abstractmethod
-    def get_current_slope(self) -> float | None:
-        """Retrieve the current heating slope in °C per hour.
-
-        The slope is read from the VTherm entity's attributes and represents
-        the instantaneous rate of indoor-temperature increase while heating
-        is active.
-
-        Returns:
-            Current heating slope as a float, or ``None`` when:
-            - The VTherm entity is unavailable.
-            - The ``slope`` attribute is missing or cannot be parsed.
+            The climate entity ID (e.g., ``"climate.living_room"``).
         """
 
     @abstractmethod
     def is_heating_active(self) -> bool:
-        """Return whether heating is currently active on the VTherm.
+        """Return whether heating is currently active on the climate.
 
         Heating is typically considered active when:
         1. ``hvac_mode`` is ``"heat"``, **and**
         2. ``current_temperature < target_temperature``.
 
         Returns:
-            ``True`` when the VTherm is actively heating, ``False`` otherwise
+            ``True`` when the climate is actively heating, ``False`` otherwise
             (including when the entity is unavailable).
         """
 
     @abstractmethod
     def get_target_temperature(self) -> float | None:
-        """Retrieve the VTherm's current target temperature.
+        """Retrieve the climate current target temperature.
 
         Reads the live state of the underlying climate entity; implementations
         must not cache a previously observed value.
 
         Returns:
-            Current target temperature in Celsius, or ``None`` when the VTherm
+            Current target temperature in Celsius, or ``None`` when the climate
             entity is unavailable or its target temperature cannot be read.
         """
 
     @abstractmethod
     async def wait_for_state_change(self, timeout_seconds: float) -> bool:
-        """Wait for the next state change of the VTherm entity.
+        """Wait for the next state change of the climate entity.
 
-        A triggered scheduler action reaches the VTherm a moment after the
+        A triggered scheduler action reaches the climate a moment after the
         ``run_action`` service call returns (#256). Callers wait here, then
         read the live state again, instead of sleeping for a fixed time.
 
@@ -86,7 +72,7 @@ class IClimateDataReader(ABC):
             timeout_seconds: Longest time to wait, in seconds.
 
         Returns:
-            ``True`` when the VTherm state changed before the timeout,
+            ``True`` when the climate state changed before the timeout,
             ``False`` when the timeout elapsed first.
         """
 

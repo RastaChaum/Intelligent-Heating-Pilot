@@ -119,7 +119,7 @@ def implements_climate_reader(climate_context):
 @then("it should store the VTherm entity ID")
 def stores_entity_id(climate_context):
     """THEN: Reader stores the VTherm entity ID."""
-    assert climate_context["reader"].get_vtherm_entity_id() == climate_context["entity_id"]
+    assert climate_context["reader"].get_climate_entity_id() == climate_context["entity_id"]
 
 
 # ------------------------------------------------------------------
@@ -208,28 +208,6 @@ def historical_data_returned(climate_context):
     assert climate_context.get("fetch_completed") is True
 
 
-# ------------------------------------------------------------------
-# Scenario: Real-time slope does NOT use RecorderQueue
-# ------------------------------------------------------------------
-
-
-@given(parsers.parse("the VTherm has a current slope of {slope:g}"))
-def vtherm_has_slope(climate_context, slope):
-    """GIVEN: The VTherm has a specific slope value."""
-    hass = climate_context["hass"]
-    vtherm_state = _make_vtherm_state(attributes={"slope": str(slope)})
-    hass.states.get.return_value = vtherm_state
-    climate_context["expected_slope"] = slope
-
-
-@when("I call get_current_slope")
-def call_get_slope(climate_context):
-    """WHEN: Call get_current_slope."""
-    reader = climate_context["reader"]
-    climate_context["slope_result"] = reader.get_current_slope()
-    climate_context["lock_checked"] = climate_context["recorder_queue"].lock.locked()
-
-
 @then("the RecorderQueue lock should NOT be acquired")
 def lock_not_acquired(climate_context):
     """THEN: RecorderQueue lock was NOT acquired."""
@@ -289,10 +267,10 @@ def have_reader_for_entity(climate_context, mock_hass, recorder_queue, entity_id
     climate_context["expected_entity_id"] = entity_id
 
 
-@when("I call get_vtherm_entity_id")
+@when("I call get_climate_entity_id")
 def call_get_entity_id(climate_context):
-    """WHEN: Call get_vtherm_entity_id."""
-    climate_context["entity_id_result"] = climate_context["reader"].get_vtherm_entity_id()
+    """WHEN: Call get_climate_entity_id."""
+    climate_context["entity_id_result"] = climate_context["reader"].get_climate_entity_id()
 
 
 @then(parsers.parse('it should return "{expected}"'))
@@ -310,7 +288,7 @@ def should_return_string(climate_context, expected):
 def create_without_queue(climate_context, mock_hass):
     """WHEN: Try to create without RecorderQueue (omitting the argument)."""
     try:
-        HAClimateDataReader(mock_hass, vtherm_entity_id="climate.test")  # type: ignore[call-arg]
+        HAClimateDataReader(mock_hass, climate_entity_id="climate.test")  # type: ignore[call-arg]
         climate_context["error"] = None
     except TypeError as e:
         climate_context["error"] = e

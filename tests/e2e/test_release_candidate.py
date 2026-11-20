@@ -1,8 +1,10 @@
 """A release candidate in a real Home Assistant: it loads, preheats on every scheduler, restarts.
 
 One container holds three rooms, each with a real Versatile Thermostat, IHP and one scheduler
-(native schedule, HACS Scheduler, Climate Scheduler). Their slot is a few minutes away on the real
-clock; IHP must put the thermostat in the slot's preset before the slot starts.
+(native schedule, HACS Scheduler, Climate Scheduler), and a fourth heated by Home Assistant's own
+generic thermostat through a HACS Scheduler preset slot, with the preset temperatures given in
+IHP's options (#252). Their slot is a few minutes away on the real clock; IHP must put the
+thermostat in the slot's preset before the slot starts.
 """
 
 from __future__ import annotations
@@ -17,7 +19,13 @@ from zoneinfo import ZoneInfo
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from tests.e2e.stack import TIMEZONE, HomeAssistantStack, Room, StackError
+from tests.e2e.stack import (
+    GENERIC_PRESET_TEMPERATURES,
+    TIMEZONE,
+    HomeAssistantStack,
+    Room,
+    StackError,
+)
 
 SLOT_DELAY = timedelta(minutes=10)
 ROOM_C = 20.7  # 0.3°C below comfort: IHP heads for the slot about 9 minutes ahead
@@ -39,11 +47,15 @@ OUR_LOGGERS = (
 NATIVE = Room("native")
 HACS = Room("hacs")
 CLIMATE_SCHEDULER = Room("cs")
-ROOMS = [NATIVE, HACS, CLIMATE_SCHEDULER]
+# Home Assistant's own generic thermostat, driven through a preset it does not publish (#252)
+GENERIC = Room("generic", generic=True)
+ROOMS = [NATIVE, HACS, CLIMATE_SCHEDULER, GENERIC]
+VTHERM_ROOMS = [room for room in ROOMS if not room.generic]
 SCHEDULE_ENTITIES = {
     NATIVE.key: "schedule.native",
     HACS.key: "switch.schedule_hacs",
     CLIMATE_SCHEDULER.key: "switch.schedule_cs",
+    GENERIC.key: "switch.schedule_generic",
 }
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 
@@ -63,9 +75,10 @@ def _entry_dict(domain: str, title: str, entry_id: str, data: dict, options: dic
 
 def _seeded_entries() -> list[dict]:
     from custom_components.intelligent_heating_pilot.const import (
+        CONF_CLIMATE_ENTITY,
         CONF_NATIVE_SCHEDULE_DRIVE,
+        CONF_PRESET_TEMPERATURES,
         CONF_SCHEDULER_ENTITIES,
-        CONF_VTHERM_ENTITY,
     )
     from tests.integration.real_components.home import vtherm_entry_data
 
@@ -74,7 +87,7 @@ def _seeded_entries() -> list[dict]:
         _entry_dict("climate_scheduler", "Climate Scheduler", "0000000000climatescheduler00", {}),
     ]
     outdoor = "input_number.outdoor_temperature"
-    for room in ROOMS:
+    for room in VTHERM_ROOMS:
         entries.append(
             _entry_dict(
                 "versatile_thermostat",
@@ -83,14 +96,19 @@ def _seeded_entries() -> list[dict]:
                 vtherm_entry_data(room.name, room.sensor, outdoor, room.heater),
             )
         )
-        options = {CONF_NATIVE_SCHEDULE_DRIVE: True} if room is NATIVE else {}
+    for room in ROOMS:
+        options: dict = {}
+        if room is NATIVE:
+            options = {CONF_NATIVE_SCHEDULE_DRIVE: True}
+        elif room.generic:
+            options = {CONF_PRESET_TEMPERATURES: dict(GENERIC_PRESET_TEMPERATURES)}
         entries.append(
             _entry_dict(
                 IHP_DOMAIN,
                 f"IHP {room.name}",
                 f"ihp{room.key:0>25}",
                 {
-                    CONF_VTHERM_ENTITY: room.thermostat,
+                    CONF_CLIMATE_ENTITY: room.thermostat,
                     CONF_SCHEDULER_ENTITIES: [SCHEDULE_ENTITIES[room.key]],
                 },
                 options,
@@ -147,6 +165,11 @@ def _prepare_rooms(stack: HomeAssistantStack) -> None:
     for room in ROOMS:
         _service(stack, "input_number", "set_value", entity_id=room.sensor, value=ROOM_C)
         _service(stack, "climate", "set_hvac_mode", entity_id=room.thermostat, hvac_mode="heat")
+        if room.generic:
+            # Its preset temperatures come with its configuration: it only rests in eco
+            _service(stack, "climate", "set_preset_mode", entity_id=room.thermostat,
+                     preset_mode="eco")  # fmt: skip
+            continue
         for preset, celsius in (("eco", ECO_C), ("comfort", COMFORT_C), ("boost", BOOST_C)):
             _service(stack, "number", "set_value", value=celsius,
                      entity_id=f"number.{room.key}_room_preset_{preset}_temp")  # fmt: skip
@@ -176,6 +199,14 @@ def _create_schedulers(stack: HomeAssistantStack, slot: datetime) -> None:
         weekdays=["daily"], repeat_type="repeat", name="Hacs",
         timeslots=[{"start": start, "stop": stop, "actions": [{
             "service": "climate.set_preset_mode", "entity_id": HACS.thermostat,
+            "service_data": {"preset_mode": "comfort"}}]}],
+    )  # fmt: skip
+    # The generic thermostat publishes no preset temperature: IHP reads it from its options
+    _service(
+        stack, "scheduler", "add",
+        weekdays=["daily"], repeat_type="repeat", name="Generic",
+        timeslots=[{"start": start, "stop": stop, "actions": [{
+            "service": "climate.set_preset_mode", "entity_id": GENERIC.thermostat,
             "service_data": {"preset_mode": "comfort"}}]}],
     )  # fmt: skip
     night = (slot - timedelta(hours=2)).strftime("%H:%M")

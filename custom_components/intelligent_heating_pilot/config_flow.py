@@ -12,16 +12,19 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers import selector
 
+from .config_flow_presets import PresetTemperaturesFlowMixin, mappable_presets
 from .config_flow_wake_up import WakeUpSourcesFlowMixin
 from .const import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_DEAD_TIME_MINUTES,
     CONF_HUMIDITY_IN_ENTITY,
     CONF_HUMIDITY_OUT_ENTITY,
     CONF_LHS_RETENTION_DAYS,
+    CONF_MANAGE_PRESET_TEMPERATURES,
     CONF_MANAGE_WAKE_UP_SOURCES,
     CONF_MAX_CYCLE_DURATION_MINUTES,
     CONF_MIN_CYCLE_DURATION_MINUTES,
@@ -35,7 +38,6 @@ from .const import (
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
     DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
@@ -56,8 +58,14 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+CLIMATE_DOMAIN = "climate"
 SCHEDULER_DOMAINS = ("switch", "schedule")
 MISSING_SCHEDULER_LABEL = "{entity_id} (not found)"
+
+
+def _climate_selector() -> selector.EntitySelector:
+    """Offer every climate entity: Versatile Thermostat is recommended, never required (#252)."""
+    return selector.EntitySelector(selector.EntitySelectorConfig(domain=CLIMATE_DOMAIN))
 
 
 def _outdoor_source_selector(device_class: str | None = None) -> selector.EntitySelector:
@@ -166,22 +174,22 @@ def _scheduler_selector(hass: HomeAssistant, configured: list[str]) -> Any:
     )
 
 
-def _configured_vtherm(entry: config_entries.ConfigEntry) -> Any:
-    """Return the VTherm a device drives: the options value when set, else the setup value."""
-    if CONF_VTHERM_ENTITY in entry.options:
-        return entry.options[CONF_VTHERM_ENTITY]
-    return entry.data.get(CONF_VTHERM_ENTITY)
+def _configured_climate(entry: config_entries.ConfigEntry) -> Any:
+    """Return the climate entity a device drives: the options value when set, else the setup value."""
+    if CONF_CLIMATE_ENTITY in entry.options:
+        return entry.options[CONF_CLIMATE_ENTITY]
+    return entry.data.get(CONF_CLIMATE_ENTITY)
 
 
-def _vtherm_in_use(hass: HomeAssistant, vtherm: str, exclude_entry_id: str | None = None) -> bool:
-    """Tell whether another device already drives this VTherm.
+def _climate_in_use(hass: HomeAssistant, climate: str, exclude_entry_id: str | None = None) -> bool:
+    """Tell whether another device already drives this climate entity.
 
-    Two devices on one VTherm would overwrite each other's setpoint, so a VTherm identifies a
-    device. Entries are compared on the VTherm they use, not on their unique_id, because
+    Two devices on one climate entity would overwrite each other's setpoint, so a climate entity identifies a
+    device. Entries are compared on the climate entity they use, not on their unique_id, because
     entries created before #192 are keyed on their name.
     """
     return any(
-        _configured_vtherm(entry) == vtherm
+        _configured_climate(entry) == climate
         for entry in hass.config_entries.async_entries(DOMAIN)
         if entry.entry_id != exclude_entry_id
     )
@@ -219,18 +227,18 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
             _LOGGER.debug("Processed data before validation: %s", processed)
 
             # Required validations
-            vtherm_val = processed.get(CONF_VTHERM_ENTITY)
-            if not vtherm_val or (isinstance(vtherm_val, str) and vtherm_val.strip() == ""):
-                errors[CONF_VTHERM_ENTITY] = "required"
+            climate_val = processed.get(CONF_CLIMATE_ENTITY)
+            if not climate_val or (isinstance(climate_val, str) and climate_val.strip() == ""):
+                errors[CONF_CLIMATE_ENTITY] = "required"
 
             # Scheduler is now optional - no validation needed
 
             if not errors:
-                vtherm: str = processed[CONF_VTHERM_ENTITY]
-                if _vtherm_in_use(self.hass, vtherm):
+                climate: str = processed[CONF_CLIMATE_ENTITY]
+                if _climate_in_use(self.hass, climate):
                     return self.async_abort(reason="already_configured")
                 _LOGGER.info("Creating entry with data: %s", processed)
-                await self.async_set_unique_id(vtherm)
+                await self.async_set_unique_id(climate)
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title=processed[CONF_NAME],
@@ -242,11 +250,7 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
-                vol.Required(CONF_VTHERM_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="climate", integration="versatile_thermostat"
-                    )
-                ),
+                vol.Required(CONF_CLIMATE_ENTITY): _climate_selector(),
                 vol.Optional(CONF_SCHEDULER_ENTITIES): scheduler_selector,
                 vol.Optional(CONF_HUMIDITY_IN_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
@@ -369,7 +373,9 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
         )
 
 
-class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.OptionsFlow):
+class IntelligentHeatingPilotOptionsFlow(
+    PresetTemperaturesFlowMixin, WakeUpSourcesFlowMixin, config_entries.OptionsFlow
+):
     """Handle options flow for Intelligent Heating Pilot."""
 
     def __init__(self) -> None:
@@ -377,23 +383,31 @@ class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.
         self._pending: dict[str, Any] = {}
         self._sources: list[dict[str, Any]] = []
         self._editing: str | None = None
+        self._then_wake_up = False
+
+    async def _after_preset_temperatures(self) -> ConfigFlowResult:
+        """Go on with the wake-up sources when they were asked too, else save the options."""
+        if self._then_wake_up:
+            self._begin_wake_up_management(self._pending)
+            return await self.async_step_wake_up_menu()
+        return self._finish(self._pending)
 
     def _finish(self, options: dict[str, Any]) -> ConfigFlowResult:
-        """Save the options, keying the entry on its new VTherm when it changed."""
-        vtherm = options.get(CONF_VTHERM_ENTITY)
-        if vtherm and vtherm != _configured_vtherm(self.config_entry):
-            self._follow_vtherm(vtherm, options)
+        """Save the options, keying the entry on its new climate entity when it changed."""
+        climate = options.get(CONF_CLIMATE_ENTITY)
+        if climate and climate != _configured_climate(self.config_entry):
+            self._follow_climate(climate, options)
         return self.async_create_entry(title="", data=options)
 
-    def _follow_vtherm(self, vtherm: str, options: dict[str, Any]) -> None:
-        """Key the entry on its new VTherm, so no two entries ever share a unique_id.
+    def _follow_climate(self, climate: str, options: dict[str, Any]) -> None:
+        """Key the entry on its new climate entity, so no two entries ever share a unique_id.
 
         The options are written in the same update: updating the unique_id alone would run
         the update listener, which reloads the device, with the previous options.
         """
-        _LOGGER.info("[%s] VTherm changed to %s", self.config_entry.title, vtherm)
+        _LOGGER.info("[%s] Climate entity changed to %s", self.config_entry.title, climate)
         self.hass.config_entries.async_update_entry(
-            self.config_entry, unique_id=vtherm, options=options
+            self.config_entry, unique_id=climate, options=options
         )
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -405,6 +419,9 @@ class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.
             # Start with user input
             normalized_input = {**user_input}
             manage_wake_up_sources = bool(normalized_input.pop(CONF_MANAGE_WAKE_UP_SOURCES, False))
+            manage_preset_temperatures = bool(
+                normalized_input.pop(CONF_MANAGE_PRESET_TEMPERATURES, False)
+            )
             # Schedulers already a list from SelectSelector (multiple=True)
             # Just ensure it's always a list
             normalized_input[CONF_SCHEDULER_ENTITIES] = _as_list(
@@ -430,11 +447,11 @@ class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.
                     fields_to_delete.append(field)
 
             # Validate required fields
-            vtherm: str | None = normalized_input.get(CONF_VTHERM_ENTITY)
-            if not vtherm:
-                errors[CONF_VTHERM_ENTITY] = "required"
-            elif _vtherm_in_use(self.hass, vtherm, exclude_entry_id=self.config_entry.entry_id):
-                errors[CONF_VTHERM_ENTITY] = "vtherm_already_configured"
+            climate: str | None = normalized_input.get(CONF_CLIMATE_ENTITY)
+            if not climate:
+                errors[CONF_CLIMATE_ENTITY] = "required"
+            elif _climate_in_use(self.hass, climate, exclude_entry_id=self.config_entry.entry_id):
+                errors[CONF_CLIMATE_ENTITY] = "vtherm_already_configured"
 
             # Scheduler is now optional - no validation needed
 
@@ -445,6 +462,10 @@ class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.
                 # For optional fields that were cleared: explicitly set to None to override data
                 for field in fields_to_delete:
                     merged_options[field] = None
+                if manage_preset_temperatures:
+                    self._pending = merged_options
+                    self._then_wake_up = manage_wake_up_sources
+                    return await self.async_step_preset_temperatures()
                 if manage_wake_up_sources:
                     self._begin_wake_up_management(merged_options)
                     return await self.async_step_wake_up_menu()
@@ -471,7 +492,7 @@ class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.
 
         # Compute defaults for entity selectors
         default_schedulers_list = _as_list(_opt_or_data(CONF_SCHEDULER_ENTITIES, []))
-        vtherm_val = _opt_or_data(CONF_VTHERM_ENTITY)
+        climate_val = _opt_or_data(CONF_CLIMATE_ENTITY)
         hum_in_val = _opt_or_data(CONF_HUMIDITY_IN_ENTITY)
         hum_out_val = _opt_or_data(CONF_HUMIDITY_OUT_ENTITY)
         temp_out_val = _opt_or_data(CONF_TEMPERATURE_OUT_ENTITY)
@@ -480,15 +501,13 @@ class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.
         # Build schema dynamically: only set default if value exists and is non-empty
         schema_dict: dict[Any, Any] = {}
 
-        # Required: VTherm (only set default if exists and non-empty)
-        vtherm_field = (
-            vol.Required(CONF_VTHERM_ENTITY, default=vtherm_val)
-            if vtherm_val and vtherm_val != ""
-            else vol.Required(CONF_VTHERM_ENTITY)
+        # Required: climate entity (only set default if exists and non-empty)
+        climate_field = (
+            vol.Required(CONF_CLIMATE_ENTITY, default=climate_val)
+            if climate_val and climate_val != ""
+            else vol.Required(CONF_CLIMATE_ENTITY)
         )
-        schema_dict[vtherm_field] = selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="climate", integration="versatile_thermostat")
-        )
+        schema_dict[climate_field] = _climate_selector()
 
         # Optional: Schedulers (multiple, only set default if non-empty list)
         scheduler_selector = _scheduler_selector(self.hass, default_schedulers_list)
@@ -681,6 +700,10 @@ class IntelligentHeatingPilotOptionsFlow(WakeUpSourcesFlowMixin, config_entries.
         )
 
         schema_dict.update(_native_schedule_fields(_opt_or_data))
+        if mappable_presets(self.hass, climate_val):
+            schema_dict[vol.Optional(CONF_MANAGE_PRESET_TEMPERATURES, default=False)] = (
+                selector.BooleanSelector()
+            )
         schema_dict[vol.Optional(CONF_MANAGE_WAKE_UP_SOURCES, default=False)] = (
             selector.BooleanSelector()
         )

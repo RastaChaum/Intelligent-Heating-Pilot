@@ -23,8 +23,8 @@ from custom_components.intelligent_heating_pilot.config_flow import (
     IntelligentHeatingPilotOptionsFlow,
 )
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_CLIMATE_ENTITY,
     CONF_NAME,
-    CONF_VTHERM_ENTITY,
     DEFAULT_NAME,
     DOMAIN,
 )
@@ -46,9 +46,9 @@ FIELD_TEXT_SECTIONS = ("data", "data_description")
 SERVICE_TEXT_KEYS = ("name", "description")
 
 # Input the flow handlers reject with their own errors (not the schema's).
-MISSING_VTHERM_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: ""}
+MISSING_VTHERM_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_CLIMATE_ENTITY: ""}
 OTHER_DEVICE_VTHERM = "climate.office"
-VTHERM_IN_USE_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: OTHER_DEVICE_VTHERM}
+VTHERM_IN_USE_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_CLIMATE_ENTITY: OTHER_DEVICE_VTHERM}
 REJECTED_INPUTS = [MISSING_VTHERM_INPUT, VTHERM_IN_USE_INPUT]
 WAKE_UP_ERRORS = {"wake_up_target_required", "wake_up_duplicate"}
 
@@ -74,7 +74,7 @@ def _add_entry(
         domain=DOMAIN,
         entry_id=entry_id,
         unique_id=vtherm,
-        data={CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: vtherm},
+        data={CONF_NAME: DEFAULT_NAME, CONF_CLIMATE_ENTITY: vtherm},
         options={},
     )
     entry.add_to_hass(hass)
@@ -87,6 +87,9 @@ async def _open_user_form(hass: HomeAssistant) -> FlowResult:
 
 async def _open_options_form(hass: HomeAssistant) -> FlowResult:
     entry = _add_entry(hass)
+    # The preset mapping is only offered for a climate that lists presets but not their
+    # temperatures (#252), so the form shows every field it can have
+    hass.states.async_set("climate.living_room", "heat", {"preset_modes": ["eco", "comfort"]})
     return await hass.config_entries.options.async_init(entry.entry_id)
 
 

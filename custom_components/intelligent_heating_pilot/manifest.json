@@ -1,14 +1,16 @@
 {
   "domain": "intelligent_heating_pilot",
   "name": "Intelligent Heating Pilot",
+  "after_dependencies": [
+    "versatile_thermostat"
+  ],
   "codeowners": [
     "@RastaChaum"
   ],
   "config_flow": true,
   "dependencies": [
     "http",
-    "recorder",
-    "versatile_thermostat"
+    "recorder"
   ],
   "documentation": "https://github.com/RastaChaum/Intelligent-Heating-Pilot",
   "integration_type": "service",

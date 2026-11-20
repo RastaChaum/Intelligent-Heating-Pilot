@@ -16,10 +16,32 @@ A configuration dialog will appear. Here's what you need:
 | Field | Required? | What It Is | How to Find |
 |-------|-----------|-----------|------------|
 | **Name** | ✅ Yes | A friendly name for this IHP device; it also names the device and its entities. Each device needs its own name | Any name you want (e.g., "Living Room" gives `sensor.living_room_anticipated_start_time`) |
-| **VTherm Entity** | ✅ Yes | Your Versatile Thermostat climate entity | Pick it from the list: only Versatile Thermostat entities are offered. Use one IHP device per thermostat |
-| **Scheduler Entities** | ⚠️ Optional | The schedulers that control this VTherm | Pick them from the list (e.g., `switch.schedule_heating`). See [Supported Schedulers](#supported-schedulers) below |
+| **Thermostat** | ✅ Yes | The `climate` entity IHP preheats (Versatile Thermostat recommended) | Pick it from the list: every `climate` entity is offered. Use one IHP device per thermostat |
+| **Scheduler Entities** | ⚠️ Optional | The schedulers that control this thermostat | Pick them from the list (e.g., `switch.schedule_heating`). See [Supported Schedulers](#supported-schedulers) below |
 
 The scheduler list offers the `switch.*` and `schedule.*` entities that look like schedulers. If none is found, an entity picker accepting any `switch.*` or `schedule.*` entity is shown instead.
+
+### Using a climate that is not a Versatile Thermostat
+
+Versatile Thermostat is the recommended target: IHP detects what it publishes and uses it when present. Any other `climate` entity (a TRV, a generic thermostat, a heat pump…) can be selected and preheated if it exposes the standard attributes below.
+
+| Attribute | Needed for | If missing |
+|-----------|-----------|-----------|
+| `current_temperature` | Everything | IHP cannot anticipate |
+| `temperature` (the target) | Everything | IHP cannot anticipate |
+| `hvac_mode` | Cycle detection | Cycles are not detected |
+| `hvac_action` (`heating` / `idle`…) | **Learning** the heating slope | The thermostat is preheated, but IHP learns nothing from it and logs one warning. The default or configured slope is used |
+| `preset_modes` | Slots that set a preset | See below |
+
+**Presets.** Versatile Thermostat publishes the temperature behind each preset; a standard climate only lists its presets. For a slot that uses `climate.set_preset_mode`, or a native schedule block mapped to a preset, IHP needs to know the temperature:
+
+1. Open the device's **Configure** form.
+2. Tick **Map presets to temperatures after saving** (only offered when your thermostat lists presets but does not publish their temperatures).
+3. Enter the temperature of each preset you use. A preset left empty is not anticipated.
+
+IHP uses, in this order: the temperature the thermostat publishes, then your mapping, then the target of the thermostat while that preset is active. An unmapped preset is logged once as a warning, and its slot is not anticipated (a native schedule block falls back to 20 °C).
+
+Versatile Thermostat-only capabilities (published preset temperatures, load shedding and safety mode awareness, the smoothed room temperature) are used when found and never required.
 
 ### Supported Schedulers
 
@@ -42,10 +64,10 @@ IHP calls `scheduler.run_action` at the anticipated start so that the scheduler 
 
 - **The slot action must set a temperature.** IHP reads the target temperature from the slot's action, and only understands two actions:
   - `climate.set_temperature` with a `temperature`
-  - `climate.set_preset_mode` with a preset (e.g. `comfort`), whose temperature IHP reads from the VTherm preset temperatures
+  - `climate.set_preset_mode` with a preset (e.g. `comfort`), whose temperature IHP reads from the thermostat (Versatile Thermostat publishes it; for any other climate, map it in the **Configure** form)
 
-  A slot whose action is anything else (`climate.set_hvac_mode`, a script, a scene, a preset whose temperature the VTherm does not expose) has no target for IHP and is not anticipated.
-- **The schedule must control the VTherm of this IHP device.** IHP does not check which entity the action targets. After triggering the slot, it waits up to 10 seconds for this VTherm to take the slot's temperature; if it does not, IHP treats the scheduler as blocked by its conditions.
+  A slot whose action is anything else (`climate.set_hvac_mode`, a script, a scene, a preset whose temperature the thermostat does not expose and you did not map) has no target for IHP and is not anticipated.
+- **The schedule must control the thermostat of this IHP device.** IHP does not check which entity the action targets. After triggering the slot, it waits up to 10 seconds for this thermostat to take the slot's temperature; if it does not, IHP treats the scheduler as blocked by its conditions.
 - **A preheat that starts the day before its slot may start at 00:01.** `run_action` looks for the slot on the day it is called. On Sunday 23:00, the Monday 05:00 slot of a Mon–Fri schedule does not exist yet, so nothing heats. IHP retries the same scheduler at 00:01 on the slot's day and treats it as blocked only if that retry has no effect either. The room then starts heating later than anticipated. Schedules that run every day are not affected.
 - **Only the next slot of each scheduler is anticipated.** If the next slot does not need heating (an eco slot, or a room already warm enough), nothing is preheated until that slot has passed, and the slot after it is anticipated then.
 - **A scheduler switched off is ignored.** Switching it back on makes IHP use it again.
@@ -67,7 +89,7 @@ IHP recognises a Climate Scheduler switch by the integration that registered it,
 
 A native schedule does not say what its blocks mean: each block may carry free **data** that you filled in. IHP reads the **next block start** through the helper (Home Assistant 2025.3 or later), even while another block is running, so adjacent blocks are anticipated too. On an older Home Assistant, IHP reads only the helper's next event: nothing is anticipated while a block runs, block data is not available, and a driven schedule gets the fallback preset. A warning says so once.
 
-By default IHP only **computes** the anticipated start, with the VTherm **comfort** preset temperature as target (20 °C if the comfort preset cannot be read), and does not start the heating.
+By default IHP only **computes** the anticipated start, with the thermostat **comfort** preset temperature as target (20 °C if the comfort preset cannot be read), and does not start the heating.
 
 To let IHP start the heating, turn on **Drive Native Schedules** in the device's **Configure** form. IHP then applies the next block's action to the thermostat at the anticipated start, read from the block's data:
 
@@ -537,7 +559,7 @@ After configuration, IHP creates these entities on your device:
 Before moving forward, verify:
 
 - [ ] IHP appears in integrations
-- [ ] A VTherm entity selected
+- [ ] A thermostat (`climate` entity) selected
 - [ ] A HACS Scheduler configured (optional — required for automatic preheating)
 - [ ] New sensors appear on your IHP device
 - [ ] No error messages in logs
@@ -551,7 +573,7 @@ Before moving forward, verify:
 ### My thermostat is not in the list
 
 **Solution:**
-- Only Versatile Thermostat entities are offered. Check that Versatile Thermostat is installed and that your thermostat is one of its entities
+- Every `climate` entity is offered. If yours is missing, check that its integration is loaded and that the entity exists in Developer Tools → States
 
 ### "This integration is already configured"
 

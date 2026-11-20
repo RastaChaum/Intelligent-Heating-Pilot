@@ -137,7 +137,7 @@ class WakeUpStack(NativeStack):
         schedule_reader = HASchedulerReader(
             self.hass,
             schedulers,
-            vtherm_entity_id=CLIMATE_ID,
+            climate_entity_id=CLIMATE_ID,
             native_settings=NativeScheduleSettings(drive_enabled=True),
             ownership_resolver=resolver,
         )
