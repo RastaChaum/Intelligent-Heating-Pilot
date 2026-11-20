@@ -30,6 +30,7 @@ central default configuration second (User Stories 2 and 3).
 
 - Q: Is the native schedule drive shareable centrally? → A: No, per device only.
 - Q: How is the central configuration created? → A: Automatically with the first device.
+- Q: What does device creation store for shareable values? → A: Only device-specific fields; every shareable value is inherited, with no override.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -98,8 +99,8 @@ sensor centrally and check that both devices use it.
 
 1. **Given** two devices without overrides, **When** the user changes a central value,
    **Then** both devices use the new value without being edited.
-2. **Given** a new device is created, **When** the user does not fill a shareable value,
-   **Then** the device follows the central value.
+2. **Given** a new device is created, **When** the user completes the creation screen,
+   **Then** the device holds no override and follows every central value.
 3. **Given** a device that overrides a value, **When** the central value changes, **Then**
    that device keeps its own value.
 4. **Given** no central configuration has ever been set, **When** a device runs, **Then** it
@@ -227,6 +228,9 @@ changes while the device form is open.
   DEBUG for value resolution, using device friendly names.
 - **FR-021**: System MUST state whether new services remain stateless: value resolution is
   stateless; the stored central and device values are the only state.
+- **FR-022**: Device creation MUST ask only for device-specific values (name, thermostat,
+  schedulers) and MUST store no override: every shareable value is inherited until the user
+  overrides it from a theme menu.
 
 ### Workflow Requirements *(mandatory)*
 
@@ -280,8 +284,8 @@ changes while the device form is open.
 - Reloading the devices that inherit a changed central value is acceptable, as it is for a
   device option change today.
 - Wake-up sources, thermostat and schedulers stay per device in all cases.
-- The initial device creation screen may stay a single form; only the options screens are
-  restructured. This can be revisited in the plan.
+- The device creation screen asks only for device-specific values; shareable values are set
+  afterwards in the theme menus (overrides) or in the central configuration.
 - Menus ship first as their own pull request, the central configuration in a following one,
   both under this specification.
 - The existing "copy settings from another device" idea is out of scope.
