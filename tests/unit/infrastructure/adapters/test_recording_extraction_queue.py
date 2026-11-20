@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -12,7 +13,9 @@ from custom_components.intelligent_heating_pilot.domain.value_objects.heating im
     HeatingCycle,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects.historical_data import (
+    HistoricalDataKey,
     HistoricalDataSet,
+    HistoricalMeasurement,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects.recording_extraction_task import (
     ExtractionTaskState,
@@ -1322,3 +1325,81 @@ class TestRecordingExtractionQueueHistoryReadFailures:
         assert explored == []
         assert queue._is_running is False
         assert not semaphore.locked()
+
+
+def _temperature_only_adapter() -> Mock:
+    """Build an adapter for a climate that records temperatures but never hvac_action."""
+    when = datetime(2024, 1, 1, 8, 0)
+    adapter = Mock()
+    adapter.fetch_all_historical_data = AsyncMock(
+        return_value=HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    HistoricalMeasurement(
+                        timestamp=when, value=19.0, attributes={}, entity_id="climate.trv"
+                    )
+                ],
+                HistoricalDataKey.TARGET_TEMP: [
+                    HistoricalMeasurement(
+                        timestamp=when, value=21.0, attributes={}, entity_id="climate.trv"
+                    )
+                ],
+            }
+        )
+    )
+    return adapter
+
+
+class TestClimateWithoutHvacAction:
+    """A climate that never publishes hvac_action is preheated but cannot be learned from (#252)."""
+
+    @pytest.mark.asyncio
+    async def test_no_cycle_is_extracted_and_no_error_is_raised(self) -> None:
+        service = Mock()
+        service.extract_heating_cycles = AsyncMock(return_value=[])
+        queue = _queue_with([_temperature_only_adapter()], service, [])
+
+        cycles = await queue._extract_period(date(2024, 1, 1), date(2024, 1, 7))
+
+        assert cycles == []
+        service.extract_heating_cycles.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_periods_are_explored_and_none_counts_as_failed(self) -> None:
+        explored: list[tuple[date, date]] = []
+        service = Mock()
+        service.extract_heating_cycles = AsyncMock(return_value=[])
+        queue = _queue_with([_temperature_only_adapter()], service, explored)
+        await queue.populate_queue(date(2024, 1, 1), date(2024, 1, 14))
+
+        await queue.run_queue()
+
+        assert len(explored) == 2
+        assert queue._failed_count == 0
+
+    @pytest.mark.asyncio
+    async def test_one_warning_explains_why_and_is_not_repeated(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        service = Mock()
+        queue = _queue_with([_temperature_only_adapter()], service, [])
+
+        with caplog.at_level(logging.WARNING):
+            await queue._extract_period(date(2024, 1, 1), date(2024, 1, 7))
+            await queue._extract_period(date(2024, 1, 8), date(2024, 1, 14))
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "hvac_action" in warnings[0].getMessage()
+        assert "climate.vtherm" in warnings[0].getMessage()
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+    @pytest.mark.asyncio
+    async def test_a_period_without_any_history_still_goes_through_the_service(self) -> None:
+        service = Mock()
+        service.extract_heating_cycles = AsyncMock(return_value=[])
+        queue = _queue_with([_empty_adapter()], service, [])
+
+        await queue._extract_period(date(2024, 1, 1), date(2024, 1, 7))
+
+        service.extract_heating_cycles.assert_called_once()

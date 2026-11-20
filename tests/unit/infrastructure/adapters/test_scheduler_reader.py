@@ -14,6 +14,9 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import (
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.native_schedule_reader import (
     NativeScheduleSettings,
 )
+from custom_components.intelligent_heating_pilot.infrastructure.adapters.preset_temperature_resolver import (
+    HAPresetTemperatureResolver,
+)
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.scheduler_reader import (
     HASchedulerReader,
 )
@@ -1145,3 +1148,47 @@ async def test_without_a_resolver_a_switch_is_read_as_a_hacs_scheduler(mock_hass
     assert result is not None
     assert result.target_temp == 16.0
     assert result.action is None
+
+
+def _generic_climate_native_reader(
+    mock_hass: Mock, mapping: dict[str, float] | None
+) -> HASchedulerReader:
+    """Create a native schedule reader over a generic climate that lists presets only (#252)."""
+    # Only the state of the climate and of the schedule is needed from this helper
+    _native_reader_with_vtherm(
+        mock_hass, {"temperature": 17.0, "preset_mode": "eco", "preset_modes": ["eco", "comfort"]}
+    )
+    return HASchedulerReader(
+        mock_hass,
+        [NATIVE_ID],
+        climate_entity_id="climate.vtherm",
+        preset_resolver=HAPresetTemperatureResolver(mock_hass, "climate.vtherm", mapping),
+    )
+
+
+@pytest.mark.asyncio
+async def test_native_schedule_on_a_generic_climate_uses_the_mapped_comfort_temperature(
+    mock_hass: Mock,
+) -> None:
+    """The comfort preset of a climate that publishes no temperature is the one the user mapped."""
+    reader = _generic_climate_native_reader(mock_hass, {"comfort": 21.5})
+
+    result = await _next_timeslot(reader)
+
+    assert result is not None
+    assert result.target_temp == 21.5
+
+
+@pytest.mark.asyncio
+async def test_native_schedule_on_a_generic_climate_without_mapping_warns_and_uses_default(
+    mock_hass: Mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Without a mapping the default is used, and the log says which preset is unknown."""
+    reader = _generic_climate_native_reader(mock_hass, None)
+
+    with caplog.at_level(logging.WARNING):
+        result = await _next_timeslot(reader)
+
+    assert result is not None
+    assert result.target_temp == 20.0
+    assert any("comfort" in record.getMessage() for record in caplog.records)
