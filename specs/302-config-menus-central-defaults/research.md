@@ -151,3 +151,20 @@ walk the catalog.
 from shipping without labels.
 
 **Alternatives**: spot checks of a few keys (rejected: misses new settings).
+
+## T002 outcome (Home Assistant 2026.10.4, the version pinned in `poetry.lock`)
+
+Read from `homeassistant/config_entries.py` and `data_entry_flow.py` on 2026-11-20.
+
+- (a) **No veto on removal.** `ConfigEntries._async_remove` deletes the entry from the registry,
+  then calls `ConfigEntry.async_remove`, which calls the integration's `async_remove_entry`; an
+  exception there is only logged. The spec fallback of D8 stands.
+- (b) **Dynamic menus.** `FlowHandler.async_show_menu(menu_options: Container[str],
+  description_placeholders=...)` builds its schema on every call, so the list of entries can differ
+  per render. "Apply" can be listed or omitted.
+- (c) **Update listeners.** `async_update_entry` runs every listener once when `data`, `options` or
+  another field changed, and none when nothing changed. One call with `data` and `options` fires
+  one listener call.
+- (d) **Minimum version.** `hacs.json` declares 2024.11.0; `async_show_menu` and
+  `description_placeholders` exist there. The frontend gives an integration no hook on the close
+  button, which the save-then-apply model no longer needs.
