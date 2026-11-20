@@ -231,3 +231,31 @@ async def test_a_theme_without_saving_stores_nothing(hass: HomeAssistant) -> Non
 
     assert entry.options == {CONF_LHS_RETENTION_DAYS: 30}
     assert "apply" not in reopened["menu_options"]
+
+
+@pytest.mark.asyncio
+async def test_submitting_a_theme_unchanged_stores_no_default_and_offers_no_apply(
+    hass: HomeAssistant,
+) -> None:
+    entry = _add_device(hass)
+    menu = await _menu(hass, entry)
+    form = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "learning"}
+    )
+
+    # the form is pre-filled with the built-in defaults: submitting them as they are
+    result = await hass.config_entries.options.async_configure(form["flow_id"], {})
+
+    assert entry.options == {CONF_LHS_RETENTION_DAYS: 30}
+    assert "apply" not in result["menu_options"]
+
+
+@pytest.mark.asyncio
+async def test_a_changed_vtherm_becomes_the_unique_id(hass: HomeAssistant) -> None:
+    entry = _add_device(hass)
+    menu = await _menu(hass, entry)
+
+    await _save(hass, menu, "thermostat_schedulers", {CONF_VTHERM_ENTITY: "climate.office"})
+
+    assert entry.unique_id == "climate.office"
+    assert entry.options[CONF_VTHERM_ENTITY] == "climate.office"

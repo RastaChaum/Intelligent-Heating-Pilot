@@ -30,7 +30,7 @@
         "data_description": {
           "name": "Un nom pour cet appareil IHP, par exemple la pièce qu'il chauffe.",
           "vtherm_entity_id": "Le Versatile Thermostat dont IHP apprend et anticipe la chauffe.",
-          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé plus bas.",
+          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé dans Plannings natifs.",
           "humidity_in_entity_id": "Capteur d'humidité de la pièce pour affiner les calculs.",
           "humidity_out_entity_id": "Capteur ou entité météo d'humidité extérieure. Surveillé, pas encore utilisé dans la prédiction.",
           "temperature_out_entity_id": "Capteur ou entité météo de température extérieure, enregistrée avec chaque cycle de chauffe.",
@@ -65,8 +65,8 @@
         "title": "Réglages d'Intelligent Heating Pilot",
         "description": "Choisissez un groupe de réglages. Chaque groupe est enregistré dès que vous le validez, et fermer cette fenêtre ne perd rien. Enregistré mais pas encore appliqué : {pending}. « Appliquer » recharge l'appareil avec les réglages enregistrés ; il n'apparaît que s'il y a quelque chose à appliquer.",
         "menu_options": {
-          "thermostat_schedulers": "Thermostat et planificateurs",
-          "native_schedule": "Planifications natives",
+          "thermostat_schedulers": "Thermostat et schedulers",
+          "native_schedule": "Plannings natifs",
           "wake_up_sources": "Sources de réveil",
           "environment": "Capteurs d'environnement",
           "learning": "Apprentissage",
@@ -76,19 +76,19 @@
         }
       },
       "thermostat_schedulers": {
-        "title": "Thermostat et planificateurs",
-        "description": "Le thermostat piloté par cet appareil et les planificateurs qui le commandent. Enregistré dès la validation.",
+        "title": "Thermostat et schedulers",
+        "description": "Le thermostat piloté par cet appareil et les schedulers qui le commandent. Enregistré dès la validation.",
         "data": {
           "vtherm_entity_id": "Entité Versatile Thermostat (VTherm)",
           "scheduler_entities": "Entités Scheduler"
         },
         "data_description": {
           "vtherm_entity_id": "Le Versatile Thermostat dont IHP apprend et anticipe la chauffe.",
-          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé plus bas."
+          "scheduler_entities": "Les switchs HACS Scheduler ou Climate Scheduler, ou les plannings natifs, qui pilotent ce VTherm. Un planning natif obtient seulement une heure de démarrage anticipée, sauf si le pilotage des plannings natifs est activé dans Plannings natifs."
         }
       },
       "native_schedule": {
-        "title": "Planifications natives",
+        "title": "Plannings natifs",
         "description": "Comment IHP lit et pilote les planifications natives. Enregistré dès la validation.",
         "data": {
           "native_schedule_drive": "Piloter les plannings natifs",

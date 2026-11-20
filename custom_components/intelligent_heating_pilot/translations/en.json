@@ -30,7 +30,7 @@
         "data_description": {
           "name": "A friendly name for this IHP device, e.g. the room it heats.",
           "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
-          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this VTherm. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on below.",
+          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this VTherm. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on in Native schedules.",
           "humidity_in_entity_id": "Room humidity sensor to refine calculations.",
           "humidity_out_entity_id": "Outdoor humidity sensor or weather entity. Monitored, not used in the prediction yet.",
           "temperature_out_entity_id": "Outdoor temperature sensor or weather entity, recorded with each heating cycle.",
@@ -84,7 +84,7 @@
         },
         "data_description": {
           "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
-          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this VTherm. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on below."
+          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this VTherm. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on in Native schedules."
         }
       },
       "native_schedule": {

@@ -241,5 +241,9 @@ def theme_definitions(theme: SettingTheme) -> tuple[SettingDefinition, ...]:
 
 
 def form_definitions() -> tuple[SettingDefinition, ...]:
-    """Return every setting that is a plain form field (the wake-up sources have their own flow)."""
-    return tuple(d for d in SettingsCatalog().all() if d.theme is not SettingTheme.WAKE_UP_SOURCES)
+    """Return every plain form field in the order of the setup form (wake-up sources excluded).
+
+    The native schedule settings come last, as they always did in the setup form.
+    """
+    fields = [d for d in SettingsCatalog().all() if d.theme is not SettingTheme.WAKE_UP_SOURCES]
+    return tuple(sorted(fields, key=lambda d: d.theme is SettingTheme.NATIVE_SCHEDULE))

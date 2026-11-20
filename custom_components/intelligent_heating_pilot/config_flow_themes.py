@@ -87,6 +87,25 @@ def normalize_theme_input(
     return values
 
 
+def drop_unchanged_defaults(
+    definitions: tuple[SettingDefinition, ...],
+    values: Mapping[str, Any],
+    stored: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Leave out the values that merely repeat a built-in default nobody stored.
+
+    A form is pre-filled with defaults, so submitting it unchanged would pin every default of
+    the theme into the entry: the menu would then offer "Apply" for nothing, and the entry would
+    hold values the user never chose.
+    """
+    defaults = {d.key: d.default for d in definitions}
+    return {
+        key: value
+        for key, value in values.items()
+        if key in stored or key not in defaults or value != defaults[key]
+    }
+
+
 def applied_snapshot(
     hass: HomeAssistant, entry: config_entries.ConfigEntry
 ) -> Mapping[str, Any] | None:
@@ -126,6 +145,7 @@ class ThemeStepsMixin:
         themes = themes_of(unapplied_keys(self.config_entry, snapshot))
         if not themes:
             return NO_PENDING_TEXT
+        _LOGGER.debug("[%s] Themes with unapplied changes: %s", self.config_entry.title, themes)
         translations = await async_get_translations(
             self.hass, self.hass.config.language, "options", [DOMAIN]
         )
@@ -185,7 +205,8 @@ class ThemeStepsMixin:
             values = normalize_theme_input(definitions, user_input)
             errors = self._validate_theme(theme, values)
             if not errors:
-                self._write_values(values)
+                stored = {**self.config_entry.data, **self.config_entry.options}
+                self._write_values(drop_unchanged_defaults(definitions, values, stored))
                 return await self.async_step_init()
             shown.update(user_input)
         return self.async_show_form(
