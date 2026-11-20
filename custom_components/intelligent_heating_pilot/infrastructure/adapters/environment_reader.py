@@ -62,6 +62,10 @@ class HAEnvironmentReader(IEnvironmentReader):
         self._humidity_out_entity_id = humidity_out_entity_id
         self._cloud_cover_entity_id = cloud_cover_entity_id
         self._device_name = get_entity_name(hass, climate_entity_id)
+        # A thermostat that has not published its first temperature after a restart
+        # is a normal transient state (its sensors are restored later). Only a
+        # temperature that disappears after having been seen is worth a warning.
+        self._temperature_seen = False
 
     async def get_current_environment(self) -> EnvironmentState | None:
         """Read current environmental state from HA entities.
@@ -79,8 +83,9 @@ class HAEnvironmentReader(IEnvironmentReader):
         # adjacent values moved the anticipated start back and forth (#258).
         current_temp = get_room_temperature(vtherm_state)
         if current_temp is None:
-            _LOGGER.warning("[%s] No room temperature available", self._device_name)
+            self._log_missing_temperature()
             return None
+        self._temperature_seen = True
 
         # Outdoor temperature is optional: a missing value stays None so the domain
         # skips the outdoor correction. Substituting the indoor temperature made it
@@ -111,6 +116,11 @@ class HAEnvironmentReader(IEnvironmentReader):
             outdoor_humidity=outdoor_humidity,
             cloud_coverage=cloud_coverage,
         )
+
+    def _log_missing_temperature(self) -> None:
+        """Log a missing room temperature, quietly until the first valid reading (#300)."""
+        level = logging.WARNING if self._temperature_seen else logging.DEBUG
+        _LOGGER.log(level, "[%s] No room temperature available", self._device_name)
 
     def _get_float_state(self, entity_id: str | None, weather_attribute: str) -> float | None:
         """Safely get float value from entity state.

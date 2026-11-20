@@ -13,7 +13,7 @@ from custom_components.intelligent_heating_pilot.infrastructure.climate_attribut
 )
 
 
-def test_get_vtherm_attribute_from_specific_states() -> None:
+def test_get_climate_attribute_from_specific_states() -> None:
     """Test reading attribute from new v8.0.0+ nested structure."""
     # GIVEN: A VTherm state with v8.0.0+ nested structure
     mock_state = Mock()
@@ -37,7 +37,7 @@ def test_get_vtherm_attribute_from_specific_states() -> None:
     assert is_active is False
 
 
-def test_get_vtherm_attribute_from_root_legacy() -> None:
+def test_get_climate_attribute_from_root_legacy() -> None:
     """Test reading attribute from legacy pre-v8.0.0 flat structure."""
     # GIVEN: A VTherm state with legacy flat structure
     mock_state = Mock()
@@ -59,7 +59,7 @@ def test_get_vtherm_attribute_from_root_legacy() -> None:
     assert is_active is True
 
 
-def test_get_vtherm_attribute_prefers_specific_states() -> None:
+def test_get_climate_attribute_prefers_specific_states() -> None:
     """Test that new nested structure takes precedence over legacy."""
     # GIVEN: A VTherm state with BOTH structures (migration scenario)
     mock_state = Mock()
@@ -78,7 +78,7 @@ def test_get_vtherm_attribute_prefers_specific_states() -> None:
     assert slope == 0.04
 
 
-def test_get_vtherm_attribute_missing_returns_default() -> None:
+def test_get_climate_attribute_missing_returns_default() -> None:
     """Test that missing attribute returns default value."""
     # GIVEN: A VTherm state without the requested attribute
     mock_state = Mock()
@@ -92,7 +92,7 @@ def test_get_vtherm_attribute_missing_returns_default() -> None:
     assert result == 99.9
 
 
-def test_get_vtherm_attribute_none_state() -> None:
+def test_get_climate_attribute_none_state() -> None:
     """Test that None state returns default."""
     # GIVEN: A None state
     mock_state = None
@@ -104,7 +104,7 @@ def test_get_vtherm_attribute_none_state() -> None:
     assert result == 0.0
 
 
-def test_get_vtherm_attribute_empty_attributes() -> None:
+def test_get_climate_attribute_empty_attributes() -> None:
     """Test that empty attributes dict returns default."""
     # GIVEN: A state with empty attributes
     mock_state = Mock()
@@ -118,7 +118,7 @@ def test_get_vtherm_attribute_empty_attributes() -> None:
     assert result == 0.0
 
 
-def test_get_vtherm_attribute_specific_states_not_dict() -> None:
+def test_get_climate_attribute_specific_states_not_dict() -> None:
     """Test fallback when specific_states is not a dict."""
     # GIVEN: A state where specific_states is not a dict (malformed)
     mock_state = Mock()
@@ -171,13 +171,13 @@ def _state(attributes: dict[str, Any]) -> Mock:
         ),
     ],
 )
-def test_get_vtherm_room_temperature(attributes: dict[str, Any], expected: float | None) -> None:
+def test_get_room_temperature(attributes: dict[str, Any], expected: float | None) -> None:
     """The smoothed ema_temp wins; current_temperature is the fallback (#258)."""
     assert get_room_temperature(_state(attributes)) == (
         pytest.approx(expected) if expected is not None else None
     )
 
 
-def test_get_vtherm_room_temperature_without_state() -> None:
+def test_get_room_temperature_without_state() -> None:
     """A missing state has no room temperature."""
     assert get_room_temperature(None) is None
