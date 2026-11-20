@@ -59,30 +59,32 @@ theme and makes reset one click.
 such as "inherit" in each field (rejected: breaks typed selectors); a separate "reset" menu
 (rejected: hides the state the user wants to see, SC-004).
 
-## D5. When values are persisted
+## D5. When values are stored and applied
 
-**Decision**: each theme form stages its values in memory; an "Apply" entry on the main menu,
-offered only while something is staged, persists once and reloads once. Closing the dialog
-discards staged values.
+**Decision**: each theme save writes the entry at once (`data` and `options` together) without
+reloading. An "Apply" entry on the main menu, offered only while the stored entry differs from the
+snapshot the coordinator loaded with, reloads once.
 
-**Rationale**: persisting updates the entry, and the entry update listener reloads the device (or,
-for the central entry, the inheriting devices). Persisting per theme would reload per theme, which
-Q4 rules out. The wake-up flow already stages the same way.
+**Rationale**: nothing lives in the dialog, so closing it loses nothing and no close
+confirmation is needed (the platform has none to offer). The unapplied state is derived from
+stored data, so it survives closing and reopening. One reload per Apply meets Q4.
 
-**Platform limits**: a menu cannot grey an entry out, so "Apply" is omitted when nothing is
-staged; the frontend gives an integration no hook on the close button, so the unapplied warning is
-text in the menu description (verify in T0).
+**Consequences**: the update listener stops reloading for option writes and keeps only the live
+`ihp_enabled` toggle; stored values can differ from the running state until Apply, a restart or
+another reload, which then picks them up. A menu cannot grey an entry out, so "Apply" is omitted
+when nothing is unapplied. The snapshot extends today's `_options_snapshot` to `data`.
 
-**Alternatives**: persist per theme (rejected: repeated reloads); a debounce on the listener
-(rejected: timing logic and flaky tests for no user gain).
+**Alternatives**: stage in memory until Apply (rejected: lost on close, and the platform offers no
+close confirmation); reload at each theme save (rejected: repeated reloads); a debounce on the
+listener (rejected: timing logic and flaky tests for no user gain).
 
 ## D6. Propagating a central change
 
-**Decision**: the central entry's update listener diffs the new options against the snapshot taken
-at load and reloads each device entry that holds none of the changed keys.
+**Decision**: the central "Apply" diffs the stored central values against the snapshot the devices
+were last reloaded with, and reloads each device entry that holds none of the changed keys.
 
 **Rationale**: matches FR-009 and Q4 exactly, uses the standard entry reload, and needs no new
-event (FR-018: the update listener is the announcement of a changed entry).
+event (FR-018: the stored central entry and its Apply are the announcement of a change).
 
 **Alternatives**: an IHP event consumed by each device (rejected: extra moving part, the entry
 listener already exists); reload every device (rejected by Q4).

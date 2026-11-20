@@ -34,7 +34,7 @@ central default configuration second (User Stories 2 and 3).
 - Q: Where does the user edit the central configuration? → A: A dedicated visible entry whose configure button opens the theme menus, without device-specific fields.
 - Q: Can the central configuration be deleted while devices exist? → A: No, deletion is refused until no device remains.
 - Q: When do devices pick up a changed central value? → A: Once, when the user applies the central changes, and only devices whose inherited value changed.
-- Q: When are changes stored? → A: Each theme form has its own save, which stages the change; an "Apply" entry on the main menu stores everything and reloads, and is offered only when something is staged.
+- Q: When are changes stored and applied? → A: Each theme form's save stores the change at once without reloading; an "Apply" entry on the main menu reloads, and is offered only while something is saved but not applied.
 - Q: Can a device override an optional sensor with "none"? → A: Yes, "none" is a valid override distinct from "inherit".
 
 ## User Scenarios & Testing *(mandatory)*
@@ -64,10 +64,11 @@ value, save, and check that the value is stored and every other value is unchang
    themes is shown and no setting field is shown yet.
 2. **Given** the theme menu, **When** the user opens "Learning" and saves a new retention,
    **Then** only the retention changes and the menu is shown again.
-3. **Given** a theme form, **When** the user leaves it without saving, **Then** nothing is staged.
-   **Given** staged changes, **When** the user chooses "Apply" on the main menu, **Then** they
-   are stored and the device reloads once; **Given** nothing is staged, **Then** "Apply" is
-   not offered.
+3. **Given** a theme form, **When** the user leaves it without saving, **Then** nothing is stored.
+   **Given** saved but unapplied changes, **When** the user chooses "Apply" on the main menu,
+   **Then** the device reloads once and uses them; **Given** nothing is unapplied, **Then**
+   "Apply" is not offered. **Given** unapplied changes, **When** the user closes the dialog
+   and reopens it, **Then** the changes are still there and "Apply" is still offered.
 4. **Given** the menu, **When** the user opens "Wake-up sources", **Then** the existing
    wake-up sources flow behaves as before.
 5. **Given** a theme form with an invalid value, **When** the user saves, **Then** the form
@@ -80,14 +81,16 @@ Feature: Device options grouped by theme
     When I open the device options and choose the "Learning" theme
     And I set the data retention to 60 days and save
     Then the options menu is shown again
+    Then the data retention stored for the device is 60 days
+    And the device has not reloaded
     And the menu offers "Apply"
     When I choose "Apply"
-    Then the data retention of the device is 60 days
+    Then the device has reloaded once and uses a data retention of 60 days
     And no other setting of the device has changed
 ```
 
 **Technical validation**: invalid and out-of-range values per theme; leaving a form without
-saving; saving two themes in a row stages both; "Apply" absent when nothing is staged; every theme and menu entry has an
+saving; saving two themes in a row keeps both; "Apply" absent when nothing is unapplied; "Apply" offered after the dialog is closed and reopened; "Apply" offered when the device failed to load; every theme and menu entry has an
 English and a French label.
 
 ---
@@ -180,8 +183,10 @@ changes while the device form is open.
 - A central sensor entity is unavailable or deleted: handled like a device-level sensor that
   is unavailable today.
 - Two edits happen at once (central value and device form): the last applied value wins and
-  no partial state is stored; staged changes are merged onto the stored values at apply time,
-  not at the time the dialog was opened.
+  no partial state is stored; each save is merged onto the stored values at the time it is
+  made, not at the time the dialog was opened.
+- Saved changes are not applied and Home Assistant restarts or the device reloads for another
+  reason: the device then runs with the saved values, which is the same as applying them.
 - Existing devices after an upgrade: every value they already hold becomes an explicit
   override, so no behaviour changes.
 - A device is added when the central configuration does not exist yet.
@@ -198,13 +203,15 @@ changes while the device form is open.
   wake-up sources, environment sensors, learning, cycle detection, anticipation behaviour.
   Native schedule settings form their own theme because they mix a device-only setting
   (the drive opt-in) with shareable ones (the keys).
-- **FR-003**: Saving a theme form MUST stage its changes and return to the main menu. The
-  main menu MUST offer "Apply" only while changes are staged; "Apply" MUST store all staged
-  changes and reload once. While changes are staged, the main menu MUST say how many
-  themes are not applied. Closing the dialog with staged changes discards them; the
-  platform offers no confirmation hook, so the warning is the menu text.
+- **FR-003**: Saving a theme form MUST store its changes at once, without reloading the
+  device, and return to the main menu. The main menu MUST offer "Apply" only while stored
+  changes have not been applied (or the device is not loaded); "Apply" MUST reload the device
+  once. While changes are unapplied, the main menu MUST say how many themes have unapplied
+  changes. Unapplied changes MUST survive closing the dialog, so no confirmation on close is
+  needed.
 - **FR-004**: The existing wake-up sources flow MUST keep its behaviour and be reachable from
-  the menu; finishing it stages its result like any other theme, and "Apply" stores it.
+  the menu; finishing it stores its result like any other theme and returns to the main menu, and
+  "Apply" reloads.
 - **FR-005**: Each theme form MUST apply the same validation as the current single form.
 - **FR-006**: The integration MUST offer a central configuration holding the shareable values:
   environment sensors, learning and cycle parameters, safety grace period, native schedule
