@@ -61,3 +61,21 @@ def test_an_optional_entity_cleared_after_being_set_is_stored_as_none() -> None:
     stored = {const.CONF_HUMIDITY_OUT_ENTITY: "sensor.h"}
 
     assert drop_unchanged_defaults(ENVIRONMENT, values, stored) == values
+
+
+def test_the_central_entry_is_ignored_when_looking_for_a_vtherm_in_use() -> None:
+    from unittest.mock import Mock
+
+    from custom_components.intelligent_heating_pilot.config_flow_themes import vtherm_in_use
+    from custom_components.intelligent_heating_pilot.const import (
+        CONF_ENTRY_TYPE,
+        ENTRY_TYPE_CENTRAL,
+    )
+
+    central = Mock(entry_id="central", data={CONF_ENTRY_TYPE: ENTRY_TYPE_CENTRAL}, options={})
+    device = Mock(entry_id="device", data={const.CONF_CLIMATE_ENTITY: "climate.a"}, options={})
+    hass = Mock()
+    hass.config_entries.async_entries.return_value = [central, device]
+
+    assert vtherm_in_use(hass, "climate.a") is True
+    assert vtherm_in_use(hass, "climate.b") is False

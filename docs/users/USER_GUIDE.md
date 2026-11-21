@@ -108,6 +108,10 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 
 **Note:** When disabled, IHP continues to learn and calculate—you'll still see predictions in sensors.
 
+### Task: Share settings between devices
+
+Open the **Central configuration** entry of Intelligent Heating Pilot, choose **Configure**, set the shared values (for example the outdoor temperature sensor), then **Apply the saved changes**. Devices that do not override a value follow it. To give one device its own value, open the group in the device's **Configure** screen and tick the setting under **Settings overridden on this device**.
+
 ### Task: Change configuration
 
 **Steps:**

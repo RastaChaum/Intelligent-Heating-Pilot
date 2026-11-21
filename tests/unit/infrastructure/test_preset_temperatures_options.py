@@ -21,6 +21,13 @@ from custom_components.intelligent_heating_pilot.infrastructure.adapters.device_
 TRV = "climate.trv"
 
 
+def _hass() -> Mock:
+    """A Home Assistant with no central configuration entry."""
+    hass = Mock()
+    hass.config_entries.async_entries.return_value = []
+    return hass
+
+
 def _state(attributes: dict) -> Mock:
     state = Mock()
     state.entity_id = TRV
@@ -161,27 +168,27 @@ class TestDeviceConfigReading:
     @pytest.mark.asyncio
     async def test_a_device_without_a_mapping_has_none(self) -> None:
         entry = _entry()
-        config = await HADeviceConfigReader(Mock(), entry).get_device_config("device")
+        config = await HADeviceConfigReader(_hass(), entry).get_device_config("device")
 
         assert config.preset_temperatures == {}
 
     @pytest.mark.asyncio
     async def test_the_mapping_is_read_from_the_options(self) -> None:
         entry = _entry({CONF_PRESET_TEMPERATURES: {"eco": 17, "comfort": "20.5"}})
-        config = await HADeviceConfigReader(Mock(), entry).get_device_config("device")
+        config = await HADeviceConfigReader(_hass(), entry).get_device_config("device")
 
         assert config.preset_temperatures == {"eco": 17.0, "comfort": 20.5}
 
     @pytest.mark.asyncio
     async def test_an_unreadable_entry_is_dropped_instead_of_failing_the_load(self) -> None:
         entry = _entry({CONF_PRESET_TEMPERATURES: {"eco": "warm", "comfort": 20.5, "boost": None}})
-        config = await HADeviceConfigReader(Mock(), entry).get_device_config("device")
+        config = await HADeviceConfigReader(_hass(), entry).get_device_config("device")
 
         assert config.preset_temperatures == {"comfort": 20.5}
 
     @pytest.mark.asyncio
     async def test_a_mapping_that_is_not_a_dict_is_ignored(self) -> None:
         entry = _entry({CONF_PRESET_TEMPERATURES: ["eco", 17]})
-        config = await HADeviceConfigReader(Mock(), entry).get_device_config("device")
+        config = await HADeviceConfigReader(_hass(), entry).get_device_config("device")
 
         assert config.preset_temperatures == {}

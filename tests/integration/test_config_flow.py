@@ -36,6 +36,7 @@ from custom_components.intelligent_heating_pilot.const import (
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.device_config_reader import (
     HADeviceConfigReader,
 )
+from tests.integration.options_helpers import save_theme
 
 pytestmark = pytest.mark.usefixtures("flow_environment")
 
@@ -74,35 +75,45 @@ THEME_KEYS = {
 }
 
 
-async def _open_theme(hass, entry_id: str, theme: str):
-    menu = await hass.config_entries.options.async_init(entry_id)
-    assert menu["type"] == "menu"
-    return await hass.config_entries.options.async_configure(
-        menu["flow_id"], {"next_step_id": theme}
-    )
-
-
 async def _save_in_themes(hass, entry_id: str, values: dict[str, Any]) -> None:
     """Save each value in the theme that holds it, as a user going through the menu does."""
+    menu = await hass.config_entries.options.async_init(entry_id)
+    assert menu["type"] == "menu"
     for theme, keys in THEME_KEYS.items():
-        form = await _open_theme(hass, entry_id, theme)
-        assert form["type"] == "form"
         subset = {key: values[key] for key in keys if key in values}
-        result = await hass.config_entries.options.async_configure(form["flow_id"], subset)
+        result = await save_theme(hass, menu["flow_id"], theme, subset)
         assert result["type"] == "menu"
 
 
 async def _all_theme_schemas(hass, entry_id: str) -> dict[Any, Any]:
-    """The fields of every theme form, merged, as the options currently show them."""
+    """The fields of every theme, merged, with the effective value of each shareable setting.
+
+    A device theme shows a picker of overridden settings; selecting them all opens the form
+    that is pre-filled with what each setting is currently worth, stored or inherited.
+    """
     schema: dict[Any, Any] = {}
     for theme in THEME_KEYS:
-        schema.update((await _open_theme(hass, entry_id, theme))["data_schema"].schema)
+        menu = await hass.config_entries.options.async_init(entry_id)
+        form = await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": theme}
+        )
+        schema.update(form["data_schema"].schema)
+        picker = next(
+            (k for k in form["data_schema"].schema if str(k) == "overridden_settings"), None
+        )
+        if picker is None:
+            continue
+        options = form["data_schema"].schema[picker].config["options"]
+        values_form = await hass.config_entries.options.async_configure(
+            form["flow_id"], {"overridden_settings": list(options)}
+        )
+        schema.update(values_form["data_schema"].schema)
     return schema
 
 
 @pytest.mark.asyncio
-async def test_user_flow_creates_entry_with_all_values(hass) -> None:
-    """Create entry with user-provided values and preserve them in data."""
+async def test_user_flow_asks_only_for_the_device_specific_values(hass) -> None:
+    """Device creation asks for name, thermostat and schedulers and stores nothing else (#302)."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
         context={"source": "user"},
@@ -110,44 +121,23 @@ async def test_user_flow_creates_entry_with_all_values(hass) -> None:
 
     assert result["type"] == "form"
     assert result["errors"] == {}
+    assert {str(key) for key in result["data_schema"].schema} == {
+        CONF_NAME,
+        CONF_CLIMATE_ENTITY,
+        CONF_SCHEDULER_ENTITIES,
+    }
 
     user_input = {
         CONF_NAME: "Living Room IHP",
         CONF_CLIMATE_ENTITY: "climate.living_room_vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.schedule_1", "switch.schedule_2"],
-        CONF_HUMIDITY_IN_ENTITY: "sensor.living_room_humidity",
-        CONF_HUMIDITY_OUT_ENTITY: "sensor.outdoor_humidity",
-        CONF_CLOUD_COVER_ENTITY: "sensor.cloud_cover",
-        CONF_LHS_RETENTION_DAYS: 40,
-        CONF_DEAD_TIME_MINUTES: 10.0,
-        CONF_AUTO_LEARNING: False,
-        CONF_TEMP_DELTA_THRESHOLD: 0.4,
-        CONF_CYCLE_SPLIT_DURATION_MINUTES: 15,
-        CONF_MIN_CYCLE_DURATION_MINUTES: 6,
-        CONF_MAX_CYCLE_DURATION_MINUTES: 180,
-        CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: 18,
     }
 
     result2 = await hass.config_entries.flow.async_configure(result["flow_id"], user_input)
 
     assert result2["type"] == "create_entry"
     assert result2["title"] == "Living Room IHP"
-
-    data = result2["data"]
-    assert data[CONF_NAME] == "Living Room IHP"
-    assert data[CONF_CLIMATE_ENTITY] == "climate.living_room_vtherm"
-    assert data[CONF_SCHEDULER_ENTITIES] == ["switch.schedule_1", "switch.schedule_2"]
-    assert data[CONF_HUMIDITY_IN_ENTITY] == "sensor.living_room_humidity"
-    assert data[CONF_HUMIDITY_OUT_ENTITY] == "sensor.outdoor_humidity"
-    assert data[CONF_CLOUD_COVER_ENTITY] == "sensor.cloud_cover"
-    assert data[CONF_LHS_RETENTION_DAYS] == 40
-    assert data[CONF_DEAD_TIME_MINUTES] == 10.0
-    assert data[CONF_AUTO_LEARNING] is False
-    assert data[CONF_TEMP_DELTA_THRESHOLD] == 0.4
-    assert data[CONF_CYCLE_SPLIT_DURATION_MINUTES] == 15
-    assert data[CONF_MIN_CYCLE_DURATION_MINUTES] == 6
-    assert data[CONF_MAX_CYCLE_DURATION_MINUTES] == 180
-    assert data[CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES] == 18
+    assert result2["data"] == user_input
 
 
 @pytest.mark.asyncio

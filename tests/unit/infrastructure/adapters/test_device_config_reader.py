@@ -25,8 +25,10 @@ from custom_components.intelligent_heating_pilot.infrastructure.adapters.device_
 
 @pytest.fixture
 def mock_hass() -> Mock:
-    """Create a mock Home Assistant instance."""
-    return Mock()
+    """Create a mock Home Assistant instance with no central configuration entry."""
+    hass = Mock()
+    hass.config_entries.async_entries.return_value = []
+    return hass
 
 
 @pytest.fixture

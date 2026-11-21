@@ -75,14 +75,19 @@ def context() -> dict:
         new_callable=PropertyMock,
         return_value=device.entry,
     )
-    translations = patch(
-        "custom_components.intelligent_heating_pilot.config_flow_themes.async_get_translations",
-        AsyncMock(return_value={}),
-    )
+    translations = [
+        patch(
+            f"custom_components.intelligent_heating_pilot.{module}.async_get_translations",
+            AsyncMock(return_value={}),
+        )
+        for module in ("config_flow_themes", "config_flow_overrides")
+    ]
     patcher.start()
-    translations.start()
+    for translation in translations:
+        translation.start()
     yield {"device": device, "flow": device.new_flow(), "result": None}
-    translations.stop()
+    for translation in translations:
+        translation.stop()
     patcher.stop()
 
 
@@ -116,9 +121,7 @@ def another_device(context: dict, vtherm: str) -> None:
 def saved_in_theme(context: dict, days: int, theme: str) -> None:
     _open(context)
     _choose(context, theme)
-    context["result"] = _run(
-        getattr(context["flow"], f"async_step_{theme}")({CONF_LHS_RETENTION_DAYS: days})
-    )
+    _override_retention(context, theme, days)
 
 
 @when("I open the device options")
@@ -132,9 +135,18 @@ def open_and_choose(context: dict, theme: str) -> None:
     _choose(context, theme)
 
 
+def _override_retention(context: dict, theme: str, days: int) -> None:
+    """Override the retention in its theme: pick it, then give its value."""
+    flow = context["flow"]
+    _run(getattr(flow, f"async_step_{theme}")({"overridden_settings": [CONF_LHS_RETENTION_DAYS]}))
+    context["result"] = _run(
+        getattr(flow, f"async_step_{theme}_values")({CONF_LHS_RETENTION_DAYS: days})
+    )
+
+
 @when(parsers.parse("I set the data retention to {days:d} days and save"))
 def set_retention(context: dict, days: int) -> None:
-    context["result"] = _run(context["flow"].async_step_learning({CONF_LHS_RETENTION_DAYS: days}))
+    _override_retention(context, "learning", days)
 
 
 @when(parsers.parse('I submit the thermostat "{vtherm}"'))
