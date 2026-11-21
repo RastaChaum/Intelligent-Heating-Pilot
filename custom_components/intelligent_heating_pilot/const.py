@@ -41,6 +41,16 @@ from .domain.constants import (  # noqa: F401  re-exported for the Home Assistan
 
 VERSION = "0.7.1"
 DOMAIN = "intelligent_heating_pilot"
+# The central configuration is a config entry of this domain holding the values devices inherit.
+CONF_ENTRY_TYPE = "entry_type"
+ENTRY_TYPE_CENTRAL = "central"
+CENTRAL_UNIQUE_ID = "central_configuration"
+CENTRAL_ENTRY_TITLE = "Central configuration"
+# The title is stored with the entry, so it cannot be a translation key: it follows the language
+# Home Assistant runs in when the entry is created.
+CENTRAL_ENTRY_TITLES = {"fr": "Configuration centrale"}
+# hass.data[DOMAIN] key of the central values the devices were last reloaded with.
+CENTRAL_APPLIED_KEY = "central_applied_values"
 EVENT_DEAD_TIME_UPDATED = f"{DOMAIN}_dead_time_updated"
 # Configuration keys
 CONF_NAME = "name"

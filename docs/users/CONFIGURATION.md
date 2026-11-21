@@ -313,6 +313,19 @@ Need to change entities or settings after setup?
 
 The **Name** cannot be changed there: rename the device from its device page.
 
+### Central Configuration
+
+With several devices, the same values (outdoor sensors, learning and cycle settings, safety grace period, native schedule keys) would otherwise be entered once per device. IHP therefore keeps a **Central configuration** entry next to your devices in **Settings** → **Devices & Services** → **Intelligent Heating Pilot**. It is created automatically with your first device, and **Configure** opens the same groups of settings as a device, for the values that can be shared.
+
+- **A device follows the central value unless it has its own.** A new device asks only for its name, thermostat and schedulers: everything else is inherited.
+- **Override a value on one device:** in a group of a device's settings, tick the setting under **Settings overridden on this device**, then enter its value. The group's text lists each shared setting as *inherited* or *overridden*, with its value.
+- **Go back to inheriting:** untick the setting and submit.
+- **Use no sensor on one device** although a central sensor is set: tick the sensor and leave it empty.
+- **Never inherited:** the thermostat, schedulers, wake-up sources, the indoor humidity sensor and **Drive Native Schedules**, which lets IHP act on the thermostat and stays a decision per device.
+- **Apply the saved changes** in the central configuration reloads, once, only the devices that inherit a changed value.
+- Devices created before this feature keep every value they already hold as their own.
+- Deleting the central configuration is not blocked by Home Assistant: devices then use the built-in defaults for what they inherit, a warning is logged, and the entry is created again at the next restart or device reload, empty.
+
 ### The Settings Menu
 
 The settings of a device are grouped by theme, so you only see the fields relevant to what you are changing:

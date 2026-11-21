@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import Mock, PropertyMock, patch
+from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 
 import pytest
 
@@ -37,6 +37,13 @@ DEFAULTS = {
     CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY: "temperature",
     CONF_NATIVE_SCHEDULE_FALLBACK_PRESET: "comfort",
 }
+
+
+def _hass() -> Mock:
+    """A Home Assistant with no central configuration entry."""
+    hass = Mock()
+    hass.config_entries.async_entries.return_value = []
+    return hass
 
 
 def _entry(data: dict | None = None, options: dict | None = None) -> Mock:
@@ -79,7 +86,7 @@ class TestDeviceConfig:
 class TestDeviceConfigReader:
     @pytest.mark.asyncio
     async def test_the_defaults_apply_when_nothing_is_configured(self) -> None:
-        config = await HADeviceConfigReader(Mock(), _entry()).get_device_config("device")
+        config = await HADeviceConfigReader(_hass(), _entry()).get_device_config("device")
 
         assert (
             config.native_schedule_drive,
@@ -100,7 +107,7 @@ class TestDeviceConfigReader:
             },
         )
 
-        config = await HADeviceConfigReader(Mock(), entry).get_device_config("device")
+        config = await HADeviceConfigReader(_hass(), entry).get_device_config("device")
 
         assert config.native_schedule_drive is True
         assert config.native_schedule_preset_key == "mode"
@@ -120,7 +127,7 @@ class TestDeviceConfigReader:
             }
         )
 
-        config = await HADeviceConfigReader(Mock(), entry).get_device_config("device")
+        config = await HADeviceConfigReader(_hass(), entry).get_device_config("device")
 
         assert config.native_schedule_preset_key == "preset"
         assert config.native_schedule_temperature_key == "temperature"
@@ -130,7 +137,7 @@ class TestDeviceConfigReader:
     async def test_the_text_is_trimmed(self) -> None:
         entry = _entry(options={CONF_NATIVE_SCHEDULE_PRESET_KEY: "  mode  "})
 
-        config = await HADeviceConfigReader(Mock(), entry).get_device_config("device")
+        config = await HADeviceConfigReader(_hass(), entry).get_device_config("device")
 
         assert config.native_schedule_preset_key == "mode"
 
@@ -143,17 +150,30 @@ def _schema_defaults(result) -> dict:
     }
 
 
+async def _native_defaults(flow) -> dict:
+    """The defaults the native schedule theme shows: the drive, then the overridable keys."""
+    picker = {"overridden_settings": list(NATIVE_KEYS[1:])}
+    with patch(
+        "custom_components.intelligent_heating_pilot.config_flow_overrides.async_get_translations",
+        AsyncMock(return_value={}),
+    ):
+        theme = _schema_defaults(await flow.async_step_native_schedule())
+        values = _schema_defaults(await flow.async_step_native_schedule(picker))
+    return {**theme, **values}
+
+
 class TestForms:
     @pytest.mark.asyncio
-    async def test_the_setup_form_offers_the_four_options_with_their_defaults(self) -> None:
+    async def test_the_setup_form_leaves_the_four_options_to_the_settings_menus(self) -> None:
         flow = IntelligentHeatingPilotConfigFlow()
         flow.hass = Mock()
         flow.hass.states.async_all = Mock(return_value=[])
+        flow.hass.config_entries.async_entries = Mock(return_value=[])
+        flow.hass.config.language = "en"
 
-        defaults = _schema_defaults(await flow.async_step_user())
+        fields = {str(key) for key in (await flow.async_step_user())["data_schema"].schema}
 
-        for key in NATIVE_KEYS:
-            assert defaults[key] == DEFAULTS[key]
+        assert not fields & set(NATIVE_KEYS)
 
     @pytest.mark.asyncio
     async def test_the_options_form_shows_the_saved_values(self) -> None:
@@ -167,13 +187,15 @@ class TestForms:
         flow = IntelligentHeatingPilotOptionsFlow()
         flow.hass = Mock()
         flow.hass.states.async_all = Mock(return_value=[])
+        flow.hass.config_entries.async_entries = Mock(return_value=[])
+        flow.hass.config.language = "en"
         with patch.object(
             IntelligentHeatingPilotOptionsFlow,
             "config_entry",
             new_callable=PropertyMock,
             return_value=entry,
         ):
-            defaults = _schema_defaults(await flow.async_step_native_schedule())
+            defaults = await _native_defaults(flow)
 
         assert defaults[CONF_NATIVE_SCHEDULE_DRIVE] is True
         assert defaults[CONF_NATIVE_SCHEDULE_PRESET_KEY] == "mode"
@@ -185,13 +207,15 @@ class TestForms:
         flow = IntelligentHeatingPilotOptionsFlow()
         flow.hass = Mock()
         flow.hass.states.async_all = Mock(return_value=[])
+        flow.hass.config_entries.async_entries = Mock(return_value=[])
+        flow.hass.config.language = "en"
         with patch.object(
             IntelligentHeatingPilotOptionsFlow,
             "config_entry",
             new_callable=PropertyMock,
             return_value=_entry(),
         ):
-            defaults = _schema_defaults(await flow.async_step_native_schedule())
+            defaults = await _native_defaults(flow)
 
         for key in NATIVE_KEYS:
             assert defaults[key] == DEFAULTS[key]

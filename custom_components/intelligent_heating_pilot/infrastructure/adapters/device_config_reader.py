@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from ...const import (
@@ -30,22 +31,15 @@ from ...const import (
     CONF_TEMP_DELTA_THRESHOLD,
     CONF_TEMPERATURE_OUT_ENTITY,
     CONF_WAKE_UP_SOURCES,
-    DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
-    DEFAULT_AUTO_LEARNING,
-    DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
-    DEFAULT_DEAD_TIME_MINUTES,
     DEFAULT_LHS_RETENTION_DAYS,
-    DEFAULT_MAX_CYCLE_DURATION_MINUTES,
-    DEFAULT_MIN_CYCLE_DURATION_MINUTES,
-    DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET,
-    DEFAULT_NATIVE_SCHEDULE_PRESET_KEY,
-    DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY,
-    DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES,
-    DEFAULT_TASK_RANGE_DAYS,
-    DEFAULT_TEMP_DELTA_THRESHOLD,
 )
+from ...domain.interfaces.central_config_reader_interface import ICentralConfigReader
 from ...domain.interfaces.device_config_reader_interface import DeviceConfig, IDeviceConfigReader
+from ...domain.services.settings_catalog import SettingsCatalog
+from ...domain.services.settings_resolver import SettingsResolver
+from ...domain.value_objects.resolved_setting import ResolvedSetting
 from ...utils.config_helpers import as_bool
+from .central_config_reader import HACentralConfigReader
 from .preset_temperatures_config import parse_preset_temperatures
 from .wake_up_sources_config import parse_wake_up_sources
 
@@ -64,15 +58,25 @@ class HADeviceConfigReader(IDeviceConfigReader):
     corresponds to the config entry ID.
     """
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        central_reader: ICentralConfigReader | None = None,
+    ) -> None:
         """Initialize the device config reader.
 
         Args:
             hass: Home Assistant instance
             config_entry: The config entry for this IHP integration instance
+            central_reader: Where the values shared by every device come from; the central
+                config entry by default
         """
         self._hass = hass
         self._config_entry = config_entry
+        self._central_reader = central_reader or HACentralConfigReader(hass)
+        self._catalog = SettingsCatalog()
+        self._resolver = SettingsResolver()
 
     async def get_device_config(self, device_id: str) -> DeviceConfig:
         """Retrieve configuration for a specific device.
@@ -95,131 +99,80 @@ class HADeviceConfigReader(IDeviceConfigReader):
                 f"This integration instance manages device {self._config_entry.entry_id}"
             )
 
-        # Extract configuration with options override support
-        config = dict(self._config_entry.data)
-        options = dict(self._config_entry.options or {})
+        # A device stores its own values in data and options (options win); a key it does not
+        # store is inherited from the central configuration, else the built-in default (#302).
+        device_values: dict[str, Any] = {
+            **self._config_entry.data,
+            **self._config_entry.options,
+        }
+        # A device that only stores the legacy retention key still owns its retention (#186).
+        if (
+            CONF_LHS_RETENTION_DAYS not in device_values
+            and device_values.get(CONF_DATA_RETENTION_DAYS) is not None
+        ):
+            device_values[CONF_LHS_RETENTION_DAYS] = device_values[CONF_DATA_RETENTION_DAYS]
+        resolved = self._resolver.resolve(
+            self._catalog, device_values, self._central_reader.read_central_values()
+        )
 
-        vtherm_entity = self._get_config_value(config, options, CONF_CLIMATE_ENTITY)
+        vtherm_entity = device_values.get(CONF_CLIMATE_ENTITY)
         if not vtherm_entity:
-            raise ValueError("Missing required climate_entity_id in configuration")
+            raise ValueError("Missing required vtherm_entity_id in configuration")
 
-        scheduler_entities = self._get_config_value(config, options, CONF_SCHEDULER_ENTITIES) or []
+        scheduler_entities = device_values.get(CONF_SCHEDULER_ENTITIES) or []
         if isinstance(scheduler_entities, str):
             scheduler_entities = [scheduler_entities]
         scheduler_entities = list(scheduler_entities) if scheduler_entities else []
 
-        humidity_in = self._get_config_value(config, options, CONF_HUMIDITY_IN_ENTITY)
-        humidity_out = self._get_config_value(config, options, CONF_HUMIDITY_OUT_ENTITY)
-        temperature_out = self._get_config_value(config, options, CONF_TEMPERATURE_OUT_ENTITY)
-        cloud_cover = self._get_config_value(config, options, CONF_CLOUD_COVER_ENTITY)
-
         # CONF_LHS_RETENTION_DAYS is the only key the config and options forms write, so it must
         # win; CONF_DATA_RETENTION_DAYS is only a fallback for legacy entries (#186)
-        data_retention = self._get_config_value(config, options, CONF_LHS_RETENTION_DAYS)
-        if data_retention is None:
-            data_retention = self._get_config_value(config, options, CONF_DATA_RETENTION_DAYS)
-        lhs_retention_days = int(
-            data_retention if data_retention is not None else DEFAULT_LHS_RETENTION_DAYS
-        )
+        retention = self._number(resolved, CONF_LHS_RETENTION_DAYS, int, allow_default=False)
+        if retention is None:
+            legacy = device_values.get(CONF_DATA_RETENTION_DAYS)
+            retention = int(legacy) if legacy is not None else DEFAULT_LHS_RETENTION_DAYS
 
-        dead_time = self._get_config_value(config, options, CONF_DEAD_TIME_MINUTES)
-        dead_time_minutes = float(dead_time if dead_time is not None else DEFAULT_DEAD_TIME_MINUTES)
-
-        auto_learning_value = self._get_config_value(config, options, CONF_AUTO_LEARNING)
-        auto_learning = bool(
-            auto_learning_value if auto_learning_value is not None else DEFAULT_AUTO_LEARNING
-        )
-
-        # Heating cycle detection parameters
-        temp_delta = self._get_config_value(config, options, CONF_TEMP_DELTA_THRESHOLD)
-        temp_delta_threshold = float(
-            temp_delta if temp_delta is not None else DEFAULT_TEMP_DELTA_THRESHOLD
-        )
-
-        cycle_split = self._get_config_value(config, options, CONF_CYCLE_SPLIT_DURATION_MINUTES)
-        cycle_split_duration_minutes = int(
-            cycle_split if cycle_split is not None else DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
-        )
-
-        min_cycle = self._get_config_value(config, options, CONF_MIN_CYCLE_DURATION_MINUTES)
-        min_cycle_duration_minutes = int(
-            min_cycle if min_cycle is not None else DEFAULT_MIN_CYCLE_DURATION_MINUTES
-        )
-
-        max_cycle = self._get_config_value(config, options, CONF_MAX_CYCLE_DURATION_MINUTES)
-        max_cycle_duration_minutes = int(
-            max_cycle if max_cycle is not None else DEFAULT_MAX_CYCLE_DURATION_MINUTES
-        )
-
-        # IHP enabled state (default to True for backward compatibility)
-        ihp_enabled_value = self._get_config_value(config, options, CONF_IHP_ENABLED)
-        ihp_enabled = as_bool(ihp_enabled_value, default=True)
-
-        task_range = self._get_config_value(config, options, CONF_TASK_RANGE_DAYS)
-        task_range_days = int(task_range if task_range is not None else DEFAULT_TASK_RANGE_DAYS)
-
-        recalc_tolerance = self._get_config_value(
-            config,
-            options,
-            CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
-        )
-        anticipation_recalc_tolerance_minutes = int(
-            recalc_tolerance
-            if recalc_tolerance is not None
-            else DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
-        )
-
-        safety_grace = self._get_config_value(config, options, CONF_SAFETY_SHUTOFF_GRACE_MINUTES)
-        safety_shutoff_grace_minutes = int(
-            safety_grace if safety_grace is not None else DEFAULT_SAFETY_SHUTOFF_GRACE_MINUTES
-        )
-
-        native_drive = self._get_config_value(config, options, CONF_NATIVE_SCHEDULE_DRIVE)
-        native_preset_key = self._get_text(
-            config, options, CONF_NATIVE_SCHEDULE_PRESET_KEY, DEFAULT_NATIVE_SCHEDULE_PRESET_KEY
-        )
-        native_temperature_key = self._get_text(
-            config,
-            options,
-            CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY,
-            DEFAULT_NATIVE_SCHEDULE_TEMPERATURE_KEY,
-        )
-        native_fallback_preset = self._get_text(
-            config,
-            options,
-            CONF_NATIVE_SCHEDULE_FALLBACK_PRESET,
-            DEFAULT_NATIVE_SCHEDULE_FALLBACK_PRESET,
-        )
+        ihp_enabled = as_bool(device_values.get(CONF_IHP_ENABLED), default=True)
+        native_drive = device_values.get(CONF_NATIVE_SCHEDULE_DRIVE)
 
         device_config = DeviceConfig(
             device_id=device_id,
             climate_entity_id=vtherm_entity,
             scheduler_entities=scheduler_entities,
-            humidity_in_entity_id=humidity_in,
-            humidity_out_entity_id=humidity_out,
-            temperature_out_entity_id=temperature_out,
-            cloud_cover_entity_id=cloud_cover,
-            lhs_retention_days=lhs_retention_days,
-            dead_time_minutes=dead_time_minutes,
-            auto_learning=auto_learning,
-            temp_delta_threshold=temp_delta_threshold,
-            cycle_split_duration_minutes=cycle_split_duration_minutes,
-            min_cycle_duration_minutes=min_cycle_duration_minutes,
-            max_cycle_duration_minutes=max_cycle_duration_minutes,
+            humidity_in_entity_id=device_values.get(CONF_HUMIDITY_IN_ENTITY),
+            humidity_out_entity_id=self._entity(resolved, CONF_HUMIDITY_OUT_ENTITY),
+            temperature_out_entity_id=self._entity(resolved, CONF_TEMPERATURE_OUT_ENTITY),
+            cloud_cover_entity_id=self._entity(resolved, CONF_CLOUD_COVER_ENTITY),
+            lhs_retention_days=retention,
+            dead_time_minutes=self._number(resolved, CONF_DEAD_TIME_MINUTES, float),
+            auto_learning=bool(self._value(resolved, CONF_AUTO_LEARNING)),
+            temp_delta_threshold=self._number(resolved, CONF_TEMP_DELTA_THRESHOLD, float),
+            cycle_split_duration_minutes=self._number(
+                resolved, CONF_CYCLE_SPLIT_DURATION_MINUTES, int
+            ),
+            min_cycle_duration_minutes=self._number(resolved, CONF_MIN_CYCLE_DURATION_MINUTES, int),
+            max_cycle_duration_minutes=self._number(resolved, CONF_MAX_CYCLE_DURATION_MINUTES, int),
             ihp_enabled=ihp_enabled,
-            task_range_days=task_range_days,
-            anticipation_recalc_tolerance_minutes=anticipation_recalc_tolerance_minutes,
-            safety_shutoff_grace_minutes=safety_shutoff_grace_minutes,
+            task_range_days=self._number(resolved, CONF_TASK_RANGE_DAYS, int),
+            anticipation_recalc_tolerance_minutes=self._number(
+                resolved, CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES, int
+            ),
+            safety_shutoff_grace_minutes=self._number(
+                resolved, CONF_SAFETY_SHUTOFF_GRACE_MINUTES, int
+            ),
             native_schedule_drive=bool(native_drive) if native_drive is not None else False,
-            native_schedule_preset_key=native_preset_key,
-            native_schedule_temperature_key=native_temperature_key,
-            native_schedule_fallback_preset=native_fallback_preset,
-            wake_up_sources=parse_wake_up_sources(
-                self._get_config_value(config, options, CONF_WAKE_UP_SOURCES),
-                has_scheduler=bool(scheduler_entities),
+            native_schedule_preset_key=self._text(resolved, CONF_NATIVE_SCHEDULE_PRESET_KEY),
+            native_schedule_temperature_key=self._text(
+                resolved, CONF_NATIVE_SCHEDULE_TEMPERATURE_KEY
+            ),
+            native_schedule_fallback_preset=self._text(
+                resolved, CONF_NATIVE_SCHEDULE_FALLBACK_PRESET
             ),
             preset_temperatures=parse_preset_temperatures(
-                self._get_config_value(config, options, CONF_PRESET_TEMPERATURES)
+                device_values.get(CONF_PRESET_TEMPERATURES)
+            ),
+            wake_up_sources=parse_wake_up_sources(
+                device_values.get(CONF_WAKE_UP_SOURCES),
+                has_scheduler=bool(scheduler_entities),
             ),
         )
 
@@ -237,37 +190,40 @@ class HADeviceConfigReader(IDeviceConfigReader):
         """
         return [self._config_entry.entry_id]
 
-    @staticmethod
-    def _get_config_value(config: dict[str, Any], options: dict[str, Any], key: str) -> Any:
-        """Get configuration value with options override support.
+    def _value(self, resolved: Mapping[str, ResolvedSetting], key: str) -> Any:
+        """Return a resolved value, or the catalog default when it is ``None``.
 
-        Options take precedence over config data.
+        ``None`` in an entry has always meant "use the default" for a plain setting; only the
+        optional sensors keep ``None`` as a value of their own.
         """
-        if key in options:
-            return options.get(key)
-        else:
-            return config.get(key)
+        value = resolved[key].value
+        return self._catalog.get(key).default if value is None else value
 
-    @classmethod
-    def _get_text(
-        cls, config: dict[str, Any], options: dict[str, Any], key: str, default: str
-    ) -> str:
-        """Get a text option, trimmed; a blank value gives the default.
+    def _number(
+        self,
+        resolved: Mapping[str, ResolvedSetting],
+        key: str,
+        cast: Callable[[Any], Any],
+        allow_default: bool = True,
+    ) -> Any:
+        """Return a resolved number cast to its type; ``None`` falls back to the default."""
+        value = resolved[key].value
+        if value is None:
+            return cast(self._catalog.get(key).default) if allow_default else None
+        return cast(value)
+
+    @staticmethod
+    def _entity(resolved: Mapping[str, ResolvedSetting], key: str) -> str | None:
+        """Return an optional sensor: an entity id, or ``None`` for none."""
+        value = resolved[key].value
+        return str(value) if value else None
+
+    def _text(self, resolved: Mapping[str, ResolvedSetting], key: str) -> str:
+        """Return a resolved text, trimmed; a blank value gives the default.
 
         A free text field can be saved empty, which would otherwise make the whole device
         configuration invalid and the integration fail to load.
         """
-        value = cls._get_config_value(config, options, key)
+        value = resolved[key].value
         text = value.strip() if isinstance(value, str) else ""
-        return text or default
-
-    @staticmethod
-    def _get_scheduler_entities(config: dict[str, Any], options: dict[str, Any]) -> list[str]:
-        """Extract scheduler entities from configuration.
-
-        Returns list of entity IDs, or empty list if not found.
-        """
-        scheduler_entities = (
-            options.get(CONF_SCHEDULER_ENTITIES) or config.get(CONF_SCHEDULER_ENTITIES) or []
-        )
-        return list(scheduler_entities) if scheduler_entities else []
+        return text or str(self._catalog.get(key).default)

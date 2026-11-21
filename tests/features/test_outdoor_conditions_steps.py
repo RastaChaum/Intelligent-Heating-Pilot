@@ -88,6 +88,7 @@ def outdoor_context() -> dict:
 def _make_hass(outdoor_context: dict) -> Mock:
     hass = Mock()
     hass.states.get = Mock(side_effect=outdoor_context["states"].get)
+    hass.config_entries.async_entries.return_value = []
     return hass
 
 

@@ -8,7 +8,7 @@ offered while the stored entry differs from what the device was loaded with.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING, Any
 
 from homeassistant import config_entries
@@ -20,6 +20,7 @@ from .config_flow_selectors import _is_blank, as_list, build_theme_schema, theme
 from .const import DOMAIN
 from .domain.constants import CONF_CLIMATE_ENTITY, CONF_SCHEDULER_ENTITIES
 from .domain.value_objects.setting_definition import SettingDefinition, SettingTheme
+from .infrastructure.adapters.central_entry import is_central_entry
 from .infrastructure.adapters.entry_changes import themes_of, unapplied_keys
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +50,15 @@ MENU_ORDER = (
 )
 
 
+CENTRAL_MENU_ORDER = (
+    SettingTheme.NATIVE_SCHEDULE,
+    SettingTheme.ENVIRONMENT,
+    SettingTheme.LEARNING,
+    SettingTheme.CYCLE_DETECTION,
+    SettingTheme.ANTICIPATION,
+)
+
+
 def configured_vtherm(entry: config_entries.ConfigEntry) -> Any:
     """Return the VTherm a device drives: the options value when set, else the setup value."""
     if CONF_CLIMATE_ENTITY in entry.options:
@@ -66,7 +76,7 @@ def vtherm_in_use(hass: HomeAssistant, vtherm: str, exclude_entry_id: str | None
     return any(
         configured_vtherm(entry) == vtherm
         for entry in hass.config_entries.async_entries(DOMAIN)
-        if entry.entry_id != exclude_entry_id
+        if entry.entry_id != exclude_entry_id and not is_central_entry(entry)
     )
 
 
@@ -135,22 +145,82 @@ class ThemeStepsMixin:
             self, user_input: dict[str, Any] | None = None
         ) -> ConfigFlowResult: ...
 
+    # -- what differs between the device options and the central configuration ------------------
+
+    def _menu_themes(self) -> tuple[SettingTheme, ...]:
+        """Return the themes the menu lists."""
+        return MENU_ORDER
+
+    def _form_definitions(self, theme: SettingTheme) -> tuple[SettingDefinition, ...]:
+        """Return the settings the form of a theme shows."""
+        return theme_definitions(theme)
+
     def _extra_menu_entries(self) -> list[str]:
-        """Return the menu entries that depend on the device, after the fixed themes."""
+        """Return the menu entries that depend on the device, after the themes."""
         return []
 
-    def _is_applied(self) -> bool:
-        """Tell whether the device runs with what is stored: nothing to apply."""
-        snapshot = applied_snapshot(self.hass, self.config_entry)
-        return snapshot is not None and not unapplied_keys(self.config_entry, snapshot)
+    def _step_id(self, theme: SettingTheme) -> str:
+        """Return the step id of the form of a theme."""
+        return theme.value
 
-    async def _pending_text(self) -> str:
-        """Name the themes whose stored values the device has not applied yet."""
+    def _shown_values(self) -> dict[str, Any]:
+        """Return the stored values the forms are pre-filled from."""
+        return {**self.config_entry.data, **self.config_entry.options}
+
+    def _unapplied(self) -> tuple[bool, set[str]]:
+        """Return whether "Apply" has something to do, and the keys that changed.
+
+        A device that is not running has nothing to compare with: "Apply" is then offered, so
+        that a device that failed to load can be reloaded once its settings are fixed.
+        """
         snapshot = applied_snapshot(self.hass, self.config_entry)
-        themes = themes_of(unapplied_keys(self.config_entry, snapshot))
+        if snapshot is None:
+            return True, set()
+        keys = unapplied_keys(self.config_entry, snapshot)
+        return bool(keys), keys
+
+    def _apply(self) -> None:
+        """Make the saved settings take effect."""
+        entry = self.config_entry
+        _LOGGER.info("[%s] Applying the saved settings", entry.title)
+        self.hass.config_entries.async_schedule_reload(entry.entry_id)
+
+    def _write_values(self, values: Mapping[str, Any], remove: Collection[str] = ()) -> None:
+        """Merge values onto the entry as it is stored now, in one update, without reloading.
+
+        Keys in ``remove`` are dropped from both the data and the options: a legacy entry holds
+        some settings in its data, and an options key cannot hide a data key by being absent.
+
+        The merge is done on the current entry, not on the one the dialog opened with, so that a
+        change made elsewhere meanwhile is kept. A new VTherm also becomes the entry's unique id
+        in the same update: updating the unique id alone would run the update listener with the
+        previous options.
+        """
+        entry = self.config_entry
+        options = {k: v for k, v in {**entry.options, **values}.items() if k not in remove}
+        changes: dict[str, Any] = {"options": options}
+        if any(key in entry.data for key in remove):
+            changes["data"] = {k: v for k, v in entry.data.items() if k not in remove}
+        if values:
+            _LOGGER.info("[%s] Saving settings: %s", entry.title, ", ".join(sorted(values)))
+        if remove:
+            _LOGGER.info(
+                "[%s] Settings back to inherited: %s", entry.title, ", ".join(sorted(remove))
+            )
+        vtherm = options.get(CONF_CLIMATE_ENTITY)
+        if vtherm and vtherm != configured_vtherm(entry):
+            _LOGGER.info("[%s] VTherm changed to %s", entry.title, vtherm)
+            changes["unique_id"] = vtherm
+        self.hass.config_entries.async_update_entry(entry, **changes)
+
+    # -- shared steps -------------------------------------------------------------------------
+
+    async def _pending_text(self, keys: set[str]) -> str:
+        """Name the themes whose stored values have not been applied yet."""
+        themes = themes_of(keys)
+        _LOGGER.debug("[%s] Themes with unapplied changes: %s", self.config_entry.title, themes)
         if not themes:
             return NO_PENDING_TEXT
-        _LOGGER.debug("[%s] Themes with unapplied changes: %s", self.config_entry.title, themes)
         translations = await async_get_translations(
             self.hass, self.hass.config.language, "options", [DOMAIN]
         )
@@ -161,33 +231,16 @@ class ThemeStepsMixin:
 
     async def _show_menu(self) -> ConfigFlowResult:
         """Show the themes, and "Apply" only while something is stored and not applied."""
-        menu = [theme.value for theme in MENU_ORDER]
+        menu = [self._step_id(theme) for theme in self._menu_themes()]
         menu += self._extra_menu_entries()
-        if not self._is_applied():
+        needs_apply, keys = self._unapplied()
+        if needs_apply:
             menu.append(STEP_APPLY)
         return self.async_show_menu(
             step_id="init",
             menu_options=menu,
-            description_placeholders={"pending": await self._pending_text()},
+            description_placeholders={"pending": await self._pending_text(keys)},
         )
-
-    def _write_values(self, values: Mapping[str, Any]) -> None:
-        """Merge values onto the entry as it is stored now, in one update, without reloading.
-
-        The merge is done on the current entry, not on the one the dialog opened with, so that a
-        change made elsewhere meanwhile is kept. A new VTherm also becomes the entry's unique id
-        in the same update: updating the unique id alone would run the update listener with the
-        previous options.
-        """
-        entry = self.config_entry
-        options = {**entry.options, **values}
-        _LOGGER.info("[%s] Saving settings: %s", entry.title, ", ".join(sorted(values)))
-        vtherm = options.get(CONF_CLIMATE_ENTITY)
-        if vtherm and vtherm != configured_vtherm(entry):
-            _LOGGER.info("[%s] VTherm changed to %s", entry.title, vtherm)
-            self.hass.config_entries.async_update_entry(entry, unique_id=vtherm, options=options)
-        else:
-            self.hass.config_entries.async_update_entry(entry, options=options)
 
     def _validate_theme(self, theme: SettingTheme, values: Mapping[str, Any]) -> dict[str, str]:
         """Return the errors of a submitted theme, by field."""
@@ -204,29 +257,27 @@ class ThemeStepsMixin:
         self, theme: SettingTheme, user_input: dict[str, Any] | None
     ) -> ConfigFlowResult:
         """Show one theme form; a valid submission is stored and the menu is shown again."""
-        definitions = theme_definitions(theme)
+        definitions = self._form_definitions(theme)
         errors: dict[str, str] = {}
-        shown = {**self.config_entry.data, **self.config_entry.options}
+        shown = self._shown_values()
         if user_input is not None:
             values = normalize_theme_input(definitions, user_input)
             errors = self._validate_theme(theme, values)
             if not errors:
-                stored = {**self.config_entry.data, **self.config_entry.options}
+                stored = self._shown_values()
                 self._write_values(drop_unchanged_defaults(definitions, values, stored))
                 return await self.async_step_init()
             shown.update(user_input)
         return self.async_show_form(
-            step_id=theme.value,
+            step_id=self._step_id(theme),
             data_schema=build_theme_schema(self.hass, definitions, shown),  # type: ignore[arg-type, unused-ignore]
             errors=errors,
         )
 
     async def async_step_apply(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Reload the device with what is stored, then close the dialog."""
-        entry = self.config_entry
-        _LOGGER.info("[%s] Applying the saved settings", entry.title)
-        self.hass.config_entries.async_schedule_reload(entry.entry_id)
-        return self.async_create_entry(title="", data=dict(entry.options))
+        """Apply the saved settings, then close the dialog."""
+        self._apply()
+        return self.async_create_entry(title="", data=dict(self.config_entry.options))
 
     async def async_step_thermostat_schedulers(
         self, user_input: dict[str, Any] | None = None
