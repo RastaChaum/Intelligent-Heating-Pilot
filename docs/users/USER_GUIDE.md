@@ -110,7 +110,7 @@ Check [Troubleshooting Guide](TROUBLESHOOTING.md) if anything seems wrong
 
 ### Task: Share settings between devices
 
-Open the **Central configuration** entry of Intelligent Heating Pilot, choose **Configure**, set the shared values (for example the outdoor temperature sensor), then **Apply the saved changes**. Devices that do not override a value follow it. To give one device its own value, open the group in the device's **Configure** screen and tick the setting under **Settings overridden on this device**.
+Open the **Central configuration** entry of Intelligent Heating Pilot, choose **Configure**, set the shared values (for example the outdoor temperature sensor), then **Apply the saved changes**. Devices that do not override a value follow it. To give one device its own value, open the group in the device's **Configure** screen and switch the setting from **Inherited** to **Custom**.
 
 ### Task: Change configuration
 

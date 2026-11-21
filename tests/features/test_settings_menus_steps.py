@@ -12,6 +12,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from custom_components.intelligent_heating_pilot.config_flow import (
     IntelligentHeatingPilotOptionsFlow,
 )
+from custom_components.intelligent_heating_pilot.config_flow_overrides import InheritanceChoice
 from custom_components.intelligent_heating_pilot.const import (
     CONF_CLIMATE_ENTITY,
     CONF_LHS_RETENTION_DAYS,
@@ -136,11 +137,10 @@ def open_and_choose(context: dict, theme: str) -> None:
 
 
 def _override_retention(context: dict, theme: str, days: int) -> None:
-    """Override the retention in its theme: pick it, then give its value."""
-    flow = context["flow"]
-    _run(getattr(flow, f"async_step_{theme}")({"overridden_settings": [CONF_LHS_RETENTION_DAYS]}))
+    """Override the retention in its theme: switch it to custom with this value."""
+    choice = InheritanceChoice(inherit=False, value=days)
     context["result"] = _run(
-        getattr(flow, f"async_step_{theme}_values")({CONF_LHS_RETENTION_DAYS: days})
+        getattr(context["flow"], f"async_step_{theme}")({CONF_LHS_RETENTION_DAYS: choice})
     )
 
 

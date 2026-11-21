@@ -146,7 +146,6 @@ MENU_ENTRIES = {
     "apply",
     *(f"central_{theme}" for theme in CENTRAL_THEMES),
 }
-PICKER = "overridden_settings"
 
 
 def _keys(theme: str, scope: str) -> set[str]:
@@ -172,34 +171,33 @@ def test_the_options_menu_lists_every_theme_and_apply(path: Path) -> None:
 
 @pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
 @pytest.mark.parametrize("theme", THEME_FORM_STEPS)
-def test_a_device_theme_form_has_its_device_fields_and_the_picker(path: Path, theme: str) -> None:
+def test_a_device_theme_form_has_a_label_and_a_help_text_per_setting(
+    path: Path, theme: str
+) -> None:
     step = _load(path)["options"]["step"][theme]
-    expected = _keys(theme, "device") | ({PICKER} if _keys(theme, "shareable") else set())
+    expected = _keys(theme, "device") | _keys(theme, "shareable")
 
     assert set(step["data"]) == expected
     assert set(step["data_description"]) == expected
-    assert step["title"].strip() and step["description"].strip()
-    assert ("{settings}" in step["description"]) == bool(_keys(theme, "shareable"))
+    assert step["title"].strip()
 
 
 @pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
 @pytest.mark.parametrize("theme", CENTRAL_THEMES)
-def test_the_values_and_central_forms_have_a_label_and_a_help_text_per_shared_setting(
+def test_a_central_form_has_a_label_and_a_help_text_per_shared_setting(
     path: Path, theme: str
 ) -> None:
-    steps = _load(path)["options"]["step"]
+    step = _load(path)["options"]["step"][f"central_{theme}"]
     keys = _keys(theme, "shareable")
 
-    for step_id in (f"{theme}_values", f"central_{theme}"):
-        assert set(steps[step_id]["data"]) == keys, step_id
-        assert set(steps[step_id]["data_description"]) == keys, step_id
-        assert steps[step_id]["title"].strip() and steps[step_id]["description"].strip()
+    assert set(step["data"]) == keys
+    assert set(step["data_description"]) == keys
+    assert step["title"].strip() and step["description"].strip()
 
 
 @pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
-def test_the_picker_and_the_indicators_are_translated(path: Path) -> None:
+def test_the_inheritance_toggle_and_the_inherited_values_are_translated(path: Path) -> None:
     translated = _load(path)
-    shareable = set().union(*(_keys(theme, "shareable") for theme in CENTRAL_THEMES))
 
-    assert set(translated["selector"][PICKER]["options"]) == shareable
-    assert set(translated["common"]) == {"inherited", "overridden", "none"}
+    assert set(translated["selector"]["inheritance"]["choices"]) == {"inherited", "custom"}
+    assert set(translated["common"]) == {"none", "on", "off"}

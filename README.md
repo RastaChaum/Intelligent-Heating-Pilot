@@ -27,7 +27,7 @@ IHP monitors your thermostat, learns how fast your room heats, and triggers your
 
 ## ✅ Requirements
 
-- **Home Assistant** 2024.11 or later
+- **Home Assistant** 2026.2 or later
 - **A `climate` entity to preheat**: use one IHP device per thermostat. **[Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat)** is the recommended target and the best supported, but any `climate` entity works (see [what a generic climate must expose](docs/users/CONFIGURATION.md#using-a-climate-that-is-not-a-versatile-thermostat))
 - **A supported scheduler**, for IHP to anticipate your slots:
 

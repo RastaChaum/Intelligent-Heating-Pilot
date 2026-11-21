@@ -14,48 +14,44 @@ from custom_components.intelligent_heating_pilot.domain.value_objects.setting_de
     SettingTheme,
 )
 
-PICKER = "overridden_settings"
+INHERIT: dict[str, Any] = {"active_choice": "inherited", "inherited": "inherited"}
 
 
-def _split(theme: str, values: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Split submitted values into the device-only ones and the shareable (overridden) ones."""
+def custom(value: Any) -> dict[str, Any]:
+    """Return what the frontend sends for a setting switched to "Custom" with this value.
+
+    ``None`` is a custom setting left empty: "no sensor" for an optional sensor.
+    """
+    toggle: dict[str, Any] = {"active_choice": "custom", "inherited": "inherited"}
+    if value is not None:
+        toggle["custom"] = value
+    return toggle
+
+
+def _as_submitted(theme: str, values: dict[str, Any]) -> dict[str, Any]:
+    """Wrap the shareable values of a theme in their "Custom" toggle; device values are as is."""
     scope = {d.key: d.scope for d in SettingsCatalog().of_theme(SettingTheme(theme))}
-    device = {k: v for k, v in values.items() if scope.get(k) is SettingScope.DEVICE}
-    shared = {k: v for k, v in values.items() if scope.get(k) is SettingScope.SHAREABLE}
-    return device, shared
+    return {
+        key: custom(value) if scope.get(key) is SettingScope.SHAREABLE else value
+        for key, value in values.items()
+    }
 
 
-async def save_theme(
-    hass: HomeAssistant,
-    flow_id: str,
-    theme: str,
-    values: dict[str, Any],
-    *,
-    keep: list[str] | None = None,
-) -> Any:
-    """Open a theme, override the shareable settings in ``values`` and submit them.
+async def save_theme(hass: HomeAssistant, flow_id: str, theme: str, values: dict[str, Any]) -> Any:
+    """Open a theme and submit it, with each shareable setting in ``values`` set to custom.
+
+    The settings left out keep the state the form opened with.
 
     Args:
         hass: Home Assistant.
         flow_id: The options flow, at its menu.
         theme: The theme to open.
-        values: What to submit; shareable settings are overridden with these values.
-        keep: Shareable settings to keep overridden without changing them.
+        values: What to submit; a shareable setting gets this value of its own.
 
     Returns:
-        The result after the last form: the menu.
+        The result after the form: the menu.
     """
     manager = hass.config_entries.options
     form = await manager.async_configure(flow_id, {"next_step_id": theme})
     assert form["type"] == "form", form
-    device, shared = _split(theme, values)
-    submitted = dict(device)
-    selected = [*shared, *(keep or [])]
-    if PICKER in form["data_schema"].schema.__repr__() or any(
-        str(key) == PICKER for key in form["data_schema"].schema
-    ):
-        submitted[PICKER] = selected
-    result = await manager.async_configure(form["flow_id"], submitted)
-    if result["type"] == "form":  # the values of the overridden settings
-        result = await manager.async_configure(result["flow_id"], shared)
-    return result
+    return await manager.async_configure(form["flow_id"], _as_submitted(theme, values))

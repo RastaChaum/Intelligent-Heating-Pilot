@@ -318,9 +318,10 @@ The **Name** cannot be changed there: rename the device from its device page.
 With several devices, the same values (outdoor sensors, learning and cycle settings, safety grace period, native schedule keys) would otherwise be entered once per device. IHP therefore keeps a **Central configuration** entry next to your devices in **Settings** → **Devices & Services** → **Intelligent Heating Pilot**. It is created automatically with your first device, and **Configure** opens the same groups of settings as a device, for the values that can be shared.
 
 - **A device follows the central value unless it has its own.** A new device asks only for its name, thermostat and schedulers: everything else is inherited.
-- **Override a value on one device:** in a group of a device's settings, tick the setting under **Settings overridden on this device**, then enter its value. The group's text lists each shared setting as *inherited* or *overridden*, with its value.
-- **Go back to inheriting:** untick the setting and submit.
-- **Use no sensor on one device** although a central sensor is set: tick the sensor and leave it empty.
+- **See what a device inherits:** in a group of a device's settings, every shared setting has an **Inherited / Custom** toggle. On **Inherited**, it shows the value the device gets (a sensor by its name), which cannot be edited there.
+- **Override a value on one device:** switch the setting to **Custom** and set its value. The field starts from the inherited value.
+- **Go back to inheriting:** switch the setting back to **Inherited** and submit.
+- **Use no sensor on one device** although a central sensor is set: switch the sensor to **Custom** and leave it empty.
 - **Never inherited:** the thermostat, schedulers, wake-up sources, the indoor humidity sensor and **Drive Native Schedules**, which lets IHP act on the thermostat and stays a decision per device.
 - **Apply the saved changes** in the central configuration reloads, once, only the devices that inherit a changed value.
 - Devices created before this feature keep every value they already hold as their own.

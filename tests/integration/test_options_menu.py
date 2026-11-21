@@ -23,7 +23,7 @@ from custom_components.intelligent_heating_pilot.const import (
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.entry_changes import (
     effective_values,
 )
-from tests.integration.options_helpers import save_theme
+from tests.integration.options_helpers import custom, save_theme
 
 pytestmark = pytest.mark.usefixtures("flow_environment")
 
@@ -164,7 +164,7 @@ async def test_a_value_out_of_range_is_rejected_and_nothing_is_stored(
 
     with pytest.raises(InvalidData):
         await hass.config_entries.options.async_configure(
-            form["flow_id"], {CONF_LHS_RETENTION_DAYS: 1000}
+            form["flow_id"], {CONF_LHS_RETENTION_DAYS: custom(1000)}
         )
 
     assert entry.options[CONF_LHS_RETENTION_DAYS] == 30
@@ -183,11 +183,8 @@ async def test_a_save_is_merged_onto_the_entry_as_stored_at_that_moment(
         entry, options={**entry.options, CONF_LHS_RETENTION_DAYS: 75}
     )
 
-    values = await hass.config_entries.options.async_configure(
-        form["flow_id"], {"overridden_settings": [CONF_TEMPERATURE_OUT_ENTITY]}
-    )
     await hass.config_entries.options.async_configure(
-        values["flow_id"], {CONF_TEMPERATURE_OUT_ENTITY: "sensor.out"}
+        form["flow_id"], {CONF_TEMPERATURE_OUT_ENTITY: custom("sensor.out")}
     )
 
     assert entry.options[CONF_LHS_RETENTION_DAYS] == 75
@@ -200,7 +197,7 @@ async def test_a_cleared_optional_entity_is_stored_as_none(hass: HomeAssistant) 
     menu = await _menu(hass, entry)
     await _save(hass, menu, "environment", {CONF_HUMIDITY_OUT_ENTITY: "sensor.hum"})
 
-    await save_theme(hass, menu["flow_id"], "environment", {}, keep=[CONF_HUMIDITY_OUT_ENTITY])
+    await _save(hass, menu, "environment", {CONF_HUMIDITY_OUT_ENTITY: None})
 
     assert entry.options[CONF_HUMIDITY_OUT_ENTITY] is None
 
