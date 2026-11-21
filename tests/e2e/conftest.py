@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from pytest_socket import enable_socket
 
 from tests.integration.real_components.fetch import ComponentFetchError, fetch_components
 
@@ -43,10 +44,28 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     for item in items:
         if "tests/e2e" not in str(item.fspath):
             continue
-        # The Home Assistant test plugin blocks sockets; these tests talk to a container
-        item.add_marker(pytest.mark.enable_socket)
         if reason is not None:
             item.add_marker(pytest.mark.skip(reason=reason))
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _sockets_for_module_fixtures() -> None:
+    """Let the module fixtures (free port, container) open sockets.
+
+    The Home Assistant test plugin blocks sockets in its ``pytest_runtest_setup`` hook, and
+    pytest-socket's ``enable_socket`` marker is honoured by another hook of the same name: which of
+    the two runs last depends on the order the plugins are loaded in, which differs between
+    machines. A marker therefore worked locally and failed on GitHub Actions (``SocketBlockedError``
+    in the first module fixture). A fixture runs after every ``pytest_runtest_setup`` hook, so it
+    does not depend on that order.
+    """
+    enable_socket()
+
+
+@pytest.fixture(autouse=True)
+def _sockets_for_test() -> None:
+    """Same for each test: Home Assistant's hook blocks the sockets again before every one."""
+    enable_socket()
 
 
 @pytest.fixture(scope="module")
