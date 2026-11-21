@@ -40,7 +40,7 @@ from .domain.services.settings_catalog import SettingsCatalog
 from .domain.value_objects.setting_definition import SettingDefinition, SettingTheme
 
 SCHEDULER_DOMAINS = ("switch", "schedule")
-MISSING_SCHEDULER_LABEL = "{entity_id} (not found)"
+MISSING_ENTITY_LABEL = "{entity_id} (not found)"
 UNIT_DAYS = "days"
 UNIT_MINUTES = "minutes"
 UNIT_CELSIUS = "°C"
@@ -105,11 +105,11 @@ def as_list(value: Any) -> list[str]:
     return [value] if value else []
 
 
-def _scheduler_label(hass: HomeAssistant, entity_id: str) -> str:
-    """Label a scheduler with its friendly name, or flag it as not found."""
+def entity_label(hass: HomeAssistant, entity_id: str) -> str:
+    """Label an entity with its friendly name, or flag it as not found."""
     state = hass.states.get(entity_id)
     if state is None:
-        return MISSING_SCHEDULER_LABEL.format(entity_id=entity_id)
+        return MISSING_ENTITY_LABEL.format(entity_id=entity_id)
     friendly_name = state.attributes.get("friendly_name", entity_id)
     return f"{friendly_name} ({entity_id})"
 
@@ -137,7 +137,7 @@ def scheduler_selector(hass: HomeAssistant, configured: Iterable[str]) -> Any:
             selector.EntitySelectorConfig(domain=list(SCHEDULER_DOMAINS), multiple=True)
         )
     options = [
-        selector.SelectOptionDict(value=entity_id, label=_scheduler_label(hass, entity_id))
+        selector.SelectOptionDict(value=entity_id, label=entity_label(hass, entity_id))
         for entity_id in found.union(configured)
     ]
     return selector.SelectSelector(

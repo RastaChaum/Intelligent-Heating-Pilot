@@ -29,7 +29,7 @@ IHP surveille votre thermostat, apprend à quelle vitesse votre pièce chauffe e
 
 ## ✅ Prérequis
 
-- **Home Assistant** 2024.11 ou plus récent
+- **Home Assistant** 2026.2 ou plus récent
 - **Une entité `climate` à préchauffer** : utilisez un appareil IHP par thermostat. **[Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat)** est la cible recommandée et la mieux prise en charge, mais toute entité `climate` fonctionne (voir [ce qu'un climate générique doit exposer](docs/users/CONFIGURATION.md#using-a-climate-that-is-not-a-versatile-thermostat))
 - **Un planificateur pris en charge**, pour qu'IHP anticipe vos créneaux :
 

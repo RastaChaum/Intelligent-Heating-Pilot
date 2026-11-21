@@ -17,6 +17,7 @@ from custom_components.intelligent_heating_pilot import (
     async_setup_entry,
     async_unload_entry,
 )
+from custom_components.intelligent_heating_pilot.config_flow_overrides import InheritableSelector
 from custom_components.intelligent_heating_pilot.const import (
     CENTRAL_UNIQUE_ID,
     CONF_CLIMATE_ENTITY,
@@ -35,7 +36,7 @@ from custom_components.intelligent_heating_pilot.infrastructure.adapters.central
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.device_config_reader import (
     HADeviceConfigReader,
 )
-from tests.integration.options_helpers import save_theme
+from tests.integration.options_helpers import INHERIT, custom, save_theme
 
 pytestmark = pytest.mark.usefixtures("flow_environment")
 
@@ -399,8 +400,20 @@ async def _open(hass: HomeAssistant, device: MockConfigEntry, theme: str) -> Any
     )
 
 
+def _toggle(form: Any, key: str) -> tuple[Any, Any]:
+    """Return the marker and the selector of one field of a form."""
+    marker = next(k for k in form["data_schema"].schema if str(k) == key)
+    return marker, form["data_schema"].schema[marker]
+
+
+def _inherited_label(form: Any, key: str) -> str:
+    """Return what the inherited side of a toggle shows."""
+    _, toggle = _toggle(form, key)
+    return toggle.config["choices"]["inherited"]["selector"].config["label"]
+
+
 @pytest.mark.asyncio
-async def test_a_theme_shows_which_settings_are_inherited_and_which_are_overridden(
+async def test_each_shared_setting_opens_on_inherited_or_on_its_own_value(
     hass: HomeAssistant,
 ) -> None:
     _add_central(hass, {CONF_LHS_RETENTION_DAYS: 60})
@@ -408,46 +421,72 @@ async def test_a_theme_shows_which_settings_are_inherited_and_which_are_overridd
 
     form = await _open(hass, device, "learning")
 
-    text = form["description_placeholders"]["settings"]
-    assert "Slope Data Retention (days): inherited (60)" in text
-    assert "Initial Dead Time (minutes): overridden (7)" in text
+    retention, _ = _toggle(form, CONF_LHS_RETENTION_DAYS)
+    dead_time, _ = _toggle(form, "dead_time_minutes")
+    assert retention.default()["active_choice"] == "inherited"
+    assert retention.default()["custom"] == 60
+    assert dead_time.default()["active_choice"] == "custom"
+    assert dead_time.default()["custom"] == 7
 
 
 @pytest.mark.asyncio
-async def test_the_picker_is_preselected_with_the_overridden_settings(
+async def test_the_inherited_side_shows_the_central_value_even_when_overridden(
     hass: HomeAssistant,
 ) -> None:
-    _add_central(hass)
-    device = _loaded_device(hass, options={"dead_time_minutes": 7})
+    _add_central(hass, {CONF_LHS_RETENTION_DAYS: 60})
+    device = _loaded_device(hass, options={CONF_LHS_RETENTION_DAYS: 90})
 
     form = await _open(hass, device, "learning")
 
-    picker = next(k for k in form["data_schema"].schema if str(k) == "overridden_settings")
-    assert picker.default() == ["dead_time_minutes"]
+    assert _inherited_label(form, CONF_LHS_RETENTION_DAYS) == "60"
 
 
 @pytest.mark.asyncio
-async def test_a_theme_with_only_device_settings_has_no_picker(hass: HomeAssistant) -> None:
+async def test_an_inherited_sensor_is_shown_by_its_name(hass: HomeAssistant) -> None:
+    hass.states.async_set(OUTDOOR, "12", {"friendly_name": "Outdoor"})
+    _add_central(hass, {CONF_TEMPERATURE_OUT_ENTITY: OUTDOOR})
+    device = _loaded_device(hass)
+
+    form = await _open(hass, device, "environment")
+
+    assert _inherited_label(form, CONF_TEMPERATURE_OUT_ENTITY) == f"Outdoor ({OUTDOOR})"
+    assert _inherited_label(form, "cloud_cover_entity_id") == "none"
+
+
+@pytest.mark.asyncio
+async def test_the_inherited_values_follow_the_language(hass: HomeAssistant) -> None:
+    hass.config.language = "fr"
+    _add_central(hass, {"auto_learning": False})
+    device = _loaded_device(hass)
+
+    learning = await _open(hass, device, "learning")
+    environment = await _open(hass, device, "environment")
+
+    assert _inherited_label(learning, "auto_learning") == "désactivé"
+    assert _inherited_label(environment, CONF_TEMPERATURE_OUT_ENTITY) == "aucun"
+
+
+@pytest.mark.asyncio
+async def test_a_theme_with_only_device_settings_has_no_toggle(hass: HomeAssistant) -> None:
     _add_central(hass)
     device = _loaded_device(hass)
 
     form = await _open(hass, device, "thermostat_schedulers")
 
-    assert "overridden_settings" not in {str(k) for k in form["data_schema"].schema}
+    assert not any(isinstance(s, InheritableSelector) for s in form["data_schema"].schema.values())
 
 
 @pytest.mark.asyncio
-async def test_the_values_form_is_prefilled_with_the_inherited_value(hass: HomeAssistant) -> None:
-    _add_central(hass, {CONF_LHS_RETENTION_DAYS: 60})
+async def test_the_native_drive_stays_a_device_setting(hass: HomeAssistant) -> None:
+    _add_central(hass)
     device = _loaded_device(hass)
-    form = await _open(hass, device, "learning")
 
-    values = await hass.config_entries.options.async_configure(
-        form["flow_id"], {"overridden_settings": [CONF_LHS_RETENTION_DAYS]}
-    )
+    form = await _open(hass, device, "native_schedule")
 
-    marker = next(k for k in values["data_schema"].schema if str(k) == CONF_LHS_RETENTION_DAYS)
-    assert marker.default() == 60
+    _, drive = _toggle(form, "native_schedule_drive")
+    _, preset_key = _toggle(form, "native_schedule_preset_key")
+    assert not isinstance(drive, InheritableSelector)
+    assert isinstance(preset_key, InheritableSelector)
 
 
 @pytest.mark.asyncio
@@ -464,7 +503,18 @@ async def test_a_value_equal_to_the_central_one_is_still_an_override(
 
 
 @pytest.mark.asyncio
-async def test_unselecting_a_setting_resets_it_to_inherit_in_data_and_options(
+async def test_submitting_unchanged_toggles_stores_nothing(hass: HomeAssistant) -> None:
+    _add_central(hass, {CONF_LHS_RETENTION_DAYS: 60})
+    device = _loaded_device(hass, options={"dead_time_minutes": 7})
+    form = await _open(hass, device, "learning")
+
+    await hass.config_entries.options.async_configure(form["flow_id"], {})
+
+    assert dict(device.options) == {"dead_time_minutes": 7}
+
+
+@pytest.mark.asyncio
+async def test_switching_back_to_inherited_resets_it_in_data_and_options(
     hass: HomeAssistant,
 ) -> None:
     _add_central(hass, {CONF_LHS_RETENTION_DAYS: 60})
@@ -476,7 +526,7 @@ async def test_unselecting_a_setting_resets_it_to_inherit_in_data_and_options(
     form = await _open(hass, device, "learning")
 
     result = await hass.config_entries.options.async_configure(
-        form["flow_id"], {"overridden_settings": []}
+        form["flow_id"], {CONF_LHS_RETENTION_DAYS: INHERIT}
     )
 
     assert result["type"] is FlowResultType.MENU
@@ -493,34 +543,39 @@ async def test_a_reset_without_a_central_value_falls_back_to_the_default(
     device.mock_state(hass, ConfigEntryState.LOADED)
     form = await _open(hass, device, "learning")
 
-    await hass.config_entries.options.async_configure(form["flow_id"], {"overridden_settings": []})
+    await hass.config_entries.options.async_configure(
+        form["flow_id"], {CONF_LHS_RETENTION_DAYS: INHERIT}
+    )
 
     assert (await _read(hass, device)).lhs_retention_days == DEFAULT_LHS_RETENTION_DAYS
 
 
 @pytest.mark.asyncio
-async def test_the_native_drive_stays_a_device_setting(hass: HomeAssistant) -> None:
-    _add_central(hass)
+async def test_a_custom_sensor_left_empty_means_no_sensor(hass: HomeAssistant) -> None:
+    _add_central(hass, {CONF_TEMPERATURE_OUT_ENTITY: OUTDOOR})
     device = _loaded_device(hass)
+    form = await _open(hass, device, "environment")
 
-    form = await _open(hass, device, "native_schedule")
+    await hass.config_entries.options.async_configure(
+        form["flow_id"], {CONF_TEMPERATURE_OUT_ENTITY: custom(None)}
+    )
 
-    fields = {str(k) for k in form["data_schema"].schema}
-    assert "native_schedule_drive" in fields and "overridden_settings" in fields
-    picker = next(k for k in form["data_schema"].schema if str(k) == "overridden_settings")
-    assert "native_schedule_drive" not in form["data_schema"].schema[picker].config["options"]
+    assert device.options[CONF_TEMPERATURE_OUT_ENTITY] is None
+    assert (await _read(hass, device)).temperature_out_entity_id is None
 
 
 @pytest.mark.asyncio
-async def test_the_indicators_follow_the_language(hass: HomeAssistant) -> None:
-    hass.config.language = "fr"
-    _add_central(hass, {CONF_LHS_RETENTION_DAYS: 60})
-    device = _loaded_device(hass, options={"dead_time_minutes": 7})
-
+async def test_a_custom_number_left_empty_is_rejected(hass: HomeAssistant) -> None:
+    _add_central(hass)
+    device = _loaded_device(hass)
     form = await _open(hass, device, "learning")
 
-    text = form["description_placeholders"]["settings"]
-    assert "hérité (60)" in text and "surchargé (7)" in text
+    with pytest.raises(InvalidData):
+        await hass.config_entries.options.async_configure(
+            form["flow_id"], {CONF_LHS_RETENTION_DAYS: custom(None)}
+        )
+
+    assert CONF_LHS_RETENTION_DAYS not in device.options
 
 
 @pytest.mark.asyncio

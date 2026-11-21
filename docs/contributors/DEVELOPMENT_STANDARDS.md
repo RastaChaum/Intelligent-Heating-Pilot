@@ -37,7 +37,7 @@ Every configurable setting is declared once, in the domain catalog (`domain/serv
 1. Add its key and built-in default to `domain/constants.py` (`const.py` re-exports them; the domain never imports `const.py`).
 2. Add a `SettingDefinition` to the catalog with its theme, its scope (`SHAREABLE` can be inherited from the central configuration, `DEVICE` never is) and whether "none" is a valid value (`optional`).
 3. Map the key to a selector in `config_flow_selectors.py` (bounds and unit for a number).
-4. Add its label and help text to `strings.json`, `translations/en.json` and `translations/fr.json`: in the theme step (device-only), in the `<theme>_values` and `central_<theme>` steps (shareable) and, for a shareable setting, in `selector.overridden_settings.options`. The translation parity tests walk the catalog and fail on a missing text.
+4. Add its label and help text to `strings.json`, `translations/en.json` and `translations/fr.json`: in the theme step (every setting of the theme; a shareable one is shown there with its **Inherited / Custom** toggle) and, for a shareable setting, in the `central_<theme>` step too. The translation parity tests walk the catalog and fail on a missing text.
 5. Read it in `HADeviceConfigReader` from the resolved settings, never from the entry directly.
 
 A device-only setting is never read from the central values, even if they hold the key.

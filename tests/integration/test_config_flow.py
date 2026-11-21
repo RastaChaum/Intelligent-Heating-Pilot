@@ -53,8 +53,12 @@ def _find_schema_key(schema: dict[Any, Any], key_name: str) -> Any:
 
 
 def _get_default_value(schema_key: Any) -> Any:
+    """Return the value a field opens with; for an inherit/custom toggle, its custom side."""
     default_value = getattr(schema_key, "default", None)
-    return default_value() if callable(default_value) else default_value
+    value = default_value() if callable(default_value) else default_value
+    if isinstance(value, dict) and "active_choice" in value:
+        return value.get("custom")
+    return value
 
 
 THEME_KEYS = {
@@ -86,10 +90,10 @@ async def _save_in_themes(hass, entry_id: str, values: dict[str, Any]) -> None:
 
 
 async def _all_theme_schemas(hass, entry_id: str) -> dict[Any, Any]:
-    """The fields of every theme, merged, with the effective value of each shareable setting.
+    """The fields of every theme, merged.
 
-    A device theme shows a picker of overridden settings; selecting them all opens the form
-    that is pre-filled with what each setting is currently worth, stored or inherited.
+    A shareable setting is an inherit/custom toggle whose custom side opens on the effective
+    value, stored or inherited.
     """
     schema: dict[Any, Any] = {}
     for theme in THEME_KEYS:
@@ -98,16 +102,6 @@ async def _all_theme_schemas(hass, entry_id: str) -> dict[Any, Any]:
             menu["flow_id"], {"next_step_id": theme}
         )
         schema.update(form["data_schema"].schema)
-        picker = next(
-            (k for k in form["data_schema"].schema if str(k) == "overridden_settings"), None
-        )
-        if picker is None:
-            continue
-        options = form["data_schema"].schema[picker].config["options"]
-        values_form = await hass.config_entries.options.async_configure(
-            form["flow_id"], {"overridden_settings": list(options)}
-        )
-        schema.update(values_form["data_schema"].schema)
     return schema
 
 
@@ -188,10 +182,10 @@ async def test_options_flow_persists_and_reopens_with_last_values(hass) -> None:
     assert hum_in_key.description.get("suggested_value") == "sensor.updated_humidity_in"
 
     hum_out_key = _find_schema_key(schema, CONF_HUMIDITY_OUT_ENTITY)
-    assert hum_out_key.description.get("suggested_value") == "sensor.updated_humidity_out"
+    assert _get_default_value(hum_out_key) == "sensor.updated_humidity_out"
 
     cloud_key = _find_schema_key(schema, CONF_CLOUD_COVER_ENTITY)
-    assert cloud_key.description.get("suggested_value") == "sensor.updated_cloud"
+    assert _get_default_value(cloud_key) == "sensor.updated_cloud"
 
     assert _get_default_value(_find_schema_key(schema, CONF_LHS_RETENTION_DAYS)) == 55
     assert _get_default_value(_find_schema_key(schema, CONF_DEAD_TIME_MINUTES)) == 12.0

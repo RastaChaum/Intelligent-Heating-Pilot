@@ -8,22 +8,25 @@ translation keys under `options.step`.
 ```text
 init (menu)
 ├── thermostat_schedulers   -> form: vtherm, schedulers (save stores)         -> init
-├── native_schedule         -> form: drive + overrides picker                -> native_schedule_values -> init
+├── native_schedule         -> form: drive + a toggle per shared key          -> init
 ├── wake_up_menu            -> existing wake-up sources flow (unchanged)     -> init
-├── environment             -> form: indoor humidity + overrides picker      -> environment_values -> init
-├── learning                -> form: overrides picker                        -> learning_values -> init
-├── cycle_detection         -> form: overrides picker                        -> cycle_detection_values -> init
-├── anticipation            -> form: overrides picker                        -> anticipation_values -> init
+├── environment             -> form: indoor humidity + a toggle per sensor   -> init
+├── learning                -> form: a toggle per setting                    -> init
+├── cycle_detection         -> form: a toggle per setting                    -> init
+├── anticipation            -> form: a toggle per setting                    -> init
 └── apply                   -> offered only while stored changes are unapplied (or the entry is not loaded): reload once, finish
 ```
 
-- Each `<theme>` step shows, in its description, one line per shareable setting: "inherited
-  (value)" or "overridden (value)".
-- The overrides picker is a multi-select of the theme's shareable settings, pre-selected with the
-  ones the device overrides. An empty selection skips the `_values` step.
-- The `_values` step shows only the selected settings, pre-filled with their effective value. A
-  cleared optional entity is stored as `None`.
-- Unselecting a setting removes its key from the stored data and options (inherit).
+- Each shareable setting is an "Inherited / Custom" toggle (Home Assistant's choose selector,
+  hence Home Assistant 2026.2 or later). It opens on "Custom" when the device stores the key,
+  else on "Inherited".
+- "Inherited" shows the inherited value (central, else built-in default) as text: a sensor by its
+  friendly name, a switch as on/off, an empty sensor as "none". It cannot be edited.
+- "Custom" shows the setting's usual selector, starting from the effective value. A custom
+  optional entity left empty is stored as `None` (no sensor); a custom number left empty is
+  rejected.
+- Submitting "Inherited" removes the key from the stored data and options. Toggles left as they
+  opened store nothing.
 - Validation errors keep the step open with the error on the field; nothing is stored.
 - `init` description says how many themes have unapplied changes. `apply` is not listed when
   nothing is unapplied. Closing the dialog loses nothing.
@@ -53,7 +56,6 @@ init (menu)
 ## Translation keys to provide (en, fr, strings.json)
 
 `options.step.init.menu_options.*`, `options.step.<theme>.{title,description,data,data_description}`,
-`options.step.<theme>_values.{title,description,data,data_description}`, the inherited and
-overridden indicator texts, the menu description about unapplied themes, and the central entry
+`selector.inheritance.choices.{inherited,custom}`, `common.{none,on,off}`, the menu description about unapplied themes, and the central entry
 title and description. A unit test walks the catalog and fails on any missing key in the three
 files.

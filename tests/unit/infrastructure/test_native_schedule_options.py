@@ -143,23 +143,25 @@ class TestDeviceConfigReader:
 
 
 def _schema_defaults(result) -> dict:
-    return {
-        str(marker): marker.default()
-        for marker in result["data_schema"].schema
-        if callable(marker.default)  # a required field has no default
-    }
+    """The value each field opens with; for an inherit/custom toggle, its custom side."""
+    defaults = {}
+    for marker in result["data_schema"].schema:
+        if not callable(marker.default):  # a required field has no default
+            continue
+        value = marker.default()
+        if isinstance(value, dict) and "active_choice" in value:
+            value = value.get("custom")
+        defaults[str(marker)] = value
+    return defaults
 
 
 async def _native_defaults(flow) -> dict:
-    """The defaults the native schedule theme shows: the drive, then the overridable keys."""
-    picker = {"overridden_settings": list(NATIVE_KEYS[1:])}
+    """The values the native schedule theme opens with: the drive and the shared keys."""
     with patch(
         "custom_components.intelligent_heating_pilot.config_flow_overrides.async_get_translations",
         AsyncMock(return_value={}),
     ):
-        theme = _schema_defaults(await flow.async_step_native_schedule())
-        values = _schema_defaults(await flow.async_step_native_schedule(picker))
-    return {**theme, **values}
+        return _schema_defaults(await flow.async_step_native_schedule())
 
 
 class TestForms:
