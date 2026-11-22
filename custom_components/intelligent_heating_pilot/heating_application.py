@@ -180,7 +180,7 @@ class HeatingApplication:
         """Build the actuator that serves each scheduler kind.
 
         This is where the choice of mode lives: HACS Scheduler delegates to its own run-action
-        command; Climate Scheduler is driven directly; a native schedule is driven directly only
+        command; Climate Scheduler and ha-chauffage are driven directly; a native schedule is driven directly only
         when the user opted in. Any other kind has no actuator and is computed only.
 
         Args:
@@ -193,6 +193,7 @@ class HeatingApplication:
         routes: dict[SchedulerKind, Any] = {
             SchedulerKind.HACS: HacsRunActionActuator(self.hass),
             SchedulerKind.CLIMATE_SCHEDULER: direct,
+            SchedulerKind.CHAUFFAGE: direct,
         }
         if self._device_config.native_schedule_drive:
             routes[SchedulerKind.NATIVE] = direct

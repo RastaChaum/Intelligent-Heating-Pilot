@@ -42,10 +42,11 @@ def stop_patches():
     [
         ("scheduler", SchedulerKind.HACS),
         ("climate_scheduler", SchedulerKind.CLIMATE_SCHEDULER),
+        ("chauffage", SchedulerKind.CHAUFFAGE),
         ("something_else", SchedulerKind.UNKNOWN),
     ],
 )
-def test_a_switch_is_owned_by_the_integration_that_registered_it(
+def test_an_entity_is_owned_by_the_integration_that_registered_it(
     platform, kind, stop_patches
 ) -> None:
     resolver, patchers = _resolver({"switch.plan": platform})

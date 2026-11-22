@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **ha-chauffage can be used as a scheduler** (#155) – Pick the *Next change* sensor of your thermostat like any scheduler. IHP recognises it by the integration that registered it, so a plain timestamp sensor remains a wake-up source. At the anticipated start it applies the change to the thermostat itself, a preset as a preset and a temperature as a temperature, with a context that has a parent so ha-chauffage creates no override. Only changes in `heat` mode are anticipated, an `unknown` sensor means no slot, and a moved or removed change cancels the preheat. See the Configuration guide.
+
+## [0.8.0] - 2026-11-22
+
 This release lets IHP drive the heating itself on every scheduler, preheat for a phone alarm or any date-time entity, and work with any `climate` entity. The device options become a menu of themes, and a central configuration holds the settings your devices share. Existing devices keep every value they hold: nothing to migrate.
 
 ### ⚠️ Before upgrading

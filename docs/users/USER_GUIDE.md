@@ -133,7 +133,7 @@ Open the **Central configuration** entry of Intelligent Heating Pilot, choose **
 
 ### ✅ Do This
 
-- ✅ Use a [supported scheduler](CONFIGURATION.md#supported-schedulers): HACS Scheduler, Climate Scheduler, or a native `schedule.*` helper, with slots that set a temperature or a preset
+- ✅ Use a [supported scheduler](CONFIGURATION.md#supported-schedulers): HACS Scheduler, Climate Scheduler, ha-chauffage, or a native `schedule.*` helper, with slots that set a temperature or a preset
 - ✅ Let IHP run a few days before judging accuracy
 - ✅ Monitor the "Global Learned Heating Slope" sensor (should stabilize)
 - ✅ Check logs if behavior seems strange
@@ -205,10 +205,11 @@ See [Configuration Guide](CONFIGURATION.md#heating-cycle-detection-parameters) f
 
 ### Q: Which schedulers does IHP support?
 
-**A:** Three kinds, see [Supported Schedulers](CONFIGURATION.md#supported-schedulers):
+**A:** Four kinds, see [Supported Schedulers](CONFIGURATION.md#supported-schedulers):
 
 - **HACS Scheduler** (`switch.schedule_*`): IHP computes the anticipated start **and** starts the heating. Each slot's action must be `climate.set_temperature` or `climate.set_preset_mode`, and the schedule must control this VTherm.
 - **Climate Scheduler** switches: IHP computes the anticipated start **and** applies the next node's action to your thermostat.
+- **ha-chauffage**: pick its *Next change* sensor. IHP computes the anticipated start **and** applies the next change (preset or temperature) to your thermostat.
 - **Native `schedule.*` helpers**: IHP computes the anticipated start. It starts the heating only if you turn on **Drive Native Schedules**, using the preset or temperature in each block's data.
 
 Other schedulers (automations, calendars, other scheduler integrations) are not read. Use the `calculate_anticipated_start_time` service with them, or a [wake-up source](CONFIGURATION.md#wake-up-sources-alarm-date-time-entity) when what you have is a point in time.

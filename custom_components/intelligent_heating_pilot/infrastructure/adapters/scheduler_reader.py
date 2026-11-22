@@ -17,6 +17,7 @@ from ...domain.interfaces.preset_temperature_resolver_interface import IPresetTe
 from ...domain.interfaces.scheduler_ownership_resolver_interface import ISchedulerOwnershipResolver
 from ...domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from ...domain.value_objects import ScheduledTimeslot, SchedulerKind, SlotAction
+from .chauffage_reader import HAChauffageReader
 from .climate_scheduler_reader import HAClimateSchedulerReader
 from .native_schedule_reader import HANativeScheduleReader, NativeScheduleSettings
 from .preset_temperature_resolver import HAPresetTemperatureResolver
@@ -74,6 +75,7 @@ class HASchedulerReader(ISchedulerReader):
         self._native_settings = native_settings or NativeScheduleSettings()
         self._native_reader = HANativeScheduleReader(hass, self._native_settings)
         self._climate_scheduler_reader = HAClimateSchedulerReader(climate_entity_id or "")
+        self._chauffage_reader = HAChauffageReader()
         self._ownership_resolver = ownership_resolver
         self._preset_resolver = preset_resolver or HAPresetTemperatureResolver(
             hass, climate_entity_id
@@ -219,24 +221,26 @@ class HASchedulerReader(ISchedulerReader):
         if entity_id.startswith("schedule."):
             return await self._read_native_timeslot(entity_id)
 
+        # A ha-chauffage sensor's state is a time, never "off": an unknown one has no slot
+        if self._is_kind(entity_id, SchedulerKind.CHAUFFAGE):
+            return self._read_chauffage_timeslot(state)
+
         # Skip disabled HACS schedulers (state is "off")
         if state.state == "off":
             device_name = get_entity_name(self._hass, entity_id)
             _LOGGER.debug("[%s] Scheduler is disabled (state: off), skipping", device_name)
             return None, None, None
 
-        if self._is_climate_scheduler(entity_id):
+        if self._is_kind(entity_id, SchedulerKind.CLIMATE_SCHEDULER):
             return self._read_climate_scheduler_timeslot(state)
 
         # Extract next trigger time and target temperature (HACS format)
         next_time, target_temp = self._extract_timeslot_data(state)
         return next_time, target_temp, None
 
-    def _is_climate_scheduler(self, entity_id: str) -> bool:
+    def _is_kind(self, entity_id: str, kind: SchedulerKind) -> bool:
         resolver = self._ownership_resolver
-        return (
-            resolver is not None and resolver.resolve(entity_id) is SchedulerKind.CLIMATE_SCHEDULER
-        )
+        return resolver is not None and resolver.resolve(entity_id) is kind
 
     def _read_climate_scheduler_timeslot(
         self, state: State
@@ -247,6 +251,22 @@ class HASchedulerReader(ISchedulerReader):
         as the thermostat publishes it. A node with no action gives no slot.
         """
         next_time, action = self._climate_scheduler_reader.read(state.attributes)
+        return self._with_target_temperature(next_time, action)
+
+    def _read_chauffage_timeslot(
+        self, state: State
+    ) -> tuple[datetime | None, float | None, SlotAction | None]:
+        """Read the next change of a ha-chauffage sensor and the temperature to anticipate.
+
+        The temperature that comes with a preset is what the preset gives, so it is anticipated
+        as it is; only when it is missing is the preset resolved through the thermostat.
+        """
+        next_time, action = self._chauffage_reader.read(state)
+        return self._with_target_temperature(next_time, action)
+
+    def _with_target_temperature(
+        self, next_time: datetime | None, action: SlotAction | None
+    ) -> tuple[datetime | None, float | None, SlotAction | None]:
         if action is None:
             return next_time, None, None
         if action.temperature is not None:
@@ -497,6 +517,10 @@ class HASchedulerReader(ISchedulerReader):
                 state.state,
             )
             return True
+
+        if self._is_kind(scheduler_entity_id, SchedulerKind.CHAUFFAGE):
+            # Its state is the next change: unknown or unavailable means nothing to preheat
+            return self._chauffage_reader.read(state)[0] is not None
 
         is_enabled = state.state != "off"
         _LOGGER.debug(

@@ -1192,3 +1192,83 @@ async def test_native_schedule_on_a_generic_climate_without_mapping_warns_and_us
     assert result is not None
     assert result.target_temp == 20.0
     assert any("comfort" in record.getMessage() for record in caplog.records)
+
+
+# ── ha-chauffage "Next change" sensor (sensor.* owned by chauffage) tests ─────
+
+CHAUFFAGE_ID = "sensor.living_room_next_change"
+
+
+def _chauffage_state(state: str = "2024-01-15T18:00:00+01:00", **attributes) -> Mock:
+    attrs = {"hvac_mode": "heat", "preset_mode": None, "temperature": None, **attributes}
+    return Mock(entity_id=CHAUFFAGE_ID, state=state, attributes=attrs)
+
+
+def _chauffage_reader(mock_hass: Mock, state: Mock, vtherm_attributes: dict | None = None):
+    from custom_components.intelligent_heating_pilot.domain.value_objects import SchedulerKind
+
+    states = {CHAUFFAGE_ID: state, "climate.vtherm": _make_vtherm_state(vtherm_attributes or {})}
+    mock_hass.states.get.side_effect = states.get
+    mock_hass.is_running = True
+    return HASchedulerReader(
+        mock_hass,
+        [CHAUFFAGE_ID],
+        climate_entity_id="climate.vtherm",
+        ownership_resolver=_Owner(SchedulerKind.CHAUFFAGE),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_chauffage_preset_change_anticipates_the_temperature_it_gives(
+    mock_hass: Mock,
+) -> None:
+    reader = _chauffage_reader(mock_hass, _chauffage_state(preset_mode="comfort", temperature=20.5))
+
+    result = await reader.get_next_timeslot()
+
+    assert result is not None
+    assert result.target_temp == 20.5
+    assert result.action == SlotAction(preset="comfort", temperature=20.5)
+    assert result.scheduler_entity == CHAUFFAGE_ID
+
+
+@pytest.mark.asyncio
+async def test_a_chauffage_preset_change_without_temperature_uses_the_thermostat(
+    mock_hass: Mock,
+) -> None:
+    reader = _chauffage_reader(
+        mock_hass,
+        _chauffage_state(preset_mode="boost"),
+        {"preset_temperatures": {"boost_temp": 23.0}},
+    )
+
+    result = await reader.get_next_timeslot()
+
+    assert result is not None
+    assert result.target_temp == 23.0
+    assert result.action == SlotAction(preset="boost")
+
+
+@pytest.mark.asyncio
+async def test_a_chauffage_change_that_is_not_heating_gives_no_slot(mock_hass: Mock) -> None:
+    reader = _chauffage_reader(mock_hass, _chauffage_state(hvac_mode="cool", temperature=24.0))
+
+    assert await reader.get_next_timeslot() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["unknown", "unavailable"])
+async def test_a_chauffage_sensor_with_no_next_change_is_not_enabled(
+    mock_hass: Mock, state: str
+) -> None:
+    reader = _chauffage_reader(mock_hass, _chauffage_state(state, temperature=21.0))
+
+    assert await reader.get_next_timeslot() is None
+    assert await reader.is_scheduler_enabled(CHAUFFAGE_ID) is False
+
+
+@pytest.mark.asyncio
+async def test_a_chauffage_sensor_with_a_next_change_is_enabled(mock_hass: Mock) -> None:
+    reader = _chauffage_reader(mock_hass, _chauffage_state(temperature=21.0))
+
+    assert await reader.is_scheduler_enabled(CHAUFFAGE_ID) is True

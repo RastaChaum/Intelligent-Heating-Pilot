@@ -35,6 +35,7 @@ IHP monitors your thermostat, learns how fast your room heats, and triggers your
 | --- | --- | --- |
 | [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) (`switch.schedule_*`) | ✅ | ✅ |
 | [Climate Scheduler](https://github.com/kneave/climate-scheduler) | ✅ | ✅ |
+| [ha-chauffage](https://github.com/armellarcier/ha-chauffage) (its *Next change* sensor) | ✅ | ✅ |
 | Native `schedule.*` helper | ✅ | ⚙️ if you turn on direct control (or build your own automation) |
 | Other schedulers (automations, calendars, other integrations) | ❌ | ❌ use the `calculate_anticipated_start_time` service |
 

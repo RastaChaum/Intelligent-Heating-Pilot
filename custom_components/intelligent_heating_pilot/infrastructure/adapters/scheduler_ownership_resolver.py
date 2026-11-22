@@ -22,6 +22,7 @@ NATIVE_SCHEDULE_DOMAIN_PREFIX = "schedule."
 PLATFORM_TO_KIND: dict[str, SchedulerKind] = {
     "scheduler": SchedulerKind.HACS,
     "climate_scheduler": SchedulerKind.CLIMATE_SCHEDULER,
+    "chauffage": SchedulerKind.CHAUFFAGE,
 }
 
 
