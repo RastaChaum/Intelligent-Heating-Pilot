@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-22
+
 This release lets IHP drive the heating itself on every scheduler, preheat for a phone alarm or any date-time entity, and work with any `climate` entity. The device options become a menu of themes, and a central configuration holds the settings your devices share. Existing devices keep every value they hold: nothing to migrate.
 
 ### ⚠️ Before upgrading
