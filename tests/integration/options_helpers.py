@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import voluptuous as vol
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import selector
 
 from custom_components.intelligent_heating_pilot.domain.services.settings_catalog import (
     SettingsCatalog,
@@ -55,3 +57,24 @@ async def save_theme(hass: HomeAssistant, flow_id: str, theme: str, values: dict
     form = await manager.async_configure(flow_id, {"next_step_id": theme})
     assert form["type"] == "form", form
     return await manager.async_configure(form["flow_id"], _as_submitted(theme, values))
+
+
+def frontend_initial_data(form: Any) -> dict[str, Any]:
+    """Return the data the frontend starts a form with, as it computes it itself.
+
+    The frontend does not open a choose selector on the structure the integration sends: it takes
+    the ``default`` as the plain value of the first choice and makes that choice the active one
+    (``computeInitialHaFormData``). A test that reads the default directly would pass while the
+    real form opens on the wrong side.
+    """
+    data: dict[str, Any] = {}
+    for marker, field in form["data_schema"].schema.items():
+        if marker.default is vol.UNDEFINED:
+            continue
+        default = marker.default()
+        if isinstance(field, selector.ChooseSelector):
+            first = next(iter(field.config["choices"]))
+            data[str(marker)] = {"active_choice": first, first: default}
+        else:
+            data[str(marker)] = default
+    return data

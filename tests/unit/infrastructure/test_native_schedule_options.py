@@ -143,14 +143,17 @@ class TestDeviceConfigReader:
 
 
 def _schema_defaults(result) -> dict:
-    """The value each field opens with; for an inherit/custom toggle, its custom side."""
+    """The value each field shows when it opens.
+
+    An inherited setting shows its inherited value; one with its own value shows that value.
+    """
     defaults = {}
-    for marker in result["data_schema"].schema:
+    for marker, field in result["data_schema"].schema.items():
         if not callable(marker.default):  # a required field has no default
             continue
         value = marker.default()
-        if isinstance(value, dict) and "active_choice" in value:
-            value = value.get("custom")
+        if value == "inherited" and hasattr(field, "config") and "choices" in field.config:
+            value = field.config["choices"]["inherited"]["selector"].config["label"]
         defaults[str(marker)] = value
     return defaults
 

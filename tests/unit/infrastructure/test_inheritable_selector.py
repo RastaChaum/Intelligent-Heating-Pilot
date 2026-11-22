@@ -11,6 +11,7 @@ from custom_components.intelligent_heating_pilot.config_flow_overrides import (
     InheritanceChoice,
     changed_values,
     initial_choice,
+    is_overridden,
 )
 from custom_components.intelligent_heating_pilot.config_flow_selectors import selector_for
 from custom_components.intelligent_heating_pilot.domain.value_objects.resolved_setting import (
@@ -52,10 +53,19 @@ class TestValidation:
         with pytest.raises(vol.Invalid):
             _number_toggle()({"active_choice": "custom", "custom": 1000})
 
-    @pytest.mark.parametrize("submitted", [60, None, {}, {"active_choice": "other"}])
-    def test_anything_but_a_toggle_is_rejected(self, submitted: object) -> None:
+    @pytest.mark.parametrize("submitted", [None, {}, {"active_choice": "other"}])
+    def test_anything_but_a_toggle_or_a_plain_value_is_rejected(self, submitted: object) -> None:
         with pytest.raises(vol.Invalid):
             _number_toggle()(submitted)
+
+    def test_a_plain_value_is_the_own_value_of_a_field_left_untouched(self) -> None:
+        assert _number_toggle()(60) == InheritanceChoice(inherit=False, value=60)
+
+    def test_the_plain_inherited_marker_is_inherited(self) -> None:
+        assert _number_toggle()("inherited") == InheritanceChoice(inherit=True)
+
+    def test_a_plain_none_is_no_sensor_for_an_optional_setting(self) -> None:
+        assert _sensor_toggle()(None) == InheritanceChoice(inherit=False)
 
 
 class TestDisplay:
@@ -71,22 +81,31 @@ class TestDisplay:
     def test_it_is_a_choose_selector(self) -> None:
         assert isinstance(_sensor_toggle(), selector.ChooseSelector)
 
-    def test_an_overridden_setting_opens_on_custom_with_its_value(self) -> None:
-        initial = initial_choice(ResolvedSetting(RETENTION, 90, SettingSource.OVERRIDE))
+    def test_the_custom_side_is_listed_first_when_the_device_has_its_own_value(self) -> None:
+        toggle = InheritableSelector(selector_for(RETENTION), "30", optional=False, own_first=True)
 
-        assert initial["active_choice"] == "custom"
-        assert initial["custom"] == 90
+        assert list(toggle.serialize()["selector"]["choose"]["choices"]) == ["custom", "inherited"]
 
-    def test_an_inherited_setting_opens_on_inherited_with_the_value_ready_to_edit(self) -> None:
-        initial = initial_choice(ResolvedSetting(RETENTION, 30, SettingSource.CENTRAL))
+    def test_an_overridden_setting_defaults_to_its_own_value(self) -> None:
+        setting = ResolvedSetting(RETENTION, 90, SettingSource.OVERRIDE)
 
-        assert initial["active_choice"] == "inherited"
-        assert initial["custom"] == 30
+        assert is_overridden(setting)
+        assert initial_choice(setting) == 90
 
-    def test_an_inherited_empty_sensor_opens_with_an_empty_custom_side(self) -> None:
-        initial = initial_choice(ResolvedSetting(OUTDOOR, None, SettingSource.DEFAULT))
+    def test_an_overridden_empty_sensor_defaults_to_none(self) -> None:
+        setting = ResolvedSetting(OUTDOOR, None, SettingSource.OVERRIDE)
 
-        assert "custom" not in initial
+        assert is_overridden(setting)
+        assert initial_choice(setting) is None
+
+    @pytest.mark.parametrize("source", [SettingSource.CENTRAL, SettingSource.DEFAULT])
+    def test_an_inherited_setting_defaults_to_the_inherited_marker(
+        self, source: SettingSource
+    ) -> None:
+        setting = ResolvedSetting(RETENTION, 30, source)
+
+        assert not is_overridden(setting)
+        assert initial_choice(setting) == "inherited"
 
 
 class TestChanges:

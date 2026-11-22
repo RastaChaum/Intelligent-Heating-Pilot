@@ -53,12 +53,15 @@ def _find_schema_key(schema: dict[Any, Any], key_name: str) -> Any:
 
 
 def _get_default_value(schema_key: Any) -> Any:
-    """Return the value a field opens with; for an inherit/custom toggle, its custom side."""
+    """Return the default of a field: for an inherit/custom toggle, its own value or "inherited"."""
     default_value = getattr(schema_key, "default", None)
-    value = default_value() if callable(default_value) else default_value
-    if isinstance(value, dict) and "active_choice" in value:
-        return value.get("custom")
-    return value
+    return default_value() if callable(default_value) else default_value
+
+
+def _shown_text(schema: dict[Any, Any], key_name: str) -> str:
+    """Return what the inherited side of a toggle shows."""
+    toggle = schema[_find_schema_key(schema, key_name)]
+    return toggle.config["choices"]["inherited"]["selector"].config["label"]
 
 
 THEME_KEYS = {
@@ -271,32 +274,17 @@ async def test_options_flow_defaults_when_no_overrides(hass) -> None:
     vtherm_key = _find_schema_key(schema, CONF_CLIMATE_ENTITY)
     assert _get_default_value(vtherm_key) == "climate.default_vtherm"
 
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_LHS_RETENTION_DAYS))
-        == DEFAULT_LHS_RETENTION_DAYS
-    )
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_DEAD_TIME_MINUTES))
-        == DEFAULT_DEAD_TIME_MINUTES
-    )
-    assert _get_default_value(_find_schema_key(schema, CONF_AUTO_LEARNING)) == DEFAULT_AUTO_LEARNING
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_TEMP_DELTA_THRESHOLD))
-        == DEFAULT_TEMP_DELTA_THRESHOLD
-    )
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_CYCLE_SPLIT_DURATION_MINUTES))
-        == DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
-    )
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_MIN_CYCLE_DURATION_MINUTES))
-        == DEFAULT_MIN_CYCLE_DURATION_MINUTES
-    )
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_MAX_CYCLE_DURATION_MINUTES))
-        == DEFAULT_MAX_CYCLE_DURATION_MINUTES
-    )
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES))
-        == DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
-    )
+    inherited_defaults = {
+        CONF_LHS_RETENTION_DAYS: DEFAULT_LHS_RETENTION_DAYS,
+        CONF_DEAD_TIME_MINUTES: DEFAULT_DEAD_TIME_MINUTES,
+        CONF_TEMP_DELTA_THRESHOLD: DEFAULT_TEMP_DELTA_THRESHOLD,
+        CONF_CYCLE_SPLIT_DURATION_MINUTES: DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
+        CONF_MIN_CYCLE_DURATION_MINUTES: DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+        CONF_MAX_CYCLE_DURATION_MINUTES: DEFAULT_MAX_CYCLE_DURATION_MINUTES,
+        CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+    }
+    for key, default in inherited_defaults.items():
+        assert _get_default_value(_find_schema_key(schema, key)) == "inherited", key
+        assert _shown_text(schema, key) == str(default), key
+    assert _get_default_value(_find_schema_key(schema, CONF_AUTO_LEARNING)) == "inherited"
+    assert _shown_text(schema, CONF_AUTO_LEARNING) == ("on" if DEFAULT_AUTO_LEARNING else "off")

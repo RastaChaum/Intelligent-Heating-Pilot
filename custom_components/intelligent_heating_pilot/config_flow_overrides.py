@@ -5,6 +5,12 @@ A theme form shows every setting of the group. A shareable setting comes with an
 device gets from the central configuration and cannot be edited; custom, it shows the usual
 selector. Switching a setting back to inherited removes the device's own value. "None" is a
 valid custom value of an optional sensor, distinct from "inherited".
+
+How the form opens on the right side matters. The frontend builds the initial data of a choose
+selector itself: it takes the ``default`` as the plain value of the *first* choice and makes that
+choice the active one, whatever a structured default says. So a setting that is overridden lists
+"Custom" first and defaults to its own value, and an inherited one lists "Inherited" first and
+defaults to the inherited marker.
 """
 
 from __future__ import annotations
@@ -63,21 +69,26 @@ class InheritableSelector(selector.ChooseSelector):
     shown. The validation keeps which side was chosen, which the stock choose selector drops.
     """
 
-    def __init__(self, own: Any, inherited_label: str, optional: bool) -> None:
+    def __init__(
+        self, own: Any, inherited_label: str, optional: bool, own_first: bool = False
+    ) -> None:
         """Build the toggle.
 
         Args:
             own: The selector the setting uses when it has its own value.
             inherited_label: The inherited value, as shown to the user.
             optional: True when an empty own value means "no sensor".
+            own_first: True to list "Custom" first, which is the side the frontend opens on.
         """
         inherited = selector.ConstantSelector(
             selector.ConstantSelectorConfig(value=INHERITED, label=inherited_label)
         )
+        choices: dict[str, Any] = {INHERITED: {"selector": inherited}, CUSTOM: {"selector": own}}
+        if own_first:
+            choices = {CUSTOM: choices[CUSTOM], INHERITED: choices[INHERITED]}
         super().__init__(
             selector.ChooseSelectorConfig(
-                choices={INHERITED: {"selector": inherited}, CUSTOM: {"selector": own}},
-                translation_key=INHERITANCE_TRANSLATION_KEY,
+                choices=choices, translation_key=INHERITANCE_TRANSLATION_KEY
             )
         )
         self._own = own
@@ -86,14 +97,29 @@ class InheritableSelector(selector.ChooseSelector):
     def __call__(self, data: Any) -> InheritanceChoice:
         """Validate a submitted toggle.
 
+        A plain value is accepted too: it is the form's default, which the validation applies to
+        a field that was not submitted, and what a frontend that does not wrap the default sends
+        back for a field left untouched.
+
         Raises:
             vol.Invalid: If the data is not a toggle, or a required own value is missing.
         """
-        if not isinstance(data, Mapping) or data.get(ACTIVE_CHOICE) not in (INHERITED, CUSTOM):
+        if not isinstance(data, Mapping):
+            return self._from_plain_value(data)
+        if data.get(ACTIVE_CHOICE) not in (INHERITED, CUSTOM):
             raise vol.Invalid("Expected an inherited or a custom value")
         if data[ACTIVE_CHOICE] == INHERITED:
             return InheritanceChoice(inherit=True)
-        value = data.get(CUSTOM)
+        return self._custom_choice(data.get(CUSTOM))
+
+    def _from_plain_value(self, data: Any) -> InheritanceChoice:
+        if data == INHERITED:
+            return InheritanceChoice(inherit=True)
+        if data is None and not self._optional:
+            raise vol.Invalid("Expected an inherited or a custom value")
+        return self._custom_choice(data)
+
+    def _custom_choice(self, value: Any) -> InheritanceChoice:
         if _is_blank(value):
             if self._optional:
                 return InheritanceChoice(inherit=False)
@@ -101,18 +127,18 @@ class InheritableSelector(selector.ChooseSelector):
         return InheritanceChoice(inherit=False, value=self._own(value))
 
 
-def initial_choice(setting: ResolvedSetting) -> dict[str, Any]:
-    """Return the toggle as the form opens: on the device's own value, else on inherited.
+def is_overridden(setting: ResolvedSetting) -> bool:
+    """Tell whether the device has its own value for a setting."""
+    return setting.source is SettingSource.OVERRIDE
 
-    The custom side starts from the effective value, so that switching to custom starts from
-    what the device uses now.
+
+def initial_choice(setting: ResolvedSetting) -> Any:
+    """Return the default of a toggle: the device's own value, else the inherited marker.
+
+    It is the plain value of the first choice (see the module docstring), so it is the device's
+    own value when ``is_overridden``, and ``INHERITED`` otherwise.
     """
-    overridden = setting.source is SettingSource.OVERRIDE
-    initial: dict[str, Any] = {ACTIVE_CHOICE: CUSTOM if overridden else INHERITED}
-    initial[INHERITED] = INHERITED
-    if not _is_blank(setting.value):
-        initial[CUSTOM] = setting.value
-    return initial
+    return setting.value if is_overridden(setting) else INHERITED
 
 
 def changed_values(
@@ -184,6 +210,7 @@ class OverrideThemeStepsMixin(ThemeStepsMixin):
                 selector_for(key),
                 self._describe(key, inherited[key].value, words),
                 definition.optional,
+                own_first=is_overridden(effective[key]),
             )
             schema[vol.Optional(key, default=initial_choice(effective[key]))] = toggle
         return vol.Schema(schema)

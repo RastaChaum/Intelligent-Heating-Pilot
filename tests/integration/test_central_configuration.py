@@ -23,6 +23,7 @@ from custom_components.intelligent_heating_pilot.const import (
     CONF_CLIMATE_ENTITY,
     CONF_ENTRY_TYPE,
     CONF_LHS_RETENTION_DAYS,
+    CONF_MAX_CYCLE_DURATION_MINUTES,
     CONF_NAME,
     CONF_TEMPERATURE_OUT_ENTITY,
     DEFAULT_LHS_RETENTION_DAYS,
@@ -36,7 +37,7 @@ from custom_components.intelligent_heating_pilot.infrastructure.adapters.central
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.device_config_reader import (
     HADeviceConfigReader,
 )
-from tests.integration.options_helpers import INHERIT, custom, save_theme
+from tests.integration.options_helpers import INHERIT, custom, frontend_initial_data, save_theme
 
 pytestmark = pytest.mark.usefixtures("flow_environment")
 
@@ -421,12 +422,41 @@ async def test_each_shared_setting_opens_on_inherited_or_on_its_own_value(
 
     form = await _open(hass, device, "learning")
 
-    retention, _ = _toggle(form, CONF_LHS_RETENTION_DAYS)
-    dead_time, _ = _toggle(form, "dead_time_minutes")
-    assert retention.default()["active_choice"] == "inherited"
-    assert retention.default()["custom"] == 60
-    assert dead_time.default()["active_choice"] == "custom"
-    assert dead_time.default()["custom"] == 7
+    opened = frontend_initial_data(form)
+    assert opened[CONF_LHS_RETENTION_DAYS]["active_choice"] == "inherited"
+    assert opened["dead_time_minutes"] == {"active_choice": "custom", "custom": 7}
+
+
+@pytest.mark.asyncio
+async def test_a_custom_value_is_still_custom_when_the_form_is_reopened(
+    hass: HomeAssistant,
+) -> None:
+    """The frontend computes the opening data itself: a custom value must survive that (#302)."""
+    _add_central(hass, {CONF_MAX_CYCLE_DURATION_MINUTES: 180})
+    device = _loaded_device(hass)
+    menu = await hass.config_entries.options.async_init(device.entry_id)
+    await save_theme(
+        hass, menu["flow_id"], "cycle_detection", {CONF_MAX_CYCLE_DURATION_MINUTES: 120}
+    )
+
+    form = await _open(hass, device, "cycle_detection")
+
+    opened = frontend_initial_data(form)[CONF_MAX_CYCLE_DURATION_MINUTES]
+    assert opened == {"active_choice": "custom", "custom": 120}
+    assert _inherited_label(form, CONF_MAX_CYCLE_DURATION_MINUTES) == "180"
+
+
+@pytest.mark.asyncio
+async def test_saving_a_form_as_the_frontend_opened_it_keeps_the_custom_values(
+    hass: HomeAssistant,
+) -> None:
+    _add_central(hass, {CONF_MAX_CYCLE_DURATION_MINUTES: 180})
+    device = _loaded_device(hass, options={CONF_MAX_CYCLE_DURATION_MINUTES: 120})
+    form = await _open(hass, device, "cycle_detection")
+
+    await hass.config_entries.options.async_configure(form["flow_id"], frontend_initial_data(form))
+
+    assert device.options[CONF_MAX_CYCLE_DURATION_MINUTES] == 120
 
 
 @pytest.mark.asyncio
