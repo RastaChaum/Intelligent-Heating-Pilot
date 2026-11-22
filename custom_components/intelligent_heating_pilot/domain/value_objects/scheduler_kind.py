@@ -11,5 +11,6 @@ class SchedulerKind(Enum):
     HACS = "hacs"
     NATIVE = "native"
     CLIMATE_SCHEDULER = "climate_scheduler"
+    CHAUFFAGE = "chauffage"
     TIMESTAMP = "timestamp"
     UNKNOWN = "unknown"

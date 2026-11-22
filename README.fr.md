@@ -37,6 +37,7 @@ IHP surveille votre thermostat, apprend à quelle vitesse votre pièce chauffe e
 | --- | --- | --- |
 | [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) (`switch.schedule_*`) | ✅ | ✅ |
 | [Climate Scheduler](https://github.com/kneave/climate-scheduler) | ✅ | ✅ |
+| [ha-chauffage](https://github.com/armellarcier/ha-chauffage) (son capteur *Prochain changement*) | ✅ | ✅ |
 | Helper natif `schedule.*` | ✅ | ⚙️ si vous activez le pilotage direct (ou construisez votre propre automatisation) |
 | Autres planificateurs (automatisations, calendriers, autres intégrations) | ❌ | ❌ utilisez le service `calculate_anticipated_start_time` |
 

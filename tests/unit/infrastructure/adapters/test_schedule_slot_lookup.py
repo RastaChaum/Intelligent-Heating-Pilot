@@ -303,3 +303,38 @@ class TestSeveralSchedulers:
         around = await lookup.get_slots_around(MOMENT)
 
         assert around.following is not None
+
+
+@pytest.mark.asyncio
+class TestChauffage:
+    SENSOR = "sensor.next_change"
+
+    def _state(self, start: datetime, **attributes) -> Mock:
+        attrs = {"hvac_mode": "heat", "preset_mode": None, "temperature": None, **attributes}
+        return Mock(state=start.isoformat(), attributes=attrs)
+
+    async def test_the_next_change_follows_the_moment(self) -> None:
+        start = MOMENT + timedelta(hours=2)
+        states = {self.SENSOR: self._state(start, preset_mode="comfort")}
+        lookup = _lookup({self.SENSOR: SchedulerKind.CHAUFFAGE}, states)
+
+        around = await lookup.get_slots_around(MOMENT)
+
+        assert around.in_effect is None
+        assert around.following is not None
+        assert around.following.target_time == start
+        assert around.following.action == SlotAction(preset="comfort")
+        assert around.following.target_temp == 21.0
+
+    async def test_a_change_that_is_not_heating_is_no_slot(self) -> None:
+        start = MOMENT + timedelta(hours=2)
+        states = {self.SENSOR: self._state(start, hvac_mode="off", temperature=17.0)}
+        lookup = _lookup({self.SENSOR: SchedulerKind.CHAUFFAGE}, states)
+
+        assert (await lookup.get_slots_around(MOMENT)).following is None
+
+    async def test_a_sensor_with_no_next_change_is_no_slot(self) -> None:
+        states = {self.SENSOR: Mock(state="unknown", attributes={})}
+        lookup = _lookup({self.SENSOR: SchedulerKind.CHAUFFAGE}, states)
+
+        assert (await lookup.get_slots_around(MOMENT)).following is None

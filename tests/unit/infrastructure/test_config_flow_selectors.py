@@ -115,3 +115,49 @@ def test_the_thermostat_is_required_and_the_sensors_suggest_their_value() -> Non
         str(k): k.description.get("suggested_value") for k in environment.schema if k.description
     }
     assert suggested == {const.CONF_TEMPERATURE_OUT_ENTITY: "sensor.out"}
+
+
+def _state(entity_id: str, **attributes) -> Mock:
+    return Mock(entity_id=entity_id, domain=entity_id.split(".")[0], attributes=attributes)
+
+
+def _hass_with(states: list[Mock], platforms: dict[str, str]) -> Mock:
+    hass = _hass()
+    hass.states.async_all.return_value = states
+    hass.states.get.return_value = None
+    registry = Mock()
+    registry.async_get = lambda entity_id: (
+        Mock(platform=platforms[entity_id]) if entity_id in platforms else None
+    )
+    return hass, registry
+
+
+def _offered(states: list[Mock], platforms: dict[str, str]) -> set[str]:
+    from unittest.mock import patch
+
+    hass, registry = _hass_with(states, platforms)
+    with patch(
+        "custom_components.intelligent_heating_pilot.config_flow_selectors.er.async_get",
+        return_value=registry,
+    ):
+        built = selector_for(const.CONF_SCHEDULER_ENTITIES, hass)
+    return {option["value"] for option in built.config["options"]}
+
+
+def test_a_chauffage_sensor_is_offered_as_a_scheduler() -> None:
+    states = [
+        _state("sensor.living_room_next_change"),
+        _state("switch.living_room_schedule"),
+    ]
+
+    offered = _offered(states, {"sensor.living_room_next_change": "chauffage"})
+
+    assert offered == {"sensor.living_room_next_change", "switch.living_room_schedule"}
+
+
+def test_a_plain_sensor_is_not_offered_as_a_scheduler() -> None:
+    states = [_state("sensor.phone_next_alarm"), _state("switch.living_room_schedule")]
+
+    offered = _offered(states, {"sensor.phone_next_alarm": "mobile_app"})
+
+    assert offered == {"switch.living_room_schedule"}

@@ -51,6 +51,7 @@ IHP does not work with every scheduler. What it can do depends on the scheduler 
 |-----------|---------------------------|------------------------|
 | [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) switch (`switch.schedule_*`) | ✅ Yes | ✅ Yes, through the scheduler's own `run_action` |
 | [Climate Scheduler](https://github.com/kneave/climate-scheduler) switch | ✅ Yes | ✅ Yes, IHP applies the node's action to the thermostat |
+| [ha-chauffage](https://github.com/armellarcier/ha-chauffage) *Next change* sensor | ✅ Yes | ✅ Yes, IHP applies the change to the thermostat |
 | Native Home Assistant `schedule.*` helper | ✅ Yes | ⚙️ Only if you turn on [direct control](#native-schedule-helpers) |
 | Anything else (automations, calendars, `input_datetime`, other scheduler integrations) | ❌ No | ❌ No |
 
@@ -84,6 +85,18 @@ IHP recognises a Climate Scheduler switch by the integration that registered it,
 - Climate Scheduler applies a node when it starts, and again after a restart or an edit. If it undoes a preheat that way, IHP does not fight it: the slot is simply reached on time.
 - A schedule that does not name its thermostats is taken as this device's thermostat.
 - **Limit:** between the last node of the day and midnight, Climate Scheduler announces the first node of *today's* schedule instead of tomorrow's, which is wrong in its 5/2 and individual modes (after midnight it is right). IHP follows what the switch announces.
+
+#### ha-chauffage
+
+Pick the **Next change** sensor of your thermostat (it needs a version of ha-chauffage that publishes it) like any scheduler. IHP recognises it by the integration that registered it, so a plain timestamp sensor is still a [wake-up source](#wake-up-sources-alarm-date-time-entity), not a scheduler. Its state is the time of the next change, and its attributes are named like a `climate` entity's. At the anticipated start IHP applies the change to this device's thermostat itself, with no extra automation:
+
+- A change that sets a **preset** (`preset_mode`) is applied as a preset, and the `temperature` that comes with it is what the preset gives, used for the anticipation. Otherwise the `temperature` is applied as a temperature.
+- Only changes whose `hvac_mode` is `heat` are anticipated: IHP only heats.
+- During an override, the sensor gives the end of the override: IHP never preheats a slot that will not run.
+- An `unknown` or `unavailable` sensor means no slot to preheat.
+- IHP applies the change with a context that has a parent, as an automation does, so ha-chauffage creates no override. At the slot time it applies the same value, which changes nothing.
+- IHP re-reads the sensor on every change: if the slot is moved or removed, the preheat is cancelled and the thermostat is put back.
+- **Limit:** IHP sees one change ahead. If a slot is shorter than the anticipation the next one needs, that next slot is preheated late.
 
 #### Native `schedule.*` Helpers
 
@@ -208,6 +221,7 @@ What the schedule can tell depends on the scheduler:
 | Native `schedule.*` (Home Assistant 2025.3+) | ✅ | ✅ |
 | HACS Scheduler | ❌ | ✅, once no other slot lies between now and the wake-up time |
 | Climate Scheduler | ❌ | ✅, once no other slot lies between now and the wake-up time |
+| ha-chauffage | ❌ | ✅, once no other slot lies between now and the wake-up time |
 
 When only one slot is known, IHP uses it only if its temperature is **higher** than your thermostat's current target; otherwise it falls back to the fixed target. With HACS Scheduler and Climate Scheduler, giving a fixed target as well is therefore recommended.
 

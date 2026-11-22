@@ -12,6 +12,7 @@ from typing import Any, NamedTuple
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, State
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .domain.constants import (
@@ -40,6 +41,8 @@ from .domain.services.settings_catalog import SettingsCatalog
 from .domain.value_objects.setting_definition import SettingDefinition, SettingTheme
 
 SCHEDULER_DOMAINS = ("switch", "schedule")
+# ha-chauffage publishes its next change as a sensor, found by the platform that owns it
+CHAUFFAGE_PLATFORM = "chauffage"
 MISSING_ENTITY_LABEL = "{entity_id} (not found)"
 UNIT_DAYS = "days"
 UNIT_MINUTES = "minutes"
@@ -114,8 +117,22 @@ def entity_label(hass: HomeAssistant, entity_id: str) -> str:
     return f"{friendly_name} ({entity_id})"
 
 
-def _is_scheduler(state: State) -> bool:
+def _is_chauffage_sensor(hass: HomeAssistant, state: State) -> bool:
+    """Tell whether a state is a sensor of ha-chauffage: its next change is read as a scheduler.
+
+    A plain timestamp sensor is a wake-up source, not a scheduler: only the registry platform
+    tells the two apart.
+    """
+    if state.domain != "sensor":
+        return False
+    entry = er.async_get(hass).async_get(state.entity_id)
+    return entry is not None and entry.platform == CHAUFFAGE_PLATFORM
+
+
+def _is_scheduler(hass: HomeAssistant, state: State) -> bool:
     """Tell whether a state looks like a scheduler (scheduler-component switch or schedule)."""
+    if _is_chauffage_sensor(hass, state):
+        return True
     return state.domain in SCHEDULER_DOMAINS and bool(
         "schedule" in state.entity_id.lower()
         or state.attributes.get("next_trigger")
@@ -131,7 +148,7 @@ def scheduler_selector(hass: HomeAssistant, configured: Iterable[str]) -> Any:
     not be saved, and the user could not see which entry to remove (#192). When no scheduler
     is found, the entity picker accepts any switch or schedule entity, configured or not.
     """
-    found = {state.entity_id for state in hass.states.async_all() if _is_scheduler(state)}
+    found = {state.entity_id for state in hass.states.async_all() if _is_scheduler(hass, state)}
     if not found:
         return selector.EntitySelector(
             selector.EntitySelectorConfig(domain=list(SCHEDULER_DOMAINS), multiple=True)

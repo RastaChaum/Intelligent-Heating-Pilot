@@ -23,6 +23,7 @@ from ...domain.interfaces.preset_temperature_resolver_interface import IPresetTe
 from ...domain.interfaces.schedule_slot_lookup_interface import IScheduleSlotLookup
 from ...domain.interfaces.scheduler_ownership_resolver_interface import ISchedulerOwnershipResolver
 from ...domain.value_objects import ScheduledTimeslot, SchedulerKind, SlotAction, SlotsAround
+from .chauffage_reader import HAChauffageReader
 from .climate_scheduler_reader import HAClimateSchedulerReader
 from .native_schedule_reader import HANativeScheduleReader, NativeBlock
 from .utils import get_entity_name
@@ -60,6 +61,7 @@ class HAScheduleSlotLookup(IScheduleSlotLookup):
         self._resolver = ownership_resolver
         self._native = native_reader
         self._climate_scheduler = climate_scheduler_reader
+        self._chauffage = HAChauffageReader()
         self._presets = preset_resolver
 
     async def get_slots_around(self, moment: datetime) -> SlotsAround:
@@ -97,7 +99,7 @@ class HAScheduleSlotLookup(IScheduleSlotLookup):
         kind = self._resolver.resolve(entity_id)
         if kind is SchedulerKind.NATIVE:
             return await self._native_around(entity_id, moment)
-        if kind in (SchedulerKind.HACS, SchedulerKind.CLIMATE_SCHEDULER):
+        if kind in (SchedulerKind.HACS, SchedulerKind.CLIMATE_SCHEDULER, SchedulerKind.CHAUFFAGE):
             return self._next_trigger_around(entity_id, kind, moment)
         return SlotsAround()
 
@@ -122,6 +124,8 @@ class HAScheduleSlotLookup(IScheduleSlotLookup):
             return SlotsAround()
         if kind is SchedulerKind.CLIMATE_SCHEDULER:
             start, action = self._climate_scheduler.read(state.attributes)
+        elif kind is SchedulerKind.CHAUFFAGE:
+            start, action = self._chauffage.read(state)
         else:
             start, action = _hacs_next(state.attributes)
         if start is None or start <= moment:

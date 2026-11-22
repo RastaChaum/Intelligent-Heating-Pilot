@@ -55,6 +55,7 @@ Use cases ask one question of one port, `IPreheatActuator`: "start the preheat o
 |-----------|------------------|-----------|
 | HACS Scheduler | entity registry platform `scheduler` | delegated: IHP calls its `run_action` (it can evaluate conditions) |
 | Climate Scheduler | platform `climate_scheduler` | direct: IHP applies the node's action to the climate |
+| ha-chauffage *Next change* sensor | platform `chauffage` | direct: IHP applies the preset or temperature to the climate |
 | Native `schedule.*` | entity domain | direct, only when the user opts in |
 | Anything else | | computed only: nothing is sent, nothing fails |
 
