@@ -23,8 +23,8 @@ from custom_components.intelligent_heating_pilot.config_flow import (
     IntelligentHeatingPilotOptionsFlow,
 )
 from custom_components.intelligent_heating_pilot.const import (
+    CONF_CLIMATE_ENTITY,
     CONF_NAME,
-    CONF_VTHERM_ENTITY,
     DEFAULT_NAME,
     DOMAIN,
 )
@@ -46,10 +46,11 @@ FIELD_TEXT_SECTIONS = ("data", "data_description")
 SERVICE_TEXT_KEYS = ("name", "description")
 
 # Input the flow handlers reject with their own errors (not the schema's).
-MISSING_VTHERM_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: ""}
+MISSING_VTHERM_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_CLIMATE_ENTITY: ""}
 OTHER_DEVICE_VTHERM = "climate.office"
-VTHERM_IN_USE_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: OTHER_DEVICE_VTHERM}
+VTHERM_IN_USE_INPUT = {CONF_NAME: DEFAULT_NAME, CONF_CLIMATE_ENTITY: OTHER_DEVICE_VTHERM}
 REJECTED_INPUTS = [MISSING_VTHERM_INPUT, VTHERM_IN_USE_INPUT]
+WAKE_UP_ERRORS = {"wake_up_target_required", "wake_up_duplicate"}
 
 # Errors each form raises for REJECTED_INPUTS. A VTherm in use aborts the setup (#192),
 # so it is no form error there.
@@ -57,6 +58,15 @@ EXPECTED_ERRORS = {
     "setup": {"required"},
     "options": {"required", "vtherm_already_configured"},
 }
+# The themes of the options menu that are plain forms (the wake-up sources have their own flow).
+OPTION_THEMES = (
+    "thermostat_schedulers",
+    "native_schedule",
+    "environment",
+    "learning",
+    "cycle_detection",
+    "anticipation",
+)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -73,7 +83,7 @@ def _add_entry(
         domain=DOMAIN,
         entry_id=entry_id,
         unique_id=vtherm,
-        data={CONF_NAME: DEFAULT_NAME, CONF_VTHERM_ENTITY: vtherm},
+        data={CONF_NAME: DEFAULT_NAME, CONF_CLIMATE_ENTITY: vtherm},
         options={},
     )
     entry.add_to_hass(hass)
@@ -84,9 +94,22 @@ async def _open_user_form(hass: HomeAssistant) -> FlowResult:
     return await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
 
 
-async def _open_options_form(hass: HomeAssistant) -> FlowResult:
-    entry = _add_entry(hass)
-    return await hass.config_entries.options.async_init(entry.entry_id)
+def _options_opener(theme: str) -> FormOpener:
+    """Open the form of one theme of the options menu (#302)."""
+
+    async def _open(hass: HomeAssistant) -> FlowResult:
+        entry = _add_entry(hass)
+        menu = await hass.config_entries.options.async_init(entry.entry_id)
+        assert menu["type"] == "menu"
+        return await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": theme}
+        )
+
+    return _open
+
+
+FormOpener = Callable[[HomeAssistant], Awaitable[FlowResult]]
+FormSubmitter = Callable[[HomeAssistant, dict[str, Any]], Awaitable[FlowResult]]
 
 
 async def _submit_user_form(hass: HomeAssistant, user_input: dict[str, Any]) -> FlowResult:
@@ -95,21 +118,26 @@ async def _submit_user_form(hass: HomeAssistant, user_input: dict[str, Any]) -> 
     return await flow.async_step_user(user_input)
 
 
-async def _submit_options_form(hass: HomeAssistant, user_input: dict[str, Any]) -> FlowResult:
+async def _submit_thermostat_form(hass: HomeAssistant, user_input: dict[str, Any]) -> FlowResult:
     flow = IntelligentHeatingPilotOptionsFlow()
     flow.hass = hass
     entry = hass.config_entries.async_get_entry("translations_entry") or _add_entry(hass)
     flow.handler = entry.entry_id
-    return await flow.async_step_init(user_input)
+    return await flow.async_step_thermostat_schedulers(user_input)
 
-
-FormOpener = Callable[[HomeAssistant], Awaitable[FlowResult]]
-FormSubmitter = Callable[[HomeAssistant, dict[str, Any]], Awaitable[FlowResult]]
 
 # (translation section, step id, opener, submitter) for each form of the integration.
-FORMS: dict[str, tuple[str, str, FormOpener, FormSubmitter]] = {
+FORMS: dict[str, tuple[str, str, FormOpener, FormSubmitter | None]] = {
     "setup": ("config", "user", _open_user_form, _submit_user_form),
-    "options": ("options", "init", _open_options_form, _submit_options_form),
+    **{
+        f"options:{theme}": ("options", theme, _options_opener(theme), None)
+        for theme in OPTION_THEMES
+    },
+}
+# The forms that validate their input: the others accept any value their selectors accept.
+SUBMITTERS: dict[str, tuple[str, FormSubmitter]] = {
+    "setup": ("config", _submit_user_form),
+    "options": ("options", _submit_thermostat_form),
 }
 
 
@@ -156,13 +184,13 @@ async def test_every_form_field_has_a_label_and_a_help_text(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("form_name", FORMS)
+@pytest.mark.parametrize("form_name", SUBMITTERS)
 @pytest.mark.parametrize("translation_file", TRANSLATION_FILES, ids=lambda path: path.name)
 async def test_declared_errors_are_the_ones_the_form_raises(
     hass: HomeAssistant, form_name: str, translation_file: Path
 ) -> None:
     """A validation error shows a message, and no error is declared that cannot occur."""
-    section, _, _, submit_form = FORMS[form_name]
+    section, submit_form = SUBMITTERS[form_name]
     _add_entry(hass, entry_id="other_device", vtherm=OTHER_DEVICE_VTHERM)
     raised: set[str] = set()
     for user_input in REJECTED_INPUTS:
@@ -170,7 +198,10 @@ async def test_declared_errors_are_the_ones_the_form_raises(
         raised |= set((result.get("errors") or {}).values())
 
     assert raised == EXPECTED_ERRORS[form_name]
-    assert set(_load_json(translation_file)[section].get("error", {})) == raised
+    # The wake-up source forms raise their own errors: covered in
+    # tests/unit/infrastructure/test_translation_parity.py
+    declared = set(_load_json(translation_file)[section].get("error", {}))
+    assert declared - WAKE_UP_ERRORS == raised
 
 
 def test_french_declares_the_same_keys_as_english() -> None:

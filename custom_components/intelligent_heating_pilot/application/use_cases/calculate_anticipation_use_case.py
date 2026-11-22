@@ -26,7 +26,7 @@ if TYPE_CHECKING:
         ISunReader,
     )
     from ...domain.services import DeadTimeCalculationService, PredictionService
-    from ...domain.value_objects import DaylightPeriod
+    from ...domain.value_objects import DaylightPeriod, ScheduledTimeslot, SlotAction
     from ..heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
     from ..lhs_lifecycle_manager import LhsLifecycleManager
 
@@ -124,6 +124,8 @@ class CalculateAnticipationUseCase:
         timeslot = None
         scheduler_entity = None
         timeslot_id = None
+        slot_action = None
+        next_slot = None
 
         # Always get environment data (for minimal return structure)
         environment = await self._environment_reader.get_current_environment()
@@ -166,6 +168,8 @@ class CalculateAnticipationUseCase:
             target_temp = timeslot.target_temp
             scheduler_entity = timeslot.scheduler_entity
             timeslot_id = timeslot.timeslot_id
+            slot_action = timeslot.action
+            next_slot = timeslot
         else:
             # Using provided target_time (API/REST usage without scheduler)
             if target_temp is None:
@@ -255,6 +259,8 @@ class CalculateAnticipationUseCase:
             confidence_level=prediction.confidence_level,
             timeslot_id=timeslot_id,
             scheduler_entity=scheduler_entity,
+            next_slot_action=slot_action,
+            next_slot=next_slot,
             dead_time=dead_time,
             humidity=humidity,
             cloud_coverage=cloud_coverage,
@@ -274,6 +280,8 @@ class CalculateAnticipationUseCase:
         confidence_level: float | None = None,
         timeslot_id: str | None = None,
         scheduler_entity: str | None = None,
+        next_slot_action: SlotAction | None = None,
+        next_slot: ScheduledTimeslot | None = None,
         dead_time: float | None = None,
         humidity: float | None = None,
         cloud_coverage: float | None = None,
@@ -292,6 +300,8 @@ class CalculateAnticipationUseCase:
             "confidence_level": confidence_level,
             "timeslot_id": timeslot_id,
             "scheduler_entity": scheduler_entity,
+            "next_slot_action": next_slot_action,
+            "next_slot": next_slot,
             "dead_time": dead_time,
             "humidity": humidity,
             "cloud_coverage": cloud_coverage,

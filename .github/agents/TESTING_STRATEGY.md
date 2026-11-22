@@ -213,6 +213,7 @@ async def test_cascade_continues_with_none_cycles():
     await manager._trigger_lhs_cascade(cycles=None)  # Should handle gracefully
     # Verify no exception raised
 
+
 @pytest.mark.asyncio
 async def test_cascade_logs_detailed_exception_context():
     """Technical constraint: Exception must include device_id and date."""
@@ -265,6 +266,7 @@ def test_cache_returns_stored_cycle():  # ❌ REDONDANT avec BDD
     result = cache.get(cycle.device_id, cycle.date)
     assert result == cycle
 
+
 def test_cache_evicts_oldest_when_full():  # ✅ GARDER (algorithme FIFO)
     cache = MemoryCache(max_size=50)
     for i in range(51):
@@ -295,6 +297,7 @@ def test_eviction_preserves_fifo_order():  # ✅ GARDER (algorithme technique)
 
     assert "A" not in cache  # First-in evicted
     assert ["B", "C", "D"] == list(cache.keys())  # Order preserved
+
 
 def test_eviction_with_zero_size_cache():  # ✅ GARDER (edge case)
     """Edge case: Cache with size 0 should not crash."""
@@ -358,10 +361,7 @@ Scenario: Oldest cycle evicted when cache full  # ✅ GARDER (comportement méti
 
 3. **Vérifier appels et paramètres**
    ```python
-   mock_lhs_service.calculate.assert_called_once_with(
-       cycles=expected_cycles,
-       force_recalculate=False
-   )
+   mock_lhs_service.calculate.assert_called_once_with(cycles=expected_cycles, force_recalculate=False)
    ```
 
 ---
@@ -395,12 +395,14 @@ Feature: Lazy Contextual LHS Population
 ```python
 # tests/unit/application/test_lazy_contextual_lhs_population.py
 
+
 @pytest.mark.asyncio
 async def test_ensure_contextual_lhs_handles_none_cycles():
     """Edge case: None cycles should not crash lazy population."""
     manager = create_lhs_manager_with_mocks()
     await manager.ensure_contextual_lhs_populated(cycles=None)
     # Should not raise exception
+
 
 @pytest.mark.asyncio
 async def test_ensure_contextual_lhs_handles_storage_error():
@@ -415,16 +417,14 @@ async def test_ensure_contextual_lhs_handles_storage_error():
     # Error should be logged
     assert "Permission denied" in captured_log
 
+
 @pytest.mark.asyncio
 async def test_force_recalculate_bypasses_cache():
     """Algorithmic validation: force_recalculate flag works correctly."""
     manager = create_lhs_manager_with_mocks()
     manager._memory_lhs_cache = {"device_1": existing_lhs}  # Pre-populate
 
-    await manager.ensure_contextual_lhs_populated(
-        cycles=[cycle],
-        force_recalculate=True
-    )
+    await manager.ensure_contextual_lhs_populated(cycles=[cycle], force_recalculate=True)
 
     # Should calculate despite cached value
     mock_calculator.calculate.assert_called_once()

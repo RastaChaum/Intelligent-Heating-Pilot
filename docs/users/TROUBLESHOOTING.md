@@ -50,7 +50,7 @@
 - ✅ **Check file permissions** - Home Assistant user must read/execute
 - ✅ **Verify folder name** - Must be exactly `intelligent_heating_pilot`
 - ✅ **Check `manifest.json`** - Should be valid JSON, not corrupted
-- ✅ **Install Versatile Thermostat** - IHP cannot load without it. The log then shows `Unable to set up dependencies of 'intelligent_heating_pilot'`
+- ✅ **Check the Recorder and HTTP integrations** - IHP needs them. Versatile Thermostat is not required
 
 **If still not working:**
 - Share error logs on [GitHub Issues](https://github.com/RastaChaum/Intelligent-Heating-Pilot/issues)
@@ -62,12 +62,12 @@
 ### My thermostat is not in the list
 
 **Symptoms:**
-- The VTherm field does not offer your thermostat
+- The thermostat field does not offer your climate
 - Or "This integration is already configured" when you submit
 
 **Solution:**
 
-1. Only **Versatile Thermostat** entities are offered. A thermostat from another integration cannot be used with IHP
+1. Every `climate` entity is offered. Check that its integration is loaded and that the entity exists in Developer Tools → States
 2. "This integration is already configured" means another IHP device already has this **Name**: choose another name
 
 ### Home Assistant slow or unresponsive after IHP configuration
@@ -128,7 +128,7 @@
 
 **Solution:**
 
-IHP only supports HACS Scheduler switches and native `schedule.*` helpers (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers)). Automations, calendars and other scheduler integrations cannot be selected.
+IHP only supports HACS Scheduler and Climate Scheduler switches and native `schedule.*` helpers (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers)). Automations, calendars and other scheduler integrations cannot be selected.
 
 
 1. Verify HACS Scheduler is installed:
@@ -197,7 +197,7 @@ IHP only supports HACS Scheduler switches and native `schedule.*` helpers (see [
 2. **No cycle learned for this hour** - The Contextual Learned Heating Slope stays `unknown` until a cycle is learned for the next slot's hour (the global slope is used meanwhile)
 3. **No supported scheduler, or no slot IHP can read** - See [Supported Schedulers](CONFIGURATION.md#supported-schedulers)
 4. **Scheduler switched off** - If a HACS Scheduler's state is "off", its slots are ignored (this is normal)
-5. **Native schedule ON** - While a `schedule.*` helper is ON, its next block is not known yet
+5. **Native schedule with no next block** - A `schedule.*` helper with no block starting later has nothing to anticipate
 
 **Solution:**
 
@@ -209,7 +209,7 @@ IHP only supports HACS Scheduler switches and native `schedule.*` helpers (see [
 
 2. **Check the next slot:**
    - Its action must be `climate.set_temperature` or `climate.set_preset_mode`
-   - For a preset, the VTherm must expose that preset's temperature
+   - For a preset, the thermostat must publish that preset's temperature (Versatile Thermostat does), or you must map it in **Configure → Map presets to temperatures**
 
 3. **Verify VTherm is working:**
    - Check VTherm entity in Developer Tools → States
@@ -249,6 +249,17 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
 
 ## 🔥 Heating Not Triggering
 
+### IHP applied a preset or a temperature, then the thermostat went back
+
+**What may be happening:**
+
+1. **Versatile Thermostat's manual override duration is set** and your slot sets a *temperature*: VTherm undoes it after that duration (see [Manual Override Duration](CONFIGURATION.md#when-ihp-applies-a-temperature-the-manual-override-duration)). Use presets in your slots, or leave the option off.
+2. **Your scheduler re-applied its current setting** after a restart or an edit. IHP does not fight it: the slot is reached on time, and the preheat is simply lost.
+3. **You or an automation changed the thermostat during the preheat.** IHP never overwrites a change made by someone else, and restores nothing when the preheat is cancelled.
+4. **The thermostat is off.** IHP leaves it off and waits quietly (only visible in the debug log).
+5. **The thermostat is locked, or in a mode that ignores presets.** IHP logs once per slot that the thermostat did not take the action, then tries again at each recalculation until the slot.
+6. **You changed the thermostat during the preheat.** IHP does not apply that slot again, so your change stands until the slot.
+
 ### Scheduler turns on but IHP never triggers it
 
 **Symptoms:**
@@ -258,7 +269,7 @@ See [Prediction Issues](#prediction-issues) below - likely a learning problem, n
 
 **Possible Causes:**
 
-1. **Native `schedule.*` helper** - IHP never starts the heating for it: it only computes the anticipated start (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers))
+1. **Native `schedule.*` helper without direct control** - IHP only computes the anticipated start unless you turn on **Drive Native Schedules** (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers))
 2. **IHP Preheating switch is off** - IHP keeps calculating but does not trigger anything
 3. **Unsupported slot action** - The slot does not use `climate.set_temperature` or `climate.set_preset_mode`, so IHP has no target to anticipate
 4. **Scheduler conditions not met** - The scheduler refused the slot; when every scheduler is blocked, the anticipation sensor lists them in its `blocked_schedulers` attribute
@@ -466,8 +477,9 @@ Prediction Confidence is not a sign of learning: it only depends on the slope us
 **Solution:**
 
 1. **Check the recorder:**
-   - The VTherm's history must be recorded (not excluded from the recorder)
+   - The thermostat's history must be recorded (not excluded from the recorder)
    - IHP learns from the current temperature, target temperature, `hvac_mode` and `hvac_action` history
+   - A thermostat that never publishes `hvac_action` (some TRVs) is preheated but cannot be learned from. The log shows one warning, `... does not publish hvac_action ...`. See [Using a climate that is not a Versatile Thermostat](CONFIGURATION.md#using-a-climate-that-is-not-a-versatile-thermostat)
 
 2. **Verify heating cycles:**
    - Cycles disturbed by load shedding or safety mode are not learned
@@ -475,7 +487,7 @@ Prediction Confidence is not a sign of learning: it only depends on the slope us
    - Enable debug logging and look for heating cycle extraction messages
 
 3. **Check thermostat settings:**
-   - VTherm must be in "heat" mode
+   - The thermostat must be in "heat" mode
    - Must have a target temperature set
    - Sensor must be actively reading temperature
 

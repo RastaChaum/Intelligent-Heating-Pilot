@@ -117,10 +117,10 @@ async def _async_handle_reset_learning(hass: HomeAssistant, call: ServiceCall) -
 
 def _vtherm_target_temp(hass: HomeAssistant, coordinator: HeatingApplication) -> Any:
     """Return the current VTherm setpoint, used when the caller gives no target."""
-    vtherm_entity_id = coordinator.get_vtherm_entity()
-    if not vtherm_entity_id:
+    climate_entity_id = coordinator.get_climate_entity()
+    if not climate_entity_id:
         return None
-    vtherm_state = hass.states.get(vtherm_entity_id)
+    vtherm_state = hass.states.get(climate_entity_id)
     return vtherm_state.attributes.get("temperature") if vtherm_state else None
 
 

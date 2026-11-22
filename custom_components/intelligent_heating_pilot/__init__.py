@@ -22,6 +22,16 @@ from homeassistant.util import dt as dt_util
 
 from .const import CONF_IHP_ENABLED, DOMAIN
 from .heating_application import HeatingApplication
+from .infrastructure.adapters.central_entry import (
+    applied_central_values,
+    central_values_of,
+    device_entries,
+    ensure_central_entry,
+    find_central_entry,
+    is_central_entry,
+    set_applied_central_values,
+)
+from .infrastructure.adapters.entry_changes import effective_values
 from .services import async_setup_services
 from .utils.config_helpers import as_bool
 from .view import async_register_http_views
@@ -86,6 +96,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
 
+    if is_central_entry(entry):
+        # The central configuration holds values for the devices: no coordinator, no entity.
+        # Keep the snapshot of what the devices run with: a central entry that is reloaded or
+        # recreated must not hide changes that were saved and not applied yet.
+        if applied_central_values(hass) is None:
+            set_applied_central_values(hass, central_values_of(entry))
+        return True
+
+    # Every device needs the central configuration to exist (created with the first device, and
+    # again after an upgrade or a deletion); the values it reads are the ones stored right now.
+    ensure_central_entry(hass)
+    central = find_central_entry(hass)
+    if central is not None and applied_central_values(hass) is None:
+        set_applied_central_values(hass, central_values_of(central))
+
     # ============================================================================
     # REFACTORING: Create device config reader and extract configuration
     # ============================================================================
@@ -108,7 +133,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _LOGGER.debug(
         "Loaded device configuration: vtherm=%s, schedulers=%d, ihp_enabled=%s",
-        device_config.vtherm_entity_id,
+        device_config.climate_entity_id,
         len(device_config.scheduler_entities),
         device_config.ihp_enabled,
     )
@@ -121,7 +146,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = HeatingApplication(hass, device_config)
     coordinator.setup_config_entry_access(entry)
-    coordinator._options_snapshot = dict(entry.options)
+    coordinator._options_snapshot = effective_values(entry)
     await coordinator.async_load()
 
     # Store coordinator
@@ -200,9 +225,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry.
 
+    The central configuration has nothing to unload.
+
     The platforms are unloaded first: if that fails, the entry stays loaded and keeps a
     working coordinator instead of sensors bound to a cleaned-up one (#192).
     """
+    if is_central_entry(entry):
+        return True
+
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
 
@@ -213,32 +243,39 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Warn when the central configuration is removed while devices exist.
+
+    An integration cannot refuse the removal of an entry: devices then fall back to their
+    built-in defaults for what they inherit, and the entry is recreated at the next device setup
+    (#302).
+    """
+    if is_central_entry(entry) and device_entries(hass):
+        _LOGGER.warning(
+            "The central configuration was removed while %d device(s) exist: they use the "
+            "built-in defaults for the settings they do not override, until it is recreated "
+            "at the next restart or device reload",
+            len(device_entries(hass)),
+        )
+
+
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Update options and reload integration."""
+    """React to a write of the entry: only the live IHP toggle is applied here.
+
+    Saving a theme of the options writes the entry but does not reload the device: the user
+    reloads it with "Apply" (#302). The coordinator keeps a snapshot of what it was loaded with,
+    so that the options menu can tell what is stored and not applied yet.
+    """
     coordinator: HeatingApplication | None = hass.data[DOMAIN].get(entry.entry_id)
-
-    previous_options = (
-        dict(getattr(coordinator, "_options_snapshot", {}) or {}) if coordinator else {}
-    )
-    previous_no_toggle = {k: v for k, v in previous_options.items() if k != CONF_IHP_ENABLED}
-    current_no_toggle = {k: v for k, v in entry.options.items() if k != CONF_IHP_ENABLED}
-    ihp_enabled = as_bool(entry.options.get(CONF_IHP_ENABLED), default=True)
-
-    # If only the ihp_enabled flag changed, skip full reload
-    if coordinator and previous_no_toggle == current_no_toggle:
-        _LOGGER.info("[%s] Options updated (ihp_enabled only), skipping reload", entry.entry_id)
-        coordinator._options_snapshot = dict(entry.options)
-        coordinator._ihp_enabled = ihp_enabled
-        await coordinator.async_update()
+    if coordinator is None:
         return
 
-    _LOGGER.info("[%s] Options updated, reloading", entry.entry_id)
-    if coordinator:
-        coordinator._options_snapshot = dict(entry.options)
+    ihp_enabled = as_bool(entry.options.get(CONF_IHP_ENABLED), default=True)
+    if ihp_enabled == coordinator.ihp_enabled_applied:
+        _LOGGER.debug("[%s] Options updated, nothing to apply until reload", entry.entry_id)
+        return
 
-    await hass.config_entries.async_reload(entry.entry_id)
-
-    # Schedule async update after reload (non-blocking)
-    coordinator = hass.data[DOMAIN].get(entry.entry_id)
-    if coordinator:
-        hass.async_create_task(coordinator.async_update())
+    _LOGGER.info("[%s] IHP enabled state changed to %s", entry.entry_id, ihp_enabled)
+    coordinator.ihp_enabled_applied = ihp_enabled
+    coordinator._ihp_enabled = ihp_enabled
+    await coordinator.async_update()

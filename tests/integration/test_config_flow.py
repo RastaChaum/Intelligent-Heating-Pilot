@@ -10,6 +10,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.intelligent_heating_pilot.const import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_CLOUD_COVER_ENTITY,
     CONF_CYCLE_SPLIT_DURATION_MINUTES,
     CONF_DEAD_TIME_MINUTES,
@@ -21,7 +22,6 @@ from custom_components.intelligent_heating_pilot.const import (
     CONF_NAME,
     CONF_SCHEDULER_ENTITIES,
     CONF_TEMP_DELTA_THRESHOLD,
-    CONF_VTHERM_ENTITY,
     DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
     DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
@@ -36,6 +36,7 @@ from custom_components.intelligent_heating_pilot.const import (
 from custom_components.intelligent_heating_pilot.infrastructure.adapters.device_config_reader import (
     HADeviceConfigReader,
 )
+from tests.integration.options_helpers import save_theme
 
 pytestmark = pytest.mark.usefixtures("flow_environment")
 
@@ -52,13 +53,64 @@ def _find_schema_key(schema: dict[Any, Any], key_name: str) -> Any:
 
 
 def _get_default_value(schema_key: Any) -> Any:
+    """Return the default of a field: for an inherit/custom toggle, its own value or "inherited"."""
     default_value = getattr(schema_key, "default", None)
     return default_value() if callable(default_value) else default_value
 
 
+def _shown_text(schema: dict[Any, Any], key_name: str) -> str:
+    """Return what the inherited side of a toggle shows."""
+    toggle = schema[_find_schema_key(schema, key_name)]
+    return toggle.config["choices"]["inherited"]["selector"].config["label"]
+
+
+THEME_KEYS = {
+    "thermostat_schedulers": [CONF_CLIMATE_ENTITY, CONF_SCHEDULER_ENTITIES],
+    "environment": [
+        CONF_HUMIDITY_IN_ENTITY,
+        CONF_HUMIDITY_OUT_ENTITY,
+        CONF_CLOUD_COVER_ENTITY,
+    ],
+    "learning": [CONF_LHS_RETENTION_DAYS, CONF_DEAD_TIME_MINUTES, CONF_AUTO_LEARNING],
+    "cycle_detection": [
+        CONF_TEMP_DELTA_THRESHOLD,
+        CONF_CYCLE_SPLIT_DURATION_MINUTES,
+        CONF_MIN_CYCLE_DURATION_MINUTES,
+        CONF_MAX_CYCLE_DURATION_MINUTES,
+    ],
+    "anticipation": [CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES],
+}
+
+
+async def _save_in_themes(hass, entry_id: str, values: dict[str, Any]) -> None:
+    """Save each value in the theme that holds it, as a user going through the menu does."""
+    menu = await hass.config_entries.options.async_init(entry_id)
+    assert menu["type"] == "menu"
+    for theme, keys in THEME_KEYS.items():
+        subset = {key: values[key] for key in keys if key in values}
+        result = await save_theme(hass, menu["flow_id"], theme, subset)
+        assert result["type"] == "menu"
+
+
+async def _all_theme_schemas(hass, entry_id: str) -> dict[Any, Any]:
+    """The fields of every theme, merged.
+
+    A shareable setting is an inherit/custom toggle whose custom side opens on the effective
+    value, stored or inherited.
+    """
+    schema: dict[Any, Any] = {}
+    for theme in THEME_KEYS:
+        menu = await hass.config_entries.options.async_init(entry_id)
+        form = await hass.config_entries.options.async_configure(
+            menu["flow_id"], {"next_step_id": theme}
+        )
+        schema.update(form["data_schema"].schema)
+    return schema
+
+
 @pytest.mark.asyncio
-async def test_user_flow_creates_entry_with_all_values(hass) -> None:
-    """Create entry with user-provided values and preserve them in data."""
+async def test_user_flow_asks_only_for_the_device_specific_values(hass) -> None:
+    """Device creation asks for name, thermostat and schedulers and stores nothing else (#302)."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN,
         context={"source": "user"},
@@ -66,44 +118,23 @@ async def test_user_flow_creates_entry_with_all_values(hass) -> None:
 
     assert result["type"] == "form"
     assert result["errors"] == {}
+    assert {str(key) for key in result["data_schema"].schema} == {
+        CONF_NAME,
+        CONF_CLIMATE_ENTITY,
+        CONF_SCHEDULER_ENTITIES,
+    }
 
     user_input = {
         CONF_NAME: "Living Room IHP",
-        CONF_VTHERM_ENTITY: "climate.living_room_vtherm",
+        CONF_CLIMATE_ENTITY: "climate.living_room_vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.schedule_1", "switch.schedule_2"],
-        CONF_HUMIDITY_IN_ENTITY: "sensor.living_room_humidity",
-        CONF_HUMIDITY_OUT_ENTITY: "sensor.outdoor_humidity",
-        CONF_CLOUD_COVER_ENTITY: "sensor.cloud_cover",
-        CONF_LHS_RETENTION_DAYS: 40,
-        CONF_DEAD_TIME_MINUTES: 10.0,
-        CONF_AUTO_LEARNING: False,
-        CONF_TEMP_DELTA_THRESHOLD: 0.4,
-        CONF_CYCLE_SPLIT_DURATION_MINUTES: 15,
-        CONF_MIN_CYCLE_DURATION_MINUTES: 6,
-        CONF_MAX_CYCLE_DURATION_MINUTES: 180,
-        CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: 18,
     }
 
     result2 = await hass.config_entries.flow.async_configure(result["flow_id"], user_input)
 
     assert result2["type"] == "create_entry"
     assert result2["title"] == "Living Room IHP"
-
-    data = result2["data"]
-    assert data[CONF_NAME] == "Living Room IHP"
-    assert data[CONF_VTHERM_ENTITY] == "climate.living_room_vtherm"
-    assert data[CONF_SCHEDULER_ENTITIES] == ["switch.schedule_1", "switch.schedule_2"]
-    assert data[CONF_HUMIDITY_IN_ENTITY] == "sensor.living_room_humidity"
-    assert data[CONF_HUMIDITY_OUT_ENTITY] == "sensor.outdoor_humidity"
-    assert data[CONF_CLOUD_COVER_ENTITY] == "sensor.cloud_cover"
-    assert data[CONF_LHS_RETENTION_DAYS] == 40
-    assert data[CONF_DEAD_TIME_MINUTES] == 10.0
-    assert data[CONF_AUTO_LEARNING] is False
-    assert data[CONF_TEMP_DELTA_THRESHOLD] == 0.4
-    assert data[CONF_CYCLE_SPLIT_DURATION_MINUTES] == 15
-    assert data[CONF_MIN_CYCLE_DURATION_MINUTES] == 6
-    assert data[CONF_MAX_CYCLE_DURATION_MINUTES] == 180
-    assert data[CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES] == 18
+    assert result2["data"] == user_input
 
 
 @pytest.mark.asyncio
@@ -114,18 +145,15 @@ async def test_options_flow_persists_and_reopens_with_last_values(hass) -> None:
         entry_id="entry_config_flow",
         data={
             CONF_NAME: DEFAULT_NAME,
-            CONF_VTHERM_ENTITY: "climate.initial_vtherm",
+            CONF_CLIMATE_ENTITY: "climate.initial_vtherm",
             CONF_SCHEDULER_ENTITIES: ["switch.initial_schedule"],
         },
         options={},
     )
     entry.add_to_hass(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] == "form"
-
     updated_options = {
-        CONF_VTHERM_ENTITY: "climate.updated_vtherm",
+        CONF_CLIMATE_ENTITY: "climate.updated_vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.updated_schedule"],
         CONF_HUMIDITY_IN_ENTITY: "sensor.updated_humidity_in",
         CONF_HUMIDITY_OUT_ENTITY: "sensor.updated_humidity_out",
@@ -140,22 +168,14 @@ async def test_options_flow_persists_and_reopens_with_last_values(hass) -> None:
         CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: 22,
     }
 
-    result2 = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        updated_options,
-    )
-
-    assert result2["type"] == "create_entry"
+    await _save_in_themes(hass, entry.entry_id, updated_options)
 
     for key, value in updated_options.items():
         assert entry.options.get(key) == value
 
-    result3 = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result3["type"] == "form"
+    schema = await _all_theme_schemas(hass, entry.entry_id)
 
-    schema = result3["data_schema"].schema
-
-    vtherm_key = _find_schema_key(schema, CONF_VTHERM_ENTITY)
+    vtherm_key = _find_schema_key(schema, CONF_CLIMATE_ENTITY)
     assert _get_default_value(vtherm_key) == "climate.updated_vtherm"
 
     sched_key = _find_schema_key(schema, CONF_SCHEDULER_ENTITIES)
@@ -165,10 +185,10 @@ async def test_options_flow_persists_and_reopens_with_last_values(hass) -> None:
     assert hum_in_key.description.get("suggested_value") == "sensor.updated_humidity_in"
 
     hum_out_key = _find_schema_key(schema, CONF_HUMIDITY_OUT_ENTITY)
-    assert hum_out_key.description.get("suggested_value") == "sensor.updated_humidity_out"
+    assert _get_default_value(hum_out_key) == "sensor.updated_humidity_out"
 
     cloud_key = _find_schema_key(schema, CONF_CLOUD_COVER_ENTITY)
-    assert cloud_key.description.get("suggested_value") == "sensor.updated_cloud"
+    assert _get_default_value(cloud_key) == "sensor.updated_cloud"
 
     assert _get_default_value(_find_schema_key(schema, CONF_LHS_RETENTION_DAYS)) == 55
     assert _get_default_value(_find_schema_key(schema, CONF_DEAD_TIME_MINUTES)) == 12.0
@@ -191,18 +211,15 @@ async def test_options_flow_values_used_by_device_config_reader(hass) -> None:
         entry_id="entry_reader",
         data={
             CONF_NAME: DEFAULT_NAME,
-            CONF_VTHERM_ENTITY: "climate.base_vtherm",
+            CONF_CLIMATE_ENTITY: "climate.base_vtherm",
             CONF_SCHEDULER_ENTITIES: ["switch.base_schedule"],
         },
         options={},
     )
     entry.add_to_hass(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] == "form"
-
     updated_options = {
-        CONF_VTHERM_ENTITY: "climate.reader_vtherm",
+        CONF_CLIMATE_ENTITY: "climate.reader_vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.reader_schedule"],
         CONF_HUMIDITY_IN_ENTITY: "sensor.reader_humidity_in",
         CONF_HUMIDITY_OUT_ENTITY: "sensor.reader_humidity_out",
@@ -217,17 +234,12 @@ async def test_options_flow_values_used_by_device_config_reader(hass) -> None:
         CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: 11,
     }
 
-    result2 = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        updated_options,
-    )
-
-    assert result2["type"] == "create_entry"
+    await _save_in_themes(hass, entry.entry_id, updated_options)
 
     reader = HADeviceConfigReader(hass, entry)
     device_config = await reader.get_device_config(entry.entry_id)
 
-    assert device_config.vtherm_entity_id == "climate.reader_vtherm"
+    assert device_config.climate_entity_id == "climate.reader_vtherm"
     assert device_config.scheduler_entities == ["switch.reader_schedule"]
     assert device_config.humidity_in_entity_id == "sensor.reader_humidity_in"
     assert device_config.humidity_out_entity_id == "sensor.reader_humidity_out"
@@ -250,47 +262,29 @@ async def test_options_flow_defaults_when_no_overrides(hass) -> None:
         entry_id="entry_defaults",
         data={
             CONF_NAME: DEFAULT_NAME,
-            CONF_VTHERM_ENTITY: "climate.default_vtherm",
+            CONF_CLIMATE_ENTITY: "climate.default_vtherm",
             CONF_SCHEDULER_ENTITIES: [],
         },
         options={},
     )
     entry.add_to_hass(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] == "form"
+    schema = await _all_theme_schemas(hass, entry.entry_id)
 
-    schema = result["data_schema"].schema
-
-    vtherm_key = _find_schema_key(schema, CONF_VTHERM_ENTITY)
+    vtherm_key = _find_schema_key(schema, CONF_CLIMATE_ENTITY)
     assert _get_default_value(vtherm_key) == "climate.default_vtherm"
 
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_LHS_RETENTION_DAYS))
-        == DEFAULT_LHS_RETENTION_DAYS
-    )
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_DEAD_TIME_MINUTES))
-        == DEFAULT_DEAD_TIME_MINUTES
-    )
-    assert _get_default_value(_find_schema_key(schema, CONF_AUTO_LEARNING)) == DEFAULT_AUTO_LEARNING
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_TEMP_DELTA_THRESHOLD))
-        == DEFAULT_TEMP_DELTA_THRESHOLD
-    )
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_CYCLE_SPLIT_DURATION_MINUTES))
-        == DEFAULT_CYCLE_SPLIT_DURATION_MINUTES
-    )
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_MIN_CYCLE_DURATION_MINUTES))
-        == DEFAULT_MIN_CYCLE_DURATION_MINUTES
-    )
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_MAX_CYCLE_DURATION_MINUTES))
-        == DEFAULT_MAX_CYCLE_DURATION_MINUTES
-    )
-    assert (
-        _get_default_value(_find_schema_key(schema, CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES))
-        == DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
-    )
+    inherited_defaults = {
+        CONF_LHS_RETENTION_DAYS: DEFAULT_LHS_RETENTION_DAYS,
+        CONF_DEAD_TIME_MINUTES: DEFAULT_DEAD_TIME_MINUTES,
+        CONF_TEMP_DELTA_THRESHOLD: DEFAULT_TEMP_DELTA_THRESHOLD,
+        CONF_CYCLE_SPLIT_DURATION_MINUTES: DEFAULT_CYCLE_SPLIT_DURATION_MINUTES,
+        CONF_MIN_CYCLE_DURATION_MINUTES: DEFAULT_MIN_CYCLE_DURATION_MINUTES,
+        CONF_MAX_CYCLE_DURATION_MINUTES: DEFAULT_MAX_CYCLE_DURATION_MINUTES,
+        CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES: DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
+    }
+    for key, default in inherited_defaults.items():
+        assert _get_default_value(_find_schema_key(schema, key)) == "inherited", key
+        assert _shown_text(schema, key) == str(default), key
+    assert _get_default_value(_find_schema_key(schema, CONF_AUTO_LEARNING)) == "inherited"
+    assert _shown_text(schema, CONF_AUTO_LEARNING) == ("on" if DEFAULT_AUTO_LEARNING else "off")

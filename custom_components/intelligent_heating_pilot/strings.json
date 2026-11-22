@@ -3,44 +3,16 @@
     "step": {
       "user": {
         "title": "Configure Intelligent Heating Pilot",
-        "description": "Set up your Intelligent Heating Pilot (IHP) integration for intelligent preheating calculations based on learned thermal slopes from your VTherm.",
+        "description": "Choose the thermostat and its schedulers. The other settings are inherited from the central configuration.",
         "data": {
           "name": "Integration Name",
-          "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
-          "scheduler_entities": "Scheduler Entities",
-          "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
-          "humidity_out_entity_id": "Outdoor Humidity Sensor or Weather Entity (optional)",
-          "temperature_out_entity_id": "Outdoor Temperature Sensor or Weather Entity (optional)",
-          "cloud_cover_entity_id": "Cloud Coverage Sensor or Weather Entity (optional)",
-          "lhs_retention_days": "Slope Data Retention (days)",
-          "dead_time_minutes": "Initial Dead Time (minutes)",
-          "auto_learning": "Automatic Learning",
-          "temp_delta_threshold": "Temperature Detection Threshold (°C)",
-          "cycle_split_duration_minutes": "Cycle Split Duration (minutes)",
-          "min_cycle_duration_minutes": "Minimum Cycle Duration (minutes)",
-          "max_cycle_duration_minutes": "Maximum Cycle Duration (minutes)",
-          "task_range_days": "Recorder Extraction Period (days)",
-          "anticipation_recalc_tolerance_minutes": "Preheating Revert Time Delta (minutes)",
-          "safety_shutoff_grace_minutes": "Safety Shutoff Grace Period (minutes)"
+          "vtherm_entity_id": "Thermostat (Versatile Thermostat recommended)",
+          "scheduler_entities": "Scheduler Entities"
         },
         "data_description": {
           "name": "A friendly name for this IHP device, e.g. the room it heats.",
-          "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
-          "scheduler_entities": "HACS Scheduler switches that control this VTherm. A native schedule helper only gets an anticipated start time: IHP does not start the heating for it.",
-          "humidity_in_entity_id": "Room humidity sensor to refine calculations.",
-          "humidity_out_entity_id": "Outdoor humidity sensor or weather entity. Monitored, not used in the prediction yet.",
-          "temperature_out_entity_id": "Outdoor temperature sensor or weather entity, recorded with each heating cycle.",
-          "cloud_cover_entity_id": "Cloud coverage sensor or weather entity to account for solar impact.",
-          "lhs_retention_days": "Number of days to retain slope data in storage. Default: 30 days.",
-          "dead_time_minutes": "Delay between the start of heating and the first temperature rise. Used until IHP has learned it from heating cycles, and always when automatic learning is off. Default: 0 min.",
-          "auto_learning": "Learn the dead time from heating cycles. When off, the initial dead time is always used. The heating slope is learned in both cases.",
-          "temp_delta_threshold": "Temperature difference used to detect the start and end of a heating cycle. Lower values make the detection more sensitive. Default: 0.2°C.",
-          "cycle_split_duration_minutes": "Split long heating cycles into sub-cycles of this duration for ML training augmentation. 0 = disabled (default).",
-          "min_cycle_duration_minutes": "Shortest heating cycle kept for learning. Filters out micro-cycles (noise). Default: 5 min.",
-          "max_cycle_duration_minutes": "Longest heating cycle kept for learning. Filters out abnormally long cycles (malfunctions). Default: 300 min.",
-          "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7 days.",
-          "anticipation_recalc_tolerance_minutes": "Minimum postponement of the anticipated start that cancels an active preheating and reschedules it. Default: 15 min.",
-          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode, Versatile Thermostat load shedding, window opened). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min."
+          "vtherm_entity_id": "The climate entity whose heating IHP learns and anticipates. Versatile Thermostat is recommended; any climate entity works. A thermostat that does not publish its heating state (hvac_action) is preheated, but IHP cannot learn from it.",
+          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this thermostat. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on in the device's Native schedules settings."
         }
       }
     },
@@ -54,49 +26,236 @@
   "options": {
     "step": {
       "init": {
-        "title": "Modify Intelligent Heating Pilot Options",
-        "description": "Modify the entities and settings used by Intelligent Heating Pilot",
+        "title": "Intelligent Heating Pilot settings",
+        "description": "Not applied yet: {pending}",
+        "menu_options": {
+          "thermostat_schedulers": "Thermostat and schedulers",
+          "native_schedule": "Native schedules",
+          "wake_up_sources": "Wake-up sources",
+          "environment": "Environment sensors",
+          "learning": "Learning",
+          "cycle_detection": "Cycle detection",
+          "anticipation": "Anticipation behaviour",
+          "apply": "Apply the saved changes",
+          "central_native_schedule": "Central: Native schedules",
+          "central_environment": "Central: Environment sensors",
+          "central_learning": "Central: Learning",
+          "central_cycle_detection": "Central: Cycle detection",
+          "central_anticipation": "Central: Anticipation behaviour",
+          "preset_temperatures": "Preset temperatures"
+        }
+      },
+      "thermostat_schedulers": {
+        "title": "Thermostat and schedulers",
         "data": {
-          "vtherm_entity_id": "Versatile Thermostat (VTherm) Entity",
-          "scheduler_entities": "Scheduler Entities",
+          "vtherm_entity_id": "Thermostat (Versatile Thermostat recommended)",
+          "scheduler_entities": "Scheduler Entities"
+        },
+        "data_description": {
+          "vtherm_entity_id": "The climate entity whose heating IHP learns and anticipates. Versatile Thermostat is recommended; any climate entity works. A thermostat that does not publish its heating state (hvac_action) is preheated, but IHP cannot learn from it.",
+          "scheduler_entities": "HACS Scheduler or Climate Scheduler switches, or native schedules, that control this thermostat. A native schedule only gets an anticipated start time unless direct control of native schedules is turned on in Native schedules."
+        }
+      },
+      "native_schedule": {
+        "title": "Native schedules",
+        "data": {
+          "native_schedule_drive": "Drive Native Schedules",
+          "native_schedule_preset_key": "Native Schedule Preset Key",
+          "native_schedule_temperature_key": "Native Schedule Temperature Key",
+          "native_schedule_fallback_preset": "Native Schedule Fallback Preset"
+        },
+        "data_description": {
+          "native_schedule_drive": "Let IHP apply the next block of a native schedule to the thermostat at the anticipated start. Off: IHP only computes the anticipation for native schedules. A block's data can hold a preset or a temperature.",
+          "native_schedule_preset_key": "Name of the block data entry that holds a preset. Default: preset.",
+          "native_schedule_temperature_key": "Name of the block data entry that holds a target temperature. Default: temperature.",
+          "native_schedule_fallback_preset": "Preset applied when a block has neither entry. It also stands in for the block's temperature when IHP computes the anticipation. Default: comfort."
+        }
+      },
+      "environment": {
+        "title": "Environment sensors",
+        "data": {
           "humidity_in_entity_id": "Indoor Humidity Sensor (optional)",
           "humidity_out_entity_id": "Outdoor Humidity Sensor or Weather Entity (optional)",
           "temperature_out_entity_id": "Outdoor Temperature Sensor or Weather Entity (optional)",
-          "cloud_cover_entity_id": "Cloud Coverage Sensor or Weather Entity (optional)",
-          "lhs_retention_days": "Slope Data Retention (days)",
-          "dead_time_minutes": "Initial Dead Time (minutes)",
+          "cloud_cover_entity_id": "Cloud Coverage Sensor or Weather Entity (optional)"
+        },
+        "data_description": {
+          "humidity_in_entity_id": "Room humidity sensor to refine calculations.",
+          "humidity_out_entity_id": "Outdoor humidity sensor or weather entity. Monitored, not used in the prediction yet.",
+          "temperature_out_entity_id": "Outdoor temperature sensor or weather entity, recorded with each heating cycle.",
+          "cloud_cover_entity_id": "Cloud coverage sensor or weather entity to account for solar impact."
+        }
+      },
+      "learning": {
+        "title": "Learning",
+        "data": {
           "auto_learning": "Automatic Learning",
+          "dead_time_minutes": "Initial Dead Time (minutes)",
+          "lhs_retention_days": "Slope Data Retention (days)",
+          "task_range_days": "Recorder Extraction Period (days)"
+        },
+        "data_description": {
+          "auto_learning": "Learn the dead time from heating cycles. When off, the initial dead time is always used. The heating slope is learned in both cases.",
+          "dead_time_minutes": "Delay between the start of heating and the first temperature rise. Used until IHP has learned it from heating cycles, and always when automatic learning is off. Default: 0 min.",
+          "lhs_retention_days": "Number of days to retain slope data in storage. Default: 30 days.",
+          "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7 days."
+        }
+      },
+      "cycle_detection": {
+        "title": "Cycle detection",
+        "data": {
           "temp_delta_threshold": "Temperature Detection Threshold (°C)",
           "cycle_split_duration_minutes": "Cycle Split Duration (minutes)",
           "min_cycle_duration_minutes": "Minimum Cycle Duration (minutes)",
           "max_cycle_duration_minutes": "Maximum Cycle Duration (minutes)",
-          "task_range_days": "Recorder Extraction Period (days)",
-          "anticipation_recalc_tolerance_minutes": "Preheating Revert Time Delta (minutes)",
           "safety_shutoff_grace_minutes": "Safety Shutoff Grace Period (minutes)"
         },
         "data_description": {
-          "vtherm_entity_id": "The Versatile Thermostat whose heating IHP learns and anticipates.",
-          "scheduler_entities": "HACS Scheduler switches that control this VTherm. A native schedule helper only gets an anticipated start time: IHP does not start the heating for it.",
-          "humidity_in_entity_id": "Room humidity sensor to refine calculations.",
-          "humidity_out_entity_id": "Outdoor humidity sensor or weather entity. Monitored, not used in the prediction yet.",
-          "temperature_out_entity_id": "Outdoor temperature sensor or weather entity, recorded with each heating cycle.",
-          "cloud_cover_entity_id": "Cloud coverage sensor or weather entity to account for solar impact.",
-          "lhs_retention_days": "Number of days to retain slope data in storage. Default: 30 days.",
-          "dead_time_minutes": "Delay between the start of heating and the first temperature rise. Used until IHP has learned it from heating cycles, and always when automatic learning is off. Default: 0 min.",
-          "auto_learning": "Learn the dead time from heating cycles. When off, the initial dead time is always used. The heating slope is learned in both cases.",
           "temp_delta_threshold": "Temperature difference used to detect the start and end of a heating cycle. Lower values make the detection more sensitive. Default: 0.2°C.",
           "cycle_split_duration_minutes": "Split long heating cycles into sub-cycles of this duration for ML training augmentation. 0 = disabled (default).",
           "min_cycle_duration_minutes": "Shortest heating cycle kept for learning. Filters out micro-cycles (noise). Default: 5 min.",
           "max_cycle_duration_minutes": "Longest heating cycle kept for learning. Filters out abnormally long cycles (malfunctions). Default: 300 min.",
-          "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7 days.",
-          "anticipation_recalc_tolerance_minutes": "Minimum postponement of the anticipated start that cancels an active preheating and reschedules it. Default: 15 min.",
           "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode, Versatile Thermostat load shedding, window opened). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min."
         }
+      },
+      "anticipation": {
+        "title": "Anticipation behaviour",
+        "data": {
+          "anticipation_recalc_tolerance_minutes": "Preheating Revert Time Delta (minutes)"
+        },
+        "data_description": {
+          "anticipation_recalc_tolerance_minutes": "Minimum postponement of the anticipated start that cancels an active preheating and reschedules it. Default: 15 min."
+        }
+      },
+      "wake_up_menu": {
+        "title": "Wake-up sources",
+        "description": "Sources set: {sources}",
+        "menu_options": {
+          "wake_up_add": "Add a source",
+          "wake_up_edit": "Edit a source",
+          "wake_up_remove": "Remove sources",
+          "wake_up_done": "Save and go back"
+        }
+      },
+      "wake_up_edit": {
+        "title": "Edit a wake-up source",
+        "data": {
+          "entity_id": "Source"
+        },
+        "data_description": {
+          "entity_id": "The wake-up source to edit."
+        }
+      },
+      "wake_up_remove": {
+        "title": "Remove wake-up sources",
+        "data": {
+          "entity_id": "Sources"
+        },
+        "data_description": {
+          "entity_id": "The wake-up sources to remove."
+        }
+      },
+      "wake_up_form": {
+        "title": "Wake-up source",
+        "data": {
+          "entity_id": "Entity holding the time",
+          "target_preset": "Target preset",
+          "target_temperature": "Target temperature (°C)",
+          "target_from_schedule": "Take the target from the schedule",
+          "horizon_hours": "Ignore times further than (hours)",
+          "hold_minutes": "Keep the target after the time (minutes)"
+        },
+        "data_description": {
+          "entity_id": "A timestamp sensor (such as a phone's next alarm), a date-time entity, or a date-time helper with both date and time.",
+          "target_preset": "Preset to apply and reach. Leave empty to give a temperature.",
+          "target_temperature": "Temperature to apply and reach. When a preset is also set, the preset is applied and this temperature is the one IHP heads for.",
+          "target_from_schedule": "Use the target of the schedule slot that follows this time, never lower than the slot already in effect. The preset or temperature above is the fallback when the schedule cannot tell.",
+          "horizon_hours": "A time further away than this is ignored, so that a distant alarm never starts a preheat by accident. Default: 24 hours.",
+          "hold_minutes": "After this time, IHP puts the thermostat back in its earlier state, unless someone changed it or a schedule took over. 0 leaves the thermostat as it is."
+        }
+      },
+      "central_native_schedule": {
+        "title": "Central: Native schedules",
+        "description": "Used by every device that inherits these settings.",
+        "data": {
+          "native_schedule_preset_key": "Native Schedule Preset Key",
+          "native_schedule_temperature_key": "Native Schedule Temperature Key",
+          "native_schedule_fallback_preset": "Native Schedule Fallback Preset"
+        },
+        "data_description": {
+          "native_schedule_preset_key": "Name of the block data entry that holds a preset. Default: preset.",
+          "native_schedule_temperature_key": "Name of the block data entry that holds a target temperature. Default: temperature.",
+          "native_schedule_fallback_preset": "Preset applied when a block has neither entry. It also stands in for the block's temperature when IHP computes the anticipation. Default: comfort."
+        }
+      },
+      "central_environment": {
+        "title": "Central: Environment sensors",
+        "description": "Used by every device that inherits these settings.",
+        "data": {
+          "humidity_out_entity_id": "Outdoor Humidity Sensor or Weather Entity (optional)",
+          "temperature_out_entity_id": "Outdoor Temperature Sensor or Weather Entity (optional)",
+          "cloud_cover_entity_id": "Cloud Coverage Sensor or Weather Entity (optional)"
+        },
+        "data_description": {
+          "humidity_out_entity_id": "Outdoor humidity sensor or weather entity. Monitored, not used in the prediction yet.",
+          "temperature_out_entity_id": "Outdoor temperature sensor or weather entity, recorded with each heating cycle.",
+          "cloud_cover_entity_id": "Cloud coverage sensor or weather entity to account for solar impact."
+        }
+      },
+      "central_learning": {
+        "title": "Central: Learning",
+        "description": "Used by every device that inherits these settings.",
+        "data": {
+          "auto_learning": "Automatic Learning",
+          "dead_time_minutes": "Initial Dead Time (minutes)",
+          "lhs_retention_days": "Slope Data Retention (days)",
+          "task_range_days": "Recorder Extraction Period (days)"
+        },
+        "data_description": {
+          "auto_learning": "Learn the dead time from heating cycles. When off, the initial dead time is always used. The heating slope is learned in both cases.",
+          "dead_time_minutes": "Delay between the start of heating and the first temperature rise. Used until IHP has learned it from heating cycles, and always when automatic learning is off. Default: 0 min.",
+          "lhs_retention_days": "Number of days to retain slope data in storage. Default: 30 days.",
+          "task_range_days": "Number of days per Recorder extraction task. Increase on powerful machines to reduce task count. Decrease on slow machines to reduce query load per task. Default: 7 days."
+        }
+      },
+      "central_cycle_detection": {
+        "title": "Central: Cycle detection",
+        "description": "Used by every device that inherits these settings.",
+        "data": {
+          "temp_delta_threshold": "Temperature Detection Threshold (°C)",
+          "cycle_split_duration_minutes": "Cycle Split Duration (minutes)",
+          "min_cycle_duration_minutes": "Minimum Cycle Duration (minutes)",
+          "max_cycle_duration_minutes": "Maximum Cycle Duration (minutes)",
+          "safety_shutoff_grace_minutes": "Safety Shutoff Grace Period (minutes)"
+        },
+        "data_description": {
+          "temp_delta_threshold": "Temperature difference used to detect the start and end of a heating cycle. Lower values make the detection more sensitive. Default: 0.2°C.",
+          "cycle_split_duration_minutes": "Split long heating cycles into sub-cycles of this duration for ML training augmentation. 0 = disabled (default).",
+          "min_cycle_duration_minutes": "Shortest heating cycle kept for learning. Filters out micro-cycles (noise). Default: 5 min.",
+          "max_cycle_duration_minutes": "Longest heating cycle kept for learning. Filters out abnormally long cycles (malfunctions). Default: 300 min.",
+          "safety_shutoff_grace_minutes": "Grace period for brief heating interruptions (safety/frost mode, Versatile Thermostat load shedding, window opened). Interruptions shorter than this do not end the cycle in progress. 0 = disabled. Default: 10 min."
+        }
+      },
+      "central_anticipation": {
+        "title": "Central: Anticipation behaviour",
+        "description": "Used by every device that inherits these settings.",
+        "data": {
+          "anticipation_recalc_tolerance_minutes": "Preheating Revert Time Delta (minutes)"
+        },
+        "data_description": {
+          "anticipation_recalc_tolerance_minutes": "Minimum postponement of the anticipated start that cancels an active preheating and reschedules it. Default: 15 min."
+        }
+      },
+      "preset_temperatures": {
+        "title": "Preset temperatures",
+        "description": "Leave a preset empty to not anticipate it."
       }
     },
     "error": {
       "required": "This field is required",
-      "vtherm_already_configured": "This thermostat is already driven by another Intelligent Heating Pilot device"
+      "vtherm_already_configured": "This thermostat is already driven by another Intelligent Heating Pilot device",
+      "wake_up_target_required": "Give a preset or a temperature, or take the target from the schedule (this needs a scheduler).",
+      "wake_up_duplicate": "This entity is already a wake-up source of this device."
     }
   },
   "services": {
@@ -114,7 +273,7 @@
         },
         "target_temp": {
           "name": "Target Temperature",
-          "description": "Desired target temperature in Celsius (optional, uses VTherm target if not specified)"
+          "description": "Desired target temperature in Celsius (optional, uses the thermostat target if not specified)"
         }
       }
     },
@@ -126,6 +285,19 @@
           "name": "IHP Entity ID",
           "description": "The entity ID of the IHP device whose learning data should be reset (e.g., sensor.intelligent_heating_pilot_anticipated_start_time)"
         }
+      }
+    }
+  },
+  "common": {
+    "none": "none",
+    "on": "on",
+    "off": "off"
+  },
+  "selector": {
+    "inheritance": {
+      "choices": {
+        "inherited": "Inherited",
+        "custom": "Custom"
       }
     }
   }

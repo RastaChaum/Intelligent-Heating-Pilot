@@ -6,7 +6,7 @@
 
 🇫🇷 [Version française](README.fr.md)
 
-> **The Adaptive Brain for Versatile Thermostat**
+> **The Adaptive Brain for Your Thermostat, with Versatile Thermostat as the recommended companion**
 
 A Home Assistant integration that learns your heating system and automatically starts heating at exactly the right time—no manual tuning required.
 
@@ -21,23 +21,24 @@ A Home Assistant integration that learns your heating system and automatically s
 ✅ Room reaches 21°C exactly at 18:00
 ```
 
-IHP monitors your VTherm, learns how fast your room heats, and triggers your scheduler at the perfect moment so you arrive to a warm home—every time.
+IHP monitors your thermostat, learns how fast your room heats, and triggers your scheduler at the perfect moment so you arrive to a warm home—every time.
 
 ---
 
 ## ✅ Requirements
 
-- **Home Assistant** 2024.11 or later
-- **[Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat)**: IHP only works with VTherm entities; use one IHP device per thermostat
+- **Home Assistant** 2026.2 or later
+- **A `climate` entity to preheat**: use one IHP device per thermostat. **[Versatile Thermostat](https://github.com/jmcollin78/versatile_thermostat)** is the recommended target and the best supported, but any `climate` entity works (see [what a generic climate must expose](docs/users/CONFIGURATION.md#using-a-climate-that-is-not-a-versatile-thermostat))
 - **A supported scheduler**, for IHP to anticipate your slots:
 
 | Scheduler | Anticipated start | IHP starts the heating |
 | --- | --- | --- |
 | [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) (`switch.schedule_*`) | ✅ | ✅ |
-| Native `schedule.*` helper | ✅ (target = VTherm comfort preset) | ❌ build your own automation |
+| [Climate Scheduler](https://github.com/kneave/climate-scheduler) | ✅ | ✅ |
+| Native `schedule.*` helper | ✅ | ⚙️ if you turn on direct control (or build your own automation) |
 | Other schedulers (automations, calendars, other integrations) | ❌ | ❌ use the `calculate_anticipated_start_time` service |
 
-With HACS Scheduler, each slot's action must be `climate.set_temperature` or `climate.set_preset_mode`, on the VTherm of the IHP device. **[Supported schedulers in detail →](docs/users/CONFIGURATION.md#supported-schedulers)**
+The scheduler decides what happens and when; IHP decides how early, and applies the slot's own action (a preset or a temperature) to your thermostat a little before the slot. With HACS Scheduler, each slot's action must be `climate.set_temperature` or `climate.set_preset_mode`, on the VTherm of the IHP device. **[Supported schedulers in detail →](docs/users/CONFIGURATION.md#supported-schedulers)**
 
 ---
 
@@ -58,7 +59,7 @@ HACS → Integrations → ⋮ → Custom repositories
 ```text
 Settings → Devices & Services → + Add Integration
 → Search "Intelligent Heating Pilot"
-→ Select VTherm + HACS Scheduler → Submit
+→ Select your thermostat + HACS Scheduler → Submit
 ```
 
 **[Full configuration guide →](docs/users/CONFIGURATION.md)**
@@ -85,11 +86,12 @@ Settings → Devices & Services → + Add Integration
 - ✅ **Configurable Detection Parameters** - Fine-tune cycle detection for your heating system
 - ✅ **Time-Contextual Learning** - Different heating speeds by time of day
 - ✅ **HACS Scheduler Preheating** - Triggers the upcoming slot early, with the scheduler's conditions respected; several schedulers per device
-- ✅ **Native Schedules** - `schedule.*` helpers get an anticipated start sensor to build your own automation (IHP does not start the heating for them)
+- ✅ **Climate Scheduler and Native Schedules** - IHP applies the next node's or block's action to your thermostat itself (native schedules: turn on direct control, the preset or temperature comes from each block's data), and puts it back if the preheat is cancelled and nobody changed it meanwhile
+- ✅ **Wake-up Sources** - Give a device your phone's next alarm (or any date-time entity): IHP preheats so the room is ready at that time, takes the target from your schedule if you want, and can put the thermostat back after it
 - ✅ **Calculation Service** - `calculate_anticipated_start_time` for your own automations, with or without a scheduler
 - ✅ **Outdoor Source** - Outdoor sensor or `weather.*` entity, recorded with each heating cycle
 - ✅ **Incremental Cache** - Reduces HA database load for long-term learning
-- ✅ **VTherm v8+ Compatible** - Works with latest Versatile Thermostat versions
+- ✅ **Any climate entity** - Versatile Thermostat v8+ is recommended and gets its extra capabilities (preset temperatures, load shedding awareness) detected automatically; other thermostats work too
 - ✅ **Optimized Startup** - Lazy loading and smart filtering prevent HA watchdog timeouts
 - ✅ **Vacation Mode Ready** - Stops automatically when the HACS Scheduler is switched off or its conditions block it
 

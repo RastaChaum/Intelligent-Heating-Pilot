@@ -7,12 +7,12 @@ import pytest
 from custom_components.intelligent_heating_pilot.const import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
+    CONF_CLIMATE_ENTITY,
     CONF_DATA_RETENTION_DAYS,
     CONF_DEAD_TIME_MINUTES,
     CONF_LHS_RETENTION_DAYS,
     CONF_SCHEDULER_ENTITIES,
     CONF_TEMPERATURE_OUT_ENTITY,
-    CONF_VTHERM_ENTITY,
     DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
     DEFAULT_DEAD_TIME_MINUTES,
@@ -25,8 +25,10 @@ from custom_components.intelligent_heating_pilot.infrastructure.adapters.device_
 
 @pytest.fixture
 def mock_hass() -> Mock:
-    """Create a mock Home Assistant instance."""
-    return Mock()
+    """Create a mock Home Assistant instance with no central configuration entry."""
+    hass = Mock()
+    hass.config_entries.async_entries.return_value = []
+    return hass
 
 
 @pytest.fixture
@@ -35,7 +37,7 @@ def mock_config_entry() -> Mock:
     config_entry = Mock()
     config_entry.entry_id = "test_device_id"
     config_entry.data = {
-        CONF_VTHERM_ENTITY: "climate.vtherm",
+        CONF_CLIMATE_ENTITY: "climate.vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.schedule1"],
     }
     config_entry.options = {}
@@ -110,7 +112,7 @@ async def test_get_device_config_uses_defaults_when_not_configured(
     """Test that defaults are used when config values are not set (None)."""
     # Setup: No optional config values set (neither in data nor options)
     mock_config_entry.data = {
-        CONF_VTHERM_ENTITY: "climate.vtherm",
+        CONF_CLIMATE_ENTITY: "climate.vtherm",
         CONF_SCHEDULER_ENTITIES: ["switch.schedule1"],
     }
     mock_config_entry.options = {}

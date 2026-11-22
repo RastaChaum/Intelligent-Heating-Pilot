@@ -16,10 +16,32 @@ A configuration dialog will appear. Here's what you need:
 | Field | Required? | What It Is | How to Find |
 |-------|-----------|-----------|------------|
 | **Name** | ✅ Yes | A friendly name for this IHP device; it also names the device and its entities. Each device needs its own name | Any name you want (e.g., "Living Room" gives `sensor.living_room_anticipated_start_time`) |
-| **VTherm Entity** | ✅ Yes | Your Versatile Thermostat climate entity | Pick it from the list: only Versatile Thermostat entities are offered. Use one IHP device per thermostat |
-| **Scheduler Entities** | ⚠️ Optional | The schedulers that control this VTherm | Pick them from the list (e.g., `switch.schedule_heating`). See [Supported Schedulers](#supported-schedulers) below |
+| **Thermostat** | ✅ Yes | The `climate` entity IHP preheats (Versatile Thermostat recommended) | Pick it from the list: every `climate` entity is offered. Use one IHP device per thermostat |
+| **Scheduler Entities** | ⚠️ Optional | The schedulers that control this thermostat | Pick them from the list (e.g., `switch.schedule_heating`). See [Supported Schedulers](#supported-schedulers) below |
 
 The scheduler list offers the `switch.*` and `schedule.*` entities that look like schedulers. If none is found, an entity picker accepting any `switch.*` or `schedule.*` entity is shown instead.
+
+### Using a climate that is not a Versatile Thermostat
+
+Versatile Thermostat is the recommended target: IHP detects what it publishes and uses it when present. Any other `climate` entity (a TRV, a generic thermostat, a heat pump…) can be selected and preheated if it exposes the standard attributes below.
+
+| Attribute | Needed for | If missing |
+|-----------|-----------|-----------|
+| `current_temperature` | Everything | IHP cannot anticipate |
+| `temperature` (the target) | Everything | IHP cannot anticipate |
+| `hvac_mode` | Cycle detection | Cycles are not detected |
+| `hvac_action` (`heating` / `idle`…) | **Learning** the heating slope | The thermostat is preheated, but IHP learns nothing from it and logs one warning. The default or configured slope is used |
+| `preset_modes` | Slots that set a preset | See below |
+
+**Presets.** Versatile Thermostat publishes the temperature behind each preset; a standard climate only lists its presets. For a slot that uses `climate.set_preset_mode`, or a native schedule block mapped to a preset, IHP needs to know the temperature:
+
+1. Open the device's **Configure** form.
+2. Tick **Map presets to temperatures after saving** (only offered when your thermostat lists presets but does not publish their temperatures).
+3. Enter the temperature of each preset you use. A preset left empty is not anticipated.
+
+IHP uses, in this order: the temperature the thermostat publishes, then your mapping, then the target of the thermostat while that preset is active. An unmapped preset is logged once as a warning, and its slot is not anticipated (a native schedule block falls back to 20 °C).
+
+Versatile Thermostat-only capabilities (published preset temperatures, load shedding and safety mode awareness, the smoothed room temperature) are used when found and never required.
 
 ### Supported Schedulers
 
@@ -27,35 +49,76 @@ IHP does not work with every scheduler. What it can do depends on the scheduler 
 
 | Scheduler | Anticipated start computed | Heating started by IHP |
 |-----------|---------------------------|------------------------|
-| [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) switch (`switch.schedule_*`) | ✅ Yes | ✅ Yes |
-| Native Home Assistant `schedule.*` helper | ✅ Yes, with the VTherm comfort preset as target | ❌ No |
+| [HACS Scheduler](https://github.com/nielsfaber/scheduler-component) switch (`switch.schedule_*`) | ✅ Yes | ✅ Yes, through the scheduler's own `run_action` |
+| [Climate Scheduler](https://github.com/kneave/climate-scheduler) switch | ✅ Yes | ✅ Yes, IHP applies the node's action to the thermostat |
+| Native Home Assistant `schedule.*` helper | ✅ Yes | ⚙️ Only if you turn on [direct control](#native-schedule-helpers) |
 | Anything else (automations, calendars, `input_datetime`, other scheduler integrations) | ❌ No | ❌ No |
+
+**The principle:** the scheduler decides what happens, when, and whether it happens. IHP only decides how early: at the anticipated start it applies the next slot's own action to the thermostat, and at the slot time the scheduler applies the same action, which changes nothing.
 
 Without a supported scheduler, use the [`calculate_anticipated_start_time` service](#using-ihp-without-a-scheduler) in your own automations.
 
 #### HACS Scheduler
 
-This is the only scheduler IHP can start the heating with. At the anticipated start, IHP calls `scheduler.run_action` so that the scheduler applies the upcoming slot early, with the scheduler's own conditions still checked. Restrictions:
+IHP calls `scheduler.run_action` at the anticipated start so that the scheduler applies the upcoming slot early, with the scheduler's own conditions still checked. Restrictions:
 
 - **The slot action must set a temperature.** IHP reads the target temperature from the slot's action, and only understands two actions:
   - `climate.set_temperature` with a `temperature`
-  - `climate.set_preset_mode` with a preset (e.g. `comfort`), whose temperature IHP reads from the VTherm preset temperatures
+  - `climate.set_preset_mode` with a preset (e.g. `comfort`), whose temperature IHP reads from the thermostat (Versatile Thermostat publishes it; for any other climate, map it in the **Configure** form)
 
-  A slot whose action is anything else (`climate.set_hvac_mode`, a script, a scene, a preset whose temperature the VTherm does not expose) has no target for IHP and is not anticipated.
-- **The schedule must control the VTherm of this IHP device.** IHP does not check which entity the action targets. After triggering the slot, it waits up to 10 seconds for this VTherm to take the slot's temperature; if it does not, IHP treats the scheduler as blocked by its conditions.
+  A slot whose action is anything else (`climate.set_hvac_mode`, a script, a scene, a preset whose temperature the thermostat does not expose and you did not map) has no target for IHP and is not anticipated.
+- **The schedule must control the thermostat of this IHP device.** IHP does not check which entity the action targets. After triggering the slot, it waits up to 10 seconds for this thermostat to take the slot's temperature; if it does not, IHP treats the scheduler as blocked by its conditions.
 - **A preheat that starts the day before its slot may start at 00:01.** `run_action` looks for the slot on the day it is called. On Sunday 23:00, the Monday 05:00 slot of a Mon–Fri schedule does not exist yet, so nothing heats. IHP retries the same scheduler at 00:01 on the slot's day and treats it as blocked only if that retry has no effect either. The room then starts heating later than anticipated. Schedules that run every day are not affected.
 - **Only the next slot of each scheduler is anticipated.** If the next slot does not need heating (an eco slot, or a room already warm enough), nothing is preheated until that slot has passed, and the slot after it is anticipated then.
 - **A scheduler switched off is ignored.** Switching it back on makes IHP use it again.
 - **Several schedulers can be configured.** IHP anticipates the earliest upcoming slot among them. If that scheduler's conditions block it, IHP tries the next scheduler right away.
 
+#### Climate Scheduler
+
+IHP recognises a Climate Scheduler switch by the integration that registered it, not by its look (it imitates the HACS Scheduler attributes). At the anticipated start IHP applies the **next node's action to this device's thermostat itself**, with no extra automation:
+
+- A node that sets a **temperature** is applied as a temperature; a node that selects a **preset** is applied as a preset.
+- A node that switches the thermostat **off** is ignored, whatever temperature it carries. A "no change" node cannot be told apart from another: Climate Scheduler publishes it with the temperature it keeps, so IHP anticipates that temperature.
+- A schedule that covers several thermostats gives each IHP device its own node action: only the thermostat of this device is touched.
+- A switch that is off is ignored.
+- Climate Scheduler applies a node when it starts, and again after a restart or an edit. If it undoes a preheat that way, IHP does not fight it: the slot is simply reached on time.
+- A schedule that does not name its thermostats is taken as this device's thermostat.
+- **Limit:** between the last node of the day and midnight, Climate Scheduler announces the first node of *today's* schedule instead of tomorrow's, which is wrong in its 5/2 and individual modes (after midnight it is right). IHP follows what the switch announces.
+
 #### Native `schedule.*` Helpers
 
-A native schedule only tells IHP when its next ON block starts. It does not hold a temperature and has no service to apply a block early. So:
+A native schedule does not say what its blocks mean: each block may carry free **data** that you filled in. IHP reads the **next block start** through the helper (Home Assistant 2025.3 or later), even while another block is running, so adjacent blocks are anticipated too. On an older Home Assistant, IHP reads only the helper's next event: nothing is anticipated while a block runs, block data is not available, and a driven schedule gets the fallback preset. A warning says so once.
 
-- IHP computes the anticipated start for the next ON block, with the VTherm **comfort** preset temperature as target (20 °C if the comfort preset cannot be read).
-- IHP does **not** start the heating. To preheat, build an automation on the **Anticipated Start Time** sensor, or use a HACS Scheduler.
-- Nothing is anticipated while the schedule is ON: the next block is only known once the current one has ended.
-- A native schedule cannot be switched off: IHP keeps computing its anticipated start, during a vacation too.
+By default IHP only **computes** the anticipated start, with the thermostat **comfort** preset temperature as target (20 °C if the comfort preset cannot be read), and does not start the heating.
+
+To let IHP start the heating, turn on **Drive Native Schedules** in the device's **Configure** form. IHP then applies the next block's action to the thermostat at the anticipated start, read from the block's data:
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| Drive Native Schedules | off | IHP applies the next block itself |
+| Native Schedule Preset Key | `preset` | Data entry that holds a preset name |
+| Native Schedule Temperature Key | `temperature` | Data entry that holds a target temperature |
+| Native Schedule Fallback Preset | `comfort` | Preset applied when a block has neither entry |
+
+A block with the data `preset: comfort` is applied as the comfort preset; with `temperature: 21`, as 21 °C. When a block holds both, the **preset is applied** and the temperature only feeds the anticipation. Without the opt-in, block data is not read and nothing changes for you.
+
+- **A native schedule applies nothing by itself.** After a block ends, nothing puts the thermostat back to eco unless you have an automation for it.
+- A native schedule cannot be switched off: IHP keeps anticipating it, during a vacation too.
+
+#### What IHP Leaves Alone
+
+When IHP drives your thermostat it first records its state, and it only puts that state back if nobody touched the thermostat meanwhile:
+
+- If you or an automation change the preset or temperature during the preheat, IHP never overwrites it, restores nothing, and **does not apply that slot again**: your change stands until the slot.
+- A thermostat you switch off is left off, and nothing is written to it.
+- A cancellation a few minutes before the slot restores nothing, because the scheduler is about to apply the same action.
+- After a Home Assistant restart IHP picks up the preheat in progress; if its scheduler cannot answer yet, it waits and asks again.
+
+#### When IHP Applies a Temperature: the Manual Override Duration
+
+Versatile Thermostat has an optional **manual override duration** (advanced configuration, off by default). When it is set, VTherm treats any `set_temperature` call as a temporary manual change: it keeps that temperature for that many minutes, then goes back to the preset it had before.
+
+IHP cannot tell VTherm that its call is not a manual change, so with this option on, a slot that sets a **temperature** can be undone by VTherm after the configured duration: before the slot if the preheat is longer, or in the middle of the slot otherwise. Slots that select a **preset** are not affected. If your schedules use temperatures, either leave the option off, or use presets in your slots.
 
 ### Step 3: (Optional) Add Environmental Sensors
 
@@ -98,17 +161,72 @@ Once configured, IHP operates automatically:
 1. **Monitors** your schedulers for the next slot
 2. **Learns** how your heating system performs
 3. **Calculates** when to start heating to reach the target temperature exactly on time
-4. **Triggers** the slot early through HACS Scheduler (a native schedule only gets the calculation)
+4. **Applies** the slot early: through HACS Scheduler's own `run_action`, or by applying the slot's action to your thermostat (Climate Scheduler, and native schedules when you turn on direct control)
 
 **You don't need to do anything—IHP works in the background!**
 
 ---
 
+## Wake-up Sources (Alarm, Date-Time Entity)
+
+A **wake-up source** is an entity that holds a point in time: your phone's next alarm, a date-time helper, a date-time entity. IHP preheats so that the room reaches the target temperature **at that time**, using the heating speed it learned, and applies the target to your thermostat itself. You do not need a scheduler or an automation.
+
+### Setting One Up
+
+1. Open the device's **Configure** screen and choose **Wake-up sources**.
+2. In the menu, choose **Add a source** and fill in:
+
+| Field | What it does |
+|-------|--------------|
+| **Entity holding the time** | A `sensor` with the *timestamp* device class (such as the phone's next-alarm sensor), a `datetime` entity, or an `input_datetime` with both date and time. A date alone or a time alone is refused: it does not say when. |
+| **Target preset** / **Target temperature** | What to apply and reach. When both are given, the preset is applied and the temperature is the one IHP heads for in its calculation. |
+| **Take the target from the schedule** | Only offered when the device has a scheduler. See below. |
+| **Ignore times further than (hours)** | Default 24. A time further away is ignored, so a distant alarm never starts a preheat by accident. |
+| **Keep the target after the time (minutes)** | Optional. After this long, IHP puts the thermostat back in its earlier state. 0 leaves the thermostat as it is. |
+
+3. Choose **Save and go back**, then **Apply the saved changes** on the main menu. A device can have several sources; each source belongs to one device. To remove sources, choose **Remove sources** in the menu and tick the ones to remove: nothing is ticked when the list opens.
+
+### How the Deadlines Combine
+
+IHP picks the **earliest valid deadline** among your schedulers and your wake-up sources. There is no priority setting:
+
+- An alarm **earlier** than the next schedule slot becomes the next deadline; once it has passed, IHP goes back to the schedule.
+- An alarm **later** than the next schedule slot changes nothing: the schedule slot is still the next deadline.
+- If a schedule slot and an alarm fall at the same minute, the schedule wins, so a single target applies.
+
+> **IHP cannot stop a scheduler.** A scheduler applies its own slots whatever IHP does. To keep the room cold for a late alarm, either **disable or add a condition to the schedule** on those days, or use **only a wake-up source and no scheduler** on that device. IHP then drives the thermostat by itself.
+
+### Where the Target Comes From
+
+- **Fixed target** (the default): the preset or temperature you gave.
+- **From the schedule**: IHP takes the target of the schedule slot that **follows** the wake-up time (an alarm at 05:30 before a 07:00 comfort slot heads for the comfort target), but **never lower than the slot already in effect** at that time (an alarm at 08:00 during a comfort block that ends at 09:00 keeps the comfort target). Your fixed target is the fallback when the schedule cannot tell.
+
+What the schedule can tell depends on the scheduler:
+
+| Scheduler | Slot in effect | Slot that follows |
+|-----------|----------------|-------------------|
+| Native `schedule.*` (Home Assistant 2025.3+) | ✅ | ✅ |
+| HACS Scheduler | ❌ | ✅, once no other slot lies between now and the wake-up time |
+| Climate Scheduler | ❌ | ✅, once no other slot lies between now and the wake-up time |
+
+When only one slot is known, IHP uses it only if its temperature is **higher** than your thermostat's current target; otherwise it falls back to the fixed target. With HACS Scheduler and Climate Scheduler, giving a fixed target as well is therefore recommended.
+
+### What Happens Around the Wake-up Time
+
+- The target is applied at the anticipated start, as a preset when you chose a preset, as a temperature otherwise. IHP never changes the thermostat's heating mode, and does nothing if it is switched off.
+- A **snooze** or an edited alarm that moves the deadline by less than the **Preheating Revert Time Delta** (15 minutes by default) is followed without putting the thermostat back in between; a larger move cancels the preheat and starts it again for the new time. A **closer** alarm takes over a preheat for a later slot without putting the thermostat back in between.
+- If you change the thermostat yourself, IHP does not apply the target again over your change.
+- If the alarm is **removed or dismissed** before its time, the preheat is cancelled and the thermostat is put back as it was, unless you changed it.
+- With a **hold**, the earlier state is put back that long after the wake-up time, unless you changed it or a schedule slot of the same device comes first: the schedule then owns the setting and IHP restores nothing.
+- Preheats driven by a wake-up source are learned from like any other.
+
+---
+
 ## Using IHP Without a Scheduler
 
-IHP can be used without a scheduler, or with a scheduler it cannot start (native `schedule.*`). This is useful for:
+IHP can be used without a scheduler, or with a scheduler it does not start (a native `schedule.*` helper without direct control). This is useful for:
 
-- 🤖 **Dynamic scheduling** based on external triggers (e.g., smartphone alarm, calendar events)
+- 🤖 **Dynamic scheduling** based on external triggers (e.g., calendar events) — for a smartphone alarm or any date-time entity, see [Wake-up Sources](#wake-up-sources-alarm-date-time-entity)
 - 🔧 **Custom automations** that calculate start times programmatically
 - 📱 **Voice-controlled** heating schedules
 - 🧪 **Testing** IHP's prediction capabilities
@@ -126,7 +244,7 @@ When no scheduler is configured:
 
 Without a scheduler, you can use the **`calculate_anticipated_start_time`** service in your own automations:
 
-**Example: Wake-up heating based on phone alarm**
+**Example: Wake-up heating based on phone alarm** (for the alarm alone, a [wake-up source](#wake-up-sources-alarm-date-time-entity) needs no automation)
 
 ```yaml
 alias: "Dynamic Wake-up Heating"
@@ -190,10 +308,45 @@ Need to change entities or settings after setup?
 1. Go to **Settings** → **Devices & Services**
 2. Open **Intelligent Heating Pilot**
 3. Click **Configure** on the device you want to change
-4. Update the entities or settings
-5. Click **Submit**
+4. Choose the group of settings to change, update it and submit
+5. Back on the menu, choose **Apply the saved changes** when you are done
 
-The device reloads automatically. The **Name** cannot be changed there: rename the device from its device page.
+The **Name** cannot be changed there: rename the device from its device page.
+
+### Central Configuration
+
+With several devices, the same values (outdoor sensors, learning and cycle settings, safety grace period, native schedule keys) would otherwise be entered once per device. IHP therefore keeps a **Central configuration** entry next to your devices in **Settings** → **Devices & Services** → **Intelligent Heating Pilot**. It is created automatically with your first device, and **Configure** opens the same groups of settings as a device, for the values that can be shared.
+
+- **A device follows the central value unless it has its own.** A new device asks only for its name, thermostat and schedulers: everything else is inherited.
+- **See what a device inherits:** in a group of a device's settings, every shared setting has an **Inherited / Custom** toggle. On **Inherited**, it shows the value the device gets (a sensor by its name), which cannot be edited there.
+- **Override a value on one device:** switch the setting to **Custom** and enter its value: the field starts empty.
+- **Go back to inheriting:** switch the setting back to **Inherited** and submit.
+- **Use no sensor on one device** although a central sensor is set: switch the sensor to **Custom** and leave it empty.
+- **Never inherited:** the thermostat, schedulers, wake-up sources, the indoor humidity sensor and **Drive Native Schedules**, which lets IHP act on the thermostat and stays a decision per device.
+- **Apply the saved changes** in the central configuration reloads, once, only the devices that inherit a changed value.
+- Devices created before this feature keep every value they already hold as their own.
+- Deleting the central configuration is not blocked by Home Assistant: devices then use the built-in defaults for what they inherit, a warning is logged, and the entry is created again at the next restart or device reload, empty.
+
+### The Settings Menu
+
+The settings of a device are grouped by theme, so you only see the fields relevant to what you are changing:
+
+| Theme | What it holds |
+|-------|---------------|
+| **Thermostat and schedulers** | The Versatile Thermostat the device drives and the schedulers that control it |
+| **Native schedules** | Whether IHP drives native `schedule.*` helpers, and the keys of their block data |
+| **Wake-up sources** | Alarms and date-time entities IHP preheats for (see below) |
+| **Environment sensors** | Indoor humidity, outdoor temperature and humidity, cloud coverage |
+| **Learning** | Automatic learning, initial dead time, data retention, recorder extraction period |
+| **Cycle detection** | Temperature threshold, cycle durations, cycle split, safety grace period |
+| **Anticipation behaviour** | Preheating revert time delta |
+
+### Saving and Applying
+
+- **Each group is saved as soon as you submit it.** Closing the dialog, even before choosing anything else, loses nothing.
+- **Saving does not reload the device.** The device keeps running with the settings it was loaded with until you apply them.
+- **Apply the saved changes** reloads the device once, with everything you saved. It is only listed while something is saved and not applied yet, and the menu text names the groups concerned. A restart of Home Assistant, or any other reload of the device, applies saved settings too.
+- Turning IHP on or off with its switch takes effect at once, with no reload.
 
 ---
 
@@ -376,9 +529,9 @@ Fine-tune how IHP detects and processes heating cycles for the Learned Heating S
 1. Go to **Settings** → **Devices & Services**
 2. Open **Intelligent Heating Pilot**
 3. Click **Configure** on the device
-4. Scroll down to the settings below the entities
-5. Adjust parameters based on your heating system
-6. Click **Submit**
+4. Open the group of settings you want (for example **Cycle detection** or **Learning**)
+5. Adjust parameters based on your heating system and submit
+6. Choose **Apply the saved changes** on the menu
 
 **Tip**: Start with defaults and only adjust if you notice issues with cycle detection in the logs.
 
@@ -441,7 +594,7 @@ After configuration, IHP creates these entities on your device:
 Before moving forward, verify:
 
 - [ ] IHP appears in integrations
-- [ ] A VTherm entity selected
+- [ ] A thermostat (`climate` entity) selected
 - [ ] A HACS Scheduler configured (optional — required for automatic preheating)
 - [ ] New sensors appear on your IHP device
 - [ ] No error messages in logs
@@ -455,7 +608,7 @@ Before moving forward, verify:
 ### My thermostat is not in the list
 
 **Solution:**
-- Only Versatile Thermostat entities are offered. Check that Versatile Thermostat is installed and that your thermostat is one of its entities
+- Every `climate` entity is offered. If yours is missing, check that its integration is loaded and that the entity exists in Developer Tools → States
 
 ### "This integration is already configured"
 

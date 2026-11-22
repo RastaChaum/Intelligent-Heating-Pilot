@@ -152,16 +152,19 @@ tests/
 from abc import ABC, abstractmethod
 from domain.value_objects import ScheduleEvent
 
+
 class ISchedulerReader(ABC):
     @abstractmethod
     async def get_next_event(self) -> ScheduleEvent | None:
         """Read the next scheduled event."""
         pass
 
+
 # tests/unit/domain/test_pilot_controller.py
 from unittest.mock import Mock
 from domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from domain.entities.pilot_controller import PilotController
+
 
 def test_pilot_decides_to_preheat():
     # GIVEN: Mock scheduler reader
@@ -186,24 +189,30 @@ Use Python **dataclasses** with `frozen=True` for all value objects:
 from dataclasses import dataclass
 from datetime import datetime
 
+
 @dataclass(frozen=True)
 class EnvironmentState:
     """Current environmental conditions."""
+
     current_temp: float
     outdoor_temp: float
     humidity: float
     timestamp: datetime
 
+
 @dataclass(frozen=True)
 class ScheduleEvent:
     """A scheduled heating event."""
+
     target_time: datetime
     target_temp: float
     event_id: str
 
+
 @dataclass(frozen=True)
 class PredictionResult:
     """Result of heating prediction."""
+
     anticipated_start_time: datetime
     estimated_duration_minutes: float
     confidence_level: float
@@ -216,6 +225,7 @@ from domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from domain.interfaces.model_storage_interface import IModelStorage
 from domain.interfaces.climate_commander_interface import IClimateCommander
 from domain.value_objects import EnvironmentState, HeatingDecision
+
 
 class PilotController:
     """Coordinates heating decisions for a single VTherm."""
@@ -230,10 +240,7 @@ class PilotController:
         self._storage = model_storage
         self._commander = climate_commander
 
-    async def decide_heating_action(
-        self,
-        environment: EnvironmentState
-    ) -> HeatingDecision:
+    async def decide_heating_action(self, environment: EnvironmentState) -> HeatingDecision:
         """Decide whether to start/stop heating based on predictions."""
         # Pure business logic here - no HA dependencies
         pass
@@ -248,6 +255,7 @@ Define clear contracts for all external interactions:
 from abc import ABC, abstractmethod
 from domain.value_objects import ScheduleEvent
 
+
 class ISchedulerReader(ABC):
     """Contract for reading scheduled events."""
 
@@ -256,8 +264,10 @@ class ISchedulerReader(ABC):
         """Read the next scheduled heating event."""
         pass
 
+
 # domain/interfaces/model_storage_interface.py
 from abc import ABC, abstractmethod
+
 
 class IModelStorage(ABC):
     """Contract for persisting learning data."""
@@ -272,8 +282,10 @@ class IModelStorage(ABC):
         """Retrieve historical learned slopes."""
         pass
 
+
 # domain/interfaces/climate_commander_interface.py
 from abc import ABC, abstractmethod
+
 
 class IClimateCommander(ABC):
     """Contract for climate control actions."""
@@ -515,6 +527,12 @@ For each bug-driven test addition, record:
 
 ## Active Technologies
 - YAML (GitHub Actions workflow syntax), Bash (GNU coreutils, awk, diff, git, jq, GitHub CLI `gh`) + `actions/checkout@v6`, `gh` CLI (pre-installed on `ubuntu-latest` runners), `jq` (pre-installed), standard POSIX utilities (001-fix-cicd-workflow)
+- Python 3.14 (virtualenv managed by Poetry) + Home Assistant core (`homeassistant.*` only in infrastructure), existing `BaseHAStorageAdapter`, pytest, pytest-bdd (281-drive-climate-at-anticipated-start)
+- one new Home Assistant `Store` per config entry for the preheat record (same pattern as `HALhsStorage`) (281-drive-climate-at-anticipated-start)
+- Python 3.14 (dev virtualenv), Home Assistant 2026.10.x; native-schedule lookup needs `schedule.get_schedule` (HA 2025.3+), with the degradation already used by #292 below that + Home Assistant core only (`sensor`, `input_datetime`, `datetime`, `schedule`); no new package (066-adaptive-wake-up-timestamp-sources)
+- the existing `PreheatRecord` store gains two optional fields (hold); wake-up sources live in the config entry options (066-adaptive-wake-up-timestamp-sources)
+- Python 3.14 (virtualenv managed by Poetry) + Home Assistant core (`homeassistant.*` only in infrastructure and the config flow modules), pytest, pytest-bdd (302-config-menus-central-defaults)
+- Home Assistant config entries only (data and options); no new `Store` (302-config-menus-central-defaults)
 
 ## Recent Changes
 - 001-fix-cicd-workflow: Added YAML (GitHub Actions workflow syntax), Bash (GNU coreutils, awk, diff, git, jq, GitHub CLI `gh`) + `actions/checkout@v6`, `gh` CLI (pre-installed on `ubuntu-latest` runners), `jq` (pre-installed), standard POSIX utilities

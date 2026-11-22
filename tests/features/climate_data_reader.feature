@@ -21,13 +21,6 @@ Feature: HAClimateDataReader - Unified Climate Data Access
     And the lock should be released after data fetch completes
     And historical data should be returned
 
-  Scenario: Real-time slope reading does NOT use RecorderQueue
-    Given I have a HAClimateDataReader with RecorderQueue
-    And the VTherm has a current slope of 0.75
-    When I call get_current_slope
-    Then the RecorderQueue lock should NOT be acquired
-    And it should return 0.75
-
   Scenario: Real-time heating state does NOT use RecorderQueue
     Given I have a HAClimateDataReader with RecorderQueue
     And the VTherm is actively heating
@@ -37,7 +30,7 @@ Feature: HAClimateDataReader - Unified Climate Data Access
 
   Scenario: VTherm entity ID is accessible
     Given I have a HAClimateDataReader for "climate.bedroom"
-    When I call get_vtherm_entity_id
+    When I call get_climate_entity_id
     Then it should return "climate.bedroom"
 
   Scenario: RecorderQueue is mandatory for construction

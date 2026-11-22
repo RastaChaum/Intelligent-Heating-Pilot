@@ -32,7 +32,7 @@ class TestHeatingCycleLifecycleManagerFactory:
         """First device configuration."""
         return DeviceConfig(
             device_id="climate.vtherm_1",
-            vtherm_entity_id="climate.vtherm_1",
+            climate_entity_id="climate.vtherm_1",
             scheduler_entities=["schedule.heating_1"],
             lhs_retention_days=30,
         )
@@ -42,7 +42,7 @@ class TestHeatingCycleLifecycleManagerFactory:
         """Second device configuration with different device_id."""
         return DeviceConfig(
             device_id="climate.vtherm_2",
-            vtherm_entity_id="climate.vtherm_2",
+            climate_entity_id="climate.vtherm_2",
             scheduler_entities=["schedule.heating_2"],
             lhs_retention_days=30,
         )
@@ -327,7 +327,7 @@ def device_config() -> DeviceConfig:
     """A device configuration keyed by its config entry id."""
     return DeviceConfig(
         device_id="entry123",
-        vtherm_entity_id="climate.vtherm_1",
+        climate_entity_id="climate.vtherm_1",
         scheduler_entities=["schedule.heating_1"],
         lhs_retention_days=30,
     )

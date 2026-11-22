@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from ..interfaces import IDecisionStrategy, ISchedulerCommander
+from ..interfaces import IDecisionStrategy, IPreheatActuator
 from ..value_objects import (
     EnvironmentState,
     HeatingDecision,
@@ -14,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class HeatingPilot:
-    """Coordinates heating decisions for a single VTherm.
+    """Coordinates heating decisions for a single climate entity.
 
     This is the aggregate root that orchestrates all domain logic
     for intelligent heating control. It delegates decision-making to
@@ -28,24 +28,24 @@ class HeatingPilot:
 
     Attributes:
         _decision_strategy: Strategy for making heating decisions
-        _scheduler_commander: Interface to control scheduler actions
+        _preheat_actuator: Interface to start and cancel a preheat
     """
 
     def __init__(
         self,
         decision_strategy: IDecisionStrategy,
-        scheduler_commander: ISchedulerCommander,
+        preheat_actuator: IPreheatActuator,
     ) -> None:
         """Initialize the heating pilot.
 
         Args:
             decision_strategy: Strategy for making heating decisions
                               (simple rules or ML-based)
-            scheduler_commander: Implementation of scheduler control interface
+            preheat_actuator: Implementation of the preheat actuator interface
         """
         _LOGGER.debug("Initializing HeatingPilot")
         self._decision_strategy = decision_strategy
-        self._scheduler_commander = scheduler_commander
+        self._preheat_actuator = preheat_actuator
         _LOGGER.info(f"HeatingPilot initialized with strategy: {type(decision_strategy).__name__}")
 
     async def decide_heating_action(

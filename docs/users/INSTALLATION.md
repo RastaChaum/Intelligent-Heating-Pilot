@@ -4,8 +4,8 @@
 
 Before installing IHP, ensure you have:
 
-- **Home Assistant** 2024.11 or higher
-- **Versatile Thermostat (VTherm)** integration installed and configured: IHP only works with Versatile Thermostat entities
+- **Home Assistant** 2026.2 or higher
+- **A thermostat** (any `climate` entity). **Versatile Thermostat (VTherm)** is recommended and best supported, but not required: see [Using a climate that is not a Versatile Thermostat](CONFIGURATION.md#using-a-climate-that-is-not-a-versatile-thermostat)
 - **[HACS Scheduler](https://github.com/nielsfaber/scheduler-component)** installed, if you want IHP to start the heating. Native `schedule.*` helpers only get an anticipated start sensor (see [Supported Schedulers](CONFIGURATION.md#supported-schedulers))
 
 ## Installation Methods

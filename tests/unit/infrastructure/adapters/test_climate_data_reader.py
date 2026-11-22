@@ -75,31 +75,7 @@ def test_get_vtherm_entity_id(mock_hass: Mock, recorder_queue: RecorderAccessQue
     """Return the configured VTherm entity ID."""
     reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
 
-    assert reader.get_vtherm_entity_id() == "climate.vtherm"
-
-
-def test_get_current_slope_returns_float(
-    mock_hass: Mock, recorder_queue: RecorderAccessQueue
-) -> None:
-    """Return slope value when available."""
-    vtherm_state = _make_state(attributes={"slope": "0.75"})
-    mock_hass.states.get.return_value = vtherm_state
-
-    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
-
-    assert reader.get_current_slope() == 0.75
-
-
-def test_get_current_slope_returns_none_on_invalid(
-    mock_hass: Mock, recorder_queue: RecorderAccessQueue
-) -> None:
-    """Return None when slope is invalid."""
-    vtherm_state = _make_state(attributes={"slope": "bad"})
-    mock_hass.states.get.return_value = vtherm_state
-
-    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
-
-    assert reader.get_current_slope() is None
+    assert reader.get_climate_entity_id() == "climate.vtherm"
 
 
 def test_is_heating_active_true_when_heat_and_below_target(

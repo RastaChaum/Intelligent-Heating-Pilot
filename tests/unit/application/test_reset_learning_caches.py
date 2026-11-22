@@ -226,7 +226,7 @@ def app_with_stale_caches() -> HeatingApplication:
     """Create a HeatingApplication whose sensor caches hold stale learned values."""
     device_config = DeviceConfig(
         device_id=DEVICE_ID,
-        vtherm_entity_id=DEVICE_ID,
+        climate_entity_id=DEVICE_ID,
         scheduler_entities=["schedule.heating"],
         lhs_retention_days=30,
     )
