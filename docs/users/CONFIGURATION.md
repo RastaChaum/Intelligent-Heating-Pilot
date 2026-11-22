@@ -184,7 +184,7 @@ A **wake-up source** is an entity that holds a point in time: your phone's next 
 | **Ignore times further than (hours)** | Default 24. A time further away is ignored, so a distant alarm never starts a preheat by accident. |
 | **Keep the target after the time (minutes)** | Optional. After this long, IHP puts the thermostat back in its earlier state. 0 leaves the thermostat as it is. |
 
-3. Choose **Save and go back**, then **Apply the saved changes** on the main menu. A device can have several sources; each source belongs to one device.
+3. Choose **Save and go back**, then **Apply the saved changes** on the main menu. A device can have several sources; each source belongs to one device. To remove sources, choose **Remove sources** in the menu and tick the ones to remove: nothing is ticked when the list opens.
 
 ### How the Deadlines Combine
 
@@ -319,7 +319,7 @@ With several devices, the same values (outdoor sensors, learning and cycle setti
 
 - **A device follows the central value unless it has its own.** A new device asks only for its name, thermostat and schedulers: everything else is inherited.
 - **See what a device inherits:** in a group of a device's settings, every shared setting has an **Inherited / Custom** toggle. On **Inherited**, it shows the value the device gets (a sensor by its name), which cannot be edited there.
-- **Override a value on one device:** switch the setting to **Custom** and set its value. The field starts from the inherited value.
+- **Override a value on one device:** switch the setting to **Custom** and enter its value: the field starts empty.
 - **Go back to inheriting:** switch the setting back to **Inherited** and submit.
 - **Use no sensor on one device** although a central sensor is set: switch the sensor to **Custom** and leave it empty.
 - **Never inherited:** the thermostat, schedulers, wake-up sources, the indoor humidity sensor and **Drive Native Schedules**, which lets IHP act on the thermostat and stays a decision per device.
