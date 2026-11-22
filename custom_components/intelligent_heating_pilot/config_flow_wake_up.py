@@ -202,6 +202,12 @@ class WakeUpSourcesFlowMixin:
         return f"{name} ({entity_id})" if name else entity_id
 
     def _source_picker(self, multiple: bool) -> Any:
+        """Offer the sources already set: a dropdown to pick one, checkboxes to pick several.
+
+        Several sources are a checkbox list: a dropdown with chips opens, in the frontend, with
+        the first source already selected. Taking the chip away then looks like "remove this
+        source" but submits an empty selection, so nothing is removed.
+        """
         options = [
             selector.SelectOptionDict(
                 value=entry[CONF_WAKE_UP_ENTITY],
@@ -209,10 +215,11 @@ class WakeUpSourcesFlowMixin:
             )
             for entry in self._sources
         ]
+        mode = (
+            selector.SelectSelectorMode.LIST if multiple else selector.SelectSelectorMode.DROPDOWN
+        )
         return selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=options, multiple=multiple, mode=selector.SelectSelectorMode.DROPDOWN
-            )
+            selector.SelectSelectorConfig(options=options, multiple=multiple, mode=mode)
         )
 
     async def async_step_wake_up_menu(
@@ -290,8 +297,10 @@ class WakeUpSourcesFlowMixin:
             return await self.async_step_wake_up_menu()
         return self.async_show_form(
             step_id="wake_up_remove",
+            # Optional with an empty default: a required selector opens with its first option
+            # selected, so nothing is ticked until the user chooses what to remove.
             data_schema=vol.Schema(
-                {vol.Required(CONF_WAKE_UP_ENTITY): self._source_picker(multiple=True)}
+                {vol.Optional(CONF_WAKE_UP_ENTITY, default=[]): self._source_picker(multiple=True)}
             ),
         )
 

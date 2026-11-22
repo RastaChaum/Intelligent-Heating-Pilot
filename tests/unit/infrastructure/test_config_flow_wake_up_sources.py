@@ -193,6 +193,35 @@ async def test_sources_are_removed(flow) -> None:
 
 
 @pytest.mark.asyncio
+async def test_the_remove_form_opens_with_nothing_selected(flow) -> None:
+    """The frontend opens a required multi-select on its first option: removing a source by
+    taking its chip away then submitted nothing. Nothing may be ticked until the user chooses."""
+    await flow.async_step_wake_up_sources()
+    await flow.async_step_wake_up_form({"entity_id": ALARM, "target_preset": "comfort"})
+    await flow.async_step_wake_up_form({"entity_id": ARRIVAL, "target_temperature": 20})
+
+    form = await flow.async_step_wake_up_remove()
+
+    ((marker, picker),) = form["data_schema"].schema.items()
+    assert type(marker).__name__ == "Optional"
+    assert marker.default() == []
+    assert picker.config["multiple"] is True
+    assert picker.config["mode"] == "list"
+    assert [o["value"] for o in picker.config["options"]] == [ALARM, ARRIVAL]
+
+
+@pytest.mark.asyncio
+async def test_submitting_the_remove_form_untouched_removes_nothing(flow) -> None:
+    await flow.async_step_wake_up_sources()
+    await flow.async_step_wake_up_form({"entity_id": ALARM, "target_preset": "comfort"})
+
+    await flow.async_step_wake_up_remove({"entity_id": []})
+    await flow.async_step_wake_up_done()
+
+    assert [s["entity_id"] for s in _stored(flow)[CONF_WAKE_UP_SOURCES]] == [ALARM]
+
+
+@pytest.mark.asyncio
 async def test_existing_sources_are_loaded_when_the_menu_opens() -> None:
     entry = _entry(
         options={
